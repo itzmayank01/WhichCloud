@@ -16,7 +16,7 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 
-from whichcloud.pricing import aws, azure, store
+from whichcloud.pricing import aws, azure, gcp, store
 from whichcloud.pricing.models import REGIONS
 
 BOLD, DIM, GREEN, YELLOW, RED, RESET = (
@@ -32,7 +32,9 @@ BOLD, DIM, GREEN, YELLOW, RED, RESET = (
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--region", default="india", choices=sorted(REGIONS))
-    ap.add_argument("--provider", choices=["aws", "azure", "all"], default="all")
+    ap.add_argument(
+        "--provider", choices=["aws", "azure", "gcp", "all"], default="all"
+    )
     ap.add_argument("--force", action="store_true", help="re-download cached catalogs")
     args = ap.parse_args()
 
@@ -41,16 +43,18 @@ def main() -> int:
 
     if args.force:
         aws.download_instances(force=True)
+        gcp.download_instances(force=True)
+        aws.load_spot_prices(args.region, force=True)
         for service in aws.BULK_SERVICES.values():
             aws.download_bulk(service, args.region, force=True)
 
-    providers = ["aws", "azure"] if args.provider == "all" else [args.provider]
+    providers = ["aws", "azure", "gcp"] if args.provider == "all" else [args.provider]
     total = 0
 
     for name in providers:
         started = time.monotonic()
         print(f"{BOLD}{name}{RESET}")
-        module = aws if name == "aws" else azure
+        module = {"aws": aws, "azure": azure, "gcp": gcp}[name]
         try:
             points = module.load_all(args.region)
         except Exception as exc:

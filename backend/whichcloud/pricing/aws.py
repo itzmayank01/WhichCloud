@@ -99,10 +99,8 @@ def _detect_arch(inst: dict) -> str:
 def load_compute_prices(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every on-demand Linux EC2 instance priced in this region.
 
-    No spot prices. The ec2instances.info catalog publishes on-demand and
-    reserved rates only, and AWS's spot feed (DescribeSpotPriceHistory) needs
-    real credentials. Until that is wired up the engine must not claim a spot
-    saving it cannot price — see knowledge-base/techniques/ for the note.
+    On-demand only; spot comes from load_spot_prices(), which uses a separate
+    feed.
     """
     region = provider_region(region_key, "aws")
     path = path or download_instances()
@@ -137,6 +135,83 @@ def load_compute_prices(region_key: str, path: Path | None = None) -> list[Price
                 )
             )
 
+    return points
+
+
+SPOT_FEED = "https://spot-price.s3.amazonaws.com/spot.js"
+
+_SPOT_CALLBACK = re.compile(r"callback\((.*)\)", re.S)
+
+
+def load_spot_prices(region_key: str, force: bool = False) -> list[PricePoint]:
+    """Spot prices from AWS's public JSONP feed.
+
+    DescribeSpotPriceHistory needs credentials, but this feed is public and
+    covers 36 regions including ap-south-1. It carries no timestamp, so treat
+    it as indicative: good enough to rank "spot vs on-demand", not to quote.
+    Spot rates move continuously anyway — any spot number is a snapshot.
+
+    Specs are joined from the on-demand catalog, since the feed has none.
+    """
+    region = provider_region(region_key, "aws")
+
+    cached = _cache_path("aws-spot.js")
+    if force or not cached.exists():
+        r = httpx.get(SPOT_FEED, timeout=180.0, follow_redirects=True)
+        r.raise_for_status()
+        cached.write_text(r.text)
+
+    match = _SPOT_CALLBACK.search(cached.read_text())
+    if not match:
+        return []
+    feed = json.loads(match.group(1))
+
+    regions = feed.get("config", {}).get("regions", [])
+    entry = next((x for x in regions if x.get("region") == region), None)
+    if entry is None:
+        return []
+
+    # Specs live in the on-demand catalog; index them once.
+    specs = {
+        p.sku: p for p in load_compute_prices(region_key) if ":" not in p.sku
+    }
+
+    points: list[PricePoint] = []
+    for family in entry.get("instanceTypes", []):
+        for size in family.get("sizes", []):
+            name = size.get("size")
+            if not name:
+                continue
+            linux = next(
+                (
+                    c
+                    for c in size.get("valueColumns", [])
+                    if c.get("name") == "linux"
+                ),
+                None,
+            )
+            if not linux:
+                continue
+            price = _decimal(linux.get("prices", {}).get("USD"))
+            if price is None:
+                continue
+
+            base = specs.get(name)
+            points.append(
+                PricePoint(
+                    provider="aws",
+                    category="compute",
+                    sku=f"{name}:spot",
+                    name=f"{name} (spot)",
+                    region=region,
+                    unit="hour",
+                    price_usd=price,
+                    vcpu=base.vcpu if base else None,
+                    memory_gb=base.memory_gb if base else None,
+                    arch=base.arch if base else None,
+                    attributes={"purchase": "spot", "source": "public-spot-feed"},
+                )
+            )
     return points
 
 
@@ -369,6 +444,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every category we price on AWS, for one region."""
     points = load_compute_prices(region_key, path)
     for loader in (
+        load_spot_prices,
         load_database_prices,
         load_storage_prices,
         load_egress_prices,

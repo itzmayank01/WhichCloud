@@ -210,6 +210,30 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
                 attributes={"engine": "postgresql", "deployment": "Single-AZ"},
             )
         )
+
+        # Azure publishes no high-availability meter. Zone-redundant HA
+        # provisions a standby that is billed as a second instance of the same
+        # SKU, so the rate is exactly 2x. This is DERIVED, not published —
+        # the attribute records that so the estimator can say so out loud.
+        points.append(
+            PricePoint(
+                provider="azure",
+                category="database",
+                sku=f"{raw}:multi-az",
+                name=f"PostgreSQL Flexible Server {raw} (zone-redundant HA)",
+                region=region,
+                unit="hour",
+                price_usd=price * 2,
+                vcpu=vcpu,
+                memory_gb=mem,
+                attributes={
+                    "engine": "postgresql",
+                    "deployment": "Multi-AZ",
+                    "derived": "2x primary; Azure bills the HA standby as a "
+                    "second instance and publishes no separate HA meter",
+                },
+            )
+        )
     return points
 
 

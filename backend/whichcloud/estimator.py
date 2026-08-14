@@ -41,6 +41,10 @@ class ArchitectureSpec:
     egress_gb: float = 0.0
     load_balancer: bool = False
 
+    # Spot capacity can be reclaimed at short notice, so it is opt-in and only
+    # ever appropriate for interruptible work.
+    use_spot: bool = False
+
 
 @dataclass(frozen=True, slots=True)
 class LineItem:
@@ -135,16 +139,19 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             region=spec.region,
             arch=spec.arch,
         )
-        point = store.cheapest_compute(query, provider=provider, dsn=dsn)
+        purchase = "spot" if spec.use_spot else "ondemand"
+        point = store.cheapest_compute(
+            query, provider=provider, purchase=purchase, dsn=dsn
+        )
         if point:
-            result.items.append(
-                _hourly_line(
-                    f"Compute × {spec.compute_count}", point, spec.compute_count
-                )
-            )
+            label = f"Compute × {spec.compute_count}"
+            if spec.use_spot:
+                label += " (spot)"
+            result.items.append(_hourly_line(label, point, spec.compute_count))
         else:
             result.missing.append(
-                f"compute {spec.compute_vcpu}vCPU/{spec.compute_memory_gb:g}GB"
+                f"{purchase} compute {spec.compute_vcpu}vCPU/"
+                f"{spec.compute_memory_gb:g}GB"
                 + (f" {spec.arch}" if spec.arch else "")
             )
 
@@ -197,7 +204,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
 def compare(
     spec: ArchitectureSpec,
-    providers: tuple[str, ...] = ("aws", "azure"),
+    providers: tuple[str, ...] = ("aws", "azure", "gcp"),
     dsn: str | None = None,
 ) -> list[Estimate]:
     """Price the same architecture on each provider, cheapest first.

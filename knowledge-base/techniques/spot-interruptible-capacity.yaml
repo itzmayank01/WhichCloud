@@ -1,0 +1,53 @@
+id: spot-interruptible-capacity
+name: Spot / preemptible capacity for interruptible work
+category: compute
+summary: >
+  Run work that can be restarted on spare cloud capacity at a steep discount.
+  The provider can reclaim the machine at short notice, so it suits batch jobs,
+  CI, and queue workers — never a database or a checkout flow.
+
+applies_when:
+  workload_type: [batch, ml]
+  requires:
+    - Work can be interrupted and resumed without data loss
+    - Job state is checkpointed, or individual tasks are short
+    - Not the only capacity serving live user traffic
+
+savings:
+  typical_pct: 62
+  confidence: high
+  basis: >
+    MEASURED 2026-08-14 by the estimator against live catalogs, 4 × 2 vCPU / 8 GB
+    in India:
+      AWS ap-south-1   on-demand $130.82/mo  ->  spot $49.06/mo   = 62% saving
+      GCP asia-south1  on-demand $162.84/mo  ->  spot $53.90/mo   = 67% saving
+
+    Spot rates float continuously with spare capacity, so any figure is a
+    snapshot, not a quote. Present it as a range and re-measure per region and
+    instance family.
+
+    AWS source note: our spot prices come from AWS's public spot feed
+    (spot-price.s3.amazonaws.com), which carries no timestamp. It is good
+    enough to rank spot against on-demand; it is not a billing-grade rate.
+    DescribeSpotPriceHistory would be authoritative but needs credentials.
+
+tradeoffs:
+  - Instances can be reclaimed with about two minutes' notice
+  - Capacity is not guaranteed; a family can be unavailable in a region
+  - Requires checkpointing or idempotent task design to avoid lost work
+  - Interruption rates vary by instance family and time of day
+  - Mixing spot with on-demand baseline capacity is usually safer than all-spot
+
+implemented_by:
+  - name: Karpenter (spot-aware Kubernetes autoscaling)
+    url: https://github.com/aws/karpenter-provider-aws
+    type: tool
+  - name: AWS Node Termination Handler
+    url: https://github.com/aws/aws-node-termination-handler
+    type: tool
+  - name: GCP Spot VMs
+    url: https://cloud.google.com/compute/docs/instances/spot
+    type: managed-service
+
+providers: [aws, gcp, azure]
+obviousness: medium
