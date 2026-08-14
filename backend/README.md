@@ -19,7 +19,11 @@ docker compose -f ../infra/docker-compose.yml up -d
 # 2. pull provider prices into the catalog (idempotent, re-run anytime)
 .venv/bin/python scripts/ingest_prices.py --region india
 
-# 3. THE ENGINE — describe a workload, get three priced architectures
+# 3. THE ENGINE — plain English in, three priced architectures out
+export ANTHROPIC_API_KEY=...          # only this step needs a key
+.venv/bin/python scripts/recommend.py --describe "an e-commerce site for 50k users, spiky weekend traffic, \$400/mo"
+
+#    ...or skip Claude and pass the requirement directly
 .venv/bin/python scripts/recommend.py --goal "e-commerce site" --scale medium --spiky --budget 400
 .venv/bin/python scripts/recommend.py --workload batch --interruptible --scale high
 
@@ -54,6 +58,7 @@ Balanced   3× 2vCPU/8GB arm64
 
 ```
 whichcloud/
+├── intake.py               # plain English → Requirement (Claude, structured output)
 ├── requirements.py         # Requirement — the contract with the front end
 ├── knowledge.py            # loads knowledge-base/*.yaml, matches techniques
 ├── engine.py               # requirements → sized shapes → techniques → priced
@@ -64,7 +69,8 @@ whichcloud/
     ├── azure.py            # VMs, PostgreSQL, Blob, egress, Load Balancer
     └── store.py            # Postgres catalog: upsert, query, prune
 scripts/
-├── recommend.py            # the engine, end to end
+├── recommend.py            # the engine, end to end (--describe for plain English)
+├── eval_intake.py          # scores intake extraction against hand-written fixtures
 ├── ingest_prices.py        # provider APIs → price_points table
 ├── estimate_architecture.py
 ├── validate_pricing.py     # cross-source validation
@@ -186,11 +192,36 @@ contains no distinguishing word. Selecting it made 36 machine types read
 96.3% to 99.5% once the selector became an allow-list. There is a regression
 test for it.
 
+## Plain-English intake
+
+`intake.py` is a thin adapter: Claude reads a description and fills the same
+`Requirement` the CLI flags build. Nothing downstream knows which one happened.
+
+Two things make it safe to trust:
+
+- **The model reports what it guessed.** Every draft carries an `assumed` list
+  and one `clarifying_question`, so an inferred budget is visibly inferred
+  rather than presented as fact.
+- **Validation is ours, not the model's.** Structured outputs guarantee the
+  shape; `Requirement` rejects the values. A hallucinated field fails at the
+  boundary instead of becoming a confidently wrong architecture.
+
+It is the only component that needs an API key, and the only one that costs
+money per call. Everything else runs offline.
+
+```bash
+.venv/bin/python scripts/eval_intake.py          # score extraction, field by field
+```
+
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 29 passed
+.venv/bin/python -m pytest tests/ -q     # 82 passed
 ```
+
+No test calls the Anthropic API — the model's judgement is measured by
+`eval_intake.py`; the suite covers the mapping, validation, and failure paths
+around it.
 
 They assert the rules above: no hand-written spec tables, incomplete estimates
 never win a comparison, undescribed machines never match a requirement, and the

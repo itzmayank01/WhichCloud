@@ -4,6 +4,7 @@
 This is the engine end to end: requirements in, sized shapes out, techniques
 applied, everything priced against the real catalog.
 
+    python scripts/recommend.py --describe "an e-commerce site for 50k users, spiky weekend traffic, $400/mo"
     python scripts/recommend.py --goal "e-commerce site" --scale medium --spiky
     python scripts/recommend.py --workload batch --interruptible --scale high
     python scripts/recommend.py --goal "internal dashboard" --scale low --all-clouds
@@ -85,6 +86,11 @@ def render(option: Option, provider: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument(
+        "--describe",
+        help="describe the app in plain English; Claude fills the rest "
+             "(needs ANTHROPIC_API_KEY)",
+    )
     ap.add_argument("--goal", default="a web application")
     ap.add_argument("--workload", default="web", choices=list(VALID_WORKLOADS))
     ap.add_argument("--scale", default="medium", choices=list(VALID_SCALES))
@@ -101,18 +107,35 @@ def main() -> int:
     ap.add_argument("--all-clouds", action="store_true")
     args = ap.parse_args()
 
-    requirement = Requirement(
-        goal=args.goal,
-        workload_type=args.workload,
-        traffic_pattern="spiky" if args.spiky else "steady",
-        traffic_scale=args.scale,
-        region=args.region,
-        budget_monthly_usd=args.budget,
-        storage_gb=args.storage_gb,
-        egress_gb=args.egress_gb,
-        interruptible=args.interruptible,
-        arm_compatible=not args.x86_only,
-    )
+    if args.describe:
+        from whichcloud.intake import IntakeError, parse_description
+
+        print(f"\n{DIM}Reading your description…{RESET}")
+        try:
+            intake = parse_description(args.describe)
+        except IntakeError as exc:
+            print(f"{YELLOW}{exc}{RESET}\n")
+            return 1
+
+        requirement = intake.requirement
+        if intake.assumed:
+            print(f"{DIM}Assumed (not stated): {', '.join(intake.assumed)}{RESET}")
+        if intake.clarifying_question:
+            print(f"{CYAN}One question that would sharpen this:{RESET} "
+                  f"{intake.clarifying_question}")
+    else:
+        requirement = Requirement(
+            goal=args.goal,
+            workload_type=args.workload,
+            traffic_pattern="spiky" if args.spiky else "steady",
+            traffic_scale=args.scale,
+            region=args.region,
+            budget_monthly_usd=args.budget,
+            storage_gb=args.storage_gb,
+            egress_gb=args.egress_gb,
+            interruptible=args.interruptible,
+            arm_compatible=not args.x86_only,
+        )
 
     print(f"\n{BOLD}WhichCloud · recommendation{RESET}")
     print(f"{DIM}{requirement.goal} — {requirement.workload_type}, "
