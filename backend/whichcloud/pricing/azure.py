@@ -5,8 +5,8 @@ authentication, OData-filterable, JSON out. Verified 2026-08 against
 `centralindia`.
 
 One gap it does not fill: it returns SKU names and prices but no CPU or memory
-specs. Matching "2 vCPU / 4 GB" therefore needs a spec table, curated below for
-the families we actually recommend. An unmapped SKU is skipped, never guessed.
+specs. Those come from the real machine catalog in specs.py — never from a
+hand-written table. A SKU absent from that catalog is skipped, never guessed.
 """
 
 from __future__ import annotations
@@ -16,63 +16,23 @@ from decimal import Decimal, InvalidOperation
 import httpx
 
 from .models import ComputeQuery, PricePoint, provider_region
+from .specs import azure_spec_for
 
 RETAIL_API = "https://prices.azure.com/api/retail/prices"
 
-AZURE_VM_SPECS: dict[str, tuple[int, float, str]] = {
-    # B-series burstable — the budget tier
-    "Standard_B1s": (1, 1.0, "x86_64"),
-    "Standard_B1ms": (1, 2.0, "x86_64"),
-    "Standard_B2s": (2, 4.0, "x86_64"),
-    "Standard_B2ms": (2, 8.0, "x86_64"),
-    "Standard_B4ms": (4, 16.0, "x86_64"),
-    "Standard_B8ms": (8, 32.0, "x86_64"),
-    # D-series v5 general purpose (Intel)
-    "Standard_D2s_v5": (2, 8.0, "x86_64"),
-    "Standard_D4s_v5": (4, 16.0, "x86_64"),
-    "Standard_D8s_v5": (8, 32.0, "x86_64"),
-    "Standard_D16s_v5": (16, 64.0, "x86_64"),
-    # D-series v5 AMD
-    "Standard_D2as_v5": (2, 8.0, "x86_64"),
-    "Standard_D4as_v5": (4, 16.0, "x86_64"),
-    "Standard_D8as_v5": (8, 32.0, "x86_64"),
-    # Dps v5 — Ampere Altra ARM. Azure's Graviton equivalent.
-    "Standard_D2ps_v5": (2, 8.0, "arm64"),
-    "Standard_D4ps_v5": (4, 16.0, "arm64"),
-    "Standard_D8ps_v5": (8, 32.0, "arm64"),
-    "Standard_D16ps_v5": (16, 64.0, "arm64"),
-    # Eps v5 — ARM, memory optimized
-    "Standard_E2ps_v5": (2, 16.0, "arm64"),
-    "Standard_E4ps_v5": (4, 32.0, "arm64"),
-    "Standard_E8ps_v5": (8, 64.0, "arm64"),
-    # E-series v5 memory optimized (Intel)
-    "Standard_E2s_v5": (2, 16.0, "x86_64"),
-    "Standard_E4s_v5": (4, 32.0, "x86_64"),
-    # F-series compute optimized
-    "Standard_F2s_v2": (2, 4.0, "x86_64"),
-    "Standard_F4s_v2": (4, 8.0, "x86_64"),
-    "Standard_F8s_v2": (8, 16.0, "x86_64"),
-}
-
-# Azure Database for PostgreSQL flexible-server sizes. vCore, GB.
-AZURE_DB_SPECS: dict[str, tuple[int, float]] = {
-    "B1MS": (1, 2.0),
-    "B2S": (2, 4.0),
-    "B2MS": (2, 8.0),
-    "B4MS": (4, 16.0),
-    "B8MS": (8, 32.0),
-    "B16MS": (16, 64.0),
-    "D2S_V3": (2, 8.0),
-    "D4S_V3": (4, 16.0),
-    "D8S_V3": (8, 32.0),
-    "D2DS_V4": (2, 8.0),
-    "D4DS_V4": (4, 16.0),
-    "E2S_V3": (2, 16.0),
-    "E4S_V3": (4, 32.0),
-}
-
-# Meter names carrying any of these are not plain on-demand Linux capacity.
+# A single armSkuName can carry a dozen meters in one region: Linux, Windows,
+# legacy "Cloud Services", dev/test rates, reservations, spot and low-priority.
+# Name-matching alone is not enough — the Windows-priced "Dasv5 Series Cloud
+# Services" meter contains neither "windows" nor anything else distinctive, and
+# picking it made 36 Azure machine types read 2.65x too expensive until
+# validation caught it. So we allow-list instead of deny-list.
 _EXCLUDE_VM = ("low priority", "windows")
+
+# Only the plain on-demand consumption meter counts.
+_ALLOWED_PRICE_TYPE = "Consumption"
+
+# ...and only products in the Virtual Machines line, never Cloud Services.
+_REQUIRED_PRODUCT = "virtual machines"
 
 
 def _decimal(value: object) -> Decimal | None:
@@ -85,6 +45,20 @@ def _decimal(value: object) -> Decimal | None:
 
 def _blob(item: dict, *keys: str) -> str:
     return " ".join(str(item.get(k, "")) for k in keys).lower()
+
+
+def is_ondemand_vm_meter(item: dict) -> bool:
+    """Is this retail item a plain on-demand Linux VM rate?
+
+    Extracted so the rule is unit-testable without a network call. See the
+    _EXCLUDE_VM comment for why this is an allow-list.
+    """
+    if item.get("type") != _ALLOWED_PRICE_TYPE:
+        return False
+    if _REQUIRED_PRODUCT not in str(item.get("productName", "")).lower():
+        return False
+    blob = _blob(item, "skuName", "meterName", "productName")
+    return not any(term in blob for term in _EXCLUDE_VM)
 
 
 def _paged(query: str, max_pages: int = 25):
@@ -116,13 +90,15 @@ def fetch_vm_prices(region_key: str) -> list[PricePoint]:
     seen: set[str] = set()
 
     for item in _paged(query):
-        sku = item.get("armSkuName") or ""
-        if sku not in AZURE_VM_SPECS:
-            continue
-        blob = _blob(item, "skuName", "meterName", "productName")
-        if any(term in blob for term in _EXCLUDE_VM):
+        if not is_ondemand_vm_meter(item):
             continue
 
+        sku = item.get("armSkuName") or ""
+        spec = azure_spec_for(sku) if sku else None
+        if spec is None:
+            continue
+
+        blob = _blob(item, "skuName", "meterName", "productName")
         is_spot = "spot" in blob
         key = f"{sku}:spot" if is_spot else sku
         if key in seen:
@@ -132,7 +108,6 @@ def fetch_vm_prices(region_key: str) -> list[PricePoint]:
         if price is None:
             continue
 
-        vcpu, mem, arch = AZURE_VM_SPECS[sku]
         seen.add(key)
         points.append(
             PricePoint(
@@ -143,11 +118,12 @@ def fetch_vm_prices(region_key: str) -> list[PricePoint]:
                 region=region,
                 unit="hour",
                 price_usd=price,
-                vcpu=vcpu,
-                memory_gb=mem,
-                arch=arch,
+                vcpu=spec.vcpu,
+                memory_gb=spec.memory_gb,
+                arch=spec.arch,
                 attributes={
                     "meter": item.get("meterName", ""),
+                    "family": spec.family,
                     "purchase": "spot" if is_spot else "ondemand",
                 },
             )
@@ -167,9 +143,9 @@ def cheapest_compute(query: ComputeQuery) -> PricePoint | None:
 def fetch_database_prices(region_key: str) -> list[PricePoint]:
     """Azure Database for PostgreSQL — flexible server compute.
 
-    Same problem as VMs: the API returns meter names, not specs. Many of those
-    meters ("vCore", "Extended Support", "Auto Tune") are billing fragments
-    rather than server sizes, so anything outside the spec table is skipped.
+    Many of these meters ("vCore", "Extended Support", "Auto Tune") are billing
+    fragments rather than server sizes. Resolving each name against the machine
+    catalog filters them out: a fragment has no spec, so it is dropped.
     """
     region = provider_region(region_key, "azure")
     query = (
@@ -186,7 +162,7 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
             continue
 
         raw = (item.get("skuName") or "").strip()
-        spec = AZURE_DB_SPECS.get(raw.upper())
+        spec = azure_spec_for(raw) if raw else None
         if spec is None or raw.upper() in seen:
             continue
 
@@ -194,7 +170,6 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
         if price is None:
             continue
 
-        vcpu, mem = spec
         seen.add(raw.upper())
         points.append(
             PricePoint(
@@ -205,8 +180,8 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
                 region=region,
                 unit="hour",
                 price_usd=price,
-                vcpu=vcpu,
-                memory_gb=mem,
+                vcpu=spec.vcpu,
+                memory_gb=spec.memory_gb,
                 attributes={"engine": "postgresql", "deployment": "Single-AZ"},
             )
         )
@@ -224,8 +199,8 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
                 region=region,
                 unit="hour",
                 price_usd=price * 2,
-                vcpu=vcpu,
-                memory_gb=mem,
+                vcpu=spec.vcpu,
+                memory_gb=spec.memory_gb,
                 attributes={
                     "engine": "postgresql",
                     "deployment": "Multi-AZ",

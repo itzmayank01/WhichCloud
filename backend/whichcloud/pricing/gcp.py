@@ -19,16 +19,12 @@ from pathlib import Path
 import httpx
 
 from .models import ComputeQuery, PricePoint, provider_region
+from .specs import gcp_arch_for
 
 INSTANCES_URL = "https://instances.vantage.sh/gcp/instances.json"
 CATALOG_API = "https://cloudbilling.googleapis.com/v1/services"
 
 CACHE_DIR = Path(os.getenv("WHICHCLOUD_CACHE", Path.home() / ".cache" / "whichcloud"))
-
-# GCP does not label architecture in the catalog. These families are ARM:
-# T2A is Ampere Altra, C4A is Google's own Axion.
-_ARM_PREFIXES = ("t2a-", "c4a-")
-
 
 def _decimal(value: object) -> Decimal | None:
     try:
@@ -58,10 +54,6 @@ def download_instances(force: bool = False) -> Path:
     return dest
 
 
-def _arch(instance_type: str) -> str:
-    return "arm64" if instance_type.startswith(_ARM_PREFIXES) else "x86_64"
-
-
 def load_compute_prices(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every Linux machine type in this region, on-demand and spot."""
     region = provider_region(region_key, "gcp")
@@ -79,7 +71,7 @@ def load_compute_prices(region_key: str, path: Path | None = None) -> list[Price
 
         vcpu = int(machine["vCPU"]) if machine.get("vCPU") else None
         mem = float(machine["memory"]) if machine.get("memory") else None
-        arch = _arch(name)
+        arch = gcp_arch_for(name)
         family = machine.get("family", "")
 
         for purchase, key in (("ondemand", "ondemand"), ("spot", "spot")):

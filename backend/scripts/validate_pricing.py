@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 from decimal import Decimal
 
@@ -86,42 +87,72 @@ def authoritative_prices(region_key: str) -> dict[str, Decimal]:
     return prices
 
 
-def our_prices(region_key: str) -> dict[str, Decimal]:
-    region = provider_region(region_key, "aws")
+def our_prices(region_key: str, provider: str = "aws") -> dict[str, Decimal]:
+    region = provider_region(region_key, provider)
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """SELECT sku, price_usd FROM price_points
-               WHERE provider='aws' AND region=%s AND category='compute'
+               WHERE provider=%s AND region=%s AND category='compute'
                  AND attributes->>'purchase' = 'ondemand'""",
-            (region,),
+            (provider, region),
         )
         return {r["sku"]: Decimal(r["price_usd"]) for r in cur.fetchall()}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--region", default="india", choices=sorted(REGIONS))
-    ap.add_argument("--tolerance", type=float, default=1.0, help="percent")
-    args = ap.parse_args()
+def azure_reference_prices(region_key: str) -> dict[str, Decimal]:
+    """Azure VM prices from the Vantage catalog.
 
-    print(f"\n{BOLD}WhichCloud · price validation{RESET}")
-    print(f"{DIM}our catalog (ec2instances.info) vs AWS Price List CSV, "
-          f"region '{args.region}'{RESET}\n")
+    This is a genuinely independent second source: our catalog is built from
+    Microsoft's Retail Prices API, while this file is compiled separately. If
+    the two agree, the numbers are not an artefact of one feed.
 
-    ours = our_prices(args.region)
+    Vantage spells regions with hyphens ('central-india') where ARM uses none
+    ('centralindia'), so the key is normalised by removing them.
+    """
+    from whichcloud.pricing import specs
+
+    arm_region = provider_region(region_key, "azure")
+
+    with specs.download_azure_catalog().open() as fh:
+        catalog = json.load(fh)
+
+    prices: dict[str, Decimal] = {}
+    for entry in catalog:
+        name = entry.get("instance_type")
+        if not name:
+            continue
+        for raw_region, pricing in (entry.get("pricing") or {}).items():
+            if raw_region.replace("-", "") != arm_region:
+                continue
+            value = ((pricing or {}).get("linux") or {}).get("ondemand")
+            try:
+                price = Decimal(str(value))
+            except Exception:
+                continue
+            if price > 0:
+                prices[specs.normalize_azure_sku(str(name))] = price
+    return prices
+
+
+def compare_sources(
+    label: str,
+    ours: dict[str, Decimal],
+    theirs: dict[str, Decimal],
+    tolerance: float,
+) -> bool:
+    """Report agreement between our catalog and an independent source."""
+    print(f"\n{BOLD}{label}{RESET}")
     if not ours:
-        print(f"{RED}Catalog is empty — run ingest_prices.py first.{RESET}")
-        return 1
-    print(f"{DIM}  catalog holds {len(ours):,} on-demand instance types{RESET}")
-    print(f"{DIM}  streaming AWS price list (~195 MB, this takes a minute)…{RESET}")
-
-    theirs = authoritative_prices(args.region)
-    print(f"{DIM}  AWS published {len(theirs):,} on-demand Linux types{RESET}\n")
+        print(f"  {RED}catalog is empty — run ingest_prices.py first{RESET}")
+        return False
+    if not theirs:
+        print(f"  {YELLOW}reference source returned nothing — skipped{RESET}")
+        return True
 
     shared = sorted(set(ours) & set(theirs))
     if not shared:
-        print(f"{RED}No overlapping instance types — cannot validate.{RESET}")
-        return 1
+        print(f"  {RED}no overlapping instance types — cannot validate{RESET}")
+        return False
 
     exact = 0
     within = 0
@@ -134,7 +165,7 @@ def main() -> int:
             within += 1
             continue
         drift = float(abs(mine - theirs_price) / theirs_price * 100)
-        if drift <= args.tolerance:
+        if drift <= tolerance:
             within += 1
         else:
             mismatches.append((name, mine, theirs_price, drift))
@@ -143,36 +174,72 @@ def main() -> int:
     pct_exact = exact / total * 100
     pct_within = within / total * 100
 
-    print(f"{BOLD}Compared {total:,} instance types present in both sources{RESET}")
+    print(f"  compared             {total:>6,} types present in both sources")
     print(f"  exact match          {exact:>6,}   {pct_exact:5.1f}%")
-    print(f"  within {args.tolerance:g}%           {within:>6,}   {pct_within:5.1f}%")
+    print(f"  within {tolerance:g}%           {within:>6,}   {pct_within:5.1f}%")
     print(f"  outside tolerance    {len(mismatches):>6,}")
 
     if mismatches:
-        print(f"\n{YELLOW}Largest discrepancies{RESET}")
+        print(f"  {YELLOW}largest discrepancies{RESET}")
         for name, mine, theirs_price, drift in sorted(
             mismatches, key=lambda m: -m[3]
-        )[:10]:
-            print(f"  {name:<20} ours ${mine:<12} aws ${theirs_price:<12} {drift:6.2f}%")
+        )[:8]:
+            print(f"    {name:<22} ours ${mine:<12} ref ${theirs_price:<12} {drift:6.2f}%")
 
     only_ours = set(ours) - set(theirs)
     only_theirs = set(theirs) - set(ours)
     if only_ours or only_theirs:
-        print(f"\n{DIM}coverage: {len(only_ours)} types only in our catalog, "
-              f"{len(only_theirs)} only in AWS's list{RESET}")
+        print(f"  {DIM}coverage: {len(only_ours)} only in our catalog, "
+              f"{len(only_theirs)} only in the reference{RESET}")
 
-    print()
     if pct_within >= 99:
-        print(f"{GREEN}✓ Validated: {pct_within:.1f}% of prices match AWS's own "
-              f"published rates within {args.tolerance:g}%.{RESET}\n")
-        return 0
+        print(f"  {GREEN}✓ validated — {pct_within:.1f}% agree within "
+              f"{tolerance:g}%{RESET}")
+        return True
     if pct_within >= 90:
-        print(f"{YELLOW}⚠ Mostly correct ({pct_within:.1f}%), but "
-              f"{len(mismatches)} types drift. Investigate before quoting.{RESET}\n")
-        return 0
-    print(f"{RED}✗ Only {pct_within:.1f}% agree. The compute source is not "
-          f"trustworthy as-is.{RESET}\n")
-    return 1
+        print(f"  {YELLOW}⚠ mostly correct ({pct_within:.1f}%); "
+              f"{len(mismatches)} types drift{RESET}")
+        return True
+    print(f"  {RED}✗ only {pct_within:.1f}% agree — source not trustworthy{RESET}")
+    return False
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--region", default="india", choices=sorted(REGIONS))
+    ap.add_argument("--tolerance", type=float, default=1.0, help="percent")
+    ap.add_argument("--skip-aws", action="store_true", help="skip the 195 MB download")
+    args = ap.parse_args()
+
+    print(f"\n{BOLD}WhichCloud · price validation{RESET}")
+    print(f"{DIM}each provider checked against an independent second source, "
+          f"region '{args.region}'{RESET}")
+
+    ok = True
+
+    if not args.skip_aws:
+        print(f"{DIM}\n  streaming AWS price list (~195 MB, takes a minute)…{RESET}")
+        ok &= compare_sources(
+            "AWS — our catalog (ec2instances.info) vs AWS Price List CSV",
+            our_prices(args.region, "aws"),
+            authoritative_prices(args.region),
+            args.tolerance,
+        )
+
+    ours_azure = {
+        k.split(":")[0].removeprefix("Standard_").replace("_", "").lower(): v
+        for k, v in our_prices(args.region, "azure").items()
+    }
+    ok &= compare_sources(
+        "Azure — our catalog (Retail Prices API) vs Vantage catalog",
+        ours_azure,
+        azure_reference_prices(args.region),
+        args.tolerance,
+    )
+
+    print(f"\n{DIM}GCP has no second credential-free source; its compute prices "
+          f"come from one feed and are unvalidated.{RESET}\n")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

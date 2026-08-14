@@ -75,8 +75,11 @@ quirks and adding GCP touches no other file.
 - **Sensible defaults, not cheapest.** S3 archive tiers undercut Standard 5×,
   but a web app's assets do not live there. `DEFAULT_SKUS` names the honest
   default per category.
-- **Unmapped SKUs are skipped, never guessed.** Azure publishes no vCPU/memory,
-  so `AZURE_VM_SPECS` / `AZURE_DB_SPECS` carry curated specs.
+- **No hand-written data.** Specs come from real machine catalogs
+  (`specs.py`), never from a table typed from memory. A SKU absent from the
+  catalog is skipped, never guessed.
+- **Allow-lists, not deny-lists**, when selecting provider meters. One SKU can
+  carry a dozen meters; naming rules miss the odd one out.
 - **Stale rows are pruned.** Every ingest deletes rows it did not refresh, so a
   retired SKU cannot be quoted later.
 - **Multi-AZ is a real SKU**, not a multiplier — the reliable option gets a
@@ -112,28 +115,53 @@ makes our core capability depend on someone else's pricing.
 | Gap | Impact |
 |---|---|
 | **GCP is compute-only** | Storage, egress and Cloud SQL need a Catalog API key. GCP estimates are correctly reported incomplete |
+| **GCP is unvalidated** | No second credential-free source exists to cross-check against |
+| **GCP architecture is inferred** | From Google's documented family naming (`t2a`/`c4a` = Arm). The only inference left in the layer; asserted by tests |
 | **Spot feed is undated** | AWS's public spot feed carries no timestamp. Fine for ranking spot vs on-demand, not billing-grade |
-| **Azure specs hand-curated** | 25 VM + 13 DB SKUs mapped. Unmapped SKUs are skipped, never guessed |
 | **Azure HA is derived** | Azure publishes no HA meter; we bill the standby as a second instance (2x) and label it derived |
 | **List prices only** | No committed-use, savings plans, or reserved rates |
 | **No Redis caching yet** | Container runs; the lookup path does not use it |
 
 ## Validation
 
-`scripts/validate_pricing.py` streams AWS's own ~195 MB Price List CSV and
-compares it against our catalog row by row.
+`scripts/validate_pricing.py` checks each provider against an **independent
+second source** — not against itself.
 
 ```
-Compared 807 instance types present in both sources
-  exact match             807   100.0%
-  within 1%               807   100.0%
-  outside tolerance         0
+AWS — our catalog (ec2instances.info) vs AWS Price List CSV
+  compared        807 types      exact match  807   100.0%   ✓
+
+Azure — our catalog (Retail Prices API) vs Vantage catalog
+  compared        928 types      exact match  923    99.5%   ✓
 ```
 
-**Every AWS on-demand compute price we hold is identical to AWS's published
-rate**, with no coverage gaps in either direction. The PRD's ±20% target is met
-with 0% drift for compute. Databases, storage and egress come straight from the
-same Price List API, so they share that provenance.
+AWS agrees **exactly**, with no coverage gap in either direction. Azure agrees
+on 923 of 928; the five outliers are legacy families (`m64`, `f2`, `f4`, `f8`,
+`m128`) where the two feeds genuinely differ.
+
+The PRD's ±20% accuracy target is met at **0% drift on AWS and 0.5% on Azure**.
+
+GCP has no second credential-free source, so it is **not validated** — stated
+plainly rather than implied.
+
+### What validation caught
+
+Cross-checking is not ceremony. It found a live bug: a single Azure `armSkuName`
+carries up to a dozen meters, and the Windows-priced **"Cloud Services"** meter
+contains no distinguishing word. Selecting it made 36 machine types read
+**2.65× too expensive** ($0.148 vs $0.0556 for `D2as_v5`). Agreement went from
+96.3% to 99.5% once the selector became an allow-list. There is a regression
+test for it.
+
+## Tests
+
+```bash
+.venv/bin/python -m pytest tests/ -q     # 29 passed
+```
+
+They assert the rules above: no hand-written spec tables, incomplete estimates
+never win a comparison, undescribed machines never match a requirement, and the
+Cloud Services meter stays rejected.
 
 ## Next
 
