@@ -1,102 +1,127 @@
-# Backend — pricing layer
+# Backend — pricing engine
 
-Phase 1 of the build: prove WhichCloud can get **real cloud prices with no cloud
+Phase 1: prove WhichCloud can price real cloud architectures with **no cloud
 account, no API key, and no paid service.** Everything else depends on this.
 
-## Run the verification
+**Status: working.** Prices are ingested into Postgres and a complete
+architecture can be costed and compared across clouds.
+
+## Run it
 
 ```bash
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -e .
+
+# 1. start Postgres + Redis
+docker compose -f ../infra/docker-compose.yml up -d
+
+# 2. pull provider prices into the catalog (idempotent, re-run anytime)
+.venv/bin/python scripts/ingest_prices.py --region india
+
+# 3. price three architectures and compare clouds
+.venv/bin/python scripts/estimate_architecture.py
+
+# (optional) single-machine cross-cloud check
 .venv/bin/python scripts/verify_pricing.py --region india --vcpu 2 --memory 4
 ```
 
-First run downloads a ~300 MB EC2 catalog to `~/.cache/whichcloud/` and takes a
-couple of minutes. After that it is instant.
+First run downloads a ~300 MB EC2 catalog to `~/.cache/whichcloud/`. After that
+it is seconds.
 
 ### Verified output (2026-08-14)
 
 ```
-1. Cheapest machine per provider
-  AWS        t4g.medium      2vCPU  4GB  ARM   $16.35/mo
-  Azure      Standard_B2s    2vCPU  4GB  x86   $32.70/mo
-  → AWS wins at $16.35/mo — 50% less than Azure
+Balanced   3× 2vCPU/8GB arm64
 
-2. Graviton / ARM saving, measured on AWS
-  x86        t3a.medium      2vCPU  4GB  x86   $17.96/mo
-  ARM        t4g.medium      2vCPU  4GB  ARM   $16.35/mo
-  → ARM is $1.61/mo cheaper — 8.9% saving
+  AWS    ap-south-1
+    Compute × 3        t4g.large           $98.11   2190 × $0.0448/hour
+    Database           db.t4g.large       $121.91    730 × $0.1670/hour
+    Object storage     s3:general-purpose   $5.00    200 × $0.0250/GB-month
+    Egress             egress:internet     $54.65    500 × $0.1093/GB
+    Load balancer      alb                 $17.45    730 × $0.0239/hour
+    Total                                 $297.12
+
+  AZURE  centralindia                     $338.14
+  → AWS is cheaper by $41.02/mo (12%)
 ```
 
-## ⚠️ Why we are not using Infracost
-
-The original plan was Infracost + a self-hosted `cloud-pricing-api`. Both changed:
-
-| What we assumed | What is actually true (checked 2026-08-14) |
-|---|---|
-| `infracost breakdown` prices raw HCL with no credentials | `breakdown` is **deprecated** in v2. `infracost scan` **forces an interactive browser login** before doing anything |
-| `infracost/cloud-pricing-api` can be self-hosted free | The repo returns **404**. Infracost moved self-hosting to a **paid plan**. Only stale third-party forks remain |
-
-Infracost's hosted free tier (1,000 runs/month) still exists and is fine for a
-student project — but it requires signing up for an account, and it makes the
-project's core capability depend on someone else's pricing.
-
-**Decision: build our own pricing layer from the providers' public APIs.** It
-removes the dependency, has no run limits, costs nothing, and is a real
-engineering contribution rather than a wrapper around someone else's tool.
-
-## Where prices come from
-
-| Source | Auth | Verified | Used for |
-|---|---|---|---|
-| [ec2instances.info](https://instances.vantage.sh/instances.json) (Vantage, open source) | none | ✅ 1,406 instances, specs + per-region prices | EC2 compute |
-| [Azure Retail Prices API](https://prices.azure.com/api/retail/prices) | **none** | ✅ live, OData-filterable | Azure VMs |
-| [AWS Price List Bulk API](https://pricing.us-east-1.amazonaws.com) | none | ✅ 106 regions | RDS, S3, everything else |
-| GCP Cloud Billing Catalog API | API key | not yet wired | GCP (Phase 4) |
-
-### Payload sizes (why we cache)
-
-Measured for `ap-south-1`:
-
-- `AmazonEC2` — **291 MB**
-- `AmazonRDS` — 17.6 MB
-- `AmazonS3` — 0.5 MB
-- ec2instances.info full catalog — 298 MB
-
-These are ingest-once-then-cache sources, never live lookups. That is what
-Postgres and Redis in `infra/` are for.
-
-## Layout
+## What exists
 
 ```
-backend/
-├── pyproject.toml
-├── whichcloud/
-│   └── pricing/
-│       ├── models.py    # PricePoint, ComputeQuery, region mapping
-│       ├── aws.py       # ec2instances.info + Price List Bulk API
-│       └── azure.py     # Retail Prices API + VM spec table
-└── scripts/
-    └── verify_pricing.py
+whichcloud/
+├── estimator.py            # architecture → itemised monthly bill, cross-cloud compare
+└── pricing/
+    ├── models.py           # PricePoint, ComputeQuery, neutral region mapping
+    ├── aws.py              # EC2, RDS, S3, egress, ALB
+    ├── azure.py            # VMs, PostgreSQL, Blob, egress, Load Balancer
+    └── store.py            # Postgres catalog: upsert, query, prune
+scripts/
+├── ingest_prices.py        # provider APIs → price_points table
+├── estimate_architecture.py
+└── verify_pricing.py
 ```
 
 Every adapter returns a `PricePoint`, so the engine never learns a provider's
 quirks and adding GCP touches no other file.
 
+## Design rules the code enforces
+
+- **Never invent a price.** Anything unpriceable lands in `Estimate.missing` and
+  the estimate is marked incomplete.
+- **Incomplete estimates never win a comparison.** A total missing its database
+  is not cheaper, it is wrong — `compare()` sorts incomplete last regardless of
+  price.
+- **Sensible defaults, not cheapest.** S3 archive tiers undercut Standard 5×,
+  but a web app's assets do not live there. `DEFAULT_SKUS` names the honest
+  default per category.
+- **Unmapped SKUs are skipped, never guessed.** Azure publishes no vCPU/memory,
+  so `AZURE_VM_SPECS` / `AZURE_DB_SPECS` carry curated specs.
+- **Stale rows are pruned.** Every ingest deletes rows it did not refresh, so a
+  retired SKU cannot be quoted later.
+- **Multi-AZ is a real SKU**, not a multiplier — the reliable option gets a
+  published price.
+
+## Where prices come from
+
+| Source | Auth | Used for |
+|---|---|---|
+| [ec2instances.info](https://instances.vantage.sh/instances.json) | none | EC2 compute (1,406 instances, specs + prices) |
+| [Azure Retail Prices API](https://prices.azure.com/api/retail/prices) | **none** | Azure VMs, PostgreSQL, Blob, egress, LB |
+| [AWS Price List Bulk API](https://pricing.us-east-1.amazonaws.com) | none | RDS, S3, data transfer, ALB |
+| GCP Cloud Billing Catalog API | API key | not yet wired |
+
+Payload sizes for `ap-south-1`: EC2 291 MB, RDS 17.6 MB, S3 0.5 MB, instances
+catalog 298 MB. Ingest-once-then-cache, never live lookups — which is what
+Postgres and Redis are for.
+
+## ⚠️ Why not Infracost
+
+The original plan was Infracost + a self-hosted `cloud-pricing-api`. Both changed:
+
+| What we assumed | What is actually true (checked 2026-08-14) |
+|---|---|
+| `infracost breakdown` prices raw HCL with no credentials | `breakdown` is **deprecated** in v2.16; `infracost scan` **forces an interactive browser login** |
+| `infracost/cloud-pricing-api` can be self-hosted free | Repo returns **404**; self-hosting moved to a **paid plan** |
+
+Its hosted free tier (1,000 runs/month) still works but needs an account and
+makes our core capability depend on someone else's pricing.
+
 ## Known gaps
 
-- **Azure specs are hand-curated.** The Retail Prices API returns no vCPU/memory,
-  so `AZURE_VM_SPECS` in `azure.py` maps the families we recommend. Unmapped SKUs
-  are skipped, never guessed. Extend deliberately.
-- **GCP is not wired up.** Its catalog API needs a (free) API key.
-- **List prices only.** No committed-use, savings plans, or negotiated rates.
-- **Nothing is in Postgres yet.** The adapters return objects; the ingest job that
-  writes them to `price_points` is the next task.
+| Gap | Impact |
+|---|---|
+| **GCP not wired** | Two of three clouds. Needs a free API key |
+| **No spot pricing** | ec2instances.info has no spot rates; AWS's spot feed needs credentials. The engine must not claim a spot saving it cannot price |
+| **Azure HA Postgres unpriced** | Zone-redundant HA is a separate meter. "Most reliable" on Azure is correctly reported incomplete |
+| **Azure specs hand-curated** | 25 VM + 13 DB SKUs mapped. Unmapped SKUs are skipped |
+| **List prices only** | No committed-use, savings plans, or reserved rates |
+| **Not validated** | The PRD's ±20% accuracy target is unproven against provider calculators |
+| **No Redis caching yet** | Container runs; the lookup path does not use it |
 
 ## Next
 
-1. Ingest job: adapters → `price_points` table
-2. Redis-backed lookup so the engine queries the DB, not the internet
-3. GCP adapter
-4. Storage/network/database categories, not just compute
+1. GCP adapter
+2. Validate totals against the AWS and Azure calculators
+3. Redis on the lookup path
+4. Feed the estimator from the optimization knowledge base

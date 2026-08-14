@@ -6,16 +6,18 @@ Two public, credential-free sources:
    instance's specs AND on-demand price per region. ~300 MB, so it is an
    ingest-once-then-cache source, never a live lookup.
 2. AWS Price List Bulk API — the authoritative per-service, per-region feed.
-   Used for RDS/S3 where instances.json has no coverage.
+   Covers RDS, S3, data transfer and load balancers.
 
 Neither needs an AWS account. Verified 2026-08.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
-from decimal import Decimal
+import re
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import httpx
@@ -26,7 +28,17 @@ INSTANCES_URL = "https://instances.vantage.sh/instances.json"
 BULK_BASE = "https://pricing.us-east-1.amazonaws.com"
 BULK_REGION_INDEX = BULK_BASE + "/offers/v1.0/aws/{service}/current/region_index.json"
 
+# AWS offer codes for the categories we price.
+BULK_SERVICES = {
+    "database": "AmazonRDS",
+    "storage": "AmazonS3",
+    "network": "AWSDataTransfer",
+    "loadbalancer": "AWSELB",
+}
+
 CACHE_DIR = Path(os.getenv("WHICHCLOUD_CACHE", Path.home() / ".cache" / "whichcloud"))
+
+_MEM_RE = re.compile(r"([\d.]+)")
 
 
 def _cache_path(name: str) -> Path:
@@ -34,18 +46,37 @@ def _cache_path(name: str) -> Path:
     return CACHE_DIR / name
 
 
+def _decimal(value: object) -> Decimal | None:
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    return d if d > 0 else None
+
+
+def _memory_gb(raw: str | None) -> float | None:
+    """'4 GiB' -> 4.0"""
+    if not raw:
+        return None
+    m = _MEM_RE.search(raw)
+    return float(m.group(1)) if m else None
+
+
+# ─────────────────────────── EC2 compute ───────────────────────────
+
+
 def download_instances(force: bool = False) -> Path:
     """Fetch the EC2 catalog once and cache it on disk.
 
-    ~300 MB. In production this is a scheduled job that writes to Postgres;
-    here it is a local file so the pricing layer can be verified offline.
+    ~300 MB. In production this is a scheduled job; here it is a local file so
+    the pricing layer can be verified offline.
     """
     dest = _cache_path("aws-instances.json")
     if dest.exists() and not force:
         return dest
 
     tmp = dest.with_suffix(".part")
-    with httpx.stream("GET", INSTANCES_URL, timeout=300.0, follow_redirects=True) as r:
+    with httpx.stream("GET", INSTANCES_URL, timeout=600.0, follow_redirects=True) as r:
         r.raise_for_status()
         with tmp.open("wb") as fh:
             for chunk in r.iter_bytes(1 << 20):
@@ -66,7 +97,13 @@ def _detect_arch(inst: dict) -> str:
 
 
 def load_compute_prices(region_key: str, path: Path | None = None) -> list[PricePoint]:
-    """Every on-demand Linux EC2 instance priced in this region."""
+    """Every on-demand Linux EC2 instance priced in this region.
+
+    No spot prices. The ec2instances.info catalog publishes on-demand and
+    reserved rates only, and AWS's spot feed (DescribeSpotPriceHistory) needs
+    real credentials. Until that is wired up the engine must not claim a spot
+    saving it cannot price — see knowledge-base/techniques/ for the note.
+    """
     region = provider_region(region_key, "aws")
     path = path or download_instances()
 
@@ -75,50 +112,270 @@ def load_compute_prices(region_key: str, path: Path | None = None) -> list[Price
 
     points: list[PricePoint] = []
     for inst in catalog:
-        pricing = (inst.get("pricing") or {}).get(region, {})
-        ondemand = (pricing.get("linux") or {}).get("ondemand")
-        if not ondemand:
-            continue
-        try:
-            price = Decimal(str(ondemand))
-        except (ArithmeticError, ValueError):
-            continue
-        if price <= 0:
-            continue
+        regional = (inst.get("pricing") or {}).get(region, {})
+        linux = regional.get("linux") or {}
+        vcpu = int(inst["vCPU"]) if inst.get("vCPU") else None
+        mem = float(inst["memory"]) if inst.get("memory") else None
+        arch = _detect_arch(inst)
+        processor = inst.get("physical_processor") or ""
 
-        points.append(
-            PricePoint(
-                provider="aws",
-                category="compute",
-                sku=inst["instance_type"],
-                name=inst["instance_type"],
-                region=region,
-                unit="hour",
-                price_usd=price,
-                vcpu=int(inst["vCPU"]) if inst.get("vCPU") else None,
-                memory_gb=float(inst["memory"]) if inst.get("memory") else None,
-                arch=_detect_arch(inst),
-                attributes={"processor": inst.get("physical_processor") or ""},
+        ondemand = _decimal(linux.get("ondemand"))
+        if ondemand:
+            points.append(
+                PricePoint(
+                    provider="aws",
+                    category="compute",
+                    sku=inst["instance_type"],
+                    name=inst["instance_type"],
+                    region=region,
+                    unit="hour",
+                    price_usd=ondemand,
+                    vcpu=vcpu,
+                    memory_gb=mem,
+                    arch=arch,
+                    attributes={"processor": processor, "purchase": "ondemand"},
+                )
             )
-        )
+
     return points
 
 
 def cheapest_compute(query: ComputeQuery, path: Path | None = None) -> PricePoint | None:
     """Smallest bill that still satisfies the query."""
-    candidates = [p for p in load_compute_prices(query.region, path) if query.matches(p)]
+    candidates = [
+        p
+        for p in load_compute_prices(query.region, path)
+        if query.matches(p) and p.attributes.get("purchase") == "ondemand"
+    ]
     return min(candidates, key=lambda p: p.price_usd, default=None)
 
 
-def bulk_region_url(service: str, region_key: str) -> str:
-    """Resolve a service+region to its Price List Bulk API URL.
+# ─────────────────────────── bulk API ───────────────────────────
 
-    `service` is an AWS offer code: AmazonRDS, AmazonS3, AmazonEC2.
-    """
+
+def download_bulk(service: str, region_key: str, force: bool = False) -> Path:
+    """Download and cache one service's regional price list (gzipped locally)."""
     region = provider_region(region_key, "aws")
-    r = httpx.get(BULK_REGION_INDEX.format(service=service), timeout=60.0)
-    r.raise_for_status()
-    regions = r.json().get("regions", {})
+    dest = _cache_path(f"aws-{service}-{region}.json.gz")
+    if dest.exists() and not force:
+        return dest
+
+    index = httpx.get(BULK_REGION_INDEX.format(service=service), timeout=90.0)
+    index.raise_for_status()
+    regions = index.json().get("regions", {})
     if region not in regions:
         raise ValueError(f"{service} is not published for {region}")
-    return BULK_BASE + regions[region]["currentVersionUrl"]
+
+    url = BULK_BASE + regions[region]["currentVersionUrl"]
+    tmp = dest.with_suffix(".part")
+    with httpx.stream("GET", url, timeout=900.0, follow_redirects=True) as r:
+        r.raise_for_status()
+        with gzip.open(tmp, "wb") as fh:
+            for chunk in r.iter_bytes(1 << 20):
+                fh.write(chunk)
+    tmp.replace(dest)
+    return dest
+
+
+def _load_bulk(service: str, region_key: str) -> dict:
+    with gzip.open(download_bulk(service, region_key), "rt") as fh:
+        return json.load(fh)
+
+
+def _ondemand_dimensions(doc: dict, sku: str):
+    """Yield every on-demand price dimension for a SKU."""
+    for term in doc.get("terms", {}).get("OnDemand", {}).get(sku, {}).values():
+        for dim in term.get("priceDimensions", {}).values():
+            yield dim
+
+
+def _cheapest_dimension(doc: dict, sku: str) -> tuple[Decimal, str] | None:
+    """Lowest published rate for a SKU, with its unit.
+
+    AWS publishes tiered rates (S3 gets cheaper past 50 TB). We take the first
+    tier — the rate a normal project actually pays — not the volume-discounted
+    floor, which would understate every estimate.
+    """
+    best: tuple[Decimal, str] | None = None
+    for dim in _ondemand_dimensions(doc, sku):
+        price = _decimal(dim.get("pricePerUnit", {}).get("USD"))
+        if price is None:
+            continue
+        begin = dim.get("beginRange")
+        if begin not in (None, "0", 0):
+            continue  # skip volume tiers
+        unit = dim.get("unit", "")
+        if best is None or price < best[0]:
+            best = (price, unit)
+    return best
+
+
+_UNITS = {"Hrs": "hour", "GB-Mo": "GB-month", "GB": "GB", "LCU-Hrs": "hour"}
+
+
+def load_database_prices(region_key: str) -> list[PricePoint]:
+    """RDS PostgreSQL instances, both Single-AZ and Multi-AZ.
+
+    Multi-AZ matters: the engine's "Most reliable" option needs a real price
+    for the standby, not a guessed multiplier.
+    """
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["database"], region_key)
+
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        if product.get("productFamily") != "Database Instance":
+            continue
+        attrs = product.get("attributes", {})
+        if attrs.get("databaseEngine") != "PostgreSQL":
+            continue
+        deployment = attrs.get("deploymentOption", "")
+        if deployment not in ("Single-AZ", "Multi-AZ"):
+            continue
+
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+
+        instance = attrs.get("instanceType", "")
+        suffix = "" if deployment == "Single-AZ" else ":multi-az"
+        points.append(
+            PricePoint(
+                provider="aws",
+                category="database",
+                sku=f"{instance}{suffix}",
+                name=f"{instance} PostgreSQL {deployment}",
+                region=region,
+                unit=_UNITS.get(unit, unit),
+                price_usd=price,
+                vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
+                memory_gb=_memory_gb(attrs.get("memory")),
+                arch="arm64" if ".t4g." in instance or ".m7g." in instance else "x86_64",
+                attributes={"engine": "postgresql", "deployment": deployment},
+            )
+        )
+    return points
+
+
+def load_storage_prices(region_key: str) -> list[PricePoint]:
+    """S3 storage classes, priced per GB-month."""
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["storage"], region_key)
+
+    points: list[PricePoint] = []
+    seen: set[str] = set()
+    for sku, product in doc.get("products", {}).items():
+        if product.get("productFamily") != "Storage":
+            continue
+        attrs = product.get("attributes", {})
+        storage_class = attrs.get("storageClass", "")
+        if not storage_class or storage_class in seen:
+            continue
+
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+        if unit != "GB-Mo":
+            continue  # tag and request meters ride in the same family
+        seen.add(storage_class)
+
+        points.append(
+            PricePoint(
+                provider="aws",
+                category="storage",
+                sku=f"s3:{storage_class.lower().replace(' ', '-')}",
+                name=f"S3 {storage_class}",
+                region=region,
+                unit=_UNITS.get(unit, unit),
+                price_usd=price,
+                attributes={"storage_class": storage_class},
+            )
+        )
+    return points
+
+
+def load_egress_prices(region_key: str) -> list[PricePoint]:
+    """Outbound data transfer to the internet — the invisible half of a bill."""
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["network"], region_key)
+
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        attrs = product.get("attributes", {})
+        if attrs.get("transferType") != "AWS Outbound":
+            continue
+        if attrs.get("fromLocationType") != "AWS Region":
+            continue
+
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+
+        points.append(
+            PricePoint(
+                provider="aws",
+                category="network",
+                sku="egress:internet",
+                name="Data transfer out to internet",
+                region=region,
+                unit=_UNITS.get(unit, unit),
+                price_usd=price,
+                attributes={"transfer_type": "outbound"},
+            )
+        )
+        break  # one canonical egress rate per region
+    return points
+
+
+def load_loadbalancer_prices(region_key: str) -> list[PricePoint]:
+    """Application Load Balancer hourly rate."""
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["loadbalancer"], region_key)
+
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        attrs = product.get("attributes", {})
+        usage = attrs.get("usagetype", "")
+        if "LoadBalancerUsage" not in usage:
+            continue
+        if attrs.get("operation") not in (None, "", "LoadBalancing:Application"):
+            continue
+
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+
+        points.append(
+            PricePoint(
+                provider="aws",
+                category="loadbalancer",
+                sku="alb",
+                name="Application Load Balancer",
+                region=region,
+                unit=_UNITS.get(unit, unit),
+                price_usd=price,
+                attributes={"type": "application"},
+            )
+        )
+        break
+    return points
+
+
+def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
+    """Every category we price on AWS, for one region."""
+    points = load_compute_prices(region_key, path)
+    for loader in (
+        load_database_prices,
+        load_storage_prices,
+        load_egress_prices,
+        load_loadbalancer_prices,
+    ):
+        try:
+            points.extend(loader(region_key))
+        except Exception as exc:  # one bad feed must not sink the ingest
+            print(f"  ! aws {loader.__name__} failed: {exc}")
+    return points
