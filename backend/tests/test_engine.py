@@ -330,3 +330,21 @@ def test_more_knowledge_means_more_measured_saving():
     option = engine.recommend(req, "aws")[0]
     assert len(option.applied) >= 2, "expected several techniques to apply"
     assert option.measured_saving > 0
+
+
+def test_mixed_workloads_are_not_silently_starved(techniques):
+    """REGRESSION: 'mixed' is a valid workload_type the engine accepts, but
+    four techniques omitted it from applies_when. A video platform labelled
+    'mixed' instead of 'web' silently lost Graviton and scale-to-zero —
+    $32.73/mo on a medium workload — with no indication anything was skipped.
+
+    The rule: a technique that suits both web and api suits mixed, since mixed
+    is those combined. Techniques scoped to batch/ml only (spot) are exempt —
+    a mixed workload serves live traffic, so reclaimable capacity is correctly
+    withheld.
+    """
+    for t in techniques:
+        if {"web", "api"} <= set(t.workload_types):
+            assert "mixed" in t.workload_types, (
+                f"{t.id} applies to web and api but not mixed"
+            )

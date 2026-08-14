@@ -6,7 +6,7 @@ summary: >
   smaller instance tier. Trades a little CPU for a lot of effective RAM.
 
 applies_when:
-  workload_type: [web, api, batch]
+  workload_type: [web, api, batch, mixed]
   requires:
     - Linux instances you control (not fully managed/serverless)
     - Workload is memory-bound, not CPU-saturated

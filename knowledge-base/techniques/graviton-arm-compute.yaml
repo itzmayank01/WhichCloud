@@ -6,7 +6,7 @@ summary: >
   most workloads, lower hourly price.
 
 applies_when:
-  workload_type: [web, api, batch, ml]
+  workload_type: [web, api, batch, ml, mixed]
   traffic_pattern: [steady, spiky]
   min_monthly_spend_usd: 30
   requires:

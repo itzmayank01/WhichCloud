@@ -7,7 +7,7 @@ summary: >
   allows — bills for the hours actually served instead of the hours provisioned.
 
 applies_when:
-  workload_type: [web, api, batch, ml]
+  workload_type: [web, api, batch, ml, mixed]
   traffic_pattern: [spiky]
   min_monthly_spend_usd: 40
   requires:

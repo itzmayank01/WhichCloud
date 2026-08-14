@@ -227,6 +227,20 @@ money per call. Everything else runs offline.
 .venv/bin/python scripts/eval_intake.py --provider anthropic # compare providers
 ```
 
+### Measured result (2026-08-15, gemini-2.5-flash, free tier)
+
+```
+34/35 fields correct (97%)
+```
+
+The one miss was worth more than the score. A video platform was labelled
+`mixed` where the fixture expected `web` — a defensible reading. But `mixed`
+turned out to be a workload type the engine accepts while four techniques
+omitted it from `applies_when`, so the label silently cost **$32.73/mo** in
+lost Graviton and scale-to-zero. The eval found a knowledge-base gap, not an
+extraction problem. Fixed, with a test asserting any technique suiting both
+`web` and `api` also lists `mixed`.
+
 ⚠️ On Gemini's free tier Google may use prompts and responses to improve its
 products. These descriptions are architecture summaries, not user data — but
 do not paste anything confidential into a free-tier request.
@@ -234,7 +248,7 @@ do not paste anything confidential into a free-tier request.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 92 passed
+.venv/bin/python -m pytest tests/ -q     # 93 passed
 ```
 
 No test calls any model API — judgement is measured by `eval_intake.py`; the
