@@ -50,3 +50,10 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# venv
+.venv/
+
+# cached price catalogs (300MB+)
+.cache/
+*.json.part

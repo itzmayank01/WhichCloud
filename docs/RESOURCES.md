@@ -48,19 +48,35 @@ Every implementation part → the exact resource we use and why.
 
 ## 6. Cost Engine ⭐ CREDIBILITY
 
+**Status: BUILT and verified 2026-08-14.** See `backend/README.md`.
+
+The original plan (Infracost + self-hosted `cloud-pricing-api`) **did not survive
+verification** — see the correction below. We build the pricing layer ourselves.
+
 | Part | Resource | Why |
 |---|---|---|
-| **Pricing a design** | [Infracost](https://github.com/infracost/infracost) (Apache-2.0) | Parses HCL directly — **no cloud credentials, no `terraform plan` needed**. Critical: our users have no cloud account |
-| **Pricing database** | [infracost/cloud-pricing-api](https://github.com/infracost/cloud-pricing-api) self-hosted | 3M+ prices AWS/GCP/Azure, auto-updates weekly, unlimited runs (hosted free tier caps at 1,000/mo) |
-| **Cross-cloud comparison** | [vantage-sh/ec2instances.info](https://github.com/vantage-sh/ec2instances.info) | Instance specs + prices across all 3 clouds — the "which cloud is cheapest" dataset |
-| Raw price sources | Azure Retail Prices API (free, no auth) · AWS Price List Bulk API (needs IAM) · GCP Cloud Billing Catalog API (needs key) | Feed the self-hosted pricing DB |
-| Backup engine | [OpenInfraQuote](https://github.com/terrateamio/openinfraquote) (MPL) | Fully offline CSV pricing, no limits — AWS-only today |
-| Caching | Redis | Price lookups are repetitive |
+| **EC2 compute prices** | [ec2instances.info](https://github.com/vantage-sh/ec2instances.info) (Vantage, open source) | ✅ 1,406 instances with specs *and* per-region prices in one file. No auth |
+| **Azure prices** | [Azure Retail Prices API](https://prices.azure.com/api/retail/prices) | ✅ **No authentication at all.** OData-filterable, live |
+| **Everything else AWS** | [AWS Price List Bulk API](https://pricing.us-east-1.amazonaws.com) | ✅ Public, no credentials. 106 regions |
+| **GCP prices** | Cloud Billing Catalog API | Needs a free API key. Phase 4 |
+| **Store** | PostgreSQL + pgvector | Prices are 300 MB per catalog — ingest once, query locally |
+| **Cache** | Redis | Price lookups are repetitive |
 
-> **Pipeline:** `LLM → Terraform → Infracost → real $` — not an LLM guess.
+> **Pipeline:** `provider APIs → our price_points table → engine → real $`
 
-⚠️ **TO VERIFY:** confirm 2026 terms for self-hosting `cloud-pricing-api` for free.
-It is a load-bearing dependency. Active forks (IBM-Cloud) suggest it's fine — confirm before building on it.
+### ⚠️ Correction: why not Infracost
+
+| What we assumed | What is actually true (checked 2026-08-14) |
+|---|---|
+| `infracost breakdown` prices raw HCL with no credentials | `breakdown` is **deprecated** in v2.16. `infracost scan` **forces an interactive browser login** |
+| `infracost/cloud-pricing-api` can be self-hosted free | Repo returns **404**. Infracost moved self-hosting to a **paid plan**. Only stale forks remain |
+
+Its hosted free tier (1,000 runs/mo) still works but needs an account and makes our
+core capability depend on someone else's pricing. Building our own removes the
+dependency, has no limits, and is a real contribution rather than a wrapper.
+
+[OpenInfraQuote](https://github.com/terrateamio/openinfraquote) (MPL, offline, no
+account, AWS-only) remains a good **cross-check** for Terraform-based estimates.
 
 ## 7. Diagram Generation
 

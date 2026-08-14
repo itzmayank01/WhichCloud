@@ -1,9 +1,9 @@
 id: graviton-arm-compute
-name: ARM-based compute (AWS Graviton / GCP Axion / Azure Cobalt)
+name: ARM-based compute (AWS Graviton / Azure Ampere / GCP Axion)
 category: compute
 summary: >
-  Run the same workload on ARM processors instead of x86. Same performance for most
-  workloads, meaningfully lower hourly price.
+  Run the same workload on ARM processors instead of x86. Comparable performance for
+  most workloads, lower hourly price.
 
 applies_when:
   workload_type: [web, api, batch, ml]
@@ -14,17 +14,27 @@ applies_when:
     - No x86-only binary dependencies
 
 savings:
-  typical_pct: 25
-  confidence: medium
+  typical_pct: 9
+  confidence: high
   basis: >
-    AWS markets "up to 40% better price-performance" for Graviton vs comparable x86.
-    Real-world reports commonly land in the 15-30% range depending on workload.
-    TODO: replace with our own measured comparison from cloud-pricing-api before launch.
+    MEASURED 2026-08-14 by scripts/verify_pricing.py against live AWS list pricing.
+    ap-south-1, 2 vCPU / 4 GB on-demand Linux: t4g.medium (ARM) $16.35/mo vs
+    t3a.medium (x86) $17.96/mo = 8.9% cheaper.
+
+    Important distinction: AWS markets "up to 40% better price-performance", which is a
+    throughput-per-dollar claim, NOT a list-price discount. On like-for-like specs the
+    list-price gap is single digits. Do not quote the 40% figure — we cannot measure
+    price-performance from pricing data alone, and overstating it destroys trust the
+    first time a user checks.
+
+    Re-measure per region and instance family; the gap varies.
 
 tradeoffs:
   - Container images must be built for arm64 (multi-arch build required)
   - Rare x86-only dependencies (some proprietary agents, older native libs) will not run
-  - Slightly smaller instance-type selection than x86 in some regions
+  - Smaller instance-type selection than x86 in some regions
+  - Real benefit may exceed the list-price gap if the workload performs better per core,
+    but that requires benchmarking the specific workload
 
 implemented_by:
   - name: docker buildx (multi-arch images)

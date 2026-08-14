@@ -1,0 +1,45 @@
+# WhichCloud local infrastructure.
+#
+# Postgres holds the price catalog ingested from the provider APIs, plus (via
+# pgvector) the knowledge-base embeddings. Redis caches price lookups so the
+# engine never re-queries a provider mid-request.
+#
+#   docker compose -f infra/docker-compose.yml up -d
+#
+# Note: we do NOT run infracost/cloud-pricing-api here. That project's free
+# self-hosting path closed — see backend/README.md. We ingest the provider
+# pricing APIs directly instead.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: whichcloud-db
+    environment:
+      POSTGRES_USER: whichcloud
+      POSTGRES_PASSWORD: whichcloud_dev
+      POSTGRES_DB: whichcloud
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whichcloud -d whichcloud"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: whichcloud-cache
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
