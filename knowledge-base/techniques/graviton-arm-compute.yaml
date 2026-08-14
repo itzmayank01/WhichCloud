@@ -1,0 +1,38 @@
+id: graviton-arm-compute
+name: ARM-based compute (AWS Graviton / GCP Axion / Azure Cobalt)
+category: compute
+summary: >
+  Run the same workload on ARM processors instead of x86. Same performance for most
+  workloads, meaningfully lower hourly price.
+
+applies_when:
+  workload_type: [web, api, batch, ml]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 30
+  requires:
+    - Workload runs in containers or on Linux (not Windows-only)
+    - No x86-only binary dependencies
+
+savings:
+  typical_pct: 25
+  confidence: medium
+  basis: >
+    AWS markets "up to 40% better price-performance" for Graviton vs comparable x86.
+    Real-world reports commonly land in the 15-30% range depending on workload.
+    TODO: replace with our own measured comparison from cloud-pricing-api before launch.
+
+tradeoffs:
+  - Container images must be built for arm64 (multi-arch build required)
+  - Rare x86-only dependencies (some proprietary agents, older native libs) will not run
+  - Slightly smaller instance-type selection than x86 in some regions
+
+implemented_by:
+  - name: docker buildx (multi-arch images)
+    url: https://github.com/docker/buildx
+    type: tool
+  - name: AWS Graviton Getting Started
+    url: https://github.com/aws/aws-graviton-getting-started
+    type: guide
+
+providers: [aws, gcp, azure]
+obviousness: medium

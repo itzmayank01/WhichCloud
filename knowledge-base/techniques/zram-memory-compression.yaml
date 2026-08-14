@@ -1,0 +1,38 @@
+id: zram-memory-compression
+name: zram / zswap in-memory compression
+category: memory
+summary: >
+  Compress memory pages in RAM instead of paging to disk, so the same workload fits on a
+  smaller instance tier. Trades a little CPU for a lot of effective RAM.
+
+applies_when:
+  workload_type: [web, api, batch]
+  requires:
+    - Linux instances you control (not fully managed/serverless)
+    - Workload is memory-bound, not CPU-saturated
+    - Spare CPU headroom available for compression
+
+savings:
+  typical_pct: 20
+  confidence: low
+  basis: >
+    Savings come indirectly: compression raises effective RAM, letting you drop one
+    instance tier. The percentage therefore equals the price gap between tiers, which
+    varies. Highly workload-dependent — only recommend with a "verify under load" note.
+
+tradeoffs:
+  - Costs CPU cycles; harmful if the workload is already CPU-bound
+  - Benefit depends entirely on how compressible the workload's pages are
+  - Not available on managed/serverless compute where you don't control the kernel
+  - Must be load-tested before downsizing — do not downsize on theory
+
+implemented_by:
+  - name: zram (Linux kernel module)
+    url: https://docs.kernel.org/admin-guide/blockdev/zram.html
+    type: kernel-feature
+  - name: zswap (Linux kernel compressed swap cache)
+    url: https://docs.kernel.org/admin-guide/mm/zswap.html
+    type: kernel-feature
+
+providers: [aws, gcp, azure]
+obviousness: low   # ← this is the kind of entry that justifies the product
