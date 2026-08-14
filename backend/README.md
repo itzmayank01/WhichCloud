@@ -20,7 +20,7 @@ docker compose -f ../infra/docker-compose.yml up -d
 .venv/bin/python scripts/ingest_prices.py --region india
 
 # 3. THE ENGINE — plain English in, three priced architectures out
-export ANTHROPIC_API_KEY=...          # only this step needs a key
+export GEMINI_API_KEY=...             # free tier; only this step needs a key
 .venv/bin/python scripts/recommend.py --describe "an e-commerce site for 50k users, spiky weekend traffic, \$400/mo"
 
 #    ...or skip Claude and pass the requirement directly
@@ -194,10 +194,19 @@ test for it.
 
 ## Plain-English intake
 
-`intake.py` is a thin adapter: Claude reads a description and fills the same
-`Requirement` the CLI flags build. Nothing downstream knows which one happened.
+`intake.py` is a thin adapter: a language model reads a description and fills
+the same `Requirement` the CLI flags build. Nothing downstream knows which one
+happened — including which provider ran.
 
-Two things make it safe to trust:
+| Provider | Cost | Key |
+|---|---|---|
+| **gemini** (default) | Free tier — ~10 req/min, no card | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| **anthropic** | Pay-as-you-go; better on ambiguous descriptions | [console.anthropic.com](https://console.anthropic.com) |
+
+Whichever key is present is used, preferring the free one. Override with
+`--provider`.
+
+Three things make it safe to trust:
 
 - **The model reports what it guessed.** Every draft carries an `assumed` list
   and one `clarifying_question`, so an inferred budget is visibly inferred
@@ -205,23 +214,31 @@ Two things make it safe to trust:
 - **Validation is ours, not the model's.** Structured outputs guarantee the
   shape; `Requirement` rejects the values. A hallucinated field fails at the
   boundary instead of becoming a confidently wrong architecture.
+- **One schema, both providers.** Every draft field is required with a
+  sentinel (`-1` budget, empty question) rather than nullable, because
+  nullable-union schema support differs between providers. A test asserts the
+  schema stays free of them.
 
 It is the only component that needs an API key, and the only one that costs
 money per call. Everything else runs offline.
 
 ```bash
-.venv/bin/python scripts/eval_intake.py          # score extraction, field by field
+.venv/bin/python scripts/eval_intake.py                      # score, field by field
+.venv/bin/python scripts/eval_intake.py --provider anthropic # compare providers
 ```
+
+⚠️ On Gemini's free tier Google may use prompts and responses to improve its
+products. These descriptions are architecture summaries, not user data — but
+do not paste anything confidential into a free-tier request.
 
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 82 passed
+.venv/bin/python -m pytest tests/ -q     # 92 passed
 ```
 
-No test calls the Anthropic API — the model's judgement is measured by
-`eval_intake.py`; the suite covers the mapping, validation, and failure paths
-around it.
+No test calls any model API — judgement is measured by `eval_intake.py`; the
+suite covers the mapping, validation, and both providers' failure paths.
 
 They assert the rules above: no hand-written spec tables, incomplete estimates
 never win a comparison, undescribed machines never match a requirement, and the

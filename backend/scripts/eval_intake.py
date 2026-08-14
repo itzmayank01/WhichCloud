@@ -9,8 +9,9 @@ accuracy, so a prompt edit can be judged rather than guessed at.
 Only the fields each description genuinely determines are scored — see the
 fixture file for why.
 
-    export ANTHROPIC_API_KEY=...
+    export GEMINI_API_KEY=...        # free tier: aistudio.google.com/apikey
     python scripts/eval_intake.py
+    python scripts/eval_intake.py --provider anthropic
     python scripts/eval_intake.py --only ecommerce-spiky
 """
 
@@ -18,12 +19,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tests.fixtures.intake_examples import EXAMPLES  # noqa: E402
-from whichcloud.intake import IntakeError, parse_description  # noqa: E402
+from whichcloud.intake import (  # noqa: E402
+    IntakeError,
+    available_providers,
+    parse_description,
+)
 
 BOLD, DIM, GREEN, YELLOW, RED, RESET = (
     "\033[1m", "\033[2m", "\033[32m", "\033[33m", "\033[31m", "\033[0m",
@@ -55,7 +61,21 @@ def matches(expected, actual) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--only", help="run a single example by id")
+    ap.add_argument(
+        "--provider",
+        choices=["gemini", "anthropic"],
+        help="default: whichever key is set, preferring the free tier",
+    )
     args = ap.parse_args()
+
+    provider = args.provider
+    if provider is None:
+        found = available_providers()
+        if not found:
+            print(f"\n{YELLOW}No credentials. Set GEMINI_API_KEY (free tier: "
+                  f"aistudio.google.com/apikey) or ANTHROPIC_API_KEY.{RESET}\n")
+            return 1
+        provider = found[0]
 
     cases = [e for e in EXAMPLES if not args.only or e["id"] == args.only]
     if not cases:
@@ -63,8 +83,8 @@ def main() -> int:
         return 1
 
     print(f"\n{BOLD}WhichCloud · intake evaluation{RESET}")
-    print(f"{DIM}{len(cases)} descriptions, scoring only the fields each one "
-          f"actually determines{RESET}\n")
+    print(f"{DIM}{len(cases)} descriptions via {provider}, scoring only the "
+          f"fields each one actually determines{RESET}\n")
 
     total_fields = 0
     correct_fields = 0
@@ -75,7 +95,7 @@ def main() -> int:
         print(f"  {DIM}{case['description'][:88]}…{RESET}")
 
         try:
-            intake = parse_description(case["description"])
+            intake = parse_description(case["description"], provider=provider)
         except IntakeError as exc:
             print(f"  {RED}✗ {exc}{RESET}\n")
             failures += 1
@@ -102,6 +122,10 @@ def main() -> int:
         if intake.clarifying_question:
             print(f"  {DIM}asks: {intake.clarifying_question}{RESET}")
         print()
+
+        # Gemini's free tier allows ~10 requests/minute; pace to stay inside it.
+        if provider == "gemini" and case is not cases[-1]:
+            time.sleep(6)
 
     if not total_fields:
         print(f"{RED}Nothing scored.{RESET}")

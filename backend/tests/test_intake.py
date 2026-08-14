@@ -35,7 +35,7 @@ def draft(**overrides) -> RequirementDraft:
         provider_preference="none",
         compliance=[],
         assumed=[],
-        clarifying_question=None,
+        clarifying_question="",
     )
     base.update(overrides)
     return RequirementDraft(**base)
@@ -87,8 +87,17 @@ def test_compliance_list_becomes_tuple():
     assert req.compliance == ("HIPAA", "GDPR")
 
 
-def test_missing_budget_is_allowed():
-    assert draft(budget_monthly_usd=None).to_requirement().budget_monthly_usd is None
+def test_sentinel_budget_means_not_mentioned():
+    """-1 crosses the wire because nullable-union schema support varies by
+    provider; a sentinel we control behaves identically everywhere."""
+    assert draft(budget_monthly_usd=-1).to_requirement().budget_monthly_usd is None
+    assert draft(budget_monthly_usd=400).to_requirement().budget_monthly_usd == 400
+
+
+def test_empty_question_means_no_question():
+    assert draft(clarifying_question="").question is None
+    assert draft(clarifying_question="   ").question is None
+    assert draft(clarifying_question="How spiky?").question == "How spiky?"
 
 
 # ── validation boundary ─────────────────────────────────────────────────
@@ -113,9 +122,10 @@ def test_negative_volume_fails_validation():
         draft(egress_gb=-1).to_requirement()
 
 
-def test_negative_budget_fails_validation():
-    with pytest.raises(ValueError, match="budget"):
-        draft(budget_monthly_usd=-100).to_requirement()
+def test_negative_budget_reads_as_absent_not_invalid():
+    """Any negative is the sentinel — it must never reach Requirement as a
+    negative number, which would fail validation for the wrong reason."""
+    assert draft(budget_monthly_usd=-100).to_requirement().budget_monthly_usd is None
 
 
 # ── parse_description ───────────────────────────────────────────────────
@@ -140,6 +150,7 @@ def test_parse_returns_intake_with_metadata():
     assert intake.requirement.workload_type == "web"
     assert intake.assumed == ("region", "storage_gb")
     assert intake.clarifying_question == "How spiky?"
+    assert intake.provider == "anthropic"
 
 
 def test_confidence_reflects_how_much_was_guessed():
@@ -232,3 +243,104 @@ def test_example_lookup_by_id():
     assert example("ecommerce-spiky")["expected"]["traffic_pattern"] == "spiky"
     with pytest.raises(KeyError):
         example("does-not-exist")
+
+
+# ── provider selection ──────────────────────────────────────────────────
+
+
+def test_gemini_is_preferred_when_both_keys_are_present(monkeypatch):
+    """Gemini has a free tier; reaching for the paid one by default would
+    silently spend the user's money."""
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
+    from whichcloud.intake import available_providers
+
+    assert available_providers()[0] == "gemini"
+
+
+def test_google_api_key_also_counts(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "x")
+    from whichcloud.intake import available_providers
+
+    assert available_providers() == ["gemini"]
+
+
+def test_no_credentials_names_both_options(monkeypatch):
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(IntakeError, match="GEMINI_API_KEY"):
+        parse_description("a shop")
+
+
+def test_unknown_provider_is_rejected():
+    with pytest.raises(IntakeError, match="Unknown provider"):
+        parse_description("a shop", provider="openai")
+
+
+# ── gemini transport ────────────────────────────────────────────────────
+
+
+class FakeGeminiResponse:
+    def __init__(self, parsed):
+        self.parsed = parsed
+
+
+class FakeGeminiClient:
+    """Stands in for genai.Client — mirrors client.models.generate_content."""
+
+    def __init__(self, response):
+        self._response = response
+        self.calls: list[dict] = []
+        self.models = self
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        if isinstance(self._response, Exception):
+            raise self._response
+        return self._response
+
+
+def test_gemini_path_produces_the_same_intake():
+    """Both providers fill the same object — the engine cannot tell them
+    apart, which is the entire point of the Requirement contract."""
+    client = FakeGeminiClient(FakeGeminiResponse(draft(assumed=["region"])))
+    intake = parse_description("a shop", provider="gemini", client=client)
+
+    assert intake.provider == "gemini"
+    assert intake.requirement.workload_type == "web"
+    assert intake.assumed == ("region",)
+
+
+def test_gemini_request_uses_structured_output():
+    client = FakeGeminiClient(FakeGeminiResponse(draft()))
+    parse_description("a shop", provider="gemini", client=client)
+
+    call = client.calls[0]
+    assert call["model"] == "gemini-2.5-flash"
+    assert call["contents"] == "a shop"
+    assert call["config"]["response_schema"] is RequirementDraft
+    assert call["config"]["response_mime_type"] == "application/json"
+
+
+def test_gemini_failure_becomes_intake_error():
+    client = FakeGeminiClient(RuntimeError("quota exceeded"))
+    with pytest.raises(IntakeError, match="Could not reach Gemini"):
+        parse_description("a shop", provider="gemini", client=client)
+
+
+def test_gemini_missing_structured_output_is_an_error():
+    client = FakeGeminiClient(FakeGeminiResponse(None))
+    with pytest.raises(IntakeError, match="no structured output"):
+        parse_description("a shop", provider="gemini", client=client)
+
+
+def test_draft_schema_has_no_nullable_fields():
+    """Nullable-union support varies between providers. Every field is
+    required with a sentinel so one schema works on both."""
+    schema = RequirementDraft.model_json_schema()
+    for name, spec in schema["properties"].items():
+        assert "anyOf" not in spec, f"{name} is a nullable union"
+    assert set(schema["required"]) == set(schema["properties"])
