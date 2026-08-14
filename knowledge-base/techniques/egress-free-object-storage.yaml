@@ -1,0 +1,50 @@
+id: egress-free-object-storage
+name: Serve static assets from egress-free storage
+category: network
+summary: >
+  Hyperscalers charge for every gigabyte leaving their network. Cloudflare R2
+  and similar stores charge nothing for egress. Moving images, video and
+  downloads there removes what is often the second-largest line on the bill.
+
+applies_when:
+  workload_type: [web, api, storage, mixed]
+  min_monthly_spend_usd: 30
+  requires:
+    - A meaningful share of egress is static files, not dynamic API responses
+    - Willing to use a provider outside your main cloud
+    - No data-residency rule that forbids it
+
+savings:
+  typical_pct: 90
+  confidence: medium
+  basis: >
+    Applies to the EGRESS LINE only, not the whole bill — R2 publishes no
+    egress charge, versus roughly $0.11/GB on AWS in ap-south-1 (a real figure
+    from our own catalog). For a workload serving 500 GB/month that is about
+    $55/month against roughly $7 of R2 storage cost.
+
+    NOT PRICED BY THE ENGINE. We ingest AWS, Azure and GCP, and Cloudflare
+    publishes no pricing API, so there is no source we can fetch R2 rates from.
+    Rather than hardcode a number and present it as fetched data, this stays
+    advisory: the engine surfaces it and the user does the arithmetic.
+
+    Wire this up properly by adding a fourth pricing adapter — that is the
+    correct fix, not a constant in the source.
+
+tradeoffs:
+  - A second vendor to operate, monitor and pay
+  - Cross-provider latency if the origin and the store are far apart
+  - Not suitable for dynamic responses, only cacheable static objects
+  - Data residency and compliance need checking separately
+  - Migration effort for existing buckets and rewritten asset URLs
+
+implemented_by:
+  - name: Cloudflare R2
+    url: https://developers.cloudflare.com/r2/
+    type: managed-service
+  - name: rclone (bulk migration between object stores)
+    url: https://github.com/rclone/rclone
+    type: tool
+
+providers: [aws, gcp, azure]
+obviousness: low

@@ -300,3 +300,33 @@ def test_unpriceable_techniques_stay_out_of_the_total():
         assert "zram-memory-compression" not in applied_ids
         advisory_ids = {m.technique.id for m in option.advisory}
         assert "zram-memory-compression" in advisory_ids
+
+
+@needs_db
+def test_counterfactual_names_the_line_it_replaced():
+    """REGRESSION: reporting items[0] credited a database technique with
+    beating a compute instance ('ARM database ... vs t4g.large')."""
+    req = Requirement(
+        goal="shop", workload_type="web", traffic_scale="medium",
+        traffic_pattern="spiky",
+    )
+    options = engine.recommend(req, "aws")
+    for option in options:
+        for applied in option.applied:
+            sku = applied.counterfactual_sku
+            if applied.technique.category == "database":
+                assert sku.startswith("db."), (
+                    f"database technique cites {sku!r}, not a database SKU"
+                )
+
+
+@needs_db
+def test_more_knowledge_means_more_measured_saving():
+    """The engine is only as good as the knowledge base feeding it."""
+    req = Requirement(
+        goal="shop", workload_type="web", traffic_scale="medium",
+        traffic_pattern="spiky",
+    )
+    option = engine.recommend(req, "aws")[0]
+    assert len(option.applied) >= 2, "expected several techniques to apply"
+    assert option.measured_saving > 0

@@ -1,0 +1,49 @@
+id: cache-to-shrink-database
+name: Cache reads so the database can be smaller
+category: database
+summary: >
+  Most read-heavy applications ask the database the same questions repeatedly.
+  An in-memory cache in front absorbs those reads, which often means a database
+  one or two sizes down carries the same traffic.
+
+applies_when:
+  workload_type: [web, api, mixed]
+  min_monthly_spend_usd: 60
+  requires:
+    - Read-heavy access pattern (roughly 80% reads or more)
+    - Tolerance for slightly stale data on cached paths
+    - Application can be changed to read through a cache
+
+savings:
+  typical_pct: 25
+  confidence: low
+  basis: >
+    NOT PRICED BY THE ENGINE, and deliberately so. The saving depends entirely
+    on hit rate, which depends on the access pattern — something no pricing feed
+    can tell us. A cache also ADDS a line to the bill, so a careless model could
+    show a saving where there is a net loss.
+
+    In our own catalog a db.t4g.large is $121.91/month against $61.32 for a
+    db.t4g.medium, so dropping one size is worth about $60/month — if the cache
+    costs less than that and the hit rate holds.
+
+    Make this priceable by ingesting ElastiCache/Memorystore rates and modelling
+    both sides of the trade. Until then it is advice with real numbers attached.
+
+tradeoffs:
+  - The cache itself costs money and can erase the saving
+  - Stale reads unless invalidation is done carefully
+  - Cache stampede on expiry can hit the database harder than no cache at all
+  - Adds a failure mode and an operational component
+  - Application changes required; not a configuration switch
+
+implemented_by:
+  - name: Valkey (open-source Redis fork)
+    url: https://github.com/valkey-io/valkey
+    type: tool
+  - name: AWS ElastiCache
+    url: https://aws.amazon.com/elasticache/
+    type: managed-service
+
+providers: [aws, gcp, azure]
+obviousness: high

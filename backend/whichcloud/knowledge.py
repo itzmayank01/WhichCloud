@@ -31,7 +31,13 @@ DEFAULT_KB = Path(__file__).resolve().parents[2] / "knowledge-base" / "technique
 
 # Effects the engine knows how to apply to an ArchitectureSpec. A technique
 # declaring anything else is a loading error, not a silent no-op.
-KNOWN_EFFECTS = {"arch", "use_spot", "database_multi_az"}
+KNOWN_EFFECTS = {
+    "arch",
+    "use_spot",
+    "database_multi_az",
+    "database_arch",
+    "compute_duty_cycle",
+}
 
 REQUIRED_FIELDS = ("id", "name", "category", "summary", "savings", "providers")
 

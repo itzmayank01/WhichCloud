@@ -1,0 +1,58 @@
+id: scale-to-zero-offpeak
+name: Scale down when nobody is using it
+category: compute
+summary: >
+  Spiky workloads sit idle most of the month but are usually billed as if they
+  ran flat out. Autoscaling on real demand — down to zero where the platform
+  allows — bills for the hours actually served instead of the hours provisioned.
+
+applies_when:
+  workload_type: [web, api, batch, ml]
+  traffic_pattern: [spiky]
+  min_monthly_spend_usd: 40
+  requires:
+    - Traffic genuinely has quiet periods (not steady round-the-clock load)
+    - Application tolerates cold starts, or keeps one warm instance
+    - Stateless application tier — sessions in a cache or database, not on disk
+
+savings:
+  typical_pct: 40
+  confidence: medium
+  basis: >
+    The RATE is real published pricing; the DUTY CYCLE is an assumption.
+
+    The engine models spiky traffic as running ~60% of the month (compute_duty_
+    cycle 0.6), which is deliberately conservative: a weekend-peaked retail
+    workload is often far idler than that, and a business-hours internal tool
+    idler still. It is an assumption, not a measurement, and the reported saving
+    is only as good as that assumption.
+
+    Replace it with observed utilisation from the user's own metrics as soon as
+    those are available — that turns this from an estimate into a fact.
+
+tradeoffs:
+  - Cold starts add latency to the first request after an idle period
+  - Scaling is not instantaneous; a sharp spike can outrun it
+  - Requires the application tier to be stateless
+  - Aggressive scale-down can cause thrashing under choppy traffic
+  - Databases and stateful services cannot scale to zero this way
+
+implemented_by:
+  - name: KEDA (event-driven autoscaling for Kubernetes)
+    url: https://github.com/kedacore/keda
+    type: tool
+  - name: Karpenter (node-level consolidation)
+    url: https://github.com/aws/karpenter-provider-aws
+    type: tool
+  - name: Google Cloud Run (scale-to-zero by default)
+    url: https://cloud.google.com/run
+    type: managed-service
+
+effect:
+  compute_duty_cycle: 0.6
+
+counterfactual:
+  compute_duty_cycle: 1.0
+
+providers: [aws, gcp, azure]
+obviousness: medium

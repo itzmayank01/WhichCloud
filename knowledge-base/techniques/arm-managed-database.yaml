@@ -1,0 +1,45 @@
+id: arm-managed-database
+name: ARM instances for the managed database
+category: database
+summary: >
+  Run the managed PostgreSQL on ARM (db.t4g / db.m7g) instead of x86. Same
+  engine, same behaviour, lower hourly rate — and unlike application compute
+  there is nothing to rebuild, because the provider runs the database.
+
+applies_when:
+  workload_type: [web, api, mixed]
+  min_monthly_spend_usd: 40
+  requires:
+    - Managed database service (not a database you run on your own instances)
+    - Engine version available on ARM instance classes in your region
+
+savings:
+  typical_pct: 5
+  confidence: high
+  basis: >
+    Measured by the engine against the counterfactual x86 database SKU in the
+    same region, from AWS Price List data. The exact gap varies by class and
+    region, so the figure the engine reports is the one that matters — this
+    number is only a rough expectation.
+
+    Worth noting this is the easiest ARM win available: the application does
+    not need an arm64 build, because the database engine is the provider's.
+
+tradeoffs:
+  - Not every engine version is offered on ARM classes in every region
+  - Migrating an existing instance class requires a maintenance window
+  - Smaller selection of instance sizes than x86 in some regions
+
+implemented_by:
+  - name: AWS RDS Graviton instance classes
+    url: https://aws.amazon.com/rds/instance-types/
+    type: managed-service
+
+effect:
+  database_arch: arm64
+
+counterfactual:
+  database_arch: x86_64
+
+providers: [aws]
+obviousness: low

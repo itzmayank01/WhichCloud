@@ -36,6 +36,7 @@ class ArchitectureSpec:
     database_vcpu: int | None = None
     database_memory_gb: float | None = None
     database_multi_az: bool = False
+    database_arch: str | None = None  # "arm64" to force ARM database instances
 
     storage_gb: float = 0.0
     egress_gb: float = 0.0
@@ -44,6 +45,10 @@ class ArchitectureSpec:
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
     use_spot: bool = False
+
+    # Fraction of the month compute actually runs. 1.0 = always on. Scale-to-
+    # zero lowers this. The hourly RATE stays real; only the hours change.
+    compute_duty_cycle: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,8 +107,10 @@ def _preferred(
     return store.cheapest_in_category(provider, region, category, dsn=dsn)
 
 
-def _hourly_line(label: str, point: PricePoint, count: int) -> LineItem:
-    quantity = Decimal(count) * HOURS_PER_MONTH
+def _hourly_line(
+    label: str, point: PricePoint, count: int, duty_cycle: float = 1.0
+) -> LineItem:
+    quantity = Decimal(count) * HOURS_PER_MONTH * Decimal(str(duty_cycle))
     return LineItem(
         label=label,
         sku=point.sku,
@@ -147,7 +154,11 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             label = f"Compute × {spec.compute_count}"
             if spec.use_spot:
                 label += " (spot)"
-            result.items.append(_hourly_line(label, point, spec.compute_count))
+            result.items.append(
+                _hourly_line(
+                    label, point, spec.compute_count, spec.compute_duty_cycle
+                )
+            )
         else:
             result.missing.append(
                 f"{purchase} compute {spec.compute_vcpu}vCPU/"
@@ -163,6 +174,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_vcpu=spec.database_vcpu,
             min_memory_gb=spec.database_memory_gb or 0.0,
             multi_az=spec.database_multi_az,
+            arch=spec.database_arch,
             dsn=dsn,
         )
         if point:
@@ -172,6 +184,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.missing.append(
                 f"database {spec.database_vcpu}vCPU/"
                 f"{(spec.database_memory_gb or 0):g}GB"
+                + (f" {spec.database_arch}" if spec.database_arch else "")
                 + (" multi-az" if spec.database_multi_az else "")
             )
 

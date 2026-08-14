@@ -1,0 +1,44 @@
+id: rightsize-idle-capacity
+name: Right-size over-provisioned instances
+category: compute
+summary: >
+  Most instances are picked once, generously, and never revisited. Matching the
+  instance to observed utilisation is the least glamorous and most reliable
+  saving available.
+
+applies_when:
+  workload_type: [web, api, batch, ml, mixed]
+  min_monthly_spend_usd: 50
+  requires:
+    - At least two weeks of CPU and memory metrics
+    - Headroom retained for peaks, not sized to the average
+
+savings:
+  typical_pct: 30
+  confidence: low
+  basis: >
+    NOT PRICED BY THE ENGINE. Right-sizing needs observed utilisation, and we
+    have none — WhichCloud sizes greenfield workloads from heuristics, so there
+    is no "before" to measure against. Claiming a right-sizing saving on a
+    system that does not exist yet would be inventing a number.
+
+    This becomes real in Audit mode, where an uploaded bill provides actual
+    resource usage. It is listed here so the recommendation is complete, and
+    marked advisory so it cannot inflate a total.
+
+tradeoffs:
+  - Sizing to the average causes incidents at the peak
+  - Needs real metrics; guessing smaller is not right-sizing
+  - Requires a restart, so a maintenance window
+  - Burstable instance families can mask sustained CPU need
+
+implemented_by:
+  - name: AWS Compute Optimizer
+    url: https://aws.amazon.com/compute-optimizer/
+    type: managed-service
+  - name: Goldilocks (Kubernetes resource recommendations)
+    url: https://github.com/FairwindsOps/goldilocks
+    type: tool
+
+providers: [aws, gcp, azure]
+obviousness: high

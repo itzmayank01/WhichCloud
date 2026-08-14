@@ -184,6 +184,26 @@ def _shape_variants(requirement: Requirement) -> list[tuple[str, str, dict]]:
     ]
 
 
+def _what_changed(with_it: Estimate, without_it: Estimate) -> str:
+    """Name the SKU this technique replaced.
+
+    Comparing whole estimates and reporting items[0] would credit a database
+    technique with beating a compute instance. Find the line that actually
+    differs instead.
+    """
+    chosen = {i.label: i.sku for i in with_it.items}
+    for item in without_it.items:
+        if chosen.get(item.label) != item.sku:
+            return item.sku
+
+    # Same SKUs, different quantities — a duty-cycle change, not a swap.
+    for item in without_it.items:
+        match = next((i for i in with_it.items if i.label == item.label), None)
+        if match and match.quantity != item.quantity:
+            return f"{item.sku} at full duty"
+    return without_it.items[0].sku if without_it.items else ""
+
+
 def recommend(
     requirement: Requirement,
     provider: str = "aws",
@@ -237,9 +257,7 @@ def recommend(
                 AppliedTechnique(
                     match=match,
                     saved=saved,
-                    counterfactual_sku=(
-                        priced_without.items[0].sku if priced_without.items else ""
-                    ),
+                    counterfactual_sku=_what_changed(priced_with, priced_without),
                 )
             )
 

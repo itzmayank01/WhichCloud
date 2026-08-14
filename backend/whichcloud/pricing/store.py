@@ -167,6 +167,7 @@ def cheapest_database(
     min_vcpu: int,
     min_memory_gb: float = 0.0,
     multi_az: bool = False,
+    arch: str | None = None,
     dsn: str | None = None,
 ) -> PricePoint | None:
     """Cheapest managed database meeting the spec.
@@ -176,6 +177,7 @@ def cheapest_database(
     """
     # A Single-AZ request must never match a Multi-AZ SKU, and vice versa.
     match = "sku LIKE '%%:multi-az'" if multi_az else "sku NOT LIKE '%%:multi-az'"
+    arch_clause = "AND arch = %(arch)s" if arch else ""
     sql = f"""
         SELECT * FROM price_points
         WHERE provider = %(provider)s
@@ -184,6 +186,7 @@ def cheapest_database(
           AND vcpu >= %(vcpu)s
           AND memory_gb >= %(memory)s
           AND {match}
+          {arch_clause}
         ORDER BY price_usd ASC LIMIT 1
     """
     with connect(dsn) as conn, conn.cursor() as cur:
@@ -194,6 +197,7 @@ def cheapest_database(
                 "region": region,
                 "vcpu": min_vcpu,
                 "memory": min_memory_gb,
+                "arch": arch,
             },
         )
         row = cur.fetchone()
