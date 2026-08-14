@@ -1,0 +1,93 @@
+"""What the user wants, as a structured object.
+
+This is the contract between the front of the system and the engine. Whether it
+was filled in by a person, a form, or (later) an LLM reading plain English, the
+engine sees only this. That separation is deliberate: it means adding natural
+language later is an adapter, not a rewrite.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Literal
+
+WorkloadType = Literal["web", "api", "batch", "ml", "storage", "mixed"]
+TrafficPattern = Literal["steady", "spiky", "unknown"]
+Scale = Literal["low", "medium", "high"]
+Tolerance = Literal["low", "medium", "high"]
+Skill = Literal["beginner", "intermediate", "expert"]
+
+VALID_WORKLOADS = ("web", "api", "batch", "ml", "storage", "mixed")
+VALID_PATTERNS = ("steady", "spiky", "unknown")
+VALID_SCALES = ("low", "medium", "high")
+
+
+@dataclass(frozen=True, slots=True)
+class Requirement:
+    """A workload described in provider-neutral terms."""
+
+    goal: str
+    workload_type: WorkloadType = "web"
+    traffic_pattern: TrafficPattern = "unknown"
+    traffic_scale: Scale = "medium"
+
+    region: str = "india"  # our neutral key, see pricing.models.REGIONS
+    budget_monthly_usd: float | None = None
+    latency_target_ms: int | None = None
+
+    # Data volumes. The user usually knows these roughly; defaults are modest
+    # rather than zero so an estimate is never silently missing egress.
+    storage_gb: float = 50.0
+    egress_gb: float = 100.0
+
+    compliance: tuple[str, ...] = ()
+    lock_in_tolerance: Tolerance = "medium"
+    team_skill: Skill = "intermediate"
+    provider_preference: str | None = None  # None = let us choose
+
+    # Properties that gate specific techniques.
+    interruptible: bool = False  # can work be restarted? gates spot
+    high_availability: bool = False  # must survive a zone failure?
+    arm_compatible: bool = True  # no x86-only dependencies?
+
+    notes: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if self.workload_type not in VALID_WORKLOADS:
+            raise ValueError(
+                f"workload_type {self.workload_type!r} is not one of {VALID_WORKLOADS}"
+            )
+        if self.traffic_pattern not in VALID_PATTERNS:
+            raise ValueError(
+                f"traffic_pattern {self.traffic_pattern!r} is not one of {VALID_PATTERNS}"
+            )
+        if self.traffic_scale not in VALID_SCALES:
+            raise ValueError(
+                f"traffic_scale {self.traffic_scale!r} is not one of {VALID_SCALES}"
+            )
+        if self.budget_monthly_usd is not None and self.budget_monthly_usd <= 0:
+            raise ValueError("budget_monthly_usd must be positive when given")
+        if self.storage_gb < 0 or self.egress_gb < 0:
+            raise ValueError("data volumes cannot be negative")
+
+    @property
+    def needs_database(self) -> bool:
+        return self.workload_type in ("web", "api", "mixed")
+
+    @property
+    def is_batch(self) -> bool:
+        return self.workload_type in ("batch", "ml")
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Requirement:
+        """Build from a plain dict — the shape an LLM will eventually emit."""
+        known = {f for f in cls.__slots__}
+        unknown = set(data) - known
+        if unknown:
+            raise ValueError(f"unknown requirement fields: {sorted(unknown)}")
+
+        payload = dict(data)
+        for key in ("compliance", "notes"):
+            if key in payload and payload[key] is not None:
+                payload[key] = tuple(payload[key])
+        return cls(**payload)

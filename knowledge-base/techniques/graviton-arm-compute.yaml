@@ -44,5 +44,16 @@ implemented_by:
     url: https://github.com/aws/aws-graviton-getting-started
     type: guide
 
+# What the engine does with this. The saving is then MEASURED by pricing the
+# architecture with and without it — never asserted from typical_pct above.
+effect:
+  arch: arm64
+
+# The counterfactual: what a team would have picked by default. The engine
+# prices BOTH and reports the difference, so the saving shown is measured
+# against a real alternative rather than against nothing.
+counterfactual:
+  arch: x86_64
+
 providers: [aws, gcp, azure]
 obviousness: medium

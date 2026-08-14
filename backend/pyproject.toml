@@ -7,7 +7,7 @@ name = "whichcloud"
 version = "0.1.0"
 description = "Constraint-driven multi-cloud architecture synthesis and cost optimization"
 requires-python = ">=3.11"
-dependencies = ["httpx>=0.27", "psycopg[binary]>=3.2"]
+dependencies = ["httpx>=0.27", "psycopg[binary]>=3.2", "PyYAML>=6.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

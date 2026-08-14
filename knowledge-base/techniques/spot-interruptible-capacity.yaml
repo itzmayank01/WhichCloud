@@ -49,5 +49,11 @@ implemented_by:
     url: https://cloud.google.com/compute/docs/instances/spot
     type: managed-service
 
+effect:
+  use_spot: true
+
+counterfactual:
+  use_spot: false
+
 providers: [aws, gcp, azure]
 obviousness: medium

@@ -19,7 +19,11 @@ docker compose -f ../infra/docker-compose.yml up -d
 # 2. pull provider prices into the catalog (idempotent, re-run anytime)
 .venv/bin/python scripts/ingest_prices.py --region india
 
-# 3. price three architectures and compare clouds
+# 3. THE ENGINE — describe a workload, get three priced architectures
+.venv/bin/python scripts/recommend.py --goal "e-commerce site" --scale medium --spiky --budget 400
+.venv/bin/python scripts/recommend.py --workload batch --interruptible --scale high
+
+# 4. price a hand-written architecture directly
 .venv/bin/python scripts/estimate_architecture.py
 
 # (optional) single-machine cross-cloud check
@@ -50,6 +54,9 @@ Balanced   3× 2vCPU/8GB arm64
 
 ```
 whichcloud/
+├── requirements.py         # Requirement — the contract with the front end
+├── knowledge.py            # loads knowledge-base/*.yaml, matches techniques
+├── engine.py               # requirements → sized shapes → techniques → priced
 ├── estimator.py            # architecture → itemised monthly bill, cross-cloud compare
 └── pricing/
     ├── models.py           # PricePoint, ComputeQuery, neutral region mapping
@@ -57,10 +64,36 @@ whichcloud/
     ├── azure.py            # VMs, PostgreSQL, Blob, egress, Load Balancer
     └── store.py            # Postgres catalog: upsert, query, prune
 scripts/
+├── recommend.py            # the engine, end to end
 ├── ingest_prices.py        # provider APIs → price_points table
 ├── estimate_architecture.py
+├── validate_pricing.py     # cross-source validation
+├── show.py                 # inspect the catalog and its provenance
 └── verify_pricing.py
 ```
+
+## How the engine reports savings
+
+A technique never asserts a saving. It declares an `effect` (use arm64) and a
+`counterfactual` (use x86_64). The engine prices **both** against the real
+catalog and reports the difference:
+
+```
+✓ ARM-based compute            −$6.57/mo   vs t3a.xlarge
+✓ Spot / preemptible capacity −$36.21/mo   vs t4g.xlarge
+  measured saving              $42.78      (32% vs untuned)
+```
+
+Nothing sums the `typical_pct` values from the knowledge base — those are
+neither independent nor additive, and adding them would invent a number.
+Techniques that cannot be modelled (zram, whose benefit depends on how
+compressible a workload's memory is) are surfaced as advice and explicitly
+excluded from the total.
+
+**Sizing is the one heuristic part.** Prices are fetched and validated; the
+rules turning "medium, spiky" into "3 × 2 vCPU" are conventional judgement,
+collected in `BASE_SIZING`/`DB_SIZING` so they can be argued with and tuned.
+Every output says so.
 
 Every adapter returns a `PricePoint`, so the engine never learns a provider's
 quirks and adding GCP touches no other file.

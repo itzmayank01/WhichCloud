@@ -34,5 +34,9 @@ implemented_by:
     url: https://docs.kernel.org/admin-guide/mm/zswap.html
     type: kernel-feature
 
+# No effect: the benefit depends on how compressible this workload's memory
+# is, which pricing data cannot tell us. Surfaced as advice, never folded into
+# a total.
+
 providers: [aws, gcp, azure]
 obviousness: low   # ← this is the kind of entry that justifies the product
