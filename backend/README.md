@@ -248,7 +248,7 @@ do not paste anything confidential into a free-tier request.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 93 passed
+.venv/bin/python -m pytest tests/ -q     # 94 passed
 ```
 
 No test calls any model API — judgement is measured by `eval_intake.py`; the

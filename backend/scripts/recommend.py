@@ -5,7 +5,7 @@ This is the engine end to end: requirements in, sized shapes out, techniques
 applied, everything priced against the real catalog.
 
     python scripts/recommend.py --describe "an e-commerce site for 50k users, spiky weekend traffic, $400/mo"
-    python scripts/recommend.py --describe "..." --provider gemini
+    python scripts/recommend.py --describe "..." --reader gemini
     python scripts/recommend.py --goal "e-commerce site" --scale medium --spiky
     python scripts/recommend.py --workload batch --interruptible --scale high
     python scripts/recommend.py --goal "internal dashboard" --scale low --all-clouds
@@ -93,9 +93,9 @@ def main() -> int:
              "ANTHROPIC_API_KEY)",
     )
     ap.add_argument(
-        "--provider",
+        "--reader",
         choices=["gemini", "anthropic"],
-        help="which model reads the description; default prefers the free tier",
+        help="which model reads --describe; default prefers the free tier",
     )
     ap.add_argument("--goal", default="a web application")
     ap.add_argument("--workload", default="web", choices=list(VALID_WORKLOADS))
@@ -118,7 +118,7 @@ def main() -> int:
 
         print(f"\n{DIM}Reading your description…{RESET}")
         try:
-            intake = parse_description(args.describe, provider=args.provider)
+            intake = parse_description(args.describe, provider=args.reader)
         except IntakeError as exc:
             print(f"{YELLOW}{exc}{RESET}\n")
             return 1

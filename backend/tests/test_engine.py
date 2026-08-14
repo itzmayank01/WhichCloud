@@ -348,3 +348,25 @@ def test_mixed_workloads_are_not_silently_starved(techniques):
             assert "mixed" in t.workload_types, (
                 f"{t.id} applies to web and api but not mixed"
             )
+
+
+def test_recommend_cli_parser_builds():
+    """REGRESSION: a second --provider flag was added for the model provider,
+    colliding with the existing one for the cloud. argparse raises at parser
+    construction, so every CLI invocation crashed — but no test touched the
+    parser, so the suite stayed green. This builds it."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "recommend.py"
+    spec = importlib.util.spec_from_file_location("recommend_cli", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["recommend_cli"] = module
+    spec.loader.exec_module(module)
+
+    # main() builds the parser; call it with --help, which exits cleanly.
+    sys.argv = ["recommend.py", "--help"]
+    with pytest.raises(SystemExit) as exc:
+        module.main()
+    assert exc.value.code == 0
