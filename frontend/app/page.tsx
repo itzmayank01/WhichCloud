@@ -87,10 +87,7 @@ export default function Home() {
 
         <h1 className="mx-auto mt-8 max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.02] tracking-[-0.035em]">
           Know what it costs{" "}
-          <span className="whitespace-nowrap rounded-xl bg-accent-wash px-3 py-1 text-accent">
-            before
-          </span>{" "}
-          you build it
+          <span className="text-accent">before</span> you build it
         </h1>
 
         <p className="mx-auto mt-7 max-w-2xl text-balance text-lg leading-relaxed text-ink-2 sm:text-xl">
@@ -114,7 +111,7 @@ export default function Home() {
         </div>
 
         <p className="mt-7 font-mono text-[14px] text-ink-3">
-          No cloud account · no credit card · prices computed, not guessed
+          Prices fetched from AWS, Azure and Google · computed, not guessed
         </p>
       </section>
 
