@@ -18,6 +18,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 export function CountUp({
   value,
   prefix = "",
+  suffix = "",
+  currency = true,
   decimals = 2,
   delayMs = 0,
   durationMs = 850,
@@ -25,6 +27,9 @@ export function CountUp({
 }: {
   value: number;
   prefix?: string;
+  suffix?: string;
+  /** Currency figures lead with $. Counts and percentages do not. */
+  currency?: boolean;
   decimals?: number;
   delayMs?: number;
   durationMs?: number;
@@ -107,7 +112,12 @@ export function CountUp({
 
   return (
     <span ref={ref} className={`tnum ${className}`}>
-      {prefix}${shown.toFixed(decimals)}
+      {prefix}
+      {currency ? "$" : ""}
+      {decimals === 0
+        ? Math.round(shown).toLocaleString()
+        : shown.toFixed(decimals)}
+      {suffix}
     </span>
   );
 }

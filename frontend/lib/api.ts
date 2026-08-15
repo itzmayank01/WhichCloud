@@ -179,6 +179,7 @@ export const api = {
   },
 
   techniques: () => get<{ count: number; techniques: Technique[] }>("/techniques"),
+  regions: () => get<Record<string, Record<string, string>>>("/regions", 3600),
 
   recommend: (body: Record<string, unknown>) =>
     post<Recommendation>("/recommend", body),

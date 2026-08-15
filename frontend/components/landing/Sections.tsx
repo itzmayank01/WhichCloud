@@ -3,6 +3,8 @@ import { api, freshness, money, type CatalogRow, type Recommendation } from "@/l
 import { ShowcaseGrid } from "@/components/landing/ShowcaseGrid";
 import { ProviderLogoCards } from "@/components/landing/ProviderLogoCards";
 import { InlineIcon } from "@/components/landing/InlineIcon";
+import { CountUp } from "@/components/landing/CountUp";
+import { Reveal } from "@/components/landing/Reveal";
 
 /* ─────────────────────────── shared ─────────────────────────── */
 
@@ -452,29 +454,55 @@ export async function Stats() {
     /* renders as — */
   }
 
-  const items = [
+  /* `count` drives a figure that counts up; the rest are set as written.
+     807/807 is a ratio and 0 is the point being made -- neither reads better
+     for being animated. */
+  const items: {
+    figure: string;
+    count?: number;
+    suffix?: string;
+    label: string;
+  }[] = [
     { figure: "807/807", label: "exact match vs AWS's own price list" },
-    { figure: prices ? prices.toLocaleString() : "n/a", label: "prices in the catalog" },
-    { figure: "3", label: "providers compared in one query" },
+    {
+      figure: prices ? prices.toLocaleString() : "n/a",
+      count: prices || undefined,
+      label: "prices in the catalog",
+    },
+    { figure: "3", count: 3, label: "providers compared in one query" },
     { figure: "0", label: "hardcoded prices in the source" },
   ];
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <Reveal className="mx-auto max-w-5xl">
       <h2 className="text-center text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em] text-white">
         Every price is fetched, not estimated.
       </h2>
       <div className="mt-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-        {items.map((s) => (
-          <div key={s.label}>
+        {items.map((s, i) => (
+          <div
+            key={s.label}
+            className="reveal-line"
+            style={{ "--i": i } as React.CSSProperties}
+          >
             <div className="tnum font-mono text-[clamp(2rem,4vw,2.75rem)] font-light leading-none tracking-tight text-white">
-              {s.figure}
+              {s.count ? (
+                <CountUp
+                  value={s.count}
+                  currency={false}
+                  decimals={0}
+                  delayMs={i * 105}
+                  durationMs={1100}
+                />
+              ) : (
+                s.figure
+              )}
             </div>
             <p className="mt-3 text-[15.5px] leading-relaxed text-zinc-400">{s.label}</p>
           </div>
         ))}
       </div>
-    </div>
+    </Reveal>
   );
 }
 

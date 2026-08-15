@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { CloudArchitectures } from "@/components/landing/CloudArchitectures";
 import { ShowcaseDiagram } from "@/components/landing/ShowcaseDiagram";
@@ -5,6 +6,7 @@ import { PriceTicker } from "@/components/PriceTicker";
 import { Reveal } from "@/components/landing/Reveal";
 import { CountUp } from "@/components/landing/CountUp";
 import { AskDemoSection } from "@/components/landing/AskDemoSection";
+import { PipelineSection } from "@/components/landing/PipelineSection";
 import {
   FeatureBlock,
   Footer,
@@ -130,6 +132,19 @@ function TerraformVisual() {
   );
 }
 
+/* Placeholder used while a data-backed section is still being fetched. It
+   reserves roughly the height of the real thing so the page does not jump
+   when the content lands. */
+function Loading({ height }: { height: number }) {
+  return (
+    <div
+      className="animate-pulse rounded-xl border border-line bg-sunk"
+      style={{ height }}
+      aria-hidden
+    />
+  );
+}
+
 /* ─────────────────────────── page ─────────────────────────── */
 
 export default function Home() {
@@ -186,7 +201,9 @@ export default function Home() {
               published rates.
             </p>
           </div>
-          <CloudArchitectures />
+          <Suspense fallback={<Loading height={560} />}>
+            <CloudArchitectures />
+          </Suspense>
         </div>
       </section>
 
@@ -270,11 +287,35 @@ export default function Home() {
               Try it on your own app
             </Link>
           </div>
-          <AskDemoSection />
+          <Suspense fallback={<Loading height={520} />}>
+            <AskDemoSection />
+          </Suspense>
         </div>
       </section>
 
       {/* feature blocks */}
+      {/* how the automation actually runs */}
+      <section className="border-t border-line px-6 py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto mb-10 max-w-2xl text-center">
+            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+              End to end
+            </div>
+            <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
+              A sentence in, a costed architecture out
+            </h2>
+            <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
+              Five steps, none of which you run. The figures on each card are
+              what that step actually works with, read from the running
+              service.
+            </p>
+          </div>
+          <Suspense fallback={<Loading height={240} />}>
+            <PipelineSection />
+          </Suspense>
+        </div>
+      </section>
+
       <section id="optimizations" className="px-6 pb-24">
         <div className="mx-auto flex max-w-6xl flex-col gap-6">
           <FeatureBlock
@@ -307,7 +348,9 @@ export default function Home() {
 
       {/* stats band */}
       <section className="bg-[#0d1414] px-6 py-24">
-        <Stats />
+        <Suspense fallback={<Loading height={260} />}>
+            <Stats />
+          </Suspense>
       </section>
 
       {/* honest limits */}

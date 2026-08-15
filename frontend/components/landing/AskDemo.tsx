@@ -33,8 +33,34 @@ const READERS = [
   { id: "anthropic", label: "Claude", icon: "logos:claude-icon" },
 ];
 
-/** A mark per prompt, so the three read as different questions at a glance. */
-const PROMPT_ICONS = ["💰", "⚡", "🌍"];
+/* A mark per prompt, so the three read as different questions at a glance.
+   Drawn rather than emoji: emoji render in whatever the operating system
+   ships, so the same three characters are a different weight, palette and
+   era on every machine, and none of them match the rest of the interface. */
+function PromptIcon({ kind }: { kind: number }) {
+  const paths = [
+    // a bill: cost
+    "M2 7h20v10H2zM12 12a2.5 2.5 0 1 0 0 .01M6 10v.01M18 14v.01",
+    // a bolt: speed
+    "M13 2 4.1 12.7a1 1 0 0 0 .8 1.6H11l-1 7.7 8.9-10.7a1 1 0 0 0-.8-1.6H12z",
+    // a globe: region
+    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z",
+  ];
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-[17px] w-[17px] text-accent"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d={paths[kind] ?? paths[0]} />
+    </svg>
+  );
+}
 
 const T = {
   toPrompt: 450,
@@ -190,7 +216,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
                         : "border-line bg-surface"
                   }`}
                 >
-                  <span className="text-[15px] leading-none">{PROMPT_ICONS[i]}</span>
+                  <PromptIcon kind={i} />
                   <p
                     className={`mt-1.5 text-[12.5px] leading-snug ${
                       active ? "text-ink-2" : "text-ink-3"
