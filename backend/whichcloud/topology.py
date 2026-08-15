@@ -100,6 +100,45 @@ _EFFECT_TARGETS = {
 }
 
 
+# What the estimator calls a gap, and which node it belongs to.
+#
+# These strings come from Estimate.missing, which is written for a human to
+# read -- "load balancer" with a space, "egress" rather than "network". A
+# node kind cannot be recovered by looking for the kind's own name inside
+# them, so the phrases are matched explicitly. Getting this wrong does not
+# raise; it silently drops the component from the diagram, which is how a
+# provider that prices one service out of seven ended up looking like a
+# three-box architecture.
+_LABELS = {
+    "loadbalancer": "Load balancer",
+    "storage": "Object storage",
+    "network": "Egress",
+    "cache": "Cache",
+    "monitoring": "Monitoring",
+    "database": "Database",
+    "compute": "Compute",
+}
+
+_MISSING_PHRASES: tuple[tuple[str, str], ...] = (
+    ("load balancer", "loadbalancer"),
+    ("object storage", "storage"),
+    ("monitoring", "monitoring"),
+    ("database", "database"),
+    ("compute", "compute"),
+    ("storage", "storage"),
+    ("egress", "network"),
+    ("cache", "cache"),
+)
+
+
+def _kind_for_missing(missing: str) -> str | None:
+    text = missing.lower()
+    for phrase, kind in _MISSING_PHRASES:
+        if phrase in text:
+            return kind
+    return None
+
+
 def build(
     spec: ArchitectureSpec,
     estimate: Estimate,
@@ -140,15 +179,11 @@ def build(
     # Anything the estimator could not price still belongs on the diagram —
     # drawn as unpriced, never silently omitted.
     for missing in estimate.missing:
-        kind = next(
-            (k for k in ("database", "storage", "network", "loadbalancer", "compute")
-             if k in missing.lower()),
-            None,
-        )
+        kind = _kind_for_missing(missing)
         if kind and kind not in by_kind:
             by_kind[kind] = Node(
                 id=kind,
-                label=kind.title(),
+                label=_LABELS.get(kind, kind.title()),
                 kind=kind,
                 monthly_usd=Decimal(0),
                 detail=missing,

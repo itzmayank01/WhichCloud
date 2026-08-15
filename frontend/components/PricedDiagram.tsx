@@ -136,7 +136,13 @@ export function PricedDiagram({
 
   return (
     <div ref={shell} className="rounded-xl border border-line bg-white p-4">
-      <div style={{ height: H * scale, overflowX: "auto", overflowY: "hidden" }}>
+      <div style={{ overflowX: "auto", overflowY: "hidden" }}>
+      {/* A CSS transform does not change an element's layout box: the canvas
+          below still occupies its authored width whatever it is scaled to,
+          which would leave a scrollbar permanently on. This sizer carries the
+          *scaled* dimensions so the layout agrees with what is drawn, and the
+          scrollbar appears only when the floor really has been hit. */}
+      <div style={{ width: W * scale, height: H * scale }}>
       <div
         className="relative origin-top-left"
         style={{ width: W, height: H, transform: `scale(${scale})` }}
@@ -265,6 +271,7 @@ export function PricedDiagram({
             </div>
           );
         })}
+      </div>
       </div>
       </div>
     </div>

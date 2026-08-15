@@ -38,6 +38,8 @@ const FILE_ICON: Record<string, Record<string, string>> = {
     compute: "/icons/azure/virtual-machines.svg",
     database: "/icons/azure/postgresql.svg",
     storage: "/icons/azure/storage.svg",
+    cache: "/icons/azure/cache-redis.svg",
+    monitoring: "/icons/azure/monitor.svg",
   },
   gcp: {
     network: "/icons/gcp/cloud-cdn.svg",
@@ -45,6 +47,8 @@ const FILE_ICON: Record<string, Record<string, string>> = {
     compute: "/icons/gcp/compute-engine.svg",
     database: "/icons/gcp/cloud-sql.svg",
     storage: "/icons/gcp/cloud-storage.svg",
+    cache: "/icons/gcp/memorystore.svg",
+    monitoring: "/icons/gcp/cloud-monitoring.svg",
   },
 };
 
@@ -100,6 +104,10 @@ export function ServiceIcon({
         width={size}
         height={size}
         style={style}
+        /* These are diagram content, not decoration further down the page —
+           a box whose icon arrives late reads as a box with no icon. They
+           are a few hundred bytes each, so deferring them buys nothing. */
+        loading="eager"
         aria-hidden
       />
     );
