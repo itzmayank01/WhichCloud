@@ -1,16 +1,127 @@
 import Link from "next/link";
-import { PreviewCards } from "@/components/landing/PreviewCards";
+import {
+  FeatureBlock,
+  Footer,
+  Pill,
+  ProductShot,
+  ProviderBar,
+  Stats,
+} from "@/components/landing/Sections";
 
 export const revalidate = 300;
+
+/* ── small visuals used inside the feature blocks ── */
+
+function DiagramVisual() {
+  const nodes = [
+    { label: "CloudFront", cost: "$0.00", w: 4 },
+    { label: "Load balancer", cost: "$17.45", w: 12 },
+    { label: "Compute × 3", cost: "$58.87", w: 34 },
+    { label: "Database", cost: "$121.91", w: 68 },
+    { label: "Object storage", cost: "$5.00", w: 3 },
+  ];
+  return (
+    <div className="rounded-xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.24)]">
+      <div className="font-mono text-[10px] uppercase tracking-[0.13em] text-ink-3">
+        Balanced · AWS ap-south-1
+      </div>
+      <div className="mt-4 space-y-2.5">
+        {nodes.map((n) => (
+          <div key={n.label} className="flex items-center gap-3">
+            <span className="w-[92px] shrink-0 truncate text-[12.5px] text-ink-2">
+              {n.label}
+            </span>
+            <div className="h-6 flex-1 overflow-hidden rounded bg-sunk">
+              <div className="h-full rounded bg-accent/85" style={{ width: `${n.w}%` }} />
+            </div>
+            <span className="tnum w-16 shrink-0 text-right font-mono text-[11.5px]">
+              {n.cost}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex items-baseline justify-between border-t border-line pt-3">
+        <span className="font-mono text-[11px] text-ink-3">Total</span>
+        <span className="tnum font-mono text-[17px]">$257.87</span>
+      </div>
+    </div>
+  );
+}
+
+function DiffVisual() {
+  return (
+    <div className="rounded-xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.24)]">
+      <div className="font-mono text-[10px] uppercase tracking-[0.13em] text-ink-3">
+        Balanced → Most reliable
+      </div>
+      <div className="mt-4 space-y-3 font-mono text-[12px]">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-ink-2">
+            <span className="text-spend">~</span> Database
+          </span>
+          <span className="tnum text-spend">+$121.91</span>
+        </div>
+        <div className="pl-3 text-[10.5px] text-ink-3">
+          db.t4g.large → db.t4g.large:multi-az
+        </div>
+        <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+          <span className="text-ink-3">= Compute, storage, egress, LB</span>
+          <span className="text-ink-3">unchanged</span>
+        </div>
+      </div>
+      <div className="mt-4 rounded-lg bg-caution-wash px-3 py-2.5">
+        <div className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-caution">
+          What you give up on Cheapest
+        </div>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-ink-2">
+          Single instance — a restart is downtime. Single-zone database.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TerraformVisual() {
+  return (
+    <div className="overflow-hidden rounded-xl border border-line bg-[#12171a] shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.3)]">
+      <div className="flex items-center gap-1.5 border-b border-white/8 px-4 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="ml-2 font-mono text-[10.5px] text-white/40">main.tf</span>
+      </div>
+      <pre className="overflow-x-auto p-5 font-mono text-[11.5px] leading-[1.75] text-zinc-400">
+        <span className="text-zinc-500"># Graviton — measured 9% cheaper here</span>
+        {"\n"}
+        <span className="text-teal-300">module</span>{" "}
+        <span className="text-amber-200">&quot;ecs_service&quot;</span> {"{"}
+        {"\n  source           = "}
+        <span className="text-amber-200">&quot;terraform-aws-modules/ecs/aws&quot;</span>
+        {"\n  cpu_architecture = "}
+        <span className="text-amber-200">&quot;ARM64&quot;</span>
+        {"\n  desired_count    = "}
+        <span className="text-teal-300">3</span>
+        {"\n  min_capacity     = "}
+        <span className="text-teal-300">1</span>{" "}
+        <span className="text-zinc-500"># scale to zero</span>
+        {"\n}"}
+      </pre>
+    </div>
+  );
+}
+
+/* ─────────────────────────── page ─────────────────────────── */
 
 export default function Home() {
   return (
     <>
-      {/* ── hero ─────────────────────────────────────────────── */}
-      <section className="px-6 pt-20 pb-16 text-center sm:pt-28">
-        <h1 className="mx-auto max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.03] tracking-[-0.035em]">
+      {/* hero */}
+      <section className="px-6 pt-16 pb-20 text-center sm:pt-24">
+        <Pill>GCP pricing now included — three clouds, one query</Pill>
+
+        <h1 className="mx-auto mt-8 max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.02] tracking-[-0.035em]">
           Know what it costs{" "}
-          <span className="whitespace-nowrap rounded-lg bg-accent-wash px-2.5 py-0.5 text-accent">
+          <span className="whitespace-nowrap rounded-xl bg-accent-wash px-3 py-1 text-accent">
             before
           </span>{" "}
           you build it
@@ -41,70 +152,120 @@ export default function Home() {
         </p>
       </section>
 
-      {/* ── product preview ──────────────────────────────────── */}
+      {/* layered product shot */}
       <section className="px-6 pb-24">
-        <div className="mx-auto max-w-6xl">
-          <PreviewCards />
-        </div>
+        <ProductShot />
       </section>
 
-      {/* ── the gap ──────────────────────────────────────────── */}
-      <section className="border-y border-line bg-sunk px-6 py-20">
+      {/* provider bar — our version of a logo wall */}
+      <section className="border-y border-line bg-sunk px-6 py-16">
+        <ProviderBar />
+      </section>
+
+      {/* the gap */}
+      <section className="px-6 py-24">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="text-balance text-[clamp(1.75rem,4vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
-            One machine. Three prices.
+          <h2 className="text-balance text-[clamp(2rem,4.5vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em]">
+            One machine. Three prices.{" "}
+            <span className="text-ink-3">
+              Multiply that across every service you run, for a year.
+            </span>
           </h2>
-          <p className="mx-auto mt-4 max-w-xl text-ink-2">
-            Same specs, same region, same hour. Multiply that gap across every
-            service you run, for a year, and it stops being a rounding error.
+          <p className="mx-auto mt-6 max-w-xl text-[16.5px] leading-relaxed text-ink-2">
+            Cost tools tell you what you already spent. This one tells you what
+            you would spend — while the decision is still cheap to change.
           </p>
         </div>
       </section>
 
-      {/* ── how it works ─────────────────────────────────────── */}
-      <section className="px-6 py-20">
-        <div className="mx-auto grid max-w-5xl gap-10 sm:grid-cols-3">
-          {[
-            {
-              n: "01",
-              title: "Describe",
-              body: "One sentence, plain English. No account, no cloud credentials, nothing to connect.",
-            },
-            {
-              n: "02",
-              title: "Price",
-              body: "Three architectures — cheapest, balanced, most reliable — itemised against live provider rates.",
-            },
-            {
-              n: "03",
-              title: "Optimize",
-              body: "The techniques that lower the bill, each measured against the machine it beat.",
-            },
-          ].map((step) => (
-            <div key={step.n}>
-              <div className="tnum font-mono text-[28px] font-light text-line-strong">
-                {step.n}
-              </div>
-              <h3 className="mt-3 text-[17px] font-medium tracking-tight">{step.title}</h3>
-              <p className="mt-2 text-[14.5px] leading-relaxed text-ink-2">{step.body}</p>
-            </div>
-          ))}
+      {/* feature blocks */}
+      <section className="px-6 pb-24">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6">
+          <FeatureBlock
+            eyebrow="Architecture"
+            title="See the whole system — and what each part costs"
+            body="Diagram tools draw boxes with no prices. Cost tools show prices with no boxes. Every node here carries its own monthly figure, weighted so the expensive one looks expensive."
+            bullets={[
+              "Three shapes: cheapest, balanced, most reliable",
+              "Unpriceable components shown, never silently dropped",
+              "Optimized nodes marked on the diagram itself",
+            ]}
+            tint="bg-accent-wash/60"
+            visual={<DiagramVisual />}
+          />
+
+          <FeatureBlock
+            eyebrow="Trade-offs"
+            title="Know what the extra money actually buys"
+            body="Switching options does not just show a bigger number. It shows which line changed, what it changed to, and what stayed the same — plus what the cheaper option gives up."
+            bullets={[
+              "One upgrade reported as one change, not two events",
+              "Every cheap option states its cost in reliability",
+            ]}
+            tint="bg-sunk"
+            reverse
+            visual={<DiffVisual />}
+          />
+
+          <FeatureBlock
+            eyebrow="Infrastructure as code"
+            title="Advice you can actually run"
+            body="Every recommendation comes out as Terraform built from vetted modules, with the optimizations already applied and a comment explaining why each one is there."
+            bullets={[
+              "Built from terraform-aws-modules, not generated from scratch",
+              "Optimizations applied and annotated",
+            ]}
+            tint="bg-[#f2f4f6]"
+            visual={<TerraformVisual />}
+          />
         </div>
       </section>
 
-      {/* ── honest limits ────────────────────────────────────── */}
-      <section className="border-t border-line px-6 py-16">
+      {/* stats band */}
+      <section className="bg-[#0d1414] px-6 py-24">
+        <Stats />
+      </section>
+
+      {/* honest limits */}
+      <section className="px-6 py-20">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">
             What we don&apos;t do
           </h2>
-          <p className="mt-4 text-[14.5px] leading-relaxed text-ink-2">
+          <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
             Sizing is a documented heuristic, not measured from your workload.
             GCP covers compute only. Prices are public list rates — no
-            committed-use or negotiated discounts. These are estimates, not quotes.
+            committed-use or negotiated discounts. Spot rates move continuously,
+            so treat them as indicative. These are estimates, not quotes.
           </p>
         </div>
       </section>
+
+      {/* final CTA */}
+      <section className="border-t border-line px-6 py-24 text-center">
+        <h2 className="mx-auto max-w-3xl text-balance text-[clamp(2rem,5vw,3.25rem)] font-semibold leading-[1.05] tracking-[-0.03em]">
+          Price it before you build it
+        </h2>
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/estimate"
+            className="rounded-lg bg-accent px-7 py-3.5 text-[15px] font-medium text-white transition-opacity hover:opacity-90"
+          >
+            Price my app
+          </Link>
+          <Link
+            href="/prices"
+            className="rounded-lg border border-line-strong bg-surface px-7 py-3.5 text-[15px] font-medium text-ink transition-colors hover:bg-sunk"
+          >
+            Browse prices
+          </Link>
+        </div>
+        <p className="mt-8 font-mono text-[11.5px] text-ink-3">
+          Takes one sentence. Needs no cloud account.
+        </p>
+      </section>
+
+      <Footer />
     </>
   );
 }

@@ -28,12 +28,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Wordmark />
             </Link>
 
-            <nav className="hidden gap-6 text-sm text-ink-2 sm:flex">
+            <nav className="hidden gap-7 text-[14px] text-ink-2 md:flex">
               <Link href="/prices" className="transition-colors hover:text-ink">
-                Prices
+                Price index
+              </Link>
+              <Link href="/estimate" className="transition-colors hover:text-ink">
+                Architecture
               </Link>
               <Link href="/techniques" className="transition-colors hover:text-ink">
-                Techniques
+                Optimizations
+              </Link>
+              <Link href="/docs" className="transition-colors hover:text-ink">
+                Docs
               </Link>
             </nav>
 
@@ -45,8 +51,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   </button>
                 </SignInButton>
                 <SignUpButton>
-                  <button className="rounded-md bg-ink px-3.5 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-88">
-                    Try it
+                  <button className="rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-white transition-opacity hover:opacity-90">
+                    Get started
                   </button>
                 </SignUpButton>
               </Show>
@@ -58,12 +64,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 
           <main className="flex-1">{children}</main>
 
-          <footer className="border-t border-line px-6 py-8">
-            <p className="max-w-3xl font-mono text-[11px] leading-relaxed text-ink-3">
-              Prices fetched from provider APIs · sizing is heuristic ·
-              estimate, not a quote
-            </p>
-          </footer>
         </ClerkProvider>
       </body>
     </html>
