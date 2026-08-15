@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CloudArchitectures } from "@/components/landing/CloudArchitectures";
+import { ShowcaseDiagram } from "@/components/landing/ShowcaseDiagram";
 import { PriceTicker } from "@/components/PriceTicker";
 import {
   FeatureBlock,
@@ -155,9 +156,25 @@ export default function Home() {
               The same system, drawn on all three clouds
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
-              Each provider&apos;s own services, each node carrying its monthly
-              cost. Switch clouds and the shape stays recognisable while the
-              names and the total change. Hover any box for detail.
+              WhichCloud reads systems like this one — every service, every
+              tier, every dependency — and prices each part against live
+              provider rates.
+            </p>
+          </div>
+
+          <ShowcaseDiagram />
+
+          <div className="mt-14 mb-8 max-w-2xl">
+            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent">
+              Priced, across three clouds
+            </div>
+            <h3 className="mt-3 text-balance text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-tight tracking-[-0.02em]">
+              The same workload, costed on each provider
+            </h3>
+            <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
+              Now with real figures. Pick a cloud to see its own services and
+              what each one costs — every number fetched from that provider&apos;s
+              published rates.
             </p>
           </div>
           <CloudArchitectures />
