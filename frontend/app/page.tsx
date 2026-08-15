@@ -4,6 +4,7 @@ import { ShowcaseDiagram } from "@/components/landing/ShowcaseDiagram";
 import { PriceTicker } from "@/components/PriceTicker";
 import { Reveal } from "@/components/landing/Reveal";
 import { CountUp } from "@/components/landing/CountUp";
+import { AskDemoSection } from "@/components/landing/AskDemoSection";
 import {
   FeatureBlock,
   Footer,
@@ -199,7 +200,10 @@ export default function Home() {
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-balance text-[clamp(2rem,4.5vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em]">
             One machine. Three prices.{" "}
-            <span className="text-ink-3">
+            {/* The second half was set in the tertiary ink, which is scaled
+                for small print. At heading size it read as faded rather than
+                secondary, and it carries the actual point of the sentence. */}
+            <span className="text-ink-2">
               Multiply that across every service you run, for a year.
             </span>
           </h2>
@@ -229,6 +233,44 @@ export default function Home() {
 
           <ShowcaseDiagram />
 
+        </div>
+      </section>
+
+      {/* plain-English intake, playing itself */}
+      <section className="border-t border-line bg-canvas px-6 py-24">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
+          <div>
+            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+              Plain English
+            </div>
+            <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
+              Describe it in a sentence, get it priced
+            </h2>
+            <p className="mt-4 max-w-md text-[17px] leading-relaxed text-ink-2">
+              A reader turns your description into a requirement: workload,
+              traffic shape, scale, region. The engine prices that requirement
+              against every cloud and shows its working.
+            </p>
+            <ul className="mt-5 space-y-2.5">
+              {[
+                "The model reads the request. It never sets a price.",
+                "Every figure comes from the provider's published rates",
+                "Prefer a form? It is the default, and needs no model at all",
+              ].map((b) => (
+                <li key={b} className="flex gap-2.5 text-[15.5px] text-ink-2">
+                  <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/estimate"
+              className="mt-6 inline-flex items-center gap-2 text-[15px] font-medium text-accent hover:underline"
+            >
+              Try it on your own app
+            </Link>
+          </div>
+          <AskDemoSection />
         </div>
       </section>
 
