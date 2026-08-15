@@ -35,6 +35,10 @@
   /* Semantic, and never used decoratively. */
   --spend: #b4442a;
   --caution: #96650f;
+  /* Money kept, as opposed to --spend for money going out. Darker than the
+     green these figures are usually set in: the bright mint reads at about
+     1.9:1 on white, which fails even the relaxed bar for large text. */
+  --save: #0b7a45;
   --caution-wash: #fdf6e6;
 
   /* Cloud service categories — the colour language of provider architecture
@@ -60,6 +64,7 @@
   --color-accent-line: var(--accent-line);
   --color-spend: var(--spend);
   --color-caution: var(--caution);
+  --color-save: var(--save);
   --color-caution-wash: var(--caution-wash);
 
   --font-sans: var(--font-inter);
