@@ -38,7 +38,7 @@ from pydantic import BaseModel, Field
 from .pricing.models import REGIONS
 from .requirements import Requirement
 
-Provider = Literal["gemini", "anthropic"]
+Provider = Literal["gemini", "anthropic", "openai"]
 
 # Free tier, fast, and comfortably capable of structured extraction.
 GEMINI_MODEL = "gemini-2.5-flash"
@@ -46,6 +46,7 @@ GEMINI_MODEL = "gemini-2.5-flash"
 # Extraction is a short, scoped task — the model is reading a paragraph and
 # filling a struct, not designing anything.
 ANTHROPIC_MODEL = "claude-opus-5"
+OPENAI_MODEL = "gpt-4.1-mini"
 ANTHROPIC_EFFORT = "low"
 
 SYSTEM = f"""\
@@ -179,6 +180,8 @@ def available_providers() -> list[Provider]:
         found.append("gemini")
     if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
         found.append("anthropic")
+    if os.getenv("OPENAI_API_KEY"):
+        found.append("openai")
     return found
 
 
@@ -187,7 +190,8 @@ def _detect_provider() -> Provider:
     if not found:
         raise IntakeError(
             "No language-model credentials found. Set GEMINI_API_KEY (free tier: "
-            "aistudio.google.com/apikey) or ANTHROPIC_API_KEY (pay-as-you-go). "
+            "aistudio.google.com/apikey), ANTHROPIC_API_KEY or OPENAI_API_KEY "
+            "(both pay-as-you-go). "
             "Only plain-English intake needs this — the rest of WhichCloud, "
             "including all pricing and recommendations, runs without it."
         )
@@ -267,7 +271,42 @@ def _extract_anthropic(description: str, client=None) -> RequirementDraft:
     return draft
 
 
-_EXTRACTORS = {"gemini": _extract_gemini, "anthropic": _extract_anthropic}
+def _extract_openai(description: str, client=None) -> RequirementDraft:
+    """GPT via structured output.
+
+    Same contract as the other two: the model fills in RequirementDraft and
+    nothing else. It never sees a price and never returns one -- every figure
+    on the site comes from the provider catalogs, and the reader's only job is
+    turning a sentence into fields the engine can price.
+    """
+    try:
+        import openai
+    except ImportError as exc:  # pragma: no cover - dependency is declared
+        raise IntakeError("openai is not installed: pip install openai") from exc
+
+    client = client or openai.OpenAI()
+
+    try:
+        response = client.responses.parse(
+            model=OPENAI_MODEL,
+            instructions=SYSTEM,
+            input=description.strip(),
+            text_format=RequirementDraft,
+        )
+    except Exception as exc:
+        raise IntakeError(f"Could not reach OpenAI: {exc}") from exc
+
+    draft = getattr(response, "output_parsed", None)
+    if draft is None:
+        raise IntakeError("OpenAI returned no structured output for that description.")
+    return draft
+
+
+_EXTRACTORS = {
+    "gemini": _extract_gemini,
+    "anthropic": _extract_anthropic,
+    "openai": _extract_openai,
+}
 
 
 # ── public entry point ──────────────────────────────────────────────────

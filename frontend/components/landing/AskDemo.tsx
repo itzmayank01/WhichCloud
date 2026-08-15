@@ -12,10 +12,11 @@ import { useEffect, useRef, useState } from "react";
  *
  * Two rules govern what it is allowed to show.
  *
- * The readers are the two the backend actually has: `intake.py` defines
- * Provider as gemini | anthropic and nothing else. A chip for a tool
- * WhichCloud does not integrate with would be claiming an integration on the
- * landing page, which is the thing the rest of this site is built to avoid.
+ * The readers are exactly the ones the backend has an extractor for --
+ * `intake.py` defines Provider as gemini | anthropic | openai, and a test
+ * pins that set against this list. A chip for a tool with nothing behind it
+ * would be an integration claimed and not built, on a page whose whole
+ * argument is that its claims are checkable.
  *
  * And every figure is passed in from the catalog, never written here. A demo
  * of a pricing tool that invents prices to look convincing gives away the
@@ -31,6 +32,7 @@ export type Scenario = {
 const READERS = [
   { id: "gemini", label: "Gemini", icon: "logos:google-gemini" },
   { id: "anthropic", label: "Claude", icon: "logos:claude-icon" },
+  { id: "openai", label: "ChatGPT", icon: "logos:openai-icon" },
 ];
 
 /* A mark per prompt, so the three read as different questions at a glance.

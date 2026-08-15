@@ -306,7 +306,7 @@ class RecommendIn(BaseModel):
 
 class DescribeIn(BaseModel):
     description: str
-    reader: Literal["gemini", "anthropic"] | None = None
+    reader: Literal["gemini", "anthropic", "openai"] | None = None
 
 
 # ── routes ──────────────────────────────────────────────────────────────
