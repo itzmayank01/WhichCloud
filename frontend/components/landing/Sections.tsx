@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { api, freshness, money, type CatalogRow, type Recommendation } from "@/lib/api";
 import { ShowcaseGrid } from "@/components/landing/ShowcaseGrid";
+import { ProviderLogoCards } from "@/components/landing/ProviderLogoCards";
 
 /* ─────────────────────────── shared ─────────────────────────── */
 
@@ -364,14 +365,8 @@ export function ProviderBar() {
       <p className="font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3 font-medium">
         Pricing sourced directly from
       </p>
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-x-14 gap-y-5">
-        {["Amazon Web Services", "Microsoft Azure", "Google Cloud"].map((name) => (
-          <span key={name} className="text-[19px] font-medium tracking-tight text-ink-2">
-            {name}
-          </span>
-        ))}
-      </div>
-      <p className="mt-6 text-[15.5px] text-ink-3">
+      <ProviderLogoCards />
+      <p className="mt-7 text-[15.5px] text-ink-3">
         Not a reseller, not an estimate engine — their own published rates,
         validated against a second source.
       </p>
