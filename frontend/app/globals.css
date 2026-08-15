@@ -1,26 +1,70 @@
 @import "tailwindcss";
 
+/**
+ * WhichCloud — light only, deliberately.
+ *
+ * A cost tool gets read on projectors, printed into reports, and screenshotted
+ * into slides. Dark mode loses all three. No prefers-color-scheme block: the
+ * page looks the same on every machine, which is what makes a demo safe.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  /* Surfaces — cool neutrals, biased a half-step toward the teal accent so
+     they read as chosen rather than inherited. */
+  --canvas: #fafbfb;
+  --surface: #ffffff;
+  --surface-sunk: #f4f6f6;
+
+  /* Hairlines. 1px, everywhere, instead of shadows. */
+  --border: #e7ebea;
+  --border-strong: #d3dad9;
+
+  --ink: #0d1414;
+  --ink-2: #5c6a69;
+  --ink-3: #8e9c9a;
+
+  /* Brand and "cheaper" are the same colour on purpose: in a cost tool the
+     good outcome IS the brand, so teal never needs a legend. */
+  --accent: #0f766e;
+  --accent-wash: #ecf7f5;
+  --accent-line: #99cec7;
+
+  /* Reserved. Clay = costs more. Amber = assumed, derived, or unvalidated —
+     the visual expression of the honesty rules. */
+  --spend: #a8542b;
+  --caution: #8a6111;
+  --caution-wash: #fdf6e7;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunk: var(--surface-sunk);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-line: var(--accent-line);
+  --color-spend: var(--spend);
+  --color-caution: var(--caution);
+  --color-caution-wash: var(--caution-wash);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Every figure lines up in its column and never reflows when it changes. */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }

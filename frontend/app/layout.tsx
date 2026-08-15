@@ -21,31 +21,31 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <body className="flex min-h-full flex-col bg-canvas text-ink">
         <ClerkProvider>
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-8 border-b border-zinc-200 bg-zinc-50/80 px-6 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
+          <header className="sticky top-0 z-30 flex h-16 items-center gap-8 border-b border-line bg-canvas/85 px-6 backdrop-blur">
             <Link href="/" aria-label="WhichCloud home">
               <Wordmark />
             </Link>
 
-            <nav className="hidden gap-6 text-sm text-zinc-600 sm:flex dark:text-zinc-400">
-              <Link href="/prices" className="hover:text-zinc-900 dark:hover:text-zinc-100">
+            <nav className="hidden gap-6 text-sm text-ink-2 sm:flex">
+              <Link href="/prices" className="transition-colors hover:text-ink">
                 Prices
               </Link>
-              <Link href="/techniques" className="hover:text-zinc-900 dark:hover:text-zinc-100">
+              <Link href="/techniques" className="transition-colors hover:text-ink">
                 Techniques
               </Link>
             </nav>
 
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex items-center gap-4">
               <Show when="signed-out">
                 <SignInButton>
-                  <button className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
+                  <button className="text-sm text-ink-2 transition-colors hover:text-ink">
                     Sign in
                   </button>
                 </SignInButton>
                 <SignUpButton>
-                  <button className="rounded-md bg-zinc-900 px-3.5 py-1.5 text-sm font-medium text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
+                  <button className="rounded-md bg-ink px-3.5 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-88">
                     Try it
                   </button>
                 </SignUpButton>
@@ -57,6 +57,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </header>
 
           <main className="flex-1">{children}</main>
+
+          <footer className="border-t border-line px-6 py-8">
+            <p className="max-w-3xl font-mono text-[11px] leading-relaxed text-ink-3">
+              Prices fetched from provider APIs · sizing is heuristic ·
+              estimate, not a quote
+            </p>
+          </footer>
         </ClerkProvider>
       </body>
     </html>

@@ -19,7 +19,7 @@ export function Mark({ className = "h-6 w-6" }: { className?: string }) {
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      <rect x="3" y="17.5" width="18" height="3.5" rx="1.2" className="fill-teal-700 dark:fill-teal-400" />
+      <rect x="3" y="17.5" width="18" height="3.5" rx="1.2" fill="var(--accent)" />
     </svg>
   );
 }
@@ -27,9 +27,9 @@ export function Mark({ className = "h-6 w-6" }: { className?: string }) {
 export function Wordmark() {
   return (
     <span className="flex items-center gap-2.5">
-      <Mark className="h-6 w-6 text-zinc-900 dark:text-zinc-100" />
-      <span className="text-[17px] font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
-        Which<span className="text-teal-700 dark:text-teal-400">Cloud</span>
+      <Mark className="h-6 w-6 text-ink" />
+      <span className="text-[17px] font-medium tracking-tight text-ink">
+        Which<span className="text-accent">Cloud</span>
       </span>
     </span>
   );
