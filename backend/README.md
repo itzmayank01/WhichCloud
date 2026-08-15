@@ -58,7 +58,9 @@ Balanced   3× 2vCPU/8GB arm64
 
 ```
 whichcloud/
-├── intake.py               # plain English → Requirement (Claude, structured output)
+├── api.py                  # HTTP layer — six routes wrapping the engine
+├── topology.py             # priced architecture → diagram nodes and edges
+├── intake.py               # plain English → Requirement (Gemini or Claude)
 ├── requirements.py         # Requirement — the contract with the front end
 ├── knowledge.py            # loads knowledge-base/*.yaml, matches techniques
 ├── engine.py               # requirements → sized shapes → techniques → priced
@@ -269,11 +271,17 @@ things it deliberately exposes that a typical API would hide:
   beat rather than taken on faith.
 - **`not_applied` with reasons**, so the interface can explain why spot was
   withheld rather than silently omitting it.
+- **`topology`** — nodes and edges with a cost on every node, so the diagram
+  and the bill can never disagree.
+- **`diffs`** between consecutive options, so switching from Balanced to Most
+  Reliable answers *what am I paying more for* rather than just showing a
+  bigger number.
+- **`tradeoffs`** per shape — what each option gives up.
 
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 112 passed
+.venv/bin/python -m pytest tests/ -q     # 126 passed
 ```
 
 No test calls any model API — judgement is measured by `eval_intake.py`; the

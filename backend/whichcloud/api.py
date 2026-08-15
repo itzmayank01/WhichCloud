@@ -23,7 +23,15 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .engine import SIZING_BASIS, Option, recommend, recommend_across_clouds, why_not
+from . import topology as topo
+from .engine import (
+    SIZING_BASIS,
+    Option,
+    diff_options,
+    recommend,
+    recommend_across_clouds,
+    why_not,
+)
 from .knowledge import Technique, load_techniques
 from .pricing import store
 from .pricing.models import REGIONS
@@ -76,6 +84,44 @@ class TechniqueOut(BaseModel):
     priced: bool
 
 
+class NodeOut(BaseModel):
+    id: str
+    label: str
+    kind: str
+    monthly_usd: float
+    share: float  # fraction of the bill — drives visual weight
+    sku: str
+    detail: str
+    priced: bool
+    optimized_by: list[str]
+
+
+class EdgeOut(BaseModel):
+    source: str
+    target: str
+    label: str
+
+
+class TopologyOut(BaseModel):
+    nodes: list[NodeOut]
+    edges: list[EdgeOut]
+
+
+class ChangeOut(BaseModel):
+    label: str
+    kind: str  # added | removed | changed | unchanged
+    delta_usd: float
+    before_sku: str | None
+    after_sku: str | None
+
+
+class DiffOut(BaseModel):
+    from_label: str
+    to_label: str
+    delta_monthly_usd: float
+    changes: list[ChangeOut]
+
+
 class OptionOut(BaseModel):
     label: str
     rationale: str
@@ -91,12 +137,15 @@ class OptionOut(BaseModel):
     saving_pct: float
     applied: list[TechniqueOut]
     advisory: list[TechniqueOut]
+    tradeoffs: list[str]
+    topology: TopologyOut
 
 
 class RecommendationOut(BaseModel):
     goal: str
     region: str
     options: list[OptionOut]
+    diffs: list[DiffOut]
     not_applied: list[dict]
     sizing_basis: str
     assumed: list[str] = Field(default_factory=list)
@@ -125,6 +174,47 @@ def _technique_out(
         versus_sku=versus,
         reasons=list(reasons),
         priced=technique.is_priceable,
+    )
+
+
+def _topology_out(option: Option) -> TopologyOut:
+    graph = topo.build(option.spec, option.estimate, option.applied)
+    total = graph.total_monthly
+    return TopologyOut(
+        nodes=[
+            NodeOut(
+                id=n.id,
+                label=n.label,
+                kind=n.kind,
+                monthly_usd=float(n.monthly_usd),
+                share=n.share_of(total),
+                sku=n.sku,
+                detail=n.detail,
+                priced=n.priced,
+                optimized_by=list(n.optimized_by),
+            )
+            for n in graph.nodes
+        ],
+        edges=[EdgeOut(source=e.source, target=e.target, label=e.label) for e in graph.edges],
+    )
+
+
+def _diff_out(before: Option, after: Option) -> DiffOut:
+    d = diff_options(before, after)
+    return DiffOut(
+        from_label=d.from_label,
+        to_label=d.to_label,
+        delta_monthly_usd=float(d.delta_monthly),
+        changes=[
+            ChangeOut(
+                label=c.label,
+                kind=c.kind,
+                delta_usd=float(c.delta),
+                before_sku=c.before.sku if c.before else None,
+                after_sku=c.after.sku if c.after else None,
+            )
+            for c in d.changes
+        ],
     )
 
 
@@ -168,6 +258,8 @@ def _option_out(option: Option, provider: str) -> OptionOut:
             for a in option.applied
         ],
         advisory=[_technique_out(m.technique, reasons=m.reasons) for m in option.advisory],
+        tradeoffs=list(option.tradeoffs),
+        topology=_topology_out(option),
     )
 
 
@@ -346,6 +438,7 @@ def recommend_route(body: RecommendIn) -> RecommendationOut:
         goal=requirement.goal,
         region=requirement.region,
         options=[_option_out(o, provider) for o in options],
+        diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
         not_applied=[
             {"id": t.id, "name": t.name, "reason": why}
             for t, why in why_not(requirement, provider)
@@ -401,6 +494,7 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
         goal=requirement.goal,
         region=requirement.region,
         options=[_option_out(o, provider) for o in options],
+        diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
         not_applied=[
             {"id": t.id, "name": t.name, "reason": why}
             for t, why in why_not(requirement, provider)

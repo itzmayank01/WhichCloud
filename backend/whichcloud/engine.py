@@ -19,10 +19,10 @@ those are neither independent nor additive.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
-from .estimator import ArchitectureSpec, Estimate, estimate
+from .estimator import ArchitectureSpec, Estimate, LineItem, estimate
 from .knowledge import Match, Technique, load_techniques, match_all, rejected
 from .requirements import Requirement
 
@@ -84,6 +84,10 @@ class Option:
     applied: tuple[AppliedTechnique, ...]  # folded in, with measured savings
     advisory: tuple[Match, ...]  # techniques we cannot price but should mention
     baseline_monthly: Decimal  # same shape with no techniques applied
+
+    # What this shape gives up. A cheap option that does not state its cost in
+    # reliability is how people get burned.
+    tradeoffs: tuple[str, ...] = ()
 
     @property
     def monthly(self) -> Decimal:
@@ -156,7 +160,9 @@ def apply_effects(spec: ArchitectureSpec, matched: list[Match]) -> ArchitectureS
     return replace(spec, **updates) if updates else spec
 
 
-def _shape_variants(requirement: Requirement) -> list[tuple[str, str, dict]]:
+def _shape_variants(
+    requirement: Requirement,
+) -> list[tuple[str, str, dict, tuple[str, ...]]]:
     """The three options, as deltas from the base shape.
 
     Three, never one: a single "best" is always wrong for someone, and the
@@ -168,18 +174,31 @@ def _shape_variants(requirement: Requirement) -> list[tuple[str, str, dict]]:
             "Smallest footprint that still runs the workload. Accepts a single "
             "instance and no standby database.",
             {"compute_count": 1, "database_multi_az": False, "load_balancer": False},
+            (
+                "Single instance — a restart or crash is downtime",
+                "No load balancer, so no room to scale out under load",
+                "Single-zone database — a zone failure takes you offline",
+            ),
         ),
         (
             "Balanced",
             "Handles the expected peak without cold starts, and fits a normal "
             "budget.",
             {},
+            (
+                "Database has no standby — a zone failure means recovery, not failover",
+                "Sized for the expected peak, not an unexpected one",
+            ),
         ),
         (
             "Most reliable",
             "Survives an availability-zone failure: extra capacity and a "
             "standby database.",
             {"database_multi_az": True, "load_balancer": True},
+            (
+                "The standby database roughly doubles the largest line on the bill",
+                "Still one region — a regional outage is not covered",
+            ),
         ),
     ]
 
@@ -214,7 +233,7 @@ def recommend(
     catalog = techniques if techniques is not None else load_techniques()
     options: list[Option] = []
 
-    for label, rationale, delta in _shape_variants(requirement):
+    for label, rationale, delta, tradeoffs in _shape_variants(requirement):
         spec = base_spec(requirement, label)
         if delta:
             spec = replace(spec, **delta)
@@ -272,11 +291,95 @@ def recommend(
                 applied=tuple(applied),
                 advisory=tuple(advisory),
                 baseline_monthly=baseline.total_monthly,
+                tradeoffs=tradeoffs,
                 spec_budget=requirement.budget_monthly_usd,
             )
         )
 
     return options
+
+
+@dataclass(frozen=True, slots=True)
+class LineChange:
+    """One line item's fate between two options."""
+
+    label: str
+    before: LineItem | None
+    after: LineItem | None
+
+    @property
+    def delta(self) -> Decimal:
+        a = self.after.monthly_usd if self.after else Decimal(0)
+        b = self.before.monthly_usd if self.before else Decimal(0)
+        return a - b
+
+    @property
+    def kind(self) -> str:
+        if self.before is None:
+            return "added"
+        if self.after is None:
+            return "removed"
+        return "changed" if self.delta else "unchanged"
+
+
+@dataclass(slots=True)
+class OptionDiff:
+    """What actually differs between two options.
+
+    A price comparison tells you one option costs more. This tells you what
+    the extra money buys — which is the question a user is really asking when
+    they click between them.
+    """
+
+    from_label: str
+    to_label: str
+    changes: list[LineChange] = field(default_factory=list)
+
+    @property
+    def added(self) -> list[LineChange]:
+        return [c for c in self.changes if c.kind == "added"]
+
+    @property
+    def removed(self) -> list[LineChange]:
+        return [c for c in self.changes if c.kind == "removed"]
+
+    @property
+    def changed(self) -> list[LineChange]:
+        return [c for c in self.changes if c.kind == "changed"]
+
+    @property
+    def unchanged(self) -> list[LineChange]:
+        return [c for c in self.changes if c.kind == "unchanged"]
+
+    @property
+    def delta_monthly(self) -> Decimal:
+        return sum((c.delta for c in self.changes), Decimal(0))
+
+
+def _line_key(label: str) -> str:
+    """Match line items across options by what they ARE, not what they cost.
+
+    "Database" and "Database (Multi-AZ)" are the same line at different
+    service levels; "Compute × 1" and "Compute × 3" are the same tier at
+    different sizes. Matching on the raw label would report each as a removal
+    plus an addition, which hides the very thing the user is trying to see.
+    """
+    return label.split(" ×")[0].split(" (")[0].strip()
+
+
+def diff_options(before: Option, after: Option) -> OptionDiff:
+    """Compare two priced options line by line."""
+    result = OptionDiff(from_label=before.label, to_label=after.label)
+
+    lhs = {_line_key(i.label): i for i in before.estimate.items}
+    rhs = {_line_key(i.label): i for i in after.estimate.items}
+
+    for key in list(lhs) + [k for k in rhs if k not in lhs]:
+        result.changes.append(
+            LineChange(label=key, before=lhs.get(key), after=rhs.get(key))
+        )
+
+    return result
 
 
 def recommend_across_clouds(
