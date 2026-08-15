@@ -245,10 +245,35 @@ extraction problem. Fixed, with a test asserting any technique suiting both
 products. These descriptions are architecture summaries, not user data — but
 do not paste anything confidential into a free-tier request.
 
+## HTTP API
+
+```bash
+.venv/bin/uvicorn whichcloud.api:app --reload    # http://localhost:8000/docs
+```
+
+| Route | Purpose |
+|---|---|
+| `GET /health` | Catalog size, providers, and when it was last refreshed |
+| `GET /catalog` | Browse prices — filter by vCPU, memory, arch, provider |
+| `GET /techniques` | The knowledge base, with `priced` marking advisory entries |
+| `POST /recommend` | Three priced architectures for a structured requirement |
+| `POST /compare` | The same requirement priced on every cloud |
+| `POST /describe` | Plain English straight through (needs a model key) |
+
+It is a translation layer only — every decision lives in the engine. Three
+things it deliberately exposes that a typical API would hide:
+
+- **`fetched_at` on every price**, so the interface shows how fresh a number
+  is instead of implying it is live.
+- **`versus_sku` on every saving**, so a figure can be checked against what it
+  beat rather than taken on faith.
+- **`not_applied` with reasons**, so the interface can explain why spot was
+  withheld rather than silently omitting it.
+
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q     # 94 passed
+.venv/bin/python -m pytest tests/ -q     # 112 passed
 ```
 
 No test calls any model API — judgement is measured by `eval_intake.py`; the
