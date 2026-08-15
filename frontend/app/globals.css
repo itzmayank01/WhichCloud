@@ -149,3 +149,66 @@ body {
     animation: none;
   }
 }
+
+/* ── diff emphasis ──
+   The changed row gets the warm wash a diff view uses, which fades out once
+   it has been noticed. The rule it is drawing attention to is the same one
+   the figure beside it is counting to. */
+
+@keyframes diff-flash {
+  0%,
+  35% {
+    background-color: rgba(180, 68, 42, 0.09);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+[data-revealed="true"] .diff-flash {
+  animation: diff-flash 2s ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 105ms + 120ms);
+}
+
+/* A row that both reveals and flashes needs one declaration naming both.
+   The `animation` shorthand replaces rather than composes, so the later rule
+   was dropping the reveal and leaving the row it highlights at opacity 0 --
+   the changed line, which is the one the panel exists to show. */
+[data-revealed="true"] .reveal-line.diff-flash {
+  animation:
+    reveal-line 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) forwards,
+    diff-flash 2s ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 105ms),
+    calc(var(--i, 0) * 105ms + 120ms);
+}
+
+/* The swapped SKU slides the width of its arrow as it lands. */
+@keyframes sku-swap {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-revealed] .sku-new {
+  opacity: 0;
+}
+
+[data-revealed="true"] .sku-new {
+  animation: sku-swap 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 105ms + 260ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-revealed] .diff-flash,
+  [data-revealed] .reveal-line.diff-flash,
+  [data-revealed] .sku-new {
+    opacity: 1;
+    animation: none;
+    background-color: transparent;
+  }
+}

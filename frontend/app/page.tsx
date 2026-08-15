@@ -3,6 +3,7 @@ import { CloudArchitectures } from "@/components/landing/CloudArchitectures";
 import { ShowcaseDiagram } from "@/components/landing/ShowcaseDiagram";
 import { PriceTicker } from "@/components/PriceTicker";
 import { Reveal } from "@/components/landing/Reveal";
+import { CountUp } from "@/components/landing/CountUp";
 import {
   FeatureBlock,
   Footer,
@@ -26,19 +27,25 @@ function DiffVisual() {
       </div>
       <div className="mt-4 space-y-3 font-mono text-[15px]">
         <div
-          className="reveal-line flex items-baseline justify-between gap-3"
+          className="reveal-line diff-flash -mx-2 flex items-baseline justify-between gap-3 rounded px-2"
           style={{ "--i": 1 } as React.CSSProperties}
         >
           <span className="text-ink-2">
             <span className="text-spend">~</span> Database
           </span>
-          <span className="tnum text-spend">+$121.91</span>
+          <CountUp value={121.91} prefix="+" delayMs={220} className="text-spend" />
         </div>
         <div
           className="reveal-line pl-3 text-[13.5px] text-ink-3 font-medium"
           style={{ "--i": 2 } as React.CSSProperties}
         >
-          db.t4g.large → db.t4g.large:multi-az
+          db.t4g.large →{" "}
+          <span
+            className="sku-new inline-block text-ink-2"
+            style={{ "--i": 2 } as React.CSSProperties}
+          >
+            db.t4g.large:multi-az
+          </span>
         </div>
         <div
           className="reveal-line flex items-baseline justify-between gap-3 border-t border-line pt-3"
