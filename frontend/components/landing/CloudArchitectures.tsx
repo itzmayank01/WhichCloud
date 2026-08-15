@@ -25,7 +25,7 @@ export async function CloudArchitectures() {
     return (
       <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-10 text-center">
         <p className="font-mono text-[14px] leading-relaxed text-ink-3 font-medium">
-          Architectures render from live pricing — start the API to see all three clouds.
+          Architectures render from live pricing. Start the API to see all three clouds.
         </p>
       </div>
     );

@@ -38,7 +38,7 @@ function Card({
 function Unavailable() {
   return (
     <p className="font-mono text-[14px] leading-relaxed text-ink-3 font-medium">
-      Catalog offline — start Postgres and the API to see live figures here.
+      Catalog offline. Start Postgres and the API to see live figures here.
     </p>
   );
 }
@@ -169,7 +169,7 @@ async function Optimizations() {
             <div className="min-w-0">
               <div className="truncate text-[15.5px] leading-snug text-ink-2">{t.name}</div>
               <div className="mt-0.5 font-mono text-[13.5px] text-caution font-medium">
-                not priced — depends on your workload
+                not priced, depends on your workload
               </div>
             </div>
           </div>

@@ -220,7 +220,7 @@ export function EstimateWorkbench() {
             <Field label="Can the work be restarted?">
               <Segmented
                 options={[
-                  ["no", "No — serves live users"],
+                  ["no", "No, serves live users"],
                   ["yes", "Yes"],
                 ]}
                 value={form.interruptible ? "yes" : "no"}
@@ -394,7 +394,7 @@ export function EstimateWorkbench() {
                     <div key={t.id} className="border-t border-line pt-3">
                       <div className="text-[14.5px] font-medium text-ink-2">{t.name}</div>
                       <div className="mt-0.5 font-mono text-[13px] font-medium text-caution">
-                        not priced — depends on your workload
+                        not priced, depends on your workload
                       </div>
                     </div>
                   ))}
@@ -426,7 +426,7 @@ export function EstimateWorkbench() {
               <div className="mt-3 space-y-2">
                 {result.not_applied.map((t) => (
                   <p key={t.id} className="text-[14px] font-medium text-ink-2">
-                    <span className="font-semibold text-ink">{t.name}</span> — {t.reason}
+                    <span className="font-semibold text-ink">{t.name}</span>: {t.reason}
                   </p>
                 ))}
               </div>

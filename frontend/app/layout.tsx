@@ -18,7 +18,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WhichCloud — know what it costs before you build it",
+  title: "WhichCloud: know what it costs before you build it",
   description:
     "Describe your app in a sentence. Get three priced architectures across AWS, " +
     "Azure and Google, with the optimizations that lower the bill.",

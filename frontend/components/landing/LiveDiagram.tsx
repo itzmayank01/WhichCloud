@@ -20,7 +20,7 @@ export async function LiveDiagram() {
     return (
       <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-8 text-center">
         <p className="font-mono text-[14px] leading-relaxed text-ink-3 font-medium">
-          Diagram renders from a live recommendation — start the API to see it.
+          Diagram renders from a live recommendation. Start the API to see it.
         </p>
       </div>
     );

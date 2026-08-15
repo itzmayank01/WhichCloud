@@ -226,7 +226,7 @@ export function MultiCloudArchitecture({
                   </>
                 ) : (
                   <div className="mt-3.5 font-mono text-[12.5px] font-medium text-caution">
-                    partial — {o.missing.length} component
+                    partial, {o.missing.length} component
                     {o.missing.length === 1 ? "" : "s"} unpriced
                   </div>
                 )}
@@ -267,7 +267,7 @@ export function MultiCloudArchitecture({
               {" "}
               <span className="text-caution">
                 {incomplete.map((p) => CHROME[p]?.label ?? p).join(" and ")} cannot be
-                compared — {byProvider[incomplete[0]].missing.join(", ")} have no
+                compared. {byProvider[incomplete[0]].missing.join(", ")} have no
                 published price, so the total shown is below the real bill.
               </span>
             </>

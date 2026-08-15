@@ -17,7 +17,7 @@ import { serviceName } from "@/lib/services";
  */
 
 const NOTE: Record<string, string> = {
-  compute: "Application servers. Usually the easiest line to shrink — smaller instances, ARM, or fewer of them off-peak.",
+  compute: "Application servers. Usually the easiest line to shrink: smaller instances, ARM, or fewer of them off-peak.",
   database: "Managed database. Often the largest line on the bill, and the one people forget to right-size.",
   storage: "Object storage. Cheap per gigabyte; the cost usually hides in egress rather than here.",
   network: "Data leaving the provider's network. The invisible half of most cloud bills.",
@@ -75,7 +75,7 @@ export function HoverBoard({
               Monthly
             </div>
             <div className="tnum mt-1 font-mono text-[24px] leading-none">
-              {node.priced ? money(node.monthly_usd) : "—"}
+              {node.priced ? money(node.monthly_usd) : "n/a"}
             </div>
             {node.priced && total > 0 && (
               <div className="tnum mt-1 font-mono text-[13px] text-ink-2 font-medium">
@@ -99,7 +99,7 @@ export function HoverBoard({
             )}
             {!node.priced && (
               <p className="mt-2 text-[13.5px] text-caution font-medium">
-                No published price for this on {provider.toUpperCase()} — shown so
+                No published price for this on {provider.toUpperCase()}. Shown so
                 the gap is visible rather than hidden.
               </p>
             )}

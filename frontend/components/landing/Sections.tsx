@@ -382,7 +382,7 @@ export function ProviderBar() {
           logo says whose price it is, the endpoint says which door it came
           through. */}
       <p className="mt-7 text-[15.5px] leading-relaxed text-ink-3">
-        Not a reseller, not an estimate engine — read from the{" "}
+        Not a reseller, not an estimate engine. Read from the{" "}
         <span className="font-medium text-ink-2">Price List API</span>,{" "}
         <span className="font-medium text-ink-2">Retail Prices API</span> and{" "}
         <span className="font-medium text-ink-2">Cloud Billing Catalog</span>,
@@ -455,7 +455,7 @@ export async function Stats() {
 
   const items = [
     { figure: "807/807", label: "exact match vs AWS's own price list" },
-    { figure: prices ? prices.toLocaleString() : "—", label: "prices in the catalog" },
+    { figure: prices ? prices.toLocaleString() : "n/a", label: "prices in the catalog" },
     { figure: "3", label: "providers compared in one query" },
     { figure: "0", label: "hardcoded prices in the source" },
   ];

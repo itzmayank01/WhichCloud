@@ -1,7 +1,7 @@
 import { EstimateWorkbench } from "@/components/estimate/EstimateWorkbench";
 
 export const metadata = {
-  title: "Price your app — WhichCloud",
+  title: "Price your app | WhichCloud",
   description:
     "Describe your app and get three priced architectures across AWS, Azure and Google Cloud.",
 };
@@ -14,7 +14,7 @@ export default function EstimatePage() {
       </h1>
       <p className="mt-4 max-w-2xl text-[17px] leading-relaxed text-ink-2">
         Describe it in a sentence, or set the details yourself. You get three
-        architectures — cheapest, balanced, most reliable — priced against live
+        architectures (cheapest, balanced, most reliable), priced against live
         provider rates.
       </p>
 

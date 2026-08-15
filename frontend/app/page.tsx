@@ -40,7 +40,7 @@ function DiffVisual() {
           What you give up on Cheapest
         </div>
         <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">
-          Single instance — a restart is downtime. Single-zone database.
+          Single instance, so a restart is downtime. Single-zone database.
         </p>
       </div>
     </div>
@@ -57,7 +57,7 @@ function TerraformVisual() {
         <span className="ml-2 font-mono text-[13.5px] text-white/40 font-medium">main.tf</span>
       </div>
       <pre className="overflow-x-auto p-5 font-mono text-[14.5px] leading-[1.75] text-zinc-400">
-        <span className="text-zinc-500"># Graviton — measured 9% cheaper here</span>
+        <span className="text-zinc-500"># Graviton, measured 9% cheaper here</span>
         {"\n"}
         <span className="text-white">module</span>{" "}
         <span className="text-amber-200">&quot;ecs_service&quot;</span> {"{"}
@@ -83,7 +83,7 @@ export default function Home() {
     <>
       {/* hero */}
       <section className="px-6 pt-16 pb-20 text-center sm:pt-24">
-        <Pill>GCP pricing now included — three clouds, one query</Pill>
+        <Pill>GCP pricing now included: three clouds, one query</Pill>
 
         <h1 className="mx-auto mt-8 max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.02] tracking-[-0.035em]">
           Know what it costs{" "}
@@ -92,7 +92,7 @@ export default function Home() {
 
         <p className="mx-auto mt-7 max-w-2xl text-balance text-lg leading-relaxed text-ink-2 sm:text-xl">
           Describe your app in a sentence. Get three priced architectures across
-          AWS, Azure and Google — with the optimizations that lower the bill.
+          AWS, Azure and Google, with the optimizations that lower the bill.
         </p>
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
@@ -130,7 +130,7 @@ export default function Home() {
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
               Real figures. Pick a cloud to see its own services and what each
-              one costs — every number fetched from that provider&apos;s
+              one costs. Every number is fetched from that provider&apos;s
               published rates.
             </p>
           </div>
@@ -154,7 +154,7 @@ export default function Home() {
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-[18px] leading-relaxed text-ink-2">
             Cost tools tell you what you already spent. This one tells you what
-            you would spend — while the decision is still cheap to change.
+            you would spend, while the decision is still cheap to change.
           </p>
         </div>
       </section>
@@ -170,8 +170,8 @@ export default function Home() {
               The same system, drawn on all three clouds
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
-              WhichCloud reads systems like this one — every service, every
-              tier, every dependency — and prices each part against live
+              WhichCloud reads systems like this one: every service, every
+              tier, every dependency. It prices each part against live
               provider rates.
             </p>
           </div>
@@ -187,7 +187,7 @@ export default function Home() {
           <FeatureBlock
             eyebrow="Trade-offs"
             title="Know what the extra money actually buys"
-            body="Switching options does not just show a bigger number. It shows which line changed, what it changed to, and what stayed the same — plus what the cheaper option gives up."
+            body="Switching options does not just show a bigger number. It shows which line changed, what it changed to, and what stayed the same, plus what the cheaper option gives up."
             bullets={[
               "One upgrade reported as one change, not two events",
               "Every cheap option states its cost in reliability",
@@ -224,7 +224,7 @@ export default function Home() {
           </h2>
           <p className="mt-5 text-[17px] leading-relaxed text-ink-2">
             Sizing is a documented heuristic, not measured from your workload.
-            GCP covers compute only. Prices are public list rates — no
+            GCP covers compute only. Prices are public list rates, with no
             committed-use or negotiated discounts. Spot rates move continuously,
             so treat them as indicative. These are estimates, not quotes.
           </p>
