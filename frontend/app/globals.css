@@ -254,3 +254,28 @@ html {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--ink);
 }
+
+/* The live dot's halo. Slower and softer than a default ping, so it reads as
+   a steady heartbeat rather than an alert asking to be dismissed. */
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.live-ping {
+  animation: live-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-ping {
+    animation: none;
+    opacity: 0.35;
+  }
+}

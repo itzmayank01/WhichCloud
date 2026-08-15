@@ -7,6 +7,7 @@ import { Reveal } from "@/components/landing/Reveal";
 import { CountUp } from "@/components/landing/CountUp";
 import { AskDemoSection } from "@/components/landing/AskDemoSection";
 import { PipelineSection } from "@/components/landing/PipelineSection";
+import { HeroFreshness } from "@/components/landing/HeroFreshness";
 import {
   FeatureBlock,
   Footer,
@@ -177,9 +178,17 @@ export default function Home() {
           </Link>
         </div>
 
-        <p className="mt-7 font-mono text-[14px] text-ink-3 font-medium">
-          Prices fetched from AWS, Azure and Google · computed, not guessed
-        </p>
+        {/* Suspended so the heading still paints without waiting on /health,
+            with the same line minus the timestamp as the fallback. */}
+        <Suspense
+          fallback={
+            <p className="mt-7 font-mono text-[14px] text-ink-3 font-medium">
+              Prices fetched from AWS, Azure and Google · computed, not guessed
+            </p>
+          }
+        >
+          <HeroFreshness />
+        </Suspense>
       </section>
 
       {/* live prices, moving */}
