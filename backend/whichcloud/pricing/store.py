@@ -243,6 +243,21 @@ def cheapest_in_category(
     return _to_point(row) if row else None
 
 
+def db_now(dsn: str | None = None):
+    """The database's clock.
+
+    Rows are stamped with Postgres `now()`, so a cutoff used to prune them has
+    to come from the same clock. Taking it from the Python process instead
+    compares two clocks that agree only approximately -- and `now()` is
+    transaction *start* time, so the write is stamped slightly earlier than it
+    lands. A cutoff a millisecond ahead of the write makes every fresh row
+    look stale, and the prune deletes the entire provider it just ingested.
+    """
+    with connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT now() AS now")
+        return cur.fetchone()["now"]
+
+
 def prune_stale(
     provider: str, region: str, cutoff, dsn: str | None = None
 ) -> int:

@@ -66,7 +66,7 @@ def main() -> int:
             continue
 
         by_category = Counter(p.category for p in points)
-        run_started = datetime.now(timezone.utc)
+        run_started = store.db_now()
         written = store.upsert_prices(points)
         total += written
 

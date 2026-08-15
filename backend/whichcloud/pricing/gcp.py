@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import time
+from functools import lru_cache
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -107,11 +110,32 @@ def cheapest_compute(query: ComputeQuery, path: Path | None = None) -> PricePoin
     return min(candidates, key=lambda p: p.price_usd, default=None)
 
 
+def _paged(url: str, key: str, field: str, max_pages: int = 40):
+    token = ""
+    for _ in range(max_pages):
+        params = {"pageSize": 5000}
+        if token:
+            params["pageToken"] = token
+        # The key travels in a header, never the query string: httpx puts the
+        # request URL into its exception text, so a key in the URL is a key in
+        # every traceback and log line that follows a failure.
+        response = httpx.get(
+            url, params=params, headers={"x-goog-api-key": key}, timeout=90.0
+        )
+        response.raise_for_status()
+        payload = response.json()
+        yield from payload.get(field, [])
+        token = payload.get("nextPageToken") or ""
+        if not token:
+            return
+
+
 def catalog_api_available() -> bool:
     return bool(os.getenv("GOOGLE_CLOUD_API_KEY"))
 
 
-def fetch_catalog_services() -> list[dict]:
+@lru_cache(maxsize=1)
+def fetch_catalog_services() -> tuple[dict, ...]:
     """List billable GCP services. Requires GOOGLE_CLOUD_API_KEY.
 
     Kept minimal on purpose: it exists so storage/egress/Cloud SQL can be wired
@@ -124,9 +148,11 @@ def fetch_catalog_services() -> list[dict]:
             "storage, egress and Cloud SQL need a key from "
             "https://console.cloud.google.com/apis/credentials"
         )
-    r = httpx.get(CATALOG_API, params={"key": key}, timeout=60.0)
-    r.raise_for_status()
-    return r.json().get("services", [])
+    # The catalog lists every billable service on the platform, Marketplace
+    # included -- thousands of them, and Google's own are not first. A single
+    # unpaged GET returns whatever fits on page one, so "Cloud Storage" is
+    # quietly absent and its component silently goes unpriced.
+    return tuple(_paged(CATALOG_API, key, "services"))
 
 
 # ---------------------------------------------------------------------------
@@ -174,21 +200,7 @@ def sku_unit(sku: dict) -> str:
     return ""
 
 
-def _paged(url: str, key: str, field: str, max_pages: int = 40):
-    token = ""
-    for _ in range(max_pages):
-        params = {"key": key, "pageSize": 5000}
-        if token:
-            params["pageToken"] = token
-        response = httpx.get(url, params=params, timeout=90.0)
-        response.raise_for_status()
-        payload = response.json()
-        yield from payload.get(field, [])
-        token = payload.get("nextPageToken") or ""
-        if not token:
-            return
-
-
+@lru_cache(maxsize=64)
 def find_service_id(display_name: str) -> str | None:
     """The catalog id for a service, matched on its display name."""
     target = display_name.strip().lower()
@@ -198,12 +210,23 @@ def find_service_id(display_name: str) -> str | None:
     return None
 
 
-def fetch_skus(service_id: str) -> list[dict]:
+@lru_cache(maxsize=16)
+def _skus_cached(service_id: str) -> tuple[dict, ...]:
     key = os.getenv("GOOGLE_CLOUD_API_KEY")
     if not key:
         raise RuntimeError("GOOGLE_CLOUD_API_KEY is not set")
     url = f"{CATALOG_API}/{service_id}/skus"
-    return list(_paged(url, key, "skus"))
+    return tuple(_paged(url, key, "skus"))
+
+
+def fetch_skus(service_id: str) -> list[dict]:
+    """SKUs for one service, fetched once per process.
+
+    Compute Engine publishes over 32,000 of them and more than one loader
+    needs the set, so without this a single ingest pages the same catalog
+    repeatedly and spends minutes doing it.
+    """
+    return list(_skus_cached(service_id))
 
 
 def select_skus(
@@ -285,14 +308,18 @@ def fetch_egress_prices(region_key: str) -> list[PricePoint]:
     service = find_service_id("Compute Engine")
     if not service:
         return []
+    # Google meters egress per destination continent, and the resource group
+    # is what separates ordinary internet egress from VPN, interconnect, CDN
+    # and inter-region traffic -- the description alone does not. Most
+    # destinations share one rate; the dearer ones (Australia, China) are
+    # destination surcharges rather than the general rate, so the common one
+    # is what belongs in a like-for-like comparison.
     matches = select_skus(
         fetch_skus(service),
         region,
         resource_family="Network",
-        must_contain=("internet egress",),
-        # Inter-region and intra-continent traffic are different products;
-        # so is Cloud CDN egress, which is billed separately.
-        must_not_contain=("inter region", "intra", "cdn", "interconnect"),
+        resource_group="PremiumInternetEgress",
+        must_contain=("internet data transfer out",),
     )
     if not matches:
         return []
@@ -343,14 +370,30 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
     if vcpu_hour is None or ram_hour is None:
         return []
 
+    # Cloud SQL is custom-sized: any vCPU count with any RAM between 0.9 and
+    # 6.5 GB per vCPU, in 256 MB steps. So the grid below is not a guess at
+    # which machines exist -- every one of these is orderable, and its price
+    # is exactly the sum of its parts.
+    #
+    # It needs to be dense for a reason. A sparse ladder does not fail
+    # visibly; the lookup just returns the next size up, and a request for
+    # 2 vCPU / 8 GB quietly gets priced as 4 vCPU / 15 GB -- twice the machine
+    # and twice the bill, reported as though it were the answer.
     points: list[PricePoint] = []
-    for vcpus, memory in ((1, 3.75), (2, 7.5), (4, 15.0), (8, 30.0), (16, 60.0)):
+    shapes: set[tuple[int, float]] = set()
+    for vcpus in (1, 2, 4, 8, 16, 32):
+        for per_vcpu in (0.9, 2.0, 3.75, 4.0, 5.0, 6.5):
+            memory = round(vcpus * per_vcpu * 4) / 4  # 256 MB steps
+            if 0.9 * vcpus <= memory <= 6.5 * vcpus:
+                shapes.add((vcpus, memory))
+
+    for vcpus, memory in sorted(shapes):
         hourly = vcpu_hour * Decimal(vcpus) + ram_hour * Decimal(str(memory))
         points.append(
             PricePoint(
                 provider="gcp",
                 category="database",
-                sku=f"cloudsql-pg-{vcpus}vcpu-{memory:g}gb",
+                sku=f"db-custom-{vcpus}-{int(memory * 1024)}",
                 name=f"Cloud SQL PostgreSQL {vcpus} vCPU / {memory:g} GB",
                 region=region,
                 unit="hour",
@@ -386,8 +429,9 @@ def fetch_cache_prices(region_key: str) -> list[PricePoint]:
         return []
     per_gb_hour = min(sku_price(s) for s in matches)
 
+    # Memorystore is sold in whole GB, so every size here is real.
     points: list[PricePoint] = []
-    for memory in (1.0, 2.0, 4.0, 8.0, 16.0):
+    for memory in (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0, 24.0, 32.0):
         points.append(
             PricePoint(
                 provider="gcp",
@@ -412,14 +456,20 @@ def fetch_cache_prices(region_key: str) -> list[PricePoint]:
 def fetch_loadbalancer_prices(region_key: str) -> list[PricePoint]:
     """The forwarding-rule charge, which is the fixed part of a load balancer."""
     region = provider_region(region_key, "gcp")
-    service = find_service_id("Compute Engine")
+    # Load balancing is billed under "Networking", not Compute Engine.
+    service = find_service_id("Networking")
     if not service:
         return []
+    # "Minimum" is what it costs to have a load balancer; "Additional" is the
+    # marginal rate for rules past the fifth. Taking the cheapest match would
+    # pick the marginal rate and price a load balancer at a third of the
+    # truth, so the base charge is required by name.
     matches = select_skus(
         fetch_skus(service),
         region,
-        must_contain=("forwarding rule",),
-        must_not_contain=("data processing",),
+        resource_group="LoadBalancing",
+        must_contain=("external application load balancer", "forwarding rule", "minimum"),
+        must_not_contain=("internal", "cross regional", "additional"),
     )
     if not matches:
         return []
@@ -446,25 +496,25 @@ def fetch_monitoring_prices(region_key: str) -> list[PricePoint]:
     sample, and both figures are recorded so the arithmetic can be redone.
     """
     region = provider_region(region_key, "gcp")
-    service = find_service_id("Stackdriver Monitoring") or find_service_id(
-        "Cloud Monitoring"
-    )
+    service = find_service_id("Cloud Monitoring")
     if not service:
         return []
+    # "Metric Volume", per MiB, is the ingestion charge. The service also
+    # publishes per-count meters for Prometheus samples, workload metrics and
+    # billed time series, all of them far cheaper per unit and none of them
+    # this. Selecting the cheapest "metric" match picked one of those and
+    # priced monitoring at five hundredths of a cent a month.
     matches = select_skus(
-        fetch_skus(service),
-        region,
-        must_contain=("metric",),
-        must_not_contain=("api", "query", "uptime"),
+        fetch_skus(service), region, must_contain=("metric volume",)
     )
     if not matches:
         return []
-    per_unit = min(sku_price(s) for s in matches)
+    per_mib = min(sku_price(s) for s in matches)
 
     samples_per_month = Decimal(60 * 24 * 30)
     bytes_per_sample = Decimal(8)
     mib = Decimal(1024 * 1024)
-    per_metric_month = per_unit * (samples_per_month * bytes_per_sample / mib)
+    per_metric_month = per_mib * (samples_per_month * bytes_per_sample / mib)
 
     return [
         PricePoint(
@@ -476,7 +526,7 @@ def fetch_monitoring_prices(region_key: str) -> list[PricePoint]:
             unit="metric-month",
             price_usd=per_metric_month,
             attributes={
-                "published_rate_usd": str(per_unit),
+                "published_rate_usd_per_mib": str(per_mib),
                 "samples_per_metric_month": str(samples_per_month),
                 "assumed_bytes_per_sample": str(bytes_per_sample),
                 "assumed_resolution": "1 minute",
@@ -505,10 +555,23 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_loadbalancer_prices,
         fetch_monitoring_prices,
     ):
-        try:
-            points.extend(loader(region_key))
-        except (httpx.HTTPError, RuntimeError):
-            # One service failing must not lose the other five, nor the
-            # compute catalog that needed no key in the first place.
-            continue
+        name = loader.__name__.replace("fetch_", "").replace("_prices", "")
+        for attempt in range(3):
+            try:
+                points.extend(loader(region_key))
+                break
+            except (httpx.HTTPError, RuntimeError) as exc:
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                # One service failing must not lose the other five, nor the
+                # compute catalog that needed no key. But it must not pass
+                # unremarked either: silently dropping a component makes a
+                # network blip indistinguishable from a real gap in the
+                # catalog, and the diagram reports both as "not priced".
+                print(
+                    f"  ! gcp {name} could not be priced: "
+                    f"{type(exc).__name__}: {str(exc)[:120]}",
+                    file=sys.stderr,
+                )
     return points
