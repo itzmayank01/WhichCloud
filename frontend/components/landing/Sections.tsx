@@ -2,6 +2,7 @@ import Link from "next/link";
 import { api, freshness, money, type CatalogRow, type Recommendation } from "@/lib/api";
 import { ShowcaseGrid } from "@/components/landing/ShowcaseGrid";
 import { ProviderLogoCards } from "@/components/landing/ProviderLogoCards";
+import { InlineIcon } from "@/components/landing/InlineIcon";
 
 /* ─────────────────────────── shared ─────────────────────────── */
 
@@ -389,6 +390,7 @@ export function ProviderBar() {
 
 export function FeatureBlock({
   eyebrow,
+  eyebrowIcon,
   title,
   body,
   bullets,
@@ -397,6 +399,7 @@ export function FeatureBlock({
   visual,
 }: {
   eyebrow: string;
+  eyebrowIcon?: string;
   title: string;
   body: string;
   bullets?: string[];
@@ -412,7 +415,10 @@ export function FeatureBlock({
         }`}
       >
         <div>
-          <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+          {/* The mark sits with the label rather than in the panel, so the
+              section is identifiable before the code beneath it is read. */}
+          <div className="flex items-center gap-2 font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+            {eyebrowIcon && <InlineIcon icon={eyebrowIcon} size={17} />}
             {eyebrow}
           </div>
           <h3 className="mt-3 text-balance text-[clamp(1.5rem,2.6vw,2rem)] font-semibold leading-tight tracking-[-0.02em]">

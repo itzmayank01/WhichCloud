@@ -7,7 +7,6 @@ import { CountUp } from "@/components/landing/CountUp";
 import {
   FeatureBlock,
   Footer,
-  Pill,
   ProviderBar,
   Stats,
 } from "@/components/landing/Sections";
@@ -137,9 +136,7 @@ export default function Home() {
     <>
       {/* hero */}
       <section className="px-6 pt-16 pb-20 text-center sm:pt-24">
-        <Pill>GCP pricing now included: three clouds, one query</Pill>
-
-        <h1 className="mx-auto mt-8 max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.02] tracking-[-0.035em]">
+        <h1 className="mx-auto max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.02] tracking-[-0.035em]">
           Know what it costs{" "}
           <span className="text-accent">before</span> you build it
         </h1>
@@ -253,6 +250,7 @@ export default function Home() {
 
           <FeatureBlock
             eyebrow="Infrastructure as code"
+            eyebrowIcon="logos:terraform-icon"
             title="Advice you can actually run"
             body="Every recommendation comes out as Terraform built from vetted modules, with the optimizations already applied and a comment explaining why each one is there."
             bullets={[
