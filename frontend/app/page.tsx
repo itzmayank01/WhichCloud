@@ -1,107 +1,110 @@
-import { api, freshness, money, type CatalogRow } from "@/lib/api";
+import Link from "next/link";
+import { PreviewCards } from "@/components/landing/PreviewCards";
 
 export const revalidate = 300;
 
-/**
- * The live index — three clouds priced for one benchmark machine.
- *
- * This is the only element on the page that exists purely to be believed, so
- * it carries a real fetched-at stamp rather than implying the price is live.
- */
-async function LiveIndex() {
-  let rows: CatalogRow[] = [];
-  let stamp: string | null = null;
-
-  try {
-    const [catalog, health] = await Promise.all([
-      api.catalog({ min_vcpu: 2, min_memory_gb: 8, arch: "arm64", limit: 40 }),
-      api.health(),
-    ]);
-    // Cheapest row per provider — the catalog is already sorted by price.
-    const seen = new Set<string>();
-    rows = catalog.rows.filter((r) =>
-      seen.has(r.provider) ? false : (seen.add(r.provider), true),
-    );
-    stamp = health.last_updated;
-  } catch {
-    return (
-      <div className="rounded-lg border border-caution/25 bg-caution-wash px-5 py-4">
-        <p className="text-sm text-ink-2">
-          Price catalog unreachable. Start Postgres and the API:
-        </p>
-        <code className="mt-2 block font-mono text-[12px] text-ink">
-          docker compose -f infra/docker-compose.yml up -d
-          <br />
-          uvicorn whichcloud.api:app --port 8000
-        </code>
-      </div>
-    );
-  }
-
-  const cheapest = Math.min(...rows.map((r) => r.monthly_usd));
-
-  return (
-    <div className="w-full max-w-3xl">
-      <div className="mb-3 font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">
-        Same machine · 2 vCPU · 8 GB · ARM · India
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        {rows.map((row) => {
-          const wins = row.monthly_usd === cheapest;
-          return (
-            <div
-              key={row.provider}
-              className={`rounded-lg border p-5 ${
-                wins
-                  ? "border-accent-line bg-accent-wash"
-                  : "border-line bg-surface"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-3">
-                  {row.provider}
-                </span>
-                {wins && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-label="cheapest" />
-                )}
-              </div>
-              <div className="tnum mt-2 font-mono text-[28px] font-light tracking-tight">
-                {money(row.monthly_usd)}
-              </div>
-              <div className="mt-1 font-mono text-[11px] text-ink-3">{row.sku}</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {stamp && (
-        <div className="mt-3 flex items-center gap-2 font-mono text-[10.5px] text-ink-3">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          fetched {freshness(stamp)} from provider APIs
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function Home() {
   return (
-    <div className="mx-auto max-w-5xl px-6 py-24 sm:py-32">
-      <h1 className="max-w-2xl text-[clamp(2.25rem,5.5vw,3.75rem)] font-light leading-[1.04] tracking-[-0.03em] text-balance">
-        Know what it costs
-        <br />
-        before you build it.
-      </h1>
+    <>
+      {/* ── hero ─────────────────────────────────────────────── */}
+      <section className="px-6 pt-20 pb-16 text-center sm:pt-28">
+        <h1 className="mx-auto max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.03] tracking-[-0.035em]">
+          Know what it costs{" "}
+          <span className="whitespace-nowrap rounded-lg bg-accent-wash px-2.5 py-0.5 text-accent">
+            before
+          </span>{" "}
+          you build it
+        </h1>
 
-      <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
-        Describe your app in a sentence. Get three priced architectures across AWS,
-        Azure and Google — with the optimizations that lower the bill.
-      </p>
+        <p className="mx-auto mt-7 max-w-2xl text-balance text-lg leading-relaxed text-ink-2 sm:text-xl">
+          Describe your app in a sentence. Get three priced architectures across
+          AWS, Azure and Google — with the optimizations that lower the bill.
+        </p>
 
-      <div className="mt-16">
-        <LiveIndex />
-      </div>
-    </div>
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/estimate"
+            className="rounded-lg bg-accent px-6 py-3 text-[15px] font-medium text-white transition-opacity hover:opacity-90"
+          >
+            Price my app
+          </Link>
+          <Link
+            href="/prices"
+            className="rounded-lg border border-line-strong bg-surface px-6 py-3 text-[15px] font-medium text-ink transition-colors hover:bg-sunk"
+          >
+            Browse prices
+          </Link>
+        </div>
+
+        <p className="mt-7 font-mono text-[11px] text-ink-3">
+          No cloud account · no credit card · prices computed, not guessed
+        </p>
+      </section>
+
+      {/* ── product preview ──────────────────────────────────── */}
+      <section className="px-6 pb-24">
+        <div className="mx-auto max-w-6xl">
+          <PreviewCards />
+        </div>
+      </section>
+
+      {/* ── the gap ──────────────────────────────────────────── */}
+      <section className="border-y border-line bg-sunk px-6 py-20">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="text-balance text-[clamp(1.75rem,4vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
+            One machine. Three prices.
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-ink-2">
+            Same specs, same region, same hour. Multiply that gap across every
+            service you run, for a year, and it stops being a rounding error.
+          </p>
+        </div>
+      </section>
+
+      {/* ── how it works ─────────────────────────────────────── */}
+      <section className="px-6 py-20">
+        <div className="mx-auto grid max-w-5xl gap-10 sm:grid-cols-3">
+          {[
+            {
+              n: "01",
+              title: "Describe",
+              body: "One sentence, plain English. No account, no cloud credentials, nothing to connect.",
+            },
+            {
+              n: "02",
+              title: "Price",
+              body: "Three architectures — cheapest, balanced, most reliable — itemised against live provider rates.",
+            },
+            {
+              n: "03",
+              title: "Optimize",
+              body: "The techniques that lower the bill, each measured against the machine it beat.",
+            },
+          ].map((step) => (
+            <div key={step.n}>
+              <div className="tnum font-mono text-[28px] font-light text-line-strong">
+                {step.n}
+              </div>
+              <h3 className="mt-3 text-[17px] font-medium tracking-tight">{step.title}</h3>
+              <p className="mt-2 text-[14.5px] leading-relaxed text-ink-2">{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── honest limits ────────────────────────────────────── */}
+      <section className="border-t border-line px-6 py-16">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">
+            What we don&apos;t do
+          </h2>
+          <p className="mt-4 text-[14.5px] leading-relaxed text-ink-2">
+            Sizing is a documented heuristic, not measured from your workload.
+            GCP covers compute only. Prices are public list rates — no
+            committed-use or negotiated discounts. These are estimates, not quotes.
+          </p>
+        </div>
+      </section>
+    </>
   );
 }
