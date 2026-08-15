@@ -275,12 +275,6 @@ export function PricedDiagram({
                 <div className="mt-1 font-mono text-[12px] text-caution">not priced</div>
               )}
 
-              {n.optimized_by.length > 0 && (
-                <span
-                  className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-accent ring-2 ring-white"
-                  title={`Optimized by ${n.optimized_by.join(", ")}`}
-                />
-              )}
             </div>
           );
         })}
