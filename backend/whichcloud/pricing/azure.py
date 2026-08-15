@@ -328,6 +328,111 @@ def fetch_egress_prices(region_key: str) -> list[PricePoint]:
     ]
 
 
+def _redis_memory_gb(sku: str) -> float | None:
+    """Memory for an Azure Managed Redis SKU, read out of the SKU name.
+
+    The Balanced tier names each size after its memory in GB — B3 is 3 GB,
+    B250 is 250 GB. That makes the size a property of the published data
+    rather than something we type in from documentation, which is the whole
+    reason this tier is the one we price. The classic C-series does *not*
+    work this way (C3 is 6 GB, not 3), so it is deliberately skipped rather
+    than guessed at.
+    """
+    if len(sku) < 2 or sku[0] != "B" or not sku[1:].isdigit():
+        return None
+    n = int(sku[1:])
+    return 0.5 if n == 0 else float(n)
+
+
+def fetch_cache_prices(region_key: str) -> list[PricePoint]:
+    """Managed Redis nodes, Balanced tier."""
+    region = provider_region(region_key, "azure")
+    query = (
+        "serviceName eq 'Redis Cache' "
+        f"and armRegionName eq '{region}' "
+        "and priceType eq 'Consumption'"
+    )
+
+    points: list[PricePoint] = []
+    seen: set[str] = set()
+    for item in _paged(query, max_pages=10):
+        if "balanced" not in str(item.get("productName", "")).lower():
+            continue
+        if (item.get("unitOfMeasure") or "").lower() != "1 hour":
+            continue
+        sku = str(item.get("skuName") or "")
+        memory = _redis_memory_gb(sku)
+        if memory is None or sku in seen:
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        seen.add(sku)
+        points.append(
+            PricePoint(
+                provider="azure",
+                category="cache",
+                sku=f"redis:{sku.lower()}",
+                name=f"Azure Managed Redis {sku}",
+                region=region,
+                unit="hour",
+                price_usd=price,
+                memory_gb=memory,
+                # vCPU is not published for these. Cache sizing is governed by
+                # memory anyway, so we leave it unset rather than invent one.
+                attributes={"tier": "balanced", "engine": "redis"},
+            )
+        )
+    return points
+
+
+def fetch_monitoring_prices(region_key: str) -> list[PricePoint]:
+    """Metric ingestion, converted to a per-metric-per-month rate.
+
+    Azure meters metrics by sample volume (per 10M samples) while AWS meters
+    them per metric per month. To compare them at all, one has to be expressed
+    in the other's unit, so we convert Azure's here using an explicit
+    assumption: one sample per minute, which is the default resolution.
+
+    The assumption is recorded in the attributes so the arithmetic can be
+    checked. It is worth knowing that the two clouds genuinely price this very
+    differently -- Azure's rate really is orders of magnitude lower per metric,
+    because AWS charges per custom metric where Azure charges for throughput.
+    """
+    region = provider_region(region_key, "azure")
+    query = (
+        "serviceName eq 'Azure Monitor' "
+        f"and armRegionName eq '{region}' "
+        "and priceType eq 'Consumption' "
+        "and meterName eq 'Metrics ingestion Metric samples'"
+    )
+
+    samples_per_metric_month = 60 * 24 * 30  # one sample a minute
+
+    for item in _paged(query, max_pages=3):
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        per_sample = price / Decimal(10_000_000)
+        return [
+            PricePoint(
+                provider="azure",
+                category="monitoring",
+                sku="monitor:metrics",
+                name="Metrics ingestion (1-minute resolution)",
+                region=region,
+                unit="metric-month",
+                price_usd=per_sample * Decimal(samples_per_metric_month),
+                attributes={
+                    "published_rate_usd_per_10m_samples": str(price),
+                    "samples_per_metric_month": str(samples_per_metric_month),
+                    "assumed_resolution": "1 minute",
+                },
+            )
+        ]
+    return []
+
+
 def load_all(region_key: str) -> list[PricePoint]:
     """Every category we price on Azure, for one region."""
     points: list[PricePoint] = []
@@ -336,6 +441,8 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_database_prices,
         fetch_storage_prices,
         fetch_egress_prices,
+        fetch_cache_prices,
+        fetch_monitoring_prices,
         fetch_loadbalancer_prices,
     ):
         try:

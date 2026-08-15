@@ -115,13 +115,25 @@ export function MultiCloudArchitecture({
                   </span>
                 )}
               </div>
-              <div className="tnum mt-1.5 font-mono text-[30px] font-semibold leading-none">
+              {/* A partial total is a floor, not a price. Showing it as a bare
+                  figure invites the reader to compare it against the complete
+                  ones, which is exactly the wrong conclusion — so it is
+                  prefixed and greyed rather than presented as a total. */}
+              <div
+                className={`tnum mt-1.5 font-mono text-[30px] font-semibold leading-none ${
+                  o.complete ? "" : "text-ink-3"
+                }`}
+              >
+                {!o.complete && (
+                  <span className="mr-0.5 text-[22px] font-normal">&ge;</span>
+                )}
                 {money(o.monthly_usd, 0)}
                 <span className="ml-1 text-[15px] font-normal text-ink-3">/mo</span>
               </div>
               {!o.complete && (
                 <div className="mt-2 font-mono text-[13px] text-caution font-medium">
-                  {o.missing.length} component{o.missing.length === 1 ? "" : "s"} unpriced
+                  partial — {o.missing.length} component
+                  {o.missing.length === 1 ? "" : "s"} unpriced
                 </div>
               )}
               {budgetValue > 0 && o.complete && (

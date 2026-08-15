@@ -221,7 +221,7 @@ def cheapest_compute_like(
         cur.execute(
             """SELECT * FROM price_points
                WHERE provider=%s AND region=%s AND category=%s
-                 AND vcpu >= %s AND memory_gb >= %s
+                 AND (vcpu IS NULL OR vcpu >= %s) AND memory_gb >= %s
                ORDER BY price_usd ASC LIMIT 1""",
             (provider, region, category, min_vcpu, min_memory_gb),
         )

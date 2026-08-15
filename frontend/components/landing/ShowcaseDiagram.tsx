@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "@iconify/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * The example architecture on the landing page.
@@ -18,6 +18,7 @@ import { useState } from "react";
  */
 
 const W = 1180;
+const MIN_SCALE = 0.62;
 const H = 640;
 const BOX_W = 156;
 const BOX_H = 88;
@@ -91,10 +92,55 @@ function path(a: Node, b: Node): string {
 
 export function ShowcaseDiagram() {
   const [hovered, setHovered] = useState<string | null>(null);
+  const shell = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  const lastWidth = useRef(-1);
+
+  useEffect(() => {
+    const el = shell.current;
+    if (!el) return;
+
+    /* Only width matters, and only width may be reacted to. Scaling changes
+       this element's own height, so responding to height would feed straight
+       back into the observer — a loop the browser resolves by dropping
+       notifications, which silently freezes the diagram at its first size.
+       Gating on width keeps the observer stable. */
+    const fit = () => {
+      const style = getComputedStyle(el);
+      const pad =
+        parseFloat(style.paddingLeft || "0") + parseFloat(style.paddingRight || "0");
+      const available = el.clientWidth - pad;
+      if (available === lastWidth.current) return;
+      lastWidth.current = available;
+
+      // Never shrink past the point where the labels stop being readable —
+      // below that a scrollbar is the honest answer, since an illegible
+      // diagram that happens to fit is worse than one you have to pan.
+      setScale(Math.max(MIN_SCALE, Math.min(1, available / W)));
+    };
+
+    fit();
+
+    // Window resize is the fallback: ResizeObserver is the precise signal,
+    // but it is not delivered in every environment, and a diagram that never
+    // re-fits is worse than one that re-fits a little coarsely.
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    window.addEventListener("resize", fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", fit);
+    };
+  }, []);
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-white p-4">
-      <div className="relative" style={{ width: W, height: H, minWidth: W }}>
+    <div ref={shell} className="rounded-xl border border-line bg-white p-4">
+      <div style={{ height: H * scale, overflowX: "auto", overflowY: "hidden" }}>
+      <div
+        className="relative origin-top-left"
+        style={{ width: W, height: H, transform: `scale(${scale})` }}
+      >
         {/* AWS cloud boundary */}
         <div
           className="absolute rounded-lg border"
@@ -222,6 +268,7 @@ export function ShowcaseDiagram() {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

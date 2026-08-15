@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { ServiceIcon } from "@/components/ServiceIcon";
 import { money, type Node as ApiNode, type Option } from "@/lib/api";
@@ -19,6 +19,7 @@ import { serviceName } from "@/lib/services";
  */
 
 const W = 1180;
+const MIN_SCALE = 0.62;
 const H = 560;
 const BOX_W = 168;
 const BOX_H = 104;
@@ -80,6 +81,52 @@ export function PricedDiagram({
   const [hovered, setHovered] = useState<string | null>(null);
   const chrome = CHROME[provider] ?? CHROME.aws;
 
+  /* The layout is authored on a fixed canvas so arrows can be routed to exact
+     coordinates. Rather than make the reader scroll it sideways, measure the
+     available width and scale the whole thing down to fit — the diagram stays
+     one piece and the geometry stays exact. */
+  const shell = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  const lastWidth = useRef(-1);
+
+  useEffect(() => {
+    const el = shell.current;
+    if (!el) return;
+
+    /* Only width matters, and only width may be reacted to. Scaling changes
+       this element's own height, so responding to height would feed straight
+       back into the observer — a loop the browser resolves by dropping
+       notifications, which silently freezes the diagram at its first size.
+       Gating on width keeps the observer stable. */
+    const fit = () => {
+      const style = getComputedStyle(el);
+      const pad =
+        parseFloat(style.paddingLeft || "0") + parseFloat(style.paddingRight || "0");
+      const available = el.clientWidth - pad;
+      if (available === lastWidth.current) return;
+      lastWidth.current = available;
+
+      // Never shrink past the point where the labels stop being readable —
+      // below that a scrollbar is the honest answer, since an illegible
+      // diagram that happens to fit is worse than one you have to pan.
+      setScale(Math.max(MIN_SCALE, Math.min(1, available / W)));
+    };
+
+    fit();
+
+    // Window resize is the fallback: ResizeObserver is the precise signal,
+    // but it is not delivered in every environment, and a diagram that never
+    // re-fits is worse than one that re-fits a little coarsely.
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    window.addEventListener("resize", fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", fit);
+    };
+  }, []);
+
   const nodes = option.topology.nodes.filter((n) => SLOT[n.kind]);
   const present = new Set(nodes.map((n) => n.kind));
   const total = nodes.reduce((s, n) => s + n.monthly_usd, 0);
@@ -88,8 +135,12 @@ export function PricedDiagram({
   const flows = FLOW.filter(([a, b]) => present.has(a) && present.has(b));
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-white p-4">
-      <div className="relative" style={{ width: W, height: H, minWidth: W }}>
+    <div ref={shell} className="rounded-xl border border-line bg-white p-4">
+      <div style={{ height: H * scale, overflowX: "auto", overflowY: "hidden" }}>
+      <div
+        className="relative origin-top-left"
+        style={{ width: W, height: H, transform: `scale(${scale})` }}
+      >
         <div
           className="absolute rounded-lg border"
           style={{
@@ -214,6 +265,7 @@ export function PricedDiagram({
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

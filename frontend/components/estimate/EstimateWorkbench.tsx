@@ -314,7 +314,15 @@ export function EstimateWorkbench() {
                     </span>
                   )}
                 </div>
-                <div className="tnum mt-1.5 font-mono text-[28px] font-semibold leading-none">
+                {/* Partial totals read as floors, not prices. */}
+                <div
+                  className={`tnum mt-1.5 font-mono text-[28px] font-semibold leading-none ${
+                    o.complete ? "" : "text-ink-3"
+                  }`}
+                >
+                  {!o.complete && (
+                    <span className="mr-0.5 text-[21px] font-normal">&ge;</span>
+                  )}
                   {money(o.monthly_usd, 0)}
                   <span className="ml-1 text-[15px] font-normal text-ink-3">/mo</span>
                 </div>
