@@ -22,11 +22,39 @@ const mono = Geist_Mono({
   display: "swap",
 });
 
+const TITLE = "WhichCloud: know what it costs before you build it";
+const DESCRIPTION =
+  "Describe your app in a sentence. Get three priced architectures across AWS, " +
+  "Azure and Google, with the optimizations that lower the bill.";
+
 export const metadata: Metadata = {
-  title: "WhichCloud: know what it costs before you build it",
-  description:
-    "Describe your app in a sentence. Get three priced architectures across AWS, " +
-    "Azure and Google, with the optimizations that lower the bill.",
+  /* Without metadataBase, Next resolves social image URLs against nothing and
+     warns at build; with it, relative URLs below become absolute. */
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  ),
+  title: TITLE,
+  description: DESCRIPTION,
+  applicationName: "WhichCloud",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "WhichCloud",
+    title: TITLE,
+    description: DESCRIPTION,
+    url: "/",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  robots: { index: true, follow: true },
+};
+
+export const viewport = {
+  themeColor: "#fbfbfc",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -36,24 +64,50 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${sans.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-canvas text-ink">
+        {/* First thing in the tab order, invisible until focused: lets a
+            keyboard user past the header without walking the whole nav. */}
+        <a
+          href="#content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-[15px] focus:font-medium focus:text-white"
+        >
+          Skip to content
+        </a>
         <ClerkProvider>
           <header className="sticky top-0 z-30 flex h-16 items-center gap-8 border-b border-line bg-canvas/85 px-6 backdrop-blur">
             <Link href="/" aria-label="WhichCloud home">
               <Wordmark />
             </Link>
 
-            <nav className="hidden gap-7 text-[15.5px] text-ink-2 md:flex">
-              <Link href="/prices" className="transition-colors hover:text-ink">
-                Price index
+            {/* Three of these pointed at routes that do not exist, so most of
+                the navigation 404'd. They address sections of the page that
+                are actually built; the routes go back in when the pages do. */}
+            <nav
+              aria-label="Main"
+              className="hidden gap-7 text-[15.5px] text-ink-2 md:flex"
+            >
+              <Link
+                href="/#pricing"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
+                Compare clouds
               </Link>
-              <Link href="/estimate" className="transition-colors hover:text-ink">
+              <Link
+                href="/#architecture"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
                 Architecture
               </Link>
-              <Link href="/techniques" className="transition-colors hover:text-ink">
+              <Link
+                href="/#optimizations"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
                 Optimizations
               </Link>
-              <Link href="/docs" className="transition-colors hover:text-ink">
-                Docs
+              <Link
+                href="/estimate"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
+                Price your app
               </Link>
             </nav>
 
@@ -76,7 +130,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </div>
           </header>
 
-          <main className="flex-1">{children}</main>
+          <main id="content" className="flex-1">
+            {children}
+          </main>
 
         </ClerkProvider>
       </body>

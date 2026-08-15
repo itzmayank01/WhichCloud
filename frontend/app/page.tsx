@@ -150,15 +150,15 @@ export default function Home() {
         <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/estimate"
-            className="rounded-lg bg-accent px-6 py-3 text-[17px] font-medium text-white transition-opacity hover:opacity-90"
+            className="rounded-lg bg-accent px-6 py-3 text-[17px] font-medium text-white transition-all hover:opacity-90 active:scale-[.98]"
           >
             Price my app
           </Link>
           <Link
-            href="/prices"
-            className="rounded-lg border border-line-strong bg-surface px-6 py-3 text-[17px] font-medium text-ink transition-colors hover:bg-sunk"
+            href="/#pricing"
+            className="rounded-lg border border-line-strong bg-surface px-6 py-3 text-[17px] font-medium text-ink transition-colors hover:bg-sunk active:bg-line"
           >
-            Browse prices
+            See the comparison
           </Link>
         </div>
 
@@ -171,7 +171,7 @@ export default function Home() {
       <PriceTicker />
 
       {/* priced comparison — the first thing after the hero */}
-      <section className="px-6 pb-24 pt-16">
+      <section id="pricing" className="px-6 pb-24 pt-16">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8 max-w-2xl">
             <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
@@ -215,7 +215,7 @@ export default function Home() {
       </section>
 
       {/* architecture, all three clouds */}
-      <section className="px-6 pb-24">
+      <section id="architecture" className="px-6 pb-24">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8 max-w-2xl">
             <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
@@ -275,7 +275,7 @@ export default function Home() {
       </section>
 
       {/* feature blocks */}
-      <section className="px-6 pb-24">
+      <section id="optimizations" className="px-6 pb-24">
         <div className="mx-auto flex max-w-6xl flex-col gap-6">
           <FeatureBlock
             eyebrow="Trade-offs"
@@ -333,15 +333,15 @@ export default function Home() {
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/estimate"
-            className="rounded-lg bg-accent px-7 py-3.5 text-[17px] font-medium text-white transition-opacity hover:opacity-90"
+            className="rounded-lg bg-accent px-7 py-3.5 text-[17px] font-medium text-white transition-all hover:opacity-90 active:scale-[.98]"
           >
             Price my app
           </Link>
           <Link
-            href="/prices"
-            className="rounded-lg border border-line-strong bg-surface px-7 py-3.5 text-[17px] font-medium text-ink transition-colors hover:bg-sunk"
+            href="/#pricing"
+            className="rounded-lg border border-line-strong bg-surface px-7 py-3.5 text-[17px] font-medium text-ink transition-colors hover:bg-sunk active:bg-line"
           >
-            Browse prices
+            See the comparison
           </Link>
         </div>
         <p className="mt-8 font-mono text-[14.5px] text-ink-3">

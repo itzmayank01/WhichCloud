@@ -480,14 +480,50 @@ export async function Stats() {
 
 /* ──────────────────────── footer ──────────────────────── */
 
-const FOOTER = [
+/* A link that goes nowhere is worse than no link: it reads as clickable,
+   costs a click, and returns you to where you were. Only the entries with a
+   real destination are anchors; the rest are plain text, so the column still
+   describes the shape of the project without pretending to navigate. */
+const FOOTER: {
+  heading: string;
+  links: { label: string; href?: string }[];
+}[] = [
   {
     heading: "Product",
-    links: ["Price index", "Architecture", "Optimizations", "Cross-cloud"],
+    links: [
+      { label: "Compare clouds", href: "/#pricing" },
+      { label: "Architecture", href: "/#architecture" },
+      { label: "Optimizations", href: "/#optimizations" },
+      { label: "Price your app", href: "/estimate" },
+    ],
   },
-  { heading: "Data", links: ["Provenance", "Validation", "Freshness", "Coverage"] },
-  { heading: "Docs", links: ["API reference", "Knowledge base", "Terraform", "Changelog"] },
-  { heading: "Project", links: ["About", "GitHub", "Roadmap", "Limits"] },
+  {
+    heading: "Data",
+    links: [
+      { label: "Provenance" },
+      { label: "Validation" },
+      { label: "Freshness" },
+      { label: "Coverage" },
+    ],
+  },
+  {
+    heading: "Docs",
+    links: [
+      { label: "API reference" },
+      { label: "Knowledge base" },
+      { label: "Terraform" },
+      { label: "Changelog" },
+    ],
+  },
+  {
+    heading: "Project",
+    links: [
+      { label: "GitHub", href: "https://github.com/itzmayank01/WhichCloud" },
+      { label: "About" },
+      { label: "Roadmap" },
+      { label: "Limits" },
+    ],
+  },
 ];
 
 export function Footer() {
@@ -506,16 +542,23 @@ export function Footer() {
 
         {FOOTER.map((col) => (
           <div key={col.heading}>
-            <h4 className="text-[15.5px] font-medium">{col.heading}</h4>
+            <h3 className="text-[15.5px] font-medium">{col.heading}</h3>
             <ul className="mt-4 space-y-2.5">
               {col.links.map((l) => (
-                <li key={l}>
-                  <Link
-                    href="#"
-                    className="text-[15.5px] text-ink-2 transition-colors hover:text-ink"
-                  >
-                    {l}
-                  </Link>
+                <li key={l.label}>
+                  {l.href ? (
+                    <Link
+                      href={l.href}
+                      className="rounded-sm text-[15.5px] text-ink-2 transition-colors hover:text-ink"
+                      {...(l.href.startsWith("http")
+                        ? { target: "_blank", rel: "noreferrer noopener" }
+                        : {})}
+                    >
+                      {l.label}
+                    </Link>
+                  ) : (
+                    <span className="text-[15.5px] text-ink-3">{l.label}</span>
+                  )}
                 </li>
               ))}
             </ul>
