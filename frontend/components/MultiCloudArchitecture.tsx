@@ -53,8 +53,10 @@ export function MultiCloudArchitecture({
     : null;
   const incomplete = providers.filter((p) => !byProvider[p].complete);
 
-  const [budget, setBudget] = useState<string>("");
-  const budgetValue = Number(budget) || 0;
+  // A fixed reference budget, stated rather than typed: this is a showcase,
+  // and an input that only recolours a label is a control with nothing behind
+  // it. The real budget is part of the requirement on the estimate page.
+  const budgetValue = 400;
 
   // Generated from the same figures shown above, so the sentence cannot drift
   // from the numbers — and only complete options are ever compared.
@@ -80,29 +82,11 @@ export function MultiCloudArchitecture({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-white px-5 py-4">
-        <label htmlFor="budget" className="text-[15px] font-medium">
-          Monthly budget
-        </label>
-        <div className="flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-2">
-          <span className="font-mono text-[15px] text-ink-3">$</span>
-          <input
-            id="budget"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={budget}
-            onChange={(e) => setBudget(e.target.value)}
-            placeholder="400"
-            className="tnum w-24 bg-transparent font-mono text-[15px] outline-none"
-          />
-        </div>
-        <span className="text-[14px] text-ink-3">
-          {budgetValue > 0
-            ? "Providers within budget are marked below."
-            : "Set a budget to see which providers fit."}
-        </span>
-      </div>
+      <p className="text-[15px] text-ink-2">
+        Priced against a{" "}
+        <span className="font-mono font-medium text-ink">$400/month</span>{" "}
+        reference budget.
+      </p>
 
       <div role="tablist" aria-label="Cloud provider" className="grid gap-3 sm:grid-cols-3">
         {providers.map((p) => {

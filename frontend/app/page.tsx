@@ -6,7 +6,6 @@ import {
   FeatureBlock,
   Footer,
   Pill,
-  ProductShot,
   ProviderBar,
   Stats,
 } from "@/components/landing/Sections";
@@ -119,9 +118,24 @@ export default function Home() {
       {/* live prices, moving */}
       <PriceTicker />
 
-      {/* layered product shot */}
-      <section className="px-6 pb-24">
-        <ProductShot />
+      {/* priced comparison — the first thing after the hero */}
+      <section className="px-6 pb-24 pt-16">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-8 max-w-2xl">
+            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent">
+              Priced, across three clouds
+            </div>
+            <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
+              The same workload, costed on each provider
+            </h2>
+            <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
+              Real figures. Pick a cloud to see its own services and what each
+              one costs — every number fetched from that provider&apos;s
+              published rates.
+            </p>
+          </div>
+          <CloudArchitectures />
+        </div>
       </section>
 
       {/* provider bar — our version of a logo wall */}
@@ -164,20 +178,6 @@ export default function Home() {
 
           <ShowcaseDiagram />
 
-          <div className="mt-14 mb-8 max-w-2xl">
-            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent">
-              Priced, across three clouds
-            </div>
-            <h3 className="mt-3 text-balance text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-tight tracking-[-0.02em]">
-              The same workload, costed on each provider
-            </h3>
-            <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
-              Now with real figures. Pick a cloud to see its own services and
-              what each one costs — every number fetched from that provider&apos;s
-              published rates.
-            </p>
-          </div>
-          <CloudArchitectures />
         </div>
       </section>
 
