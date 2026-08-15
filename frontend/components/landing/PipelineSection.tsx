@@ -33,46 +33,42 @@ export async function PipelineSection() {
   const stages: Stage[] = [
     {
       key: "sentence",
-      title: "You describe it",
+      title: "Tell it what you are building",
       detail:
-        "One sentence, or a short form. No cloud account, no agent, nothing to install.",
-      metric: "plain English in",
+        "One sentence is enough, like \u201Can online shop for India\u201D. No cloud account, nothing to install.",
       icon: "sentence",
     },
     {
       key: "parse",
-      title: "It becomes a requirement",
+      title: "It works out what you need",
       detail:
-        "Workload, traffic shape, scale and region, with anything assumed reported back to you.",
-      metric: regions ? `${regions} regions supported` : "structured output",
+        "How busy the app will be, how much it stores, which country it runs in. It tells you anything it had to guess.",
+      metric: regions ? `${regions} regions` : undefined,
       icon: "parse",
     },
     {
       key: "catalog",
-      title: "The catalog is searched",
+      title: "It checks what every cloud charges",
       detail:
-        "Every machine that meets the spec, on each cloud, at that provider's published rate.",
+        "The real published price of every machine that would do the job, on all three clouds.",
       metric: prices
         ? `${prices.toLocaleString()} prices · ${providers} clouds`
-        : "every published rate",
+        : undefined,
       icon: "catalog",
     },
     {
       key: "optimize",
-      title: "Optimizations are measured",
+      title: "It looks for ways to pay less",
       detail:
-        "Each technique is priced against the option it replaces. Only what is cheaper survives.",
-      metric: techniques
-        ? `${techniques} techniques tested`
-        : "measured, not claimed",
+        "It tries each known trick, works out what it would actually save you, and keeps only the ones that do.",
+      metric: techniques ? `${techniques} techniques tried` : undefined,
       icon: "optimize",
     },
     {
       key: "output",
-      title: "You get three options",
+      title: "You get three plans to pick from",
       detail:
-        "Cheapest, balanced and most reliable, each drawn as an architecture and written as Terraform.",
-      metric: "3 options · 1 diagram · main.tf",
+        "Cheapest, balanced, and the most reliable. Each one drawn as a diagram, with the cost of every part.",
       icon: "output",
     },
   ];

@@ -308,15 +308,14 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto mb-10 max-w-2xl text-center">
             <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
-              End to end
+              How it works
             </div>
             <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
-              A sentence in, a costed architecture out
+              You write one sentence. It does the rest.
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed text-ink-2">
-              Five steps, none of which you run. The figures on each card are
-              what that step actually works with, read from the running
-              service.
+              Five steps, and you only do the first one. The numbers under each
+              step are live, read from the service as this page loaded.
             </p>
           </div>
           <Suspense fallback={<Loading height={240} />}>

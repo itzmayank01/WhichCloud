@@ -19,8 +19,11 @@ export type Stage = {
   key: string;
   title: string;
   detail: string;
-  /** Shown in mono, in the accent, once the stage completes. */
-  metric: string;
+  /* Optional on purpose. Two of these steps have no figure behind them, and
+     the previous version filled the gap with phrases like "plain English in"
+     -- a label styled to look like data while saying nothing. A step with
+     nothing to count now simply has no footer. */
+  metric?: string;
   /* A key, not an element. Importing JSX out of a "use client" module into a
      server component hands back a client reference rather than the element
      itself, so the icons silently rendered as nothing at all. The name
@@ -145,18 +148,6 @@ export function Pipeline({ stages }: { stages: Stage[] }) {
                   : "border-line bg-surface/60"
             }`}
           >
-            {/* the connector, which fills as the stage before it completes */}
-            {i < stages.length - 1 && (
-              <span
-                aria-hidden
-                className="absolute right-[-7px] top-1/2 hidden h-px w-3.5 md:block"
-                style={{
-                  background: lit ? "var(--accent)" : "var(--border-strong)",
-                  transition: "background 400ms ease",
-                }}
-              />
-            )}
-
             <div className="flex items-center gap-2.5">
               <span
                 className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-all duration-500 ${
@@ -165,12 +156,16 @@ export function Pipeline({ stages }: { stages: Stage[] }) {
               >
                 {ICONS[s.icon] ?? ICONS.sentence}
               </span>
+              {/* The position in the row already says which step this is; a
+                  chip repeating it in caps was chrome. The numeral sits back
+                  where it can be found and not read. */}
               <span
-                className={`font-mono text-[11px] uppercase tracking-[0.1em] transition-colors duration-500 ${
-                  lit ? "text-accent" : "text-ink-3"
+                className={`ml-auto font-mono text-[13px] tabular-nums transition-colors duration-500 ${
+                  lit ? "text-ink-3" : "text-line-strong"
                 }`}
+                aria-hidden
               >
-                Step {i + 1}
+                {i + 1}
               </span>
             </div>
 
@@ -189,15 +184,17 @@ export function Pipeline({ stages }: { stages: Stage[] }) {
               {s.detail}
             </p>
 
-            <div
-              className={`mt-3 border-t pt-2.5 font-mono text-[12.5px] font-medium transition-all duration-500 ${
-                lit
-                  ? "border-line text-accent opacity-100"
-                  : "border-transparent text-ink-3 opacity-0"
-              }`}
-            >
-              {s.metric}
-            </div>
+            {s.metric && (
+              <div
+                className={`mt-3 border-t pt-2.5 font-mono text-[12.5px] font-medium transition-all duration-500 ${
+                  lit
+                    ? "border-line text-accent opacity-100"
+                    : "border-transparent text-ink-3 opacity-0"
+                }`}
+              >
+                {s.metric}
+              </div>
+            )}
           </div>
         );
       })}
