@@ -366,14 +366,7 @@ export function ProviderBar() {
         How we can saved <span className="tnum text-save">$999</span> From Which
         Cloud Annually
       </h2>
-      <Link
-        href="/estimate"
-        className="mt-4 inline-flex items-center gap-2 text-[15px] font-medium text-accent hover:underline"
-      >
-        <span aria-hidden>»</span> Price your own app
-      </Link>
-
-      <p className="mt-14 font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3 font-medium">
+      <p className="mt-12 font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3 font-medium">
         Pricing sourced directly from
       </p>
       <ProviderLogoCards />
