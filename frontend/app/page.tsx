@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CloudArchitectures } from "@/components/landing/CloudArchitectures";
 import { ShowcaseDiagram } from "@/components/landing/ShowcaseDiagram";
 import { PriceTicker } from "@/components/PriceTicker";
+import { Reveal } from "@/components/landing/Reveal";
 import {
   FeatureBlock,
   Footer,
@@ -16,26 +17,41 @@ export const revalidate = 300;
 
 function DiffVisual() {
   return (
-    <div className="rounded-xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.24)]">
-      <div className="font-mono text-[13px] uppercase tracking-[0.13em] text-ink-3 font-medium">
+    <Reveal className="rounded-xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.24)]">
+      <div
+        className="reveal-line font-mono text-[13px] uppercase tracking-[0.13em] text-ink-3 font-medium"
+        style={{ "--i": 0 } as React.CSSProperties}
+      >
         Balanced → Most reliable
       </div>
       <div className="mt-4 space-y-3 font-mono text-[15px]">
-        <div className="flex items-baseline justify-between gap-3">
+        <div
+          className="reveal-line flex items-baseline justify-between gap-3"
+          style={{ "--i": 1 } as React.CSSProperties}
+        >
           <span className="text-ink-2">
             <span className="text-spend">~</span> Database
           </span>
           <span className="tnum text-spend">+$121.91</span>
         </div>
-        <div className="pl-3 text-[13.5px] text-ink-3 font-medium">
+        <div
+          className="reveal-line pl-3 text-[13.5px] text-ink-3 font-medium"
+          style={{ "--i": 2 } as React.CSSProperties}
+        >
           db.t4g.large → db.t4g.large:multi-az
         </div>
-        <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+        <div
+          className="reveal-line flex items-baseline justify-between gap-3 border-t border-line pt-3"
+          style={{ "--i": 3 } as React.CSSProperties}
+        >
           <span className="text-ink-3">= Compute, storage, egress, LB</span>
           <span className="text-ink-3">unchanged</span>
         </div>
       </div>
-      <div className="mt-4 rounded-lg bg-caution-wash px-3 py-2.5">
+      <div
+        className="reveal-line mt-4 rounded-lg bg-caution-wash px-3 py-2.5"
+        style={{ "--i": 4 } as React.CSSProperties}
+      >
         <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-caution font-medium">
           What you give up on Cheapest
         </div>
@@ -43,13 +59,42 @@ function DiffVisual() {
           Single instance, so a restart is downtime. Single-zone database.
         </p>
       </div>
-    </div>
+    </Reveal>
   );
 }
 
 function TerraformVisual() {
+  /* Written out a line at a time rather than dropped in whole, so the panel
+     reads as a file being generated. The lines are listed here instead of
+     inlined in a <pre> because each one needs to carry its own delay. */
+  const LINES = [
+    <span className="text-zinc-500"># Graviton, measured 9% cheaper here</span>,
+    <>
+      <span className="text-white">module</span>{" "}
+      <span className="text-amber-200">&quot;ecs_service&quot;</span> {"{"}
+    </>,
+    <>
+      {"  source           = "}
+      <span className="text-amber-200">&quot;terraform-aws-modules/ecs/aws&quot;</span>
+    </>,
+    <>
+      {"  cpu_architecture = "}
+      <span className="text-amber-200">&quot;ARM64&quot;</span>
+    </>,
+    <>
+      {"  desired_count    = "}
+      <span className="text-white">3</span>
+    </>,
+    <>
+      {"  min_capacity     = "}
+      <span className="text-white">1</span>{" "}
+      <span className="text-zinc-500"># scale to zero</span>
+    </>,
+    <>{"}"}</>,
+  ];
+
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-[#12171a] shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.3)]">
+    <Reveal className="overflow-hidden rounded-xl border border-line bg-[#12171a] shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.3)]">
       <div className="flex items-center gap-1.5 border-b border-white/8 px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
@@ -57,22 +102,24 @@ function TerraformVisual() {
         <span className="ml-2 font-mono text-[13.5px] text-white/40 font-medium">main.tf</span>
       </div>
       <pre className="overflow-x-auto p-5 font-mono text-[14.5px] leading-[1.75] text-zinc-400">
-        <span className="text-zinc-500"># Graviton, measured 9% cheaper here</span>
-        {"\n"}
-        <span className="text-white">module</span>{" "}
-        <span className="text-amber-200">&quot;ecs_service&quot;</span> {"{"}
-        {"\n  source           = "}
-        <span className="text-amber-200">&quot;terraform-aws-modules/ecs/aws&quot;</span>
-        {"\n  cpu_architecture = "}
-        <span className="text-amber-200">&quot;ARM64&quot;</span>
-        {"\n  desired_count    = "}
-        <span className="text-white">3</span>
-        {"\n  min_capacity     = "}
-        <span className="text-white">1</span>{" "}
-        <span className="text-zinc-500"># scale to zero</span>
-        {"\n}"}
+        {LINES.map((line, i) => (
+          <div
+            key={i}
+            className="reveal-line"
+            style={{ "--i": i } as React.CSSProperties}
+          >
+            {line}
+            {i === LINES.length - 1 && (
+              <span
+                className="reveal-caret ml-1 inline-block h-[1.05em] w-[0.55ch] translate-y-[0.18em] bg-zinc-500"
+                style={{ "--i": LINES.length } as React.CSSProperties}
+                aria-hidden
+              />
+            )}
+          </div>
+        ))}
       </pre>
-    </div>
+    </Reveal>
   );
 }
 

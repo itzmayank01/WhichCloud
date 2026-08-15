@@ -93,3 +93,59 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-\[ticker_48s_linear_infinite\] { animation: none; }
 }
+
+/* ── staggered reveal, used by components/landing/Reveal.tsx ──
+   Panels on the landing page assemble a line at a time when they are first
+   scrolled to, so a code file reads as something being written rather than
+   something that was always there. Each child sets its own delay through
+   --i, the index of its line. */
+
+@keyframes reveal-line {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  95% {
+    opacity: 0;
+  }
+}
+
+[data-revealed] .reveal-line {
+  opacity: 0;
+}
+
+[data-revealed="true"] .reveal-line {
+  animation: reveal-line 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 105ms);
+}
+
+/* The caret trails the last line in, then sits and blinks. */
+[data-revealed] .reveal-caret {
+  opacity: 0;
+}
+
+[data-revealed="true"] .reveal-caret {
+  animation: caret-blink 1.1s steps(1, end) infinite;
+  animation-delay: calc(var(--i, 0) * 105ms);
+}
+
+/* Motion is decoration here; the panels read the same standing still. */
+@media (prefers-reduced-motion: reduce) {
+  [data-revealed] .reveal-line,
+  [data-revealed] .reveal-caret {
+    opacity: 1;
+    animation: none;
+  }
+}
