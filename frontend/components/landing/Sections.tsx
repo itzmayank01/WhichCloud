@@ -366,9 +366,16 @@ export function ProviderBar() {
         Pricing sourced directly from
       </p>
       <ProviderLogoCards />
-      <p className="mt-7 text-[15.5px] text-ink-3">
-        Not a reseller, not an estimate engine — their own published rates,
-        validated against a second source.
+      {/* The endpoints are named here rather than on the cards, which keeps
+          the marks clean without giving up the part a reader can check: a
+          logo says whose price it is, the endpoint says which door it came
+          through. */}
+      <p className="mt-7 text-[15.5px] leading-relaxed text-ink-3">
+        Not a reseller, not an estimate engine — read from the{" "}
+        <span className="font-medium text-ink-2">Price List API</span>,{" "}
+        <span className="font-medium text-ink-2">Retail Prices API</span> and{" "}
+        <span className="font-medium text-ink-2">Cloud Billing Catalog</span>,
+        then validated against a second source.
       </p>
     </div>
   );
