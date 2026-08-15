@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CloudArchitectures } from "@/components/landing/CloudArchitectures";
+import { PriceTicker } from "@/components/PriceTicker";
 import {
   FeatureBlock,
   Footer,
@@ -16,17 +17,17 @@ export const revalidate = 300;
 function DiffVisual() {
   return (
     <div className="rounded-xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.24)]">
-      <div className="font-mono text-[12px] uppercase tracking-[0.13em] text-ink-3">
+      <div className="font-mono text-[13px] uppercase tracking-[0.13em] text-ink-3">
         Balanced → Most reliable
       </div>
-      <div className="mt-4 space-y-3 font-mono text-[14px]">
+      <div className="mt-4 space-y-3 font-mono text-[15px]">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-ink-2">
             <span className="text-spend">~</span> Database
           </span>
           <span className="tnum text-spend">+$121.91</span>
         </div>
-        <div className="pl-3 text-[12.5px] text-ink-3">
+        <div className="pl-3 text-[13.5px] text-ink-3">
           db.t4g.large → db.t4g.large:multi-az
         </div>
         <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
@@ -35,10 +36,10 @@ function DiffVisual() {
         </div>
       </div>
       <div className="mt-4 rounded-lg bg-caution-wash px-3 py-2.5">
-        <div className="font-mono text-[12px] uppercase tracking-[0.12em] text-caution">
+        <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-caution">
           What you give up on Cheapest
         </div>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-ink-2">
+        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">
           Single instance — a restart is downtime. Single-zone database.
         </p>
       </div>
@@ -53,9 +54,9 @@ function TerraformVisual() {
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-        <span className="ml-2 font-mono text-[12.5px] text-white/40">main.tf</span>
+        <span className="ml-2 font-mono text-[13.5px] text-white/40">main.tf</span>
       </div>
-      <pre className="overflow-x-auto p-5 font-mono text-[13.5px] leading-[1.75] text-zinc-400">
+      <pre className="overflow-x-auto p-5 font-mono text-[14.5px] leading-[1.75] text-zinc-400">
         <span className="text-zinc-500"># Graviton — measured 9% cheaper here</span>
         {"\n"}
         <span className="text-white">module</span>{" "}
@@ -112,10 +113,13 @@ export default function Home() {
           </Link>
         </div>
 
-        <p className="mt-7 font-mono text-[13px] text-ink-3">
+        <p className="mt-7 font-mono text-[14px] text-ink-3">
           No cloud account · no credit card · prices computed, not guessed
         </p>
       </section>
+
+      {/* live prices, moving */}
+      <PriceTicker />
 
       {/* layered product shot */}
       <section className="px-6 pb-24">
@@ -147,7 +151,7 @@ export default function Home() {
       <section className="px-6 pb-24">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8 max-w-2xl">
-            <div className="font-mono text-[12.5px] uppercase tracking-[0.14em] text-accent">
+            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent">
               Architecture
             </div>
             <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
@@ -201,7 +205,7 @@ export default function Home() {
       {/* honest limits */}
       <section className="px-6 py-20">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="font-mono text-[12.5px] uppercase tracking-[0.14em] text-ink-3">
+          <h2 className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-ink-3">
             What we don&apos;t do
           </h2>
           <p className="mt-5 text-[17px] leading-relaxed text-ink-2">
@@ -232,7 +236,7 @@ export default function Home() {
             Browse prices
           </Link>
         </div>
-        <p className="mt-8 font-mono text-[13.5px] text-ink-3">
+        <p className="mt-8 font-mono text-[14.5px] text-ink-3">
           Takes one sentence. Needs no cloud account.
         </p>
       </section>

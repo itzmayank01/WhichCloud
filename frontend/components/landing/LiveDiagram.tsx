@@ -19,7 +19,7 @@ export async function LiveDiagram() {
   } catch {
     return (
       <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-8 text-center">
-        <p className="font-mono text-[13px] leading-relaxed text-ink-3">
+        <p className="font-mono text-[14px] leading-relaxed text-ink-3">
           Diagram renders from a live recommendation — start the API to see it.
         </p>
       </div>

@@ -6,7 +6,7 @@ import { api, freshness, money, type CatalogRow, type Recommendation } from "@/l
 export function Pill({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto inline-flex items-center gap-2.5 rounded-full border border-line bg-surface py-1.5 pl-2 pr-4 shadow-[0_1px_2px_rgba(13,20,20,.05)]">
-      <span className="rounded-full bg-accent px-2.5 py-0.5 text-[13px] font-medium text-white">
+      <span className="rounded-full bg-accent px-2.5 py-0.5 text-[14px] font-medium text-white">
         New
       </span>
       <span className="text-[15.5px] text-ink-2">{children}</span>
@@ -44,7 +44,7 @@ function CardHead({ eyebrow, title }: { eyebrow: string; title: string }) {
         <span className="h-2.5 w-2.5 rounded-sm bg-accent" />
       </span>
       <div className="min-w-0">
-        <div className="font-mono text-[12px] uppercase tracking-[0.13em] text-ink-3">
+        <div className="font-mono text-[13px] uppercase tracking-[0.13em] text-ink-3">
           {eyebrow}
         </div>
         <div className="mt-0.5 truncate text-[17px] font-medium tracking-tight">{title}</div>
@@ -55,7 +55,7 @@ function CardHead({ eyebrow, title }: { eyebrow: string; title: string }) {
 
 function Offline() {
   return (
-    <p className="font-mono text-[13px] leading-relaxed text-ink-3">
+    <p className="font-mono text-[14px] leading-relaxed text-ink-3">
       Catalog offline — start Postgres and the API to see live figures.
     </p>
   );
@@ -96,11 +96,11 @@ async function IndexCard() {
           <span className="tnum font-mono text-[38px] font-light leading-none tracking-tight">
             {money(cheapest)}
           </span>
-          <span className="rounded-md bg-accent-wash px-2 py-0.5 font-mono text-[13px] text-accent">
+          <span className="rounded-md bg-accent-wash px-2 py-0.5 font-mono text-[14px] text-accent">
             −{money(dearest - cheapest)} vs dearest
           </span>
         </div>
-        <div className="mt-1 font-mono text-[13px] text-ink-3">
+        <div className="mt-1 font-mono text-[14px] text-ink-3">
           per month · 2 vCPU · 8 GB · ARM · India
         </div>
 
@@ -110,7 +110,7 @@ async function IndexCard() {
             const width = Math.round((r.monthly_usd / dearest) * 100);
             return (
               <div key={r.provider} className="flex items-center gap-3">
-                <span className="w-12 shrink-0 font-mono text-[12.5px] uppercase tracking-[0.06em] text-ink-2">
+                <span className="w-12 shrink-0 font-mono text-[13.5px] uppercase tracking-[0.06em] text-ink-2">
                   {r.provider}
                 </span>
                 <div className="h-6 flex-1 overflow-hidden rounded bg-sunk">
@@ -119,7 +119,7 @@ async function IndexCard() {
                     style={{ width: `${width}%` }}
                   />
                 </div>
-                <span className="tnum w-16 shrink-0 text-right font-mono text-[14px]">
+                <span className="tnum w-16 shrink-0 text-right font-mono text-[15px]">
                   {money(r.monthly_usd)}
                 </span>
               </div>
@@ -128,7 +128,7 @@ async function IndexCard() {
         </div>
 
         {stamp && (
-          <div className="mt-5 flex items-center gap-2 border-t border-line pt-3 font-mono text-[12px] text-ink-3">
+          <div className="mt-5 flex items-center gap-2 border-t border-line pt-3 font-mono text-[13px] text-ink-3">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             fetched {freshness(stamp)} from provider APIs
           </div>
@@ -176,7 +176,7 @@ async function AskCard() {
                       : "bg-sunk"
                   }`}
                 >
-                  <div className="truncate font-mono text-[11.5px] uppercase tracking-[0.06em] text-ink-3">
+                  <div className="truncate font-mono text-[13px] uppercase tracking-[0.06em] text-ink-3">
                     {o.label}
                   </div>
                   <div className="tnum mt-0.5 font-mono text-[17px]">
@@ -191,7 +191,7 @@ async function AskCard() {
                 .filter((n) => n.monthly_usd > 0)
                 .map((n) => (
                   <div key={n.id} className="flex items-center gap-2.5">
-                    <span className="w-[74px] shrink-0 truncate text-[14px] text-ink-2">
+                    <span className="w-[74px] shrink-0 truncate text-[15px] text-ink-2">
                       {n.label}
                     </span>
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunk">
@@ -200,7 +200,7 @@ async function AskCard() {
                         style={{ width: `${Math.max(n.share * 100, 2)}%` }}
                       />
                     </div>
-                    <span className="tnum w-14 shrink-0 text-right font-mono text-[13px] text-ink-2">
+                    <span className="tnum w-14 shrink-0 text-right font-mono text-[14px] text-ink-2">
                       {money(n.monthly_usd)}
                     </span>
                   </div>
@@ -246,7 +246,7 @@ async function SavingsCard() {
       <CardHead eyebrow="Optimizations" title="Measured, not claimed" />
       <div className="p-5">
         <div className="flex items-baseline justify-between">
-          <span className="font-mono text-[12.5px] uppercase tracking-[0.12em] text-ink-3">
+          <span className="font-mono text-[13.5px] uppercase tracking-[0.12em] text-ink-3">
             Saved
           </span>
           <span className="tnum font-mono text-[30px] font-light text-accent">
@@ -259,11 +259,11 @@ async function SavingsCard() {
             <div key={t.id} className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-[15px] leading-snug">{t.name}</div>
-                <div className="mt-0.5 font-mono text-[12px] text-ink-3">
+                <div className="mt-0.5 font-mono text-[13px] text-ink-3">
                   vs {t.versus_sku}
                 </div>
               </div>
-              <span className="tnum shrink-0 rounded bg-accent-wash px-1.5 py-0.5 font-mono text-[13.5px] text-accent">
+              <span className="tnum shrink-0 rounded bg-accent-wash px-1.5 py-0.5 font-mono text-[14.5px] text-accent">
                 −{money(t.saved_monthly_usd ?? 0)}
               </span>
             </div>
@@ -272,7 +272,7 @@ async function SavingsCard() {
           {balanced.advisory.slice(0, 1).map((t) => (
             <div key={t.id} className="border-t border-line pt-3">
               <div className="truncate text-[15px] text-ink-2">{t.name}</div>
-              <div className="mt-0.5 font-mono text-[12px] text-caution">
+              <div className="mt-0.5 font-mono text-[13px] text-caution">
                 not priced — depends on your workload
               </div>
             </div>
@@ -309,7 +309,7 @@ export function ProductShot() {
 export function ProviderBar() {
   return (
     <div className="mx-auto max-w-4xl text-center">
-      <p className="font-mono text-[13px] uppercase tracking-[0.14em] text-ink-3">
+      <p className="font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3">
         Pricing sourced directly from
       </p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-x-14 gap-y-5">
@@ -354,7 +354,7 @@ export function FeatureBlock({
         }`}
       >
         <div>
-          <div className="font-mono text-[12.5px] uppercase tracking-[0.14em] text-accent">
+          <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent">
             {eyebrow}
           </div>
           <h3 className="mt-3 text-balance text-[clamp(1.5rem,2.6vw,2rem)] font-semibold leading-tight tracking-[-0.02em]">
@@ -436,7 +436,7 @@ export function Footer() {
           </p>
           <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            <span className="font-mono text-[12.5px] text-ink-2">All prices current</span>
+            <span className="font-mono text-[13.5px] text-ink-2">All prices current</span>
           </div>
         </div>
 
@@ -460,7 +460,7 @@ export function Footer() {
       </div>
 
       <div className="mx-auto mt-12 max-w-6xl border-t border-line pt-6">
-        <p className="font-mono text-[12.5px] leading-relaxed text-ink-3">
+        <p className="font-mono text-[13.5px] leading-relaxed text-ink-3">
           Prices are public list rates from provider APIs · sizing is a documented
           heuristic · estimates, not quotes
         </p>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Node as ApiNode, Topology } from "@/lib/api";
 import { money } from "@/lib/api";
 import { serviceName } from "@/lib/services";
+import { HoverBoard } from "@/components/HoverBoard";
 
 /**
  * A provider-style cloud architecture diagram, with costs on the services.
@@ -153,12 +154,12 @@ function Tile({
         </svg>
       </span>
 
-      <span className="mt-2.5 text-[13.5px] font-medium leading-tight text-ink">
+      <span className="mt-2.5 text-[14.5px] font-medium leading-tight text-ink">
         {serviceName(provider, node.kind, node.label)}
       </span>
 
       {node.detail && (
-        <span className="mt-1 font-mono text-[11.5px] leading-tight text-ink-3">
+        <span className="mt-1 font-mono text-[13px] leading-tight text-ink-3">
           {node.detail}
         </span>
       )}
@@ -167,17 +168,17 @@ function Tile({
         <span className="mt-1.5 flex items-baseline gap-1.5">
           {node.priced ? (
             <>
-              <span className="tnum font-mono text-[14px] font-medium">
+              <span className="tnum font-mono text-[15px] font-medium">
                 {money(node.monthly_usd)}
               </span>
               {node.share > 0.01 && (
-                <span className="tnum font-mono text-[11.5px] text-ink-3">
+                <span className="tnum font-mono text-[13px] text-ink-3">
                   {Math.round(node.share * 100)}%
                 </span>
               )}
             </>
           ) : (
-            <span className="font-mono text-[11.5px] text-caution">not priced</span>
+            <span className="font-mono text-[13px] text-caution">not priced</span>
           )}
         </span>
       )}
@@ -219,7 +220,7 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
   if (!label) return <>{children}</>;
   return (
     <div className="relative rounded-lg border border-dashed border-[#b3bac6] px-3 pb-3 pt-8">
-      <span className="absolute left-1/2 top-2.5 -translate-x-1/2 whitespace-nowrap text-[12.5px] font-medium text-ink-2">
+      <span className="absolute left-1/2 top-2.5 -translate-x-1/2 whitespace-nowrap text-[13.5px] font-medium text-ink-2">
         {label}
       </span>
       <div className="flex flex-col items-center gap-2">{children}</div>
@@ -254,6 +255,8 @@ export function ArchitectureDiagram({
 
   const users = topology.nodes.find((n) => n.kind === "client");
   const dim = hovered !== null;
+  const focused = topology.nodes.find((n) => n.id === hovered) ?? null;
+  const total = topology.nodes.reduce((sum, n) => sum + n.monthly_usd, 0);
 
   return (
     <div className="overflow-x-auto pb-1">
@@ -289,7 +292,7 @@ export function ArchitectureDiagram({
               >
                 <span className="h-1.5 w-1.5 rounded-[1px] bg-white" />
               </span>
-              <span className="text-[13px] font-medium text-ink-2">{chrome.label}</span>
+              <span className="text-[14px] font-medium text-ink-2">{chrome.label}</span>
             </span>
 
             <div className="flex items-center justify-between gap-1">
@@ -315,6 +318,10 @@ export function ArchitectureDiagram({
           </div>
         </div>
 
+        <div className="mt-3">
+          <HoverBoard node={focused} provider={provider} total={total} />
+        </div>
+
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             {[
@@ -328,15 +335,15 @@ export function ArchitectureDiagram({
                   className="h-2.5 w-2.5 rounded-[3px]"
                   style={{ background: colour as string }}
                 />
-                <span className="text-[12.5px] text-ink-3">{label}</span>
+                <span className="text-[13.5px] text-ink-3">{label}</span>
               </span>
             ))}
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-accent" />
-              <span className="text-[12.5px] text-ink-3">optimized</span>
+              <span className="text-[13.5px] text-ink-3">optimized</span>
             </span>
           </div>
-          {caption && <span className="font-mono text-[12px] text-ink-3">{caption}</span>}
+          {caption && <span className="font-mono text-[13px] text-ink-3">{caption}</span>}
         </div>
       </div>
     </div>

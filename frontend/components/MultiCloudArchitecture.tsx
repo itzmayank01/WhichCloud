@@ -64,10 +64,10 @@ export function MultiCloudArchitecture({
               </div>
               <div className="tnum mt-1 font-mono text-[22px] leading-none">
                 {money(o.monthly_usd, 0)}
-                <span className="ml-1 text-[13px] text-ink-3">/mo</span>
+                <span className="ml-1 text-[14px] text-ink-3">/mo</span>
               </div>
               {!o.complete && (
-                <div className="mt-1.5 font-mono text-[12px] text-caution">
+                <div className="mt-1.5 font-mono text-[13px] text-caution">
                   {o.missing.length} component{o.missing.length === 1 ? "" : "s"} unpriced
                 </div>
               )}
@@ -86,7 +86,7 @@ export function MultiCloudArchitecture({
       </div>
 
       {!option.complete && (
-        <p className="mt-3 rounded-lg bg-caution-wash px-4 py-3 text-[14px] leading-relaxed text-ink-2">
+        <p className="mt-3 rounded-lg bg-caution-wash px-4 py-3 text-[15px] leading-relaxed text-ink-2">
           <span className="font-medium text-caution">Incomplete.</span>{" "}
           {PROVIDER_LABEL[active]} is missing a published price for{" "}
           {option.missing.join(", ")}, so this total is lower than the real

@@ -25,7 +25,7 @@ function Card({
       className={`rounded-xl border border-line bg-surface shadow-[0_1px_2px_rgba(13,20,20,.04),0_12px_32px_-16px_rgba(13,20,20,.18)] ${className}`}
     >
       <div className="border-b border-line px-5 py-3.5">
-        <div className="font-mono text-[12px] uppercase tracking-[0.13em] text-ink-3">
+        <div className="font-mono text-[13px] uppercase tracking-[0.13em] text-ink-3">
           {eyebrow}
         </div>
         <div className="mt-0.5 text-[17px] font-medium tracking-tight">{title}</div>
@@ -37,7 +37,7 @@ function Card({
 
 function Unavailable() {
   return (
-    <p className="font-mono text-[13px] leading-relaxed text-ink-3">
+    <p className="font-mono text-[14px] leading-relaxed text-ink-3">
       Catalog offline — start Postgres and the API to see live figures here.
     </p>
   );
@@ -69,7 +69,7 @@ async function Prices() {
 
   return (
     <Card eyebrow="Live index" title="Same machine, three clouds">
-      <div className="font-mono text-[12.5px] uppercase tracking-[0.12em] text-ink-3">
+      <div className="font-mono text-[13.5px] uppercase tracking-[0.12em] text-ink-3">
         2 vCPU · 8 GB · ARM · India
       </div>
 
@@ -84,17 +84,17 @@ async function Prices() {
               }`}
             >
               <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[13px] uppercase tracking-[0.08em] text-ink-2">
+                <span className="font-mono text-[14px] uppercase tracking-[0.08em] text-ink-2">
                   {row.provider}
                 </span>
                 {wins && (
-                  <span className="font-mono text-[12px] uppercase tracking-[0.1em] text-accent">
+                  <span className="font-mono text-[13px] uppercase tracking-[0.1em] text-accent">
                     cheapest
                   </span>
                 )}
               </div>
               <div className="flex items-baseline gap-2.5">
-                <span className="font-mono text-[12.5px] text-ink-3">{row.sku}</span>
+                <span className="font-mono text-[13.5px] text-ink-3">{row.sku}</span>
                 <span
                   className={`tnum font-mono text-[19px] ${wins ? "text-accent" : "text-ink"}`}
                 >
@@ -107,7 +107,7 @@ async function Prices() {
       </div>
 
       {stamp && (
-        <div className="mt-4 flex items-center gap-2 font-mono text-[12px] text-ink-3">
+        <div className="mt-4 flex items-center gap-2 font-mono text-[13px] text-ink-3">
           <span className="h-1.5 w-1.5 rounded-full bg-accent" />
           fetched {freshness(stamp)}
         </div>
@@ -141,7 +141,7 @@ async function Optimizations() {
   return (
     <Card eyebrow="Optimizations" title="Measured, not claimed">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[12.5px] uppercase tracking-[0.12em] text-ink-3">
+        <span className="font-mono text-[13.5px] uppercase tracking-[0.12em] text-ink-3">
           Saved on {balanced.label.toLowerCase()}
         </span>
         <span className="tnum font-mono text-[24px] text-accent">
@@ -154,7 +154,7 @@ async function Optimizations() {
           <div key={t.id} className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="truncate text-[15.5px] leading-snug">{t.name}</div>
-              <div className="mt-0.5 font-mono text-[12.5px] text-ink-3">
+              <div className="mt-0.5 font-mono text-[13.5px] text-ink-3">
                 vs {t.versus_sku}
               </div>
             </div>
@@ -168,7 +168,7 @@ async function Optimizations() {
           <div key={t.id} className="flex items-start justify-between gap-3 border-t border-line pt-3">
             <div className="min-w-0">
               <div className="truncate text-[15.5px] leading-snug text-ink-2">{t.name}</div>
-              <div className="mt-0.5 font-mono text-[12.5px] text-caution">
+              <div className="mt-0.5 font-mono text-[13.5px] text-caution">
                 not priced — depends on your workload
               </div>
             </div>
@@ -214,7 +214,7 @@ async function Breakdown() {
                 : "bg-sunk"
             }`}
           >
-            <div className="truncate font-mono text-[12px] uppercase tracking-[0.08em] text-ink-3">
+            <div className="truncate font-mono text-[13px] uppercase tracking-[0.08em] text-ink-3">
               {o.label}
             </div>
             <div className="tnum mt-0.5 font-mono text-[15.5px]">
@@ -227,7 +227,7 @@ async function Breakdown() {
       <div className="mt-4 space-y-2">
         {nodes.map((n) => (
           <div key={n.id} className="flex items-center gap-3">
-            <span className="w-[86px] shrink-0 truncate text-[14.5px] text-ink-2">
+            <span className="w-[86px] shrink-0 truncate text-[15px] text-ink-2">
               {n.label}
             </span>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunk">
@@ -236,14 +236,14 @@ async function Breakdown() {
                 style={{ width: `${Math.max(n.share * 100, 2)}%` }}
               />
             </div>
-            <span className="tnum w-[62px] shrink-0 text-right font-mono text-[13.5px] text-ink-2">
+            <span className="tnum w-[62px] shrink-0 text-right font-mono text-[14.5px] text-ink-2">
               {money(n.monthly_usd)}
             </span>
           </div>
         ))}
       </div>
 
-      <div className="mt-4 border-t border-line pt-3 font-mono text-[12.5px] text-ink-3">
+      <div className="mt-4 border-t border-line pt-3 font-mono text-[13.5px] text-ink-3">
         {balanced.shape}
       </div>
     </Card>
