@@ -37,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Wordmark />
             </Link>
 
-            <nav className="hidden gap-7 text-[14px] text-ink-2 md:flex">
+            <nav className="hidden gap-7 text-[15.5px] text-ink-2 md:flex">
               <Link href="/prices" className="transition-colors hover:text-ink">
                 Price index
               </Link>
@@ -60,7 +60,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   </button>
                 </SignInButton>
                 <SignUpButton>
-                  <button className="rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-white transition-opacity hover:opacity-90">
+                  <button className="rounded-lg bg-accent px-4 py-2 text-[15.5px] font-medium text-white transition-opacity hover:opacity-90">
                     Get started
                   </button>
                 </SignUpButton>

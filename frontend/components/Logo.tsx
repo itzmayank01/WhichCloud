@@ -28,7 +28,7 @@ export function Wordmark() {
   return (
     <span className="flex items-center gap-2.5">
       <Mark className="h-6 w-6 text-ink" />
-      <span className="text-[17px] font-medium tracking-tight text-ink">
+      <span className="text-[19px] font-medium tracking-tight text-ink">
         Which<span className="text-accent">Cloud</span>
       </span>
     </span>

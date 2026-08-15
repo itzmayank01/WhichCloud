@@ -130,6 +130,13 @@ export type Recommendation = {
   read_by: string | null;
 };
 
+export type Comparison = {
+  goal: string;
+  region: string;
+  sizing_basis: string;
+  clouds: Record<string, Option[]>;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -147,6 +154,20 @@ async function get<T>(path: string, revalidate = 300): Promise<T> {
   return response.json();
 }
 
+async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    next: { revalidate: 300 },
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new ApiError(detail.detail ?? `POST ${path} failed`, response.status);
+  }
+  return response.json();
+}
+
 export const api = {
   health: () => get<Health>("/health", 60),
 
@@ -159,18 +180,11 @@ export const api = {
 
   techniques: () => get<{ count: number; techniques: Technique[] }>("/techniques"),
 
-  async recommend(body: Record<string, unknown>): Promise<Recommendation> {
-    const response = await fetch(`${BASE}/recommend`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const detail = await response.json().catch(() => ({}));
-      throw new ApiError(detail.detail ?? "recommendation failed", response.status);
-    }
-    return response.json();
-  },
+  recommend: (body: Record<string, unknown>) =>
+    post<Recommendation>("/recommend", body),
+
+  /** The same requirement priced on every cloud. */
+  compare: (body: Record<string, unknown>) => post<Comparison>("/compare", body),
 };
 
 /** Prices are the product. Format them once, consistently, everywhere. */

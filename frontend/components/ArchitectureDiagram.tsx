@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Node as ApiNode, Topology } from "@/lib/api";
 import { money } from "@/lib/api";
+import { serviceName } from "@/lib/services";
 
 /**
  * A cloud architecture diagram where every node carries its own cost.
@@ -115,12 +116,14 @@ function Glyph({ kind }: { kind: string }) {
 
 function NodeBox({
   node,
+  provider,
   active,
   dimmed,
   onEnter,
   onLeave,
 }: {
   node: ApiNode;
+  provider: string;
   active: boolean;
   dimmed: boolean;
   onEnter: () => void;
@@ -151,27 +154,27 @@ function NodeBox({
       <div className="flex items-start gap-3">
         <Glyph kind={node.kind} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium leading-tight">
-            {node.label}
+          <div className="truncate text-[15px] font-medium leading-tight">
+            {serviceName(provider, node.kind, node.label)}
           </div>
-          <div className="mt-0.5 truncate font-mono text-[10.5px] text-ink-3">
+          <div className="mt-0.5 truncate font-mono text-[12.5px] text-ink-3">
             {node.detail || node.sku || "—"}
           </div>
         </div>
         <div className="shrink-0 text-right">
           {node.priced ? (
             <>
-              <div className="tnum font-mono text-[13px] leading-tight">
+              <div className="tnum font-mono text-[15px] leading-tight">
                 {money(node.monthly_usd)}
               </div>
               {node.share > 0.01 && (
-                <div className="tnum font-mono text-[10px] text-ink-3">
+                <div className="tnum font-mono text-[12px] text-ink-3">
                   {Math.round(node.share * 100)}%
                 </div>
               )}
             </>
           ) : (
-            <div className="font-mono text-[10px] text-caution">not priced</div>
+            <div className="font-mono text-[12px] text-caution">not priced</div>
           )}
         </div>
       </div>
@@ -224,7 +227,7 @@ function GroupFrame({
   if (!label) return <div className="flex flex-col gap-2">{children}</div>;
   return (
     <div className="relative rounded-lg border border-dashed border-line-strong p-3 pt-6">
-      <span className="absolute left-3 top-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-3">
+      <span className="absolute left-3 top-1.5 font-mono text-[12px] uppercase tracking-[0.12em] text-ink-3">
         {label}
       </span>
       <div className="flex flex-col gap-2">{children}</div>
@@ -234,9 +237,11 @@ function GroupFrame({
 
 export function ArchitectureDiagram({
   topology,
+  provider = "aws",
   caption,
 }: {
   topology: Topology;
+  provider?: string;
   caption?: string;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
@@ -265,6 +270,7 @@ export function ArchitectureDiagram({
                   <NodeBox
                     key={n.id}
                     node={n}
+                    provider={provider}
                     active={hovered === n.id}
                     dimmed={hovered !== null && hovered !== n.id}
                     onEnter={() => setHovered(n.id)}
@@ -291,16 +297,16 @@ export function ArchitectureDiagram({
                 className="h-2 w-2 rounded-sm"
                 style={{ background: colour as string }}
               />
-              <span className="font-mono text-[10px] text-ink-3">{label}</span>
+              <span className="font-mono text-[12px] text-ink-3">{label}</span>
             </span>
           ))}
           <span className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-accent" />
-            <span className="font-mono text-[10px] text-ink-3">optimized</span>
+            <span className="font-mono text-[12px] text-ink-3">optimized</span>
           </span>
         </div>
         {caption && (
-          <span className="font-mono text-[10px] text-ink-3">{caption}</span>
+          <span className="font-mono text-[12px] text-ink-3">{caption}</span>
         )}
       </div>
     </div>
