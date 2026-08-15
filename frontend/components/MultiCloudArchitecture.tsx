@@ -370,19 +370,26 @@ export function MultiCloudArchitecture({
     )}/mo. ${others.join("; ")}.`;
   }
 
+  // The cheapest complete option opens first; a partial total never leads.
+  const [active, setActive] = useState(cheapest ?? providers[0]);
+
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div role="tablist" aria-label="Cloud provider" className="grid gap-3 sm:grid-cols-3">
         {providers.map((p) => {
           const o = byProvider[p];
           const wins = p === cheapest;
+          const on = p === active;
           return (
-            <div
+            <button
               key={p}
-              className={`rounded-xl border px-5 py-4 ${
-                wins
+              role="tab"
+              aria-selected={on}
+              onClick={() => setActive(p)}
+              className={`rounded-xl border px-5 py-4 text-left transition-all duration-150 ${
+                on
                   ? "border-accent bg-accent-wash shadow-[0_2px_12px_-4px_rgba(36,81,217,.3)]"
-                  : "border-line bg-white"
+                  : "border-line bg-white hover:border-line-strong hover:bg-sunk"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -404,14 +411,19 @@ export function MultiCloudArchitecture({
                   {o.missing.length} component{o.missing.length === 1 ? "" : "s"} unpriced
                 </div>
               )}
-            </div>
+              <div
+                className={`mt-2.5 text-[13px] font-medium transition-colors ${
+                  on ? "text-accent" : "text-ink-3"
+                }`}
+              >
+                {on ? "Showing architecture" : "View architecture →"}
+              </div>
+            </button>
           );
         })}
       </div>
 
-      {providers.map((p) => (
-        <CloudDiagram key={p} option={byProvider[p]} provider={p} />
-      ))}
+      <CloudDiagram key={active} option={byProvider[active]} provider={active} />
 
       {insight && (
         <p className="rounded-xl border border-line bg-sunk px-5 py-4 text-[15px] leading-relaxed text-ink-2">
