@@ -89,7 +89,13 @@ export function MultiCloudArchitecture({
         reference budget.
       </p>
 
-      <div role="tablist" aria-label="Cloud provider" className="grid gap-3 sm:grid-cols-3">
+            {/* Three across only once each card can hold a provider's full name
+          beside its badge. Measured: the name ellipsises to "Go…" at 225px of
+          card and is comfortable by 259px. sm gives ~200px and md ~232px,
+          both inside that range; lg gives ~317px. So the columns start at lg
+          and the cards stack below it, which costs some vertical space and
+          never costs a provider its name. */}
+      <div role="tablist" aria-label="Cloud provider" className="grid gap-3 lg:grid-cols-3">
         {providers.map((p) => {
           const o = byProvider[p];
           const chrome = CHROME[p];
@@ -115,11 +121,17 @@ export function MultiCloudArchitecture({
               role="tab"
               aria-selected={on}
               onClick={() => setActive(p)}
+              /* The winner keeps its own colour whether or not it is the
+                 selected card. Two accents on one card -- green for cheapest,
+                 blue for selected -- read as two different claims about the
+                 same thing, so on this card selection is green as well. */
               className={`group relative overflow-hidden rounded-xl border bg-white text-left transition-all duration-150 ${
-                on
-                  ? "border-accent shadow-[0_4px_16px_-6px_rgba(36,81,217,.28)]"
-                  : wins
-                    ? "border-save/45 shadow-[0_2px_10px_-6px_rgba(11,122,69,.25)] hover:border-save/70"
+                wins
+                  ? on
+                    ? "border-save shadow-[0_4px_16px_-6px_rgba(11,122,69,.32)]"
+                    : "border-save/45 shadow-[0_2px_10px_-6px_rgba(11,122,69,.25)] hover:border-save/70"
+                  : on
+                    ? "border-accent shadow-[0_4px_16px_-6px_rgba(36,81,217,.28)]"
                     : "border-line hover:border-line-strong hover:shadow-[0_2px_10px_-6px_rgba(11,13,18,.18)]"
               }`}
             >
@@ -131,7 +143,11 @@ export function MultiCloudArchitecture({
                 className={`absolute inset-x-0 top-0 h-[3px] transition-opacity duration-150 ${
                   on ? "opacity-100" : "opacity-0"
                 }`}
-                style={{ background: chrome?.border ?? "#2451d9" }}
+                style={{
+                  background: wins
+                    ? "var(--save)"
+                    : (chrome?.border ?? "#2451d9"),
+                }}
               />
 
               <div className="px-5 pb-4 pt-5">
@@ -219,8 +235,12 @@ export function MultiCloudArchitecture({
               <div
                 className={`flex items-center justify-between border-t px-5 py-2.5 text-[12.5px] font-medium transition-colors ${
                   on
-                    ? "border-accent/25 bg-accent-wash text-accent"
-                    : "border-line text-ink-3 group-hover:text-ink-2"
+                    ? wins
+                      ? "border-save/25 text-save"
+                      : "border-accent/25 bg-accent-wash text-accent"
+                    : wins
+                      ? "border-save/20 text-save/85 group-hover:text-save"
+                      : "border-line text-ink-3 group-hover:text-ink-2"
                 }`}
               >
                 <span>{on ? "Showing architecture" : "View architecture"}</span>
