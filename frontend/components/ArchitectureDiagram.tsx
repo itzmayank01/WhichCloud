@@ -6,115 +6,101 @@ import { money } from "@/lib/api";
 import { serviceName } from "@/lib/services";
 
 /**
- * A cloud architecture diagram where every node carries its own cost.
+ * A provider-style cloud architecture diagram, with costs on the services.
  *
- * Provider reference diagrams colour services by category — compute orange,
- * storage green, networking purple — so an engineer reads the shape of a
- * system before reading a single label. This borrows that language and adds
- * the thing those diagrams never have: the monthly figure, on the box.
+ * Drawn in the idiom of AWS, Azure and GCP reference diagrams: a cloud
+ * boundary, dashed tier groups, solid category-coloured service tiles with
+ * white glyphs, and arrows following the request path. What those diagrams
+ * never carry is the money — so every tile here shows its monthly figure and
+ * its share of the bill.
  *
- * Hovering a node dims the rest and reveals its detail. Costly nodes are drawn
- * heavier, so the expensive part of the architecture looks expensive.
+ * The glyphs are drawn rather than imported. AWS publishes its icon set under
+ * CC-BY-ND, which forbids the recolouring and resizing a component like this
+ * needs; the category colours and line-art style are the readable part anyway,
+ * and they are not what the licence protects.
  */
 
-const CATEGORY: Record<
-  string,
-  { colour: string; wash: string; glyph: React.ReactNode; group: string }
-> = {
+type Category = {
+  colour: string;
+  group: string;
+  glyph: React.ReactNode;
+};
+
+/* Category colours follow the providers' own conventions, so an engineer reads
+   the shape of a system before reading any label. */
+const CATEGORY: Record<string, Category> = {
   client: {
-    colour: "var(--svc-client)",
-    wash: "#f3f4f6",
+    colour: "#5A6270",
     group: "",
     glyph: (
       <>
-        <circle cx="12" cy="8.5" r="3.2" />
-        <path d="M5.5 19c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" />
+        <circle cx="12" cy="8" r="3.4" />
+        <path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" />
       </>
     ),
   },
   network: {
-    colour: "var(--svc-network)",
-    wash: "#f4efff",
+    colour: "#8C4FFF",
     group: "Edge",
     glyph: (
       <>
-        <circle cx="12" cy="12" r="7.5" />
-        <path d="M4.5 12h15M12 4.5c2 2.4 3 4.9 3 7.5s-1 5.1-3 7.5c-2-2.4-3-4.9-3-7.5s1-5.1 3-7.5Z" />
+        <circle cx="12" cy="12" r="8.2" />
+        <path d="M3.8 12h16.4M12 3.8c2.2 2.6 3.3 5.3 3.3 8.2s-1.1 5.6-3.3 8.2c-2.2-2.6-3.3-5.3-3.3-8.2S9.8 6.4 12 3.8Z" />
       </>
     ),
   },
   loadbalancer: {
-    colour: "var(--svc-network)",
-    wash: "#f4efff",
+    colour: "#8C4FFF",
     group: "Edge",
     glyph: (
       <>
-        <path d="M12 4v5M12 9 6 14M12 9l6 5" />
-        <rect x="3.5" y="14" width="5" height="5" rx="1" />
-        <rect x="15.5" y="14" width="5" height="5" rx="1" />
+        <circle cx="12" cy="4.2" r="1.8" />
+        <path d="M12 6v3.4M12 9.4 5.6 15M12 9.4l6.4 5.6" />
+        <rect x="2.6" y="15" width="6" height="6" rx="1.3" />
+        <rect x="15.4" y="15" width="6" height="6" rx="1.3" />
       </>
     ),
   },
   compute: {
-    colour: "var(--svc-compute)",
-    wash: "#fff2e6",
+    colour: "#ED7100",
     group: "Application tier",
     glyph: (
       <>
-        <rect x="4.5" y="4.5" width="15" height="15" rx="2" />
-        <rect x="9" y="9" width="6" height="6" rx="1" />
-        <path d="M9 2.5v2M15 2.5v2M9 19.5v2M15 19.5v2M2.5 9h2M2.5 15h2M19.5 9h2M19.5 15h2" />
+        <rect x="5" y="5" width="14" height="14" rx="2.2" />
+        <rect x="9.2" y="9.2" width="5.6" height="5.6" rx="1" />
+        <path d="M9 2.4v2.4M15 2.4v2.4M9 19.2v2.4M15 19.2v2.4M2.4 9h2.4M2.4 15h2.4M19.2 9h2.4M19.2 15h2.4" />
       </>
     ),
   },
   database: {
-    colour: "var(--svc-database)",
-    wash: "#eef1fd",
+    colour: "#3556C8",
     group: "Data tier",
     glyph: (
       <>
-        <ellipse cx="12" cy="6.5" rx="7" ry="3" />
-        <path d="M5 6.5v11c0 1.7 3.1 3 7 3s7-1.3 7-3v-11M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" />
+        <ellipse cx="12" cy="6.4" rx="7.2" ry="3.1" />
+        <path d="M4.8 6.4v11.2c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.4M4.8 12c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1" />
       </>
     ),
   },
   storage: {
-    colour: "var(--svc-storage)",
-    wash: "#eff6e8",
+    colour: "#4A8C1C",
     group: "Data tier",
     glyph: (
       <>
-        <path d="M4 7.5 12 3.5l8 4v9l-8 4-8-4v-9Z" />
-        <path d="M4 7.5l8 4 8-4M12 11.5v9" />
+        <path d="M3.6 7.4 12 3.2l8.4 4.2v9.2L12 20.8l-8.4-4.2V7.4Z" />
+        <path d="M3.6 7.4 12 11.6l8.4-4.2M12 11.6v9.2" />
       </>
     ),
   },
 };
 
-function Glyph({ kind }: { kind: string }) {
-  const cat = CATEGORY[kind] ?? CATEGORY.compute;
-  return (
-    <span
-      className="grid h-9 w-9 shrink-0 place-items-center rounded-md"
-      style={{ background: cat.wash }}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        className="h-[19px] w-[19px]"
-        fill="none"
-        stroke={cat.colour}
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        {cat.glyph}
-      </svg>
-    </span>
-  );
-}
+const CHROME: Record<string, { label: string; mark: string; tint: string }> = {
+  aws: { label: "AWS Cloud", mark: "#232F3E", tint: "#f7f8fa" },
+  azure: { label: "Microsoft Azure", mark: "#0078D4", tint: "#f5f9fd" },
+  gcp: { label: "Google Cloud", mark: "#1A73E8", tint: "#f6f9fd" },
+};
 
-function NodeBox({
+function Tile({
   node,
   provider,
   active,
@@ -130,8 +116,6 @@ function NodeBox({
   onLeave: () => void;
 }) {
   const cat = CATEGORY[node.kind] ?? CATEGORY.compute;
-  // Border weight tracks share of the bill — the expensive box looks expensive.
-  const heavy = node.share > 0.3;
 
   return (
     <div
@@ -140,75 +124,89 @@ function NodeBox({
       onFocus={onEnter}
       onBlur={onLeave}
       tabIndex={0}
-      className={`group relative w-full rounded-lg bg-surface px-3.5 py-3 text-left outline-none transition-all duration-200 ${
-        dimmed ? "opacity-40" : "opacity-100"
+      className={`relative flex w-[156px] flex-col items-center rounded-lg px-2 py-3 text-center outline-none transition-all duration-200 ${
+        dimmed ? "opacity-35" : "opacity-100"
       } ${
-        active
-          ? "-translate-y-0.5 shadow-[0_8px_24px_-8px_rgba(11,13,18,.28)]"
-          : "shadow-[0_1px_2px_rgba(11,13,18,.05)]"
+        active ? "-translate-y-1 bg-white shadow-[0_10px_28px_-10px_rgba(11,13,18,.32)]" : ""
       }`}
-      style={{
-        border: `${heavy ? 1.5 : 1}px solid ${active ? cat.colour : "var(--border)"}`,
-      }}
     >
-      <div className="flex items-start gap-3">
-        <Glyph kind={node.kind} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-medium leading-tight">
-            {serviceName(provider, node.kind, node.label)}
-          </div>
-          <div className="mt-0.5 truncate font-mono text-[12.5px] text-ink-3">
-            {node.detail || node.sku || "—"}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
+      <span
+        className="grid h-[52px] w-[52px] place-items-center rounded-[10px] transition-transform duration-200"
+        style={{
+          background: cat.colour,
+          transform: active ? "scale(1.06)" : "scale(1)",
+          boxShadow: active ? `0 6px 18px -6px ${cat.colour}` : "none",
+          opacity: node.priced ? 1 : 0.4,
+        }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-7 w-7"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          {cat.glyph}
+        </svg>
+      </span>
+
+      <span className="mt-2.5 text-[13.5px] font-medium leading-tight text-ink">
+        {serviceName(provider, node.kind, node.label)}
+      </span>
+
+      {node.detail && (
+        <span className="mt-1 font-mono text-[11.5px] leading-tight text-ink-3">
+          {node.detail}
+        </span>
+      )}
+
+      {node.kind !== "client" && (
+        <span className="mt-1.5 flex items-baseline gap-1.5">
           {node.priced ? (
             <>
-              <div className="tnum font-mono text-[15px] leading-tight">
+              <span className="tnum font-mono text-[14px] font-medium">
                 {money(node.monthly_usd)}
-              </div>
+              </span>
               {node.share > 0.01 && (
-                <div className="tnum font-mono text-[12px] text-ink-3">
+                <span className="tnum font-mono text-[11.5px] text-ink-3">
                   {Math.round(node.share * 100)}%
-                </div>
+                </span>
               )}
             </>
           ) : (
-            <div className="font-mono text-[12px] text-caution">not priced</div>
+            <span className="font-mono text-[11.5px] text-caution">not priced</span>
           )}
-        </div>
-      </div>
+        </span>
+      )}
 
       {node.optimized_by.length > 0 && (
         <span
-          className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full ring-2 ring-surface"
+          className="absolute right-3 top-2 h-2.5 w-2.5 rounded-full ring-2 ring-white"
           style={{ background: "var(--accent)" }}
-          title={`Optimized: ${node.optimized_by.join(", ")}`}
+          title={`Optimized by ${node.optimized_by.join(", ")}`}
         />
       )}
     </div>
   );
 }
 
-function Connector({ dimmed }: { dimmed: boolean }) {
+function Arrow({ dimmed }: { dimmed: boolean }) {
   return (
     <div
-      className={`hidden shrink-0 items-center transition-opacity lg:flex ${
-        dimmed ? "opacity-25" : "opacity-100"
+      className={`flex shrink-0 items-center px-0.5 transition-opacity ${
+        dimmed ? "opacity-20" : "opacity-100"
       }`}
       aria-hidden
     >
-      <svg width="26" height="10" viewBox="0 0 26 10" fill="none">
+      <svg width="32" height="12" viewBox="0 0 32 12" fill="none">
+        <path d="M0 6h24" stroke="#98A0AE" strokeWidth="1.2" />
         <path
-          d="M0 5h20"
-          stroke="var(--border-strong)"
-          strokeWidth="1"
-          strokeDasharray="3 3"
-        />
-        <path
-          d="M19 1.5 24 5l-5 3.5"
-          stroke="var(--border-strong)"
-          strokeWidth="1"
+          d="M23 2 29.5 6 23 10"
+          stroke="#98A0AE"
+          strokeWidth="1.2"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
@@ -217,20 +215,14 @@ function Connector({ dimmed }: { dimmed: boolean }) {
   );
 }
 
-function GroupFrame({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  if (!label) return <div className="flex flex-col gap-2">{children}</div>;
+function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  if (!label) return <>{children}</>;
   return (
-    <div className="relative rounded-lg border border-dashed border-line-strong p-3 pt-6">
-      <span className="absolute left-3 top-1.5 font-mono text-[12px] uppercase tracking-[0.12em] text-ink-3">
+    <div className="relative rounded-lg border border-dashed border-[#b3bac6] px-3 pb-3 pt-8">
+      <span className="absolute left-1/2 top-2.5 -translate-x-1/2 whitespace-nowrap text-[12.5px] font-medium text-ink-2">
         {label}
       </span>
-      <div className="flex flex-col gap-2">{children}</div>
+      <div className="flex flex-col items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -245,9 +237,10 @@ export function ArchitectureDiagram({
   caption?: string;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
+  const chrome = CHROME[provider] ?? CHROME.aws;
 
-  // Column layout follows the request path, which is how these diagrams read.
-  const order = ["client", "network", "loadbalancer", "compute", "database", "storage"];
+  // Columns follow the request path, which is how these diagrams read.
+  const order = ["network", "loadbalancer", "compute", "database", "storage"];
   const columns: { group: string; nodes: ApiNode[] }[] = [];
 
   for (const kind of order) {
@@ -259,55 +252,92 @@ export function ArchitectureDiagram({
     else columns.push({ group, nodes: [node] });
   }
 
-  return (
-    <div className="rounded-xl border border-line bg-canvas p-5">
-      <div className="flex items-start gap-0 overflow-x-auto pb-1 lg:overflow-visible">
-        {columns.map((col, i) => (
-          <div key={i} className="flex shrink-0 items-center lg:shrink lg:flex-1">
-            <div className="w-[210px] lg:w-full">
-              <GroupFrame label={col.group}>
-                {col.nodes.map((n) => (
-                  <NodeBox
-                    key={n.id}
-                    node={n}
-                    provider={provider}
-                    active={hovered === n.id}
-                    dimmed={hovered !== null && hovered !== n.id}
-                    onEnter={() => setHovered(n.id)}
-                    onLeave={() => setHovered(null)}
-                  />
-                ))}
-              </GroupFrame>
-            </div>
-            {i < columns.length - 1 && <Connector dimmed={hovered !== null} />}
-          </div>
-        ))}
-      </div>
+  const users = topology.nodes.find((n) => n.kind === "client");
+  const dim = hovered !== null;
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {[
-            ["Compute", "var(--svc-compute)"],
-            ["Data", "var(--svc-database)"],
-            ["Storage", "var(--svc-storage)"],
-            ["Edge", "var(--svc-network)"],
-          ].map(([label, colour]) => (
-            <span key={label} className="flex items-center gap-1.5">
+  return (
+    <div className="overflow-x-auto pb-1">
+      <div className="min-w-[900px]">
+        <div className="flex items-stretch gap-2">
+          {/* the client sits outside the boundary, as in provider diagrams */}
+          {users && (
+            <>
+              <div className="flex items-center">
+                <Tile
+                  node={users}
+                  provider={provider}
+                  active={hovered === users.id}
+                  dimmed={dim && hovered !== users.id}
+                  onEnter={() => setHovered(users.id)}
+                  onLeave={() => setHovered(null)}
+                />
+              </div>
+              <div className="flex items-center">
+                <Arrow dimmed={dim} />
+              </div>
+            </>
+          )}
+
+          <div
+            className="relative flex-1 rounded-xl border border-[#9aa3b2] px-4 pb-4 pt-10"
+            style={{ background: chrome.tint }}
+          >
+            <span className="absolute left-4 top-3 flex items-center gap-2">
               <span
-                className="h-2 w-2 rounded-sm"
-                style={{ background: colour as string }}
-              />
-              <span className="font-mono text-[12px] text-ink-3">{label}</span>
+                className="grid h-5 w-5 place-items-center rounded"
+                style={{ background: chrome.mark }}
+              >
+                <span className="h-1.5 w-1.5 rounded-[1px] bg-white" />
+              </span>
+              <span className="text-[13px] font-medium text-ink-2">{chrome.label}</span>
             </span>
-          ))}
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-accent" />
-            <span className="font-mono text-[12px] text-ink-3">optimized</span>
-          </span>
+
+            <div className="flex items-center justify-between gap-1">
+              {columns.map((col, i) => (
+                <div key={i} className="flex items-center">
+                  <Group label={col.group}>
+                    {col.nodes.map((n) => (
+                      <Tile
+                        key={n.id}
+                        node={n}
+                        provider={provider}
+                        active={hovered === n.id}
+                        dimmed={dim && hovered !== n.id}
+                        onEnter={() => setHovered(n.id)}
+                        onLeave={() => setHovered(null)}
+                      />
+                    ))}
+                  </Group>
+                  {i < columns.length - 1 && <Arrow dimmed={dim} />}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        {caption && (
-          <span className="font-mono text-[12px] text-ink-3">{caption}</span>
-        )}
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            {[
+              ["Compute", "#ED7100"],
+              ["Database", "#3556C8"],
+              ["Storage", "#4A8C1C"],
+              ["Networking", "#8C4FFF"],
+            ].map(([label, colour]) => (
+              <span key={label} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-2.5 rounded-[3px]"
+                  style={{ background: colour as string }}
+                />
+                <span className="text-[12.5px] text-ink-3">{label}</span>
+              </span>
+            ))}
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-accent" />
+              <span className="text-[12.5px] text-ink-3">optimized</span>
+            </span>
+          </div>
+          {caption && <span className="font-mono text-[12px] text-ink-3">{caption}</span>}
+        </div>
       </div>
     </div>
   );
