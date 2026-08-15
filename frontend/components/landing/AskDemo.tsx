@@ -230,28 +230,43 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
           </div>
 
           {/* the input */}
+          {/* The gradient is a border, not a background: a 2px frame with the
+              real surface inset inside it, so the field stays white and the
+              colour reads as a ring around the place you type. */}
           <div
             ref={inputRef}
-            className="mt-4 flex items-center gap-2.5 rounded-xl border border-line bg-sunk px-3 py-2.5"
+            className="mt-4 rounded-2xl p-[2px]"
+            style={{
+              backgroundImage:
+                "linear-gradient(100deg, #f4a58c, #e6a8d0 28%, #a99cf0 58%, #6d7ff0 82%, #2451d9)",
+            }}
           >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-ink-3" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden>
-              <path d="M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.19a3.67 3.67 0 0 1 5.18 5.18l-9.2 9.2a1.83 1.83 0 0 1-2.6-2.6l8.5-8.48" />
-            </svg>
-            <span className="min-h-[1.4em] flex-1 truncate text-left font-mono text-[13.5px] text-ink">
-              {typed || <span className="text-ink-3">Ask something…</span>}
-              {!still && stage === "typing" && (
-                <span className="ml-0.5 inline-block h-[1.05em] w-[0.5ch] translate-y-[0.16em] animate-pulse bg-accent" />
-              )}
-            </span>
-            <span
-              className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors duration-300 ${
-                typed ? "bg-accent" : "bg-line-strong"
-              }`}
-            >
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
-              </svg>
-            </span>
+            <div className="flex items-center gap-3 rounded-[14px] bg-surface px-4 py-3">
+              <span className="min-h-[1.4em] flex-1 truncate text-left font-mono text-[13.5px] text-ink">
+                {typed || <span className="text-ink-3">Ask something…</span>}
+                {!still && stage === "typing" && (
+                  <span className="ml-0.5 inline-block h-[1.05em] w-[0.5ch] translate-y-[0.16em] animate-pulse bg-accent" />
+                )}
+              </span>
+              <span
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl transition-colors duration-300 ${
+                  typed ? "bg-accent" : "bg-line-strong"
+                }`}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="#fff"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </span>
+            </div>
           </div>
 
           {/* what the reader understood */}
