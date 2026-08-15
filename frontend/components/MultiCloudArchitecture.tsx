@@ -1,42 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { HoverBoard } from "@/components/HoverBoard";
-import { money, type Node as ApiNode, type Option } from "@/lib/api";
-import { serviceName } from "@/lib/services";
-import { ServiceIcon } from "@/components/ServiceIcon";
-import { Icon } from "@iconify/react";
+import { PricedDiagram } from "@/components/PricedDiagram";
+import { money, type Option } from "@/lib/api";
 
 /**
- * The same workload drawn on all three clouds, with a cost on every service
- * and a subtotal on every tier.
+ * The priced comparison: one workload, three clouds, a budget to check it
+ * against.
  *
- * Every figure is computed from the priced estimate. None are written into
- * this file — a landing page for a tool promising "computed, not guessed"
- * cannot contain a hand-typed price, or the promise is worth nothing.
- *
- * That constraint shows most clearly on GCP: it prices compute only, so its
- * total is genuinely lower and genuinely wrong. It is shown, labelled, and
- * excluded from any "cheapest" claim rather than quietly winning.
+ * Selecting a provider draws its architecture with that provider's own
+ * services and what each one costs. Every figure is computed from the
+ * catalog — none are written into this file.
  */
-
-const TIERS = [
-  { id: "edge", label: "Edge", kinds: ["network", "loadbalancer"] },
-  { id: "app", label: "Application tier", kinds: ["compute"] },
-  { id: "data", label: "Data tier", kinds: ["cache", "database", "storage"] },
-  { id: "ops", label: "Operations", kinds: ["monitoring"] },
-];
-
-const SERVICE_COLOUR: Record<string, string> = {
-  cache: "#3556C8",
-  monitoring: "#5A6270",
-  network: "#8C4FFF",
-  loadbalancer: "#8C4FFF",
-  compute: "#ED7100",
-  database: "#3556C8",
-  storage: "#4A8C1C",
-  client: "#5A6270",
-};
 
 const CHROME: Record<
   string,
@@ -63,271 +38,6 @@ const CHROME: Record<
 };
 
 
-function Service({
-  node,
-  provider,
-  active,
-  dimmed,
-  onEnter,
-  onLeave,
-}: {
-  node: ApiNode;
-  provider: string;
-  active: boolean;
-  dimmed: boolean;
-  onEnter: () => void;
-  onLeave: () => void;
-}) {
-  const colour = SERVICE_COLOUR[node.kind] ?? "#5A6270";
-
-  return (
-    <div
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      onFocus={onEnter}
-      onBlur={onLeave}
-      tabIndex={0}
-      className={`relative w-[190px] rounded-lg border bg-white px-3.5 py-3 outline-none transition-all duration-200 ${
-        dimmed ? "opacity-40" : "opacity-100"
-      } ${
-        active
-          ? "scale-[1.02] border-line-strong shadow-[0_10px_26px_-10px_rgba(11,13,18,.3)]"
-          : "border-line shadow-[0_1px_2px_rgba(11,13,18,.04)]"
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center">
-          <ServiceIcon
-            provider={provider}
-            kind={node.kind}
-            size={40}
-            faded={!node.priced}
-          />
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold leading-tight text-ink">
-            {serviceName(provider, node.kind, node.label)}
-          </div>
-          <div className="mt-1 truncate font-mono text-[13px] text-ink-3">
-            {node.detail || node.sku || "—"}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-2.5 flex items-baseline justify-between border-t border-line pt-2.5">
-        {node.priced ? (
-          <>
-            <span
-              className="tnum font-mono text-[17px] font-semibold"
-              style={{ color: colour }}
-            >
-              {money(node.monthly_usd)}
-            </span>
-            <span className="tnum font-mono text-[13px] text-ink-3">
-              {Math.round(node.share * 100)}%
-            </span>
-          </>
-        ) : (
-          <span className="font-mono text-[13px] text-caution">not priced</span>
-        )}
-      </div>
-
-      {node.optimized_by.length > 0 && (
-        <span
-          className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-accent ring-2 ring-white"
-          title={`Optimized by ${node.optimized_by.join(", ")}`}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * A connector between tiers.
- *
- * Drawn as one continuous line meeting both edges rather than a floating
- * chevron, and stretched to the available gap so the two boxes read as
- * genuinely joined — which is the difference between a diagram and a row of
- * cards with decoration between them.
- */
-function Flow({ label }: { label?: string }) {
-  return (
-    <div className="flex min-w-[52px] shrink-0 flex-col items-center justify-center self-center px-1">
-      {label && (
-        <span className="mb-1 whitespace-nowrap font-mono text-[11.5px] text-ink-3">
-          {label}
-        </span>
-      )}
-      <svg
-        width="100%"
-        height="14"
-        viewBox="0 0 52 14"
-        preserveAspectRatio="none"
-        fill="none"
-        aria-hidden
-      >
-        <defs>
-          <marker
-            id="flow-head"
-            viewBox="0 0 10 10"
-            refX="8.5"
-            refY="5"
-            markerWidth="7"
-            markerHeight="7"
-            orient="auto-start-reverse"
-            markerUnits="userSpaceOnUse"
-          >
-            <path
-              d="M1 1 L8.5 5 L1 9"
-              fill="none"
-              stroke="#8b93a1"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </marker>
-        </defs>
-        <line
-          x1="0"
-          y1="7"
-          x2="52"
-          y2="7"
-          stroke="#8b93a1"
-          strokeWidth="1.4"
-          markerEnd="url(#flow-head)"
-        />
-      </svg>
-    </div>
-  );
-}
-
-function CloudDiagram({ option, provider }: { option: Option; provider: string }) {
-  const [hovered, setHovered] = useState<string | null>(null);
-  const chrome = CHROME[provider] ?? CHROME.aws;
-  const nodes = option.topology.nodes;
-  const users = nodes.find((n) => n.kind === "client");
-  const total = nodes.reduce((s, n) => s + n.monthly_usd, 0);
-  const focused = nodes.find((n) => n.id === hovered) ?? null;
-  const dim = hovered !== null;
-
-  const tiers = TIERS.map((t) => {
-    const members = t.kinds
-      .map((k) => nodes.find((n) => n.kind === k))
-      .filter((n): n is ApiNode => Boolean(n));
-    return { ...t, members, subtotal: members.reduce((s, n) => s + n.monthly_usd, 0) };
-  }).filter((t) => t.members.length);
-
-  return (
-    <div className="rounded-xl border border-line bg-white p-5">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-[17px] font-semibold tracking-tight">
-          {chrome.label} — cost breakdown by tier
-        </h3>
-        <span className="tnum font-mono text-[15px] text-ink-2">
-          {money(option.monthly_usd)}/mo
-        </span>
-      </div>
-
-      <div className="overflow-x-auto pb-1">
-        <div className="flex min-w-[940px] items-stretch gap-1">
-          {users && (
-            <>
-              <div className="flex items-center">
-                <div className="w-[112px] text-center">
-                  <span className="mx-auto grid h-11 w-11 place-items-center">
-                    <ServiceIcon provider={provider} kind="client" size={40} />
-                  </span>
-                  <div className="mt-2 text-[14px] font-semibold">Users</div>
-                </div>
-              </div>
-              <div className="flex items-center">
-                <Flow />
-              </div>
-            </>
-          )}
-
-          <div
-            className="relative flex-1 rounded-xl border px-4 pb-4 pt-10"
-            style={{ background: chrome.tint, borderColor: chrome.border }}
-          >
-            <span className="absolute left-4 top-2 flex items-center gap-2 rounded-md bg-white px-2 py-1 shadow-[0_1px_2px_rgba(11,13,18,.06)]">
-              <Icon icon={chrome.logo} width={18} height={18} aria-hidden />
-              <span className="text-[13.5px] font-semibold text-ink-2">
-                {chrome.label}
-              </span>
-            </span>
-
-            <div className="flex items-start justify-between gap-1">
-              {tiers.map((tier, i) => (
-                <div key={tier.id} className="flex items-center">
-                  <div className="relative rounded-lg border border-dashed border-[#b3bac6] px-3 pb-9 pt-8">
-                    <span className="absolute left-1/2 top-2.5 -translate-x-1/2 whitespace-nowrap text-[13.5px] font-semibold text-ink-2">
-                      {tier.label}
-                    </span>
-
-                    <div className="flex flex-col gap-2.5">
-                      {tier.members.map((n) => (
-                        <Service
-                          key={n.id}
-                          node={n}
-                          provider={provider}
-                          active={hovered === n.id}
-                          dimmed={dim && hovered !== n.id}
-                          onEnter={() => setHovered(n.id)}
-                          onLeave={() => setHovered(null)}
-                        />
-                      ))}
-                    </div>
-
-                    {/* summed from this tier's own priced nodes, never typed in */}
-                    <span className="absolute bottom-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[13px] text-ink-2">
-                      {money(tier.subtotal)}
-                      <span className="ml-2 text-ink-3">
-                        {total > 0 ? Math.round((tier.subtotal / total) * 100) : 0}%
-                      </span>
-                    </span>
-                  </div>
-                  {i < tiers.length - 1 && <Flow />}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3">
-        <HoverBoard node={focused} provider={provider} total={total} />
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          {[
-            ["Compute", "#ED7100"],
-            ["Database", "#3556C8"],
-            ["Storage", "#4A8C1C"],
-            ["Networking", "#8C4FFF"],
-          ].map(([label, colour]) => (
-            <span key={label} className="flex items-center gap-1.5">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ background: colour as string }}
-              />
-              <span className="text-[13px] text-ink-2">{label}</span>
-            </span>
-          ))}
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-accent" />
-            <span className="text-[13px] text-ink-2">optimized</span>
-          </span>
-        </div>
-        <span className="font-mono text-[13px] text-ink-3">
-          {option.label} · {option.region} · {option.shape}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 export function MultiCloudArchitecture({
   byProvider,
@@ -342,6 +52,9 @@ export function MultiCloudArchitecture({
       )
     : null;
   const incomplete = providers.filter((p) => !byProvider[p].complete);
+
+  const [budget, setBudget] = useState<string>("");
+  const budgetValue = Number(budget) || 0;
 
   // Generated from the same figures shown above, so the sentence cannot drift
   // from the numbers — and only complete options are ever compared.
@@ -367,6 +80,30 @@ export function MultiCloudArchitecture({
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-white px-5 py-4">
+        <label htmlFor="budget" className="text-[15px] font-medium">
+          Monthly budget
+        </label>
+        <div className="flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-2">
+          <span className="font-mono text-[15px] text-ink-3">$</span>
+          <input
+            id="budget"
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            placeholder="400"
+            className="tnum w-24 bg-transparent font-mono text-[15px] outline-none"
+          />
+        </div>
+        <span className="text-[14px] text-ink-3">
+          {budgetValue > 0
+            ? "Providers within budget are marked below."
+            : "Set a budget to see which providers fit."}
+        </span>
+      </div>
+
       <div role="tablist" aria-label="Cloud provider" className="grid gap-3 sm:grid-cols-3">
         {providers.map((p) => {
           const o = byProvider[p];
@@ -403,6 +140,17 @@ export function MultiCloudArchitecture({
                   {o.missing.length} component{o.missing.length === 1 ? "" : "s"} unpriced
                 </div>
               )}
+              {budgetValue > 0 && o.complete && (
+                <div
+                  className={`mt-2 font-mono text-[13px] ${
+                    o.monthly_usd <= budgetValue ? "text-accent" : "text-spend"
+                  }`}
+                >
+                  {o.monthly_usd <= budgetValue
+                    ? `${money(budgetValue - o.monthly_usd)} under budget`
+                    : `${money(o.monthly_usd - budgetValue)} over budget`}
+                </div>
+              )}
               <div
                 className={`mt-2.5 text-[13px] font-medium transition-colors ${
                   on ? "text-accent" : "text-ink-3"
@@ -415,7 +163,7 @@ export function MultiCloudArchitecture({
         })}
       </div>
 
-      <CloudDiagram key={active} option={byProvider[active]} provider={active} />
+      <PricedDiagram key={active} option={byProvider[active]} provider={active} />
 
       {insight && (
         <p className="rounded-xl border border-line bg-sunk px-5 py-4 text-[15px] leading-relaxed text-ink-2">
