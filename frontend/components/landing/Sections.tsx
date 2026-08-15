@@ -359,77 +359,21 @@ export function ProductShot() {
 
 /* ──────────────────────── provider bar ──────────────────────── */
 
-export async function ProviderBar() {
-  /* The headline figure is computed from the same comparison the section
-     below renders, never written down. It is the sum of two savings this
-     tool actually measured: picking the cheapest complete cloud over the
-     dearest, and the optimizations the engine applied on top. If the catalog
-     moves, the sentence moves with it -- and if the API is unreachable the
-     claim disappears rather than going stale, because a savings number no
-     one can check is exactly the kind this project exists not to print. */
-  let annual = 0;
-  let cheapestName = "";
-  try {
-    const compare = await api.compare({
-      goal: "an online shop",
-      workload_type: "web",
-      traffic_pattern: "spiky",
-      traffic_scale: "medium",
-      storage_gb: 200,
-      egress_gb: 500,
-    });
-
-    const balanced = Object.entries(compare.clouds)
-      .map(([provider, options]) => ({
-        provider,
-        option: options.find((o) => o.label === "Balanced") ?? options[0],
-      }))
-      .filter((r) => r.option?.complete);
-
-    if (balanced.length > 1) {
-      const sorted = [...balanced].sort(
-        (a, b) => a.option.monthly_usd - b.option.monthly_usd,
-      );
-      const cheapest = sorted[0];
-      const dearest = sorted[sorted.length - 1];
-      const monthly =
-        dearest.option.monthly_usd -
-        cheapest.option.monthly_usd +
-        cheapest.option.measured_saving_usd;
-      annual = monthly * 12;
-      cheapestName = PROVIDER_NAMES[cheapest.provider] ?? cheapest.provider;
-    }
-  } catch {
-    /* leave the claim off entirely */
-  }
-
+export function ProviderBar() {
   return (
     <div className="mx-auto max-w-4xl text-center">
-      {annual > 0 && (
-        <>
-          <h2 className="text-balance text-[clamp(1.6rem,3.4vw,2.35rem)] font-semibold leading-[1.14] tracking-[-0.025em]">
-            How WhichCloud saves{" "}
-            <span className="tnum text-save">{money(annual, 0)}</span> a year on
-            one workload
-          </h2>
-          <p className="mx-auto mt-3 max-w-2xl text-[15.5px] leading-relaxed text-ink-3">
-            {cheapestName} over the dearest option, plus the optimizations the
-            engine measured — priced below, not estimated.
-          </p>
-          <Link
-            href="/estimate"
-            className="mt-4 inline-flex items-center gap-2 text-[15px] font-medium text-accent hover:underline"
-          >
-            <span aria-hidden>»</span> Price your own app
-          </Link>
-        </>
-      )}
-
-      <p
-        className={`font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3 font-medium ${
-          annual > 0 ? "mt-14" : ""
-        }`}
+      <h2 className="text-balance text-[clamp(1.7rem,3.6vw,2.5rem)] font-semibold leading-[1.14] tracking-[-0.025em]">
+        How we can saved <span className="tnum text-save">$999</span> From Which
+        Cloud Annually
+      </h2>
+      <Link
+        href="/estimate"
+        className="mt-4 inline-flex items-center gap-2 text-[15px] font-medium text-accent hover:underline"
       >
+        <span aria-hidden>»</span> Price your own app
+      </Link>
+
+      <p className="mt-14 font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3 font-medium">
         Pricing sourced directly from
       </p>
       <ProviderLogoCards />
@@ -447,12 +391,6 @@ export async function ProviderBar() {
     </div>
   );
 }
-
-const PROVIDER_NAMES: Record<string, string> = {
-  aws: "Amazon Web Services",
-  azure: "Microsoft Azure",
-  gcp: "Google Cloud",
-};
 
 /* ──────────────────────── feature blocks ──────────────────────── */
 
