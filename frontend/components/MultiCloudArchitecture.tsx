@@ -4,6 +4,7 @@ import { useState } from "react";
 import { HoverBoard } from "@/components/HoverBoard";
 import { money, type Node as ApiNode, type Option } from "@/lib/api";
 import { serviceName } from "@/lib/services";
+import { ServiceIcon } from "@/components/ServiceIcon";
 
 /**
  * The same workload drawn on all three clouds, with a cost on every service
@@ -39,51 +40,6 @@ const CHROME: Record<string, { label: string; mark: string; tint: string }> = {
   gcp: { label: "Google Cloud", mark: "#1A73E8", tint: "#f9fbfe" },
 };
 
-/* Glyphs echo each service's silhouette — a bucket for storage, a cylinder
-   for the database, a globe for the CDN — without reproducing the providers'
-   icon artwork. AWS ships its set under CC-BY-ND, which forbids exactly the
-   recolouring and resizing a component like this performs. */
-const GLYPH: Record<string, React.ReactNode> = {
-  client: (
-    <>
-      <circle cx="12" cy="8" r="3.4" />
-      <path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" />
-    </>
-  ),
-  network: (
-    <>
-      <circle cx="12" cy="12" r="8.2" />
-      <path d="M3.8 12h16.4M12 3.8c2.2 2.6 3.3 5.3 3.3 8.2s-1.1 5.6-3.3 8.2c-2.2-2.6-3.3-5.3-3.3-8.2S9.8 6.4 12 3.8Z" />
-    </>
-  ),
-  loadbalancer: (
-    <>
-      <circle cx="12" cy="4.4" r="2" />
-      <path d="M12 6.4v3.2M12 9.6 5.8 14.6M12 9.6l6.2 5" />
-      <rect x="2.8" y="14.6" width="6" height="6" rx="1.4" />
-      <rect x="15.2" y="14.6" width="6" height="6" rx="1.4" />
-    </>
-  ),
-  compute: (
-    <>
-      <rect x="5.2" y="5.2" width="13.6" height="13.6" rx="2.2" />
-      <rect x="9.4" y="9.4" width="5.2" height="5.2" rx="1" />
-      <path d="M9 2.6v2.6M15 2.6v2.6M9 18.8v2.6M15 18.8v2.6M2.6 9h2.6M2.6 15h2.6M18.8 9h2.6M18.8 15h2.6" />
-    </>
-  ),
-  database: (
-    <>
-      <ellipse cx="12" cy="6.2" rx="7" ry="3" />
-      <path d="M5 6.2v11.6c0 1.7 3.1 3 7 3s7-1.3 7-3V6.2M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" />
-    </>
-  ),
-  storage: (
-    <>
-      <path d="M4.4 6.6h15.2l-1.3 13a1.6 1.6 0 0 1-1.6 1.4H7.3a1.6 1.6 0 0 1-1.6-1.4l-1.3-13Z" />
-      <path d="M3 6.6h18M9.4 11v6M14.6 11v6" />
-    </>
-  ),
-};
 
 function Service({
   node,
@@ -118,22 +74,13 @@ function Service({
       }`}
     >
       <div className="flex items-start gap-3">
-        <span
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-lg"
-          style={{ background: colour, opacity: node.priced ? 1 : 0.35 }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-6 w-6"
-            fill="none"
-            stroke="#fff"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            {GLYPH[node.kind] ?? GLYPH.compute}
-          </svg>
+        <span className="grid h-11 w-11 shrink-0 place-items-center">
+          <ServiceIcon
+            provider={provider}
+            kind={node.kind}
+            size={40}
+            faded={!node.priced}
+          />
         </span>
 
         <div className="min-w-0 flex-1">
@@ -224,22 +171,8 @@ function CloudDiagram({ option, provider }: { option: Option; provider: string }
             <>
               <div className="flex items-center">
                 <div className="w-[112px] text-center">
-                  <span
-                    className="mx-auto grid h-11 w-11 place-items-center rounded-lg"
-                    style={{ background: SERVICE_COLOUR.client }}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-6 w-6"
-                      fill="none"
-                      stroke="#fff"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden
-                    >
-                      {GLYPH.client}
-                    </svg>
+                  <span className="mx-auto grid h-11 w-11 place-items-center">
+                    <ServiceIcon provider={provider} kind="client" size={40} />
                   </span>
                   <div className="mt-2 text-[14px] font-semibold">Users</div>
                 </div>
