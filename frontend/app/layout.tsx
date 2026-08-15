@@ -1,19 +1,24 @@
 import { ClerkProvider, Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { IBM_Plex_Mono, Inter } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Wordmark } from "@/components/Logo";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+/* Geist and Geist Mono are drawn as one system, which matters on a page that
+   sets prose and figures side by side constantly: the mono lines up with the
+   sans at the same optical size instead of sitting slightly heavier and
+   wider, the way a borrowed mono usually does. Both carry proper tabular
+   figures, which is what keeps a column of prices from shuffling. */
+const sans = Geist({
+  variable: "--font-sans-family",
   subsets: ["latin"],
   display: "swap",
 });
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+const mono = Geist_Mono({
+  variable: "--font-mono-family",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
   display: "swap",
 });
 
@@ -28,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${sans.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-canvas text-ink">
         <ClerkProvider>

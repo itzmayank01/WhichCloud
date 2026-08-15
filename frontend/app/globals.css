@@ -67,14 +67,14 @@
   --color-save: var(--save);
   --color-caution-wash: var(--caution-wash);
 
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-plex-mono);
+  --font-sans: var(--font-sans-family);
+  --font-mono: var(--font-mono-family);
 }
 
 body {
   background: var(--canvas);
   color: var(--ink);
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans-family), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "cv05" 1, "ss01" 1; /* single-storey a, tighter l */
 }
 
