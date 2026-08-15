@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Icon } from "@iconify/react";
 import { PricedDiagram } from "@/components/PricedDiagram";
 import { money, type Option } from "@/lib/api";
 
@@ -91,68 +92,117 @@ export function MultiCloudArchitecture({
       <div role="tablist" aria-label="Cloud provider" className="grid gap-3 sm:grid-cols-3">
         {providers.map((p) => {
           const o = byProvider[p];
+          const chrome = CHROME[p];
           const wins = p === cheapest;
           const on = p === active;
+
+          // How much of the reference budget this consumes, and how it
+          // compares to the cheapest complete option. Both are derived here
+          // rather than stated, so neither can drift from the figures.
+          const usedPct = Math.min(
+            100,
+            Math.round((o.monthly_usd / budgetValue) * 100),
+          );
+          const over = o.monthly_usd > budgetValue;
+          const delta =
+            cheapest && o.complete && !wins
+              ? o.monthly_usd - byProvider[cheapest].monthly_usd
+              : 0;
+
           return (
             <button
               key={p}
               role="tab"
               aria-selected={on}
               onClick={() => setActive(p)}
-              className={`rounded-xl border px-5 py-4 text-left transition-all duration-150 ${
+              className={`group relative overflow-hidden rounded-xl border text-left transition-all duration-150 ${
                 on
-                  ? "border-accent bg-accent-wash shadow-[0_2px_12px_-4px_rgba(36,81,217,.3)]"
-                  : "border-line bg-white hover:border-line-strong hover:bg-sunk"
+                  ? "border-accent bg-white shadow-[0_4px_16px_-6px_rgba(36,81,217,.28)]"
+                  : "border-line bg-white hover:border-line-strong hover:shadow-[0_2px_10px_-6px_rgba(11,13,18,.18)]"
               }`}
             >
-              <div className="flex items-center gap-2">
-                <span className="text-[16px] font-semibold">
-                  {CHROME[p]?.label ?? p}
-                </span>
-                {wins && (
-                  <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
-                    Cheapest
-                  </span>
-                )}
-              </div>
-              {/* A partial total is a floor, not a price. Showing it as a bare
-                  figure invites the reader to compare it against the complete
-                  ones, which is exactly the wrong conclusion — so it is
-                  prefixed and greyed rather than presented as a total. */}
-              <div
-                className={`tnum mt-1.5 font-mono text-[30px] font-semibold leading-none ${
-                  o.complete ? "" : "text-ink-3"
+              {/* Selection reads as a marked edge rather than a filled panel,
+                  so the figures inside keep the same contrast whether or not
+                  the card is the active one. */}
+              <span
+                aria-hidden
+                className={`absolute inset-x-0 top-0 h-[3px] transition-opacity duration-150 ${
+                  on ? "opacity-100" : "opacity-0"
                 }`}
-              >
-                {!o.complete && (
-                  <span className="mr-0.5 text-[22px] font-normal">&ge;</span>
-                )}
-                {money(o.monthly_usd, 0)}
-                <span className="ml-1 text-[15px] font-normal text-ink-3">/mo</span>
-              </div>
-              {!o.complete && (
-                <div className="mt-2 font-mono text-[13px] text-caution font-medium">
-                  partial — {o.missing.length} component
-                  {o.missing.length === 1 ? "" : "s"} unpriced
+                style={{ background: chrome?.border ?? "#2451d9" }}
+              />
+
+              <div className="px-5 pb-4 pt-5">
+                <div className="flex items-center gap-2">
+                  {chrome?.logo && (
+                    <Icon icon={chrome.logo} width={18} height={18} aria-hidden />
+                  )}
+                  <span className="text-[15px] font-semibold tracking-[-0.01em]">
+                    {chrome?.label ?? p}
+                  </span>
+                  {wins && (
+                    <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-white">
+                      Cheapest
+                    </span>
+                  )}
                 </div>
-              )}
-              {budgetValue > 0 && o.complete && (
+
+                {/* A partial total is a floor, not a price. Showing it as a
+                    bare figure invites comparison against the complete ones,
+                    which is exactly the wrong conclusion. */}
                 <div
-                  className={`mt-2 font-mono text-[13px] ${
-                    o.monthly_usd <= budgetValue ? "text-accent" : "text-spend"
+                  className={`tnum mt-3 font-mono text-[32px] font-semibold leading-none tracking-[-0.02em] ${
+                    o.complete ? "" : "text-ink-3"
                   }`}
                 >
-                  {o.monthly_usd <= budgetValue
-                    ? `${money(budgetValue - o.monthly_usd)} under budget`
-                    : `${money(o.monthly_usd - budgetValue)} over budget`}
+                  {!o.complete && (
+                    <span className="mr-0.5 text-[23px] font-normal">&ge;</span>
+                  )}
+                  {money(o.monthly_usd, 0)}
+                  <span className="ml-1 text-[14px] font-normal text-ink-3">
+                    /mo
+                  </span>
                 </div>
-              )}
+
+                {o.complete ? (
+                  <>
+                    <div className="mt-3.5 h-1 w-full overflow-hidden rounded-full bg-sunk">
+                      <span
+                        className="block h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${usedPct}%`,
+                          background: over ? "var(--spend)" : "var(--accent)",
+                        }}
+                      />
+                    </div>
+                    <div className="mt-2 flex items-baseline justify-between font-mono text-[12.5px] font-medium">
+                      <span className={over ? "text-spend" : "text-ink-3"}>
+                        {usedPct}% of {money(budgetValue, 0)}
+                      </span>
+                      <span className={wins ? "text-accent" : "text-ink-3"}>
+                        {wins ? "baseline" : `+${money(delta, 0)}`}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-3.5 font-mono text-[12.5px] font-medium text-caution">
+                    partial — {o.missing.length} component
+                    {o.missing.length === 1 ? "" : "s"} unpriced
+                  </div>
+                )}
+              </div>
+
               <div
-                className={`mt-2.5 text-[13px] font-medium transition-colors ${
-                  on ? "text-accent" : "text-ink-3"
+                className={`flex items-center justify-between border-t px-5 py-2.5 text-[12.5px] font-medium transition-colors ${
+                  on
+                    ? "border-accent/25 bg-accent-wash text-accent"
+                    : "border-line text-ink-3 group-hover:text-ink-2"
                 }`}
               >
-                {on ? "Showing architecture" : "View architecture →"}
+                <span>{on ? "Showing architecture" : "View architecture"}</span>
+                <span className="tnum font-mono text-[11.5px]">
+                  {o.items.length} services
+                </span>
               </div>
             </button>
           );
