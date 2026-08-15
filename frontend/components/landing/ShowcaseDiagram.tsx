@@ -240,8 +240,8 @@ export function ShowcaseDiagram() {
               tabIndex={0}
               className={`absolute flex flex-col items-center justify-center rounded-lg border bg-white px-2 text-center outline-none transition-all duration-200 ${
                 active
-                  ? "-translate-y-0.5 border-line-strong shadow-[0_10px_24px_-10px_rgba(11,13,18,.3)]"
-                  : "border-line shadow-[0_1px_2px_rgba(11,13,18,.05)]"
+                  ? "-translate-y-0.5 border-line-strong elev-3"
+                  : "border-line elev-1"
               }`}
               style={{ left: n.x, top: n.y, width: BOX_W, height: BOX_H }}
             >

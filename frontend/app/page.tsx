@@ -21,7 +21,7 @@ export const revalidate = 300;
 
 function DiffVisual() {
   return (
-    <Reveal className="rounded-xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.24)]">
+    <Reveal className="rounded-xl border border-line bg-surface p-5 elev-3">
       <div
         className="reveal-line font-mono text-[13px] uppercase tracking-[0.13em] text-ink-3 font-medium"
         style={{ "--i": 0 } as React.CSSProperties}
@@ -104,7 +104,7 @@ function TerraformVisual() {
   ];
 
   return (
-    <Reveal className="overflow-hidden rounded-xl border border-line bg-[#12171a] shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.3)]">
+    <Reveal className="overflow-hidden rounded-xl border border-line bg-[#12171a] elev-3">
       <div className="flex items-center gap-1.5 border-b border-white/8 px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />

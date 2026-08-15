@@ -132,7 +132,7 @@ export function MultiCloudArchitecture({
                     : "border-save/45 shadow-[0_2px_10px_-6px_rgba(11,122,69,.25)] hover:border-save/70"
                   : on
                     ? "border-accent shadow-[0_4px_16px_-6px_rgba(36,81,217,.28)]"
-                    : "border-line hover:border-line-strong hover:shadow-[0_2px_10px_-6px_rgba(11,13,18,.18)]"
+                    : "border-line hover:border-line-strong hover:elev-2"
               }`}
             >
               {/* Selection reads as a marked edge rather than a filled panel,

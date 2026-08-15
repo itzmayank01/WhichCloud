@@ -41,7 +41,7 @@ export function HoverBoard({
       className={`rounded-xl border bg-white px-5 py-4 transition-all duration-200 ${
         idle
           ? "border-line"
-          : "border-line-strong shadow-[0_12px_32px_-14px_rgba(11,13,18,.28)]"
+          : "border-line-strong elev-3"
       }`}
       aria-live="polite"
     >

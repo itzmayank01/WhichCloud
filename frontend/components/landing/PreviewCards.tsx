@@ -203,7 +203,7 @@ async function Breakdown() {
   const nodes = balanced.topology.nodes.filter((n) => n.monthly_usd > 0);
 
   return (
-    <Card eyebrow="Architecture" title="Three ways to run it" className="lg:-mt-8 lg:shadow-[0_2px_4px_rgba(13,20,20,.05),0_28px_60px_-24px_rgba(13,20,20,.28)]">
+    <Card eyebrow="Architecture" title="Three ways to run it" className="lg:-mt-8 lg:elev-4">
       <div className="flex gap-1.5">
         {rec.options.map((o) => (
           <div

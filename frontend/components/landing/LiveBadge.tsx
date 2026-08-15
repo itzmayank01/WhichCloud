@@ -21,11 +21,11 @@ function ago(from: number, now: number): string {
   const secs = Math.max(0, Math.round((now - from) / 1000));
   if (secs < 60) return "just now";
   const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
+  return `${days}d ago`;
 }
 
 /* Past this, the catalog is not "live" in any sense a reader would accept,
@@ -52,40 +52,49 @@ export function LiveBadge({ updatedAt }: { updatedAt: string | null }) {
   }, [stamp, valid]);
 
   return (
-    <p className="mt-7 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1.5 font-mono text-[14px] text-ink-3 font-medium">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="relative flex h-2 w-2" aria-hidden>
-          {fresh && (
-            <span className="live-ping absolute inline-flex h-full w-full rounded-full bg-[#d64027] opacity-70" />
-          )}
-          <span
-            className={`relative inline-flex h-2 w-2 rounded-full ${
-              fresh ? "bg-[#d64027]" : "bg-line-strong"
-            }`}
-          />
-        </span>
-        <span
-          className={`uppercase tracking-[0.1em] ${
-            fresh ? "text-ink-2" : "text-ink-3"
-          }`}
-        >
-          {fresh ? "Live" : "Cached"}
-        </span>
-      </span>
-      <span aria-hidden>·</span>
-      <span>Prices fetched from AWS, Azure and Google</span>
-      {/* Only claims a time when there is one to claim. */}
-      {label && (
-        <>
-          <span aria-hidden>·</span>
-          <span
-            className="text-ink-2"
-            title={valid ? new Date(stamp).toISOString() : undefined}
-          >
-            refreshed {label}
+    /* A bordered pill rather than a line of loose text: a status indicator is
+       a component, and reading as one is what separates it from a caption. */
+    <div className="mt-8 flex justify-center">
+      <div className="inline-flex items-center gap-3 rounded-full border border-line bg-surface py-1.5 pl-3 pr-3.5 elev-1">
+        <span className="inline-flex items-center gap-2">
+          <span className="relative flex h-2 w-2" aria-hidden>
+            {fresh && (
+              <span className="live-ping absolute inline-flex h-full w-full rounded-full bg-[#d64027] opacity-70" />
+            )}
+            <span
+              className={`relative inline-flex h-2 w-2 rounded-full ${
+                fresh ? "bg-[#d64027]" : "bg-line-strong"
+              }`}
+            />
           </span>
-        </>
-      )}
-    </p>
+          <span
+            className={`text-[11.5px] font-semibold uppercase tracking-[0.13em] ${
+              fresh ? "text-ink" : "text-ink-3"
+            }`}
+          >
+            {fresh ? "Live" : "Cached"}
+          </span>
+        </span>
+
+        <span className="h-3.5 w-px bg-line" aria-hidden />
+
+        <span className="font-mono text-[12.5px] font-medium text-ink-2">
+          AWS · Azure · Google
+        </span>
+
+        {/* Only claims a time when there is one to claim. */}
+        {label && (
+          <>
+            <span className="h-3.5 w-px bg-line" aria-hidden />
+            <span
+              className="font-mono text-[12.5px] font-medium text-ink-3"
+              title={valid ? new Date(stamp).toISOString() : undefined}
+            >
+              {label}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

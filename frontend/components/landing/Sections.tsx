@@ -10,7 +10,7 @@ import { Reveal } from "@/components/landing/Reveal";
 
 export function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto inline-flex items-center gap-2.5 rounded-full border border-line bg-surface py-1.5 pl-2 pr-4 shadow-[0_1px_2px_rgba(13,20,20,.05)]">
+    <div className="mx-auto inline-flex items-center gap-2.5 rounded-full border border-line bg-surface py-1.5 pl-2 pr-4 elev-1">
       <span className="rounded-full bg-accent px-2.5 py-0.5 text-[14px] font-medium text-white">
         New
       </span>

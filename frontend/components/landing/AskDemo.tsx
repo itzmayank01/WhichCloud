@@ -171,7 +171,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
     <div className="rounded-[22px] border border-line bg-sunk p-3 sm:p-4">
       <div
         ref={cardRef}
-        className="relative overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_1px_2px_rgba(13,20,20,.04),0_18px_40px_-26px_rgba(13,20,20,.28)]">
+        className="relative overflow-hidden rounded-2xl border border-line bg-surface elev-3">
         {/* reader selector */}
         <div className="flex flex-wrap items-center gap-2.5 border-b border-line px-4 py-3">
           <span className="text-[14px] font-semibold text-ink">Read by</span>
