@@ -209,7 +209,11 @@ export function MultiCloudArchitecture({
         })}
       </div>
 
-      <PricedDiagram key={active} option={byProvider[active]} provider={active} />
+      {/* No key: keying on the provider tears the diagram down and builds it
+          again on every click, which throws away the measured scale and makes
+          each switch flash at full size before settling. Switching provider
+          is a prop change, so it is passed as one. */}
+      <PricedDiagram option={byProvider[active]} provider={active} />
 
       {insight && (
         <p className="rounded-xl border border-line bg-sunk px-5 py-4 text-[15px] leading-relaxed text-ink-2">

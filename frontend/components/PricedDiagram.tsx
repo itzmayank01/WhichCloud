@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { ServiceIcon } from "@/components/ServiceIcon";
 import { money, type Node as ApiNode, type Option } from "@/lib/api";
@@ -90,7 +90,15 @@ export function PricedDiagram({
 
   const lastWidth = useRef(-1);
 
-  useEffect(() => {
+  /* Measuring in useEffect runs *after* the browser has painted, so the first
+     frame of any mount shows the canvas at its authored size before it snaps
+     down — a visible jolt, and a layout jump too, since the sizer's height
+     follows the scale. useLayoutEffect measures before that paint. It has no
+     server equivalent, hence the guard. */
+  const useIsomorphicLayoutEffect =
+    typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+  useIsomorphicLayoutEffect(() => {
     const el = shell.current;
     if (!el) return;
 
@@ -126,6 +134,11 @@ export function PricedDiagram({
       window.removeEventListener("resize", fit);
     };
   }, []);
+
+  // The component is deliberately not remounted when the provider changes,
+  // so the hover has to be cleared by hand -- otherwise a box that was lit
+  // under the cursor stays lit for a service that is no longer on screen.
+  useEffect(() => setHovered(null), [provider]);
 
   const nodes = option.topology.nodes.filter((n) => SLOT[n.kind]);
   const present = new Set(nodes.map((n) => n.kind));
