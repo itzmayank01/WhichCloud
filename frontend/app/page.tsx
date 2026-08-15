@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LiveDiagram } from "@/components/landing/LiveDiagram";
 import {
   FeatureBlock,
   Footer,
@@ -11,42 +12,6 @@ import {
 export const revalidate = 300;
 
 /* ── small visuals used inside the feature blocks ── */
-
-function DiagramVisual() {
-  const nodes = [
-    { label: "CloudFront", cost: "$0.00", w: 4 },
-    { label: "Load balancer", cost: "$17.45", w: 12 },
-    { label: "Compute × 3", cost: "$58.87", w: 34 },
-    { label: "Database", cost: "$121.91", w: 68 },
-    { label: "Object storage", cost: "$5.00", w: 3 },
-  ];
-  return (
-    <div className="rounded-xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(13,20,20,.04),0_20px_44px_-24px_rgba(13,20,20,.24)]">
-      <div className="font-mono text-[10px] uppercase tracking-[0.13em] text-ink-3">
-        Balanced · AWS ap-south-1
-      </div>
-      <div className="mt-4 space-y-2.5">
-        {nodes.map((n) => (
-          <div key={n.label} className="flex items-center gap-3">
-            <span className="w-[92px] shrink-0 truncate text-[12.5px] text-ink-2">
-              {n.label}
-            </span>
-            <div className="h-6 flex-1 overflow-hidden rounded bg-sunk">
-              <div className="h-full rounded bg-accent/85" style={{ width: `${n.w}%` }} />
-            </div>
-            <span className="tnum w-16 shrink-0 text-right font-mono text-[11.5px]">
-              {n.cost}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 flex items-baseline justify-between border-t border-line pt-3">
-        <span className="font-mono text-[11px] text-ink-3">Total</span>
-        <span className="tnum font-mono text-[17px]">$257.87</span>
-      </div>
-    </div>
-  );
-}
 
 function DiffVisual() {
   return (
@@ -93,16 +58,16 @@ function TerraformVisual() {
       <pre className="overflow-x-auto p-5 font-mono text-[11.5px] leading-[1.75] text-zinc-400">
         <span className="text-zinc-500"># Graviton — measured 9% cheaper here</span>
         {"\n"}
-        <span className="text-teal-300">module</span>{" "}
+        <span className="text-white">module</span>{" "}
         <span className="text-amber-200">&quot;ecs_service&quot;</span> {"{"}
         {"\n  source           = "}
         <span className="text-amber-200">&quot;terraform-aws-modules/ecs/aws&quot;</span>
         {"\n  cpu_architecture = "}
         <span className="text-amber-200">&quot;ARM64&quot;</span>
         {"\n  desired_count    = "}
-        <span className="text-teal-300">3</span>
+        <span className="text-white">3</span>
         {"\n  min_capacity     = "}
-        <span className="text-teal-300">1</span>{" "}
+        <span className="text-white">1</span>{" "}
         <span className="text-zinc-500"># scale to zero</span>
         {"\n}"}
       </pre>
@@ -191,7 +156,7 @@ export default function Home() {
               "Optimized nodes marked on the diagram itself",
             ]}
             tint="bg-accent-wash/60"
-            visual={<DiagramVisual />}
+            visual={<LiveDiagram />}
           />
 
           <FeatureBlock

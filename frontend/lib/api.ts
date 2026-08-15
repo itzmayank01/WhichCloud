@@ -84,6 +84,8 @@ export type Node = {
 
 export type Edge = { source: string; target: string; label: string };
 
+export type Topology = { nodes: Node[]; edges: Edge[] };
+
 export type Option = {
   label: string;
   rationale: string;

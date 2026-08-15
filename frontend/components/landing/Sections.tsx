@@ -403,7 +403,7 @@ export async function Stats() {
       <div className="mt-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((s) => (
           <div key={s.label}>
-            <div className="tnum font-mono text-[clamp(2rem,4vw,2.75rem)] font-light leading-none tracking-tight text-teal-300">
+            <div className="tnum font-mono text-[clamp(2rem,4vw,2.75rem)] font-light leading-none tracking-tight text-white">
               {s.figure}
             </div>
             <p className="mt-3 text-[13.5px] leading-relaxed text-zinc-400">{s.label}</p>

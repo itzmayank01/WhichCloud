@@ -3,39 +3,47 @@
 /**
  * WhichCloud — light only, deliberately.
  *
- * A cost tool gets read on projectors, printed into reports, and screenshotted
- * into slides. Dark mode loses all three. No prefers-color-scheme block: the
- * page looks the same on every machine, which is what makes a demo safe.
+ * A cost tool gets read on projectors, printed into reports and screenshotted
+ * into slides. Dark loses all three, so there is no prefers-color-scheme block:
+ * the page looks the same on every machine, which is what makes a demo safe.
+ *
+ * The palette is near-monochrome on purpose. Colour is spent almost entirely
+ * on the architecture diagram, where it carries meaning — each cloud service
+ * category has its own hue, the way provider reference diagrams do. Everywhere
+ * else, ink and hairlines.
  */
 
 :root {
   color-scheme: light;
 
-  /* Surfaces — cool neutrals, biased a half-step toward the teal accent so
-     they read as chosen rather than inherited. */
-  --canvas: #fafbfb;
+  --canvas: #fbfbfc;
   --surface: #ffffff;
-  --surface-sunk: #f4f6f6;
+  --surface-sunk: #f4f5f7;
 
-  /* Hairlines. 1px, everywhere, instead of shadows. */
-  --border: #e7ebea;
-  --border-strong: #d3dad9;
+  --border: #e4e6ea;
+  --border-strong: #cfd3da;
 
-  --ink: #0d1414;
-  --ink-2: #5c6a69;
-  --ink-3: #8e9c9a;
+  --ink: #0b0d12;
+  --ink-2: #555d6b;
+  --ink-3: #8b93a1;
 
-  /* Brand and "cheaper" are the same colour on purpose: in a cost tool the
-     good outcome IS the brand, so teal never needs a legend. */
-  --accent: #0f766e;
-  --accent-wash: #ecf7f5;
-  --accent-line: #99cec7;
+  /* One accent, used sparingly: links, the active state, the winning figure. */
+  --accent: #2451d9;
+  --accent-wash: #eef2fe;
+  --accent-line: #b9c8f5;
 
-  /* Reserved. Clay = costs more. Amber = assumed, derived, or unvalidated —
-     the visual expression of the honesty rules. */
-  --spend: #a8542b;
-  --caution: #8a6111;
-  --caution-wash: #fdf6e7;
+  /* Semantic, and never used decoratively. */
+  --spend: #b4442a;
+  --caution: #96650f;
+  --caution-wash: #fdf6e6;
+
+  /* Cloud service categories — the colour language of provider architecture
+     diagrams, so an engineer reads the shapes before the labels. */
+  --svc-compute: #ed7100;
+  --svc-database: #3556c8;
+  --svc-storage: #4a8c1c;
+  --svc-network: #7d3fd6;
+  --svc-client: #6b7280;
 }
 
 @theme inline {
@@ -54,14 +62,15 @@
   --color-caution: var(--caution);
   --color-caution-wash: var(--caution-wash);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
 }
 
 body {
   background: var(--canvas);
   color: var(--ink);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv05" 1, "ss01" 1; /* single-storey a, tighter l */
 }
 
 /* Every figure lines up in its column and never reflows when it changes. */
