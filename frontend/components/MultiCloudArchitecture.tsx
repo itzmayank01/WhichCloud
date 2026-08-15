@@ -5,6 +5,7 @@ import { HoverBoard } from "@/components/HoverBoard";
 import { money, type Node as ApiNode, type Option } from "@/lib/api";
 import { serviceName } from "@/lib/services";
 import { ServiceIcon } from "@/components/ServiceIcon";
+import { Icon } from "@iconify/react";
 
 /**
  * The same workload drawn on all three clouds, with a cost on every service
@@ -22,10 +23,13 @@ import { ServiceIcon } from "@/components/ServiceIcon";
 const TIERS = [
   { id: "edge", label: "Edge", kinds: ["network", "loadbalancer"] },
   { id: "app", label: "Application tier", kinds: ["compute"] },
-  { id: "data", label: "Data tier", kinds: ["database", "storage"] },
+  { id: "data", label: "Data tier", kinds: ["cache", "database", "storage"] },
+  { id: "ops", label: "Operations", kinds: ["monitoring"] },
 ];
 
 const SERVICE_COLOUR: Record<string, string> = {
+  cache: "#3556C8",
+  monitoring: "#5A6270",
   network: "#8C4FFF",
   loadbalancer: "#8C4FFF",
   compute: "#ED7100",
@@ -34,10 +38,28 @@ const SERVICE_COLOUR: Record<string, string> = {
   client: "#5A6270",
 };
 
-const CHROME: Record<string, { label: string; mark: string; tint: string }> = {
-  aws: { label: "AWS Cloud", mark: "#232F3E", tint: "#fafbfc" },
-  azure: { label: "Microsoft Azure", mark: "#0078D4", tint: "#f8fbfe" },
-  gcp: { label: "Google Cloud", mark: "#1A73E8", tint: "#f9fbfe" },
+const CHROME: Record<
+  string,
+  { label: string; logo: string; border: string; tint: string }
+> = {
+  aws: {
+    label: "AWS Cloud",
+    logo: "logos:aws",
+    border: "#232F3E",
+    tint: "#fafbfc",
+  },
+  azure: {
+    label: "Microsoft Azure",
+    logo: "logos:microsoft-azure",
+    border: "#0078D4",
+    tint: "#f8fbfe",
+  },
+  gcp: {
+    label: "Google Cloud",
+    logo: "logos:google-cloud",
+    border: "#1A73E8",
+    tint: "#f9fbfe",
+  },
 };
 
 
@@ -121,17 +143,59 @@ function Service({
   );
 }
 
-function Flow() {
+/**
+ * A connector between tiers.
+ *
+ * Drawn as one continuous line meeting both edges rather than a floating
+ * chevron, and stretched to the available gap so the two boxes read as
+ * genuinely joined — which is the difference between a diagram and a row of
+ * cards with decoration between them.
+ */
+function Flow({ label }: { label?: string }) {
   return (
-    <div className="flex shrink-0 items-center px-1.5" aria-hidden>
-      <svg width="30" height="12" viewBox="0 0 30 12" fill="none">
-        <path d="M0 6h22" stroke="#aab1bd" strokeWidth="1.3" />
-        <path
-          d="M21 2.2 27 6l-6 3.8"
-          stroke="#aab1bd"
-          strokeWidth="1.3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+    <div className="flex min-w-[52px] shrink-0 flex-col items-center justify-center self-center px-1">
+      {label && (
+        <span className="mb-1 whitespace-nowrap font-mono text-[11.5px] text-ink-3">
+          {label}
+        </span>
+      )}
+      <svg
+        width="100%"
+        height="14"
+        viewBox="0 0 52 14"
+        preserveAspectRatio="none"
+        fill="none"
+        aria-hidden
+      >
+        <defs>
+          <marker
+            id="flow-head"
+            viewBox="0 0 10 10"
+            refX="8.5"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+            markerUnits="userSpaceOnUse"
+          >
+            <path
+              d="M1 1 L8.5 5 L1 9"
+              fill="none"
+              stroke="#8b93a1"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </marker>
+        </defs>
+        <line
+          x1="0"
+          y1="7"
+          x2="52"
+          y2="7"
+          stroke="#8b93a1"
+          strokeWidth="1.4"
+          markerEnd="url(#flow-head)"
         />
       </svg>
     </div>
@@ -184,16 +248,11 @@ function CloudDiagram({ option, provider }: { option: Option; provider: string }
           )}
 
           <div
-            className="relative flex-1 rounded-xl border border-[#9aa3b2] px-4 pb-4 pt-9"
-            style={{ background: chrome.tint }}
+            className="relative flex-1 rounded-xl border px-4 pb-4 pt-10"
+            style={{ background: chrome.tint, borderColor: chrome.border }}
           >
-            <span className="absolute left-4 top-2.5 flex items-center gap-2">
-              <span
-                className="grid h-5 w-5 place-items-center rounded"
-                style={{ background: chrome.mark }}
-              >
-                <span className="h-1.5 w-1.5 rounded-[1px] bg-white" />
-              </span>
+            <span className="absolute left-4 top-2 flex items-center gap-2 rounded-md bg-white px-2 py-1 shadow-[0_1px_2px_rgba(11,13,18,.06)]">
+              <Icon icon={chrome.logo} width={18} height={18} aria-hidden />
               <span className="text-[13.5px] font-semibold text-ink-2">
                 {chrome.label}
               </span>

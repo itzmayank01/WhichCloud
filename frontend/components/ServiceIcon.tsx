@@ -27,6 +27,8 @@ const AWS_ICON: Record<string, string> = {
   compute: "logos:aws-ecs",
   database: "logos:aws-rds",
   storage: "logos:aws-s3",
+  cache: "logos:aws-elasticache",
+  monitoring: "logos:aws-cloudwatch",
 };
 
 const FILE_ICON: Record<string, Record<string, string>> = {

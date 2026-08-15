@@ -34,6 +34,9 @@ BULK_SERVICES = {
     "storage": "AmazonS3",
     "network": "AWSDataTransfer",
     "loadbalancer": "AWSELB",
+    "cache": "AmazonElastiCache",
+    "monitoring": "AmazonCloudWatch",
+    "dns": "AmazonRoute53",
 }
 
 CACHE_DIR = Path(os.getenv("WHICHCLOUD_CACHE", Path.home() / ".cache" / "whichcloud"))
@@ -440,6 +443,108 @@ def load_loadbalancer_prices(region_key: str) -> list[PricePoint]:
     return points
 
 
+def load_cache_prices(region_key: str) -> list[PricePoint]:
+    """ElastiCache nodes — Redis/Valkey.
+
+    Closes a loop the knowledge base left open: cache-to-shrink-database
+    advises adding a cache but stayed advisory because a cache ADDS a line we
+    could not price. Now both sides of that trade are quotable.
+    """
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["cache"], region_key)
+
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        if product.get("productFamily") != "Cache Instance":
+            continue
+        attrs = product.get("attributes", {})
+        engine = (attrs.get("cacheEngine") or "").lower()
+        if engine not in ("redis", "valkey", "memcached"):
+            continue
+
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+        instance = attrs.get("instanceType", "")
+        if not instance:
+            continue
+
+        points.append(
+            PricePoint(
+                provider="aws",
+                category="cache",
+                sku=instance,
+                name=f"{instance} {engine}",
+                region=region,
+                unit=_UNITS.get(unit, unit),
+                price_usd=price,
+                vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
+                memory_gb=_memory_gb(attrs.get("memory")),
+                arch="arm64" if ".r7g." in instance or ".t4g." in instance else "x86_64",
+                attributes={"engine": engine},
+            )
+        )
+    return points
+
+
+def load_monitoring_prices(region_key: str) -> list[PricePoint]:
+    """CloudWatch custom metrics, priced per metric-month."""
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["monitoring"], region_key)
+
+    for sku, product in doc.get("products", {}).items():
+        if product.get("productFamily") != "Metric":
+            continue
+        if "Metric" not in (product.get("attributes", {}).get("usagetype") or ""):
+            continue
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+        return [
+            PricePoint(
+                provider="aws",
+                category="monitoring",
+                sku="cloudwatch:metrics",
+                name="CloudWatch custom metrics",
+                region=region,
+                unit="metric-month",
+                price_usd=price,
+                attributes={"published_unit": unit},
+            )
+        ]
+    return []
+
+
+def load_dns_prices(region_key: str) -> list[PricePoint]:
+    """Route 53 hosted zone — a flat monthly charge per domain."""
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["dns"], region_key)
+
+    for sku, product in doc.get("products", {}).items():
+        usage = (product.get("attributes", {}).get("usagetype") or "").lower()
+        if "hostedzone" not in usage:
+            continue
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+        return [
+            PricePoint(
+                provider="aws",
+                category="dns",
+                sku="route53:hosted-zone",
+                name="Route 53 hosted zone",
+                region=region,
+                unit="month",
+                price_usd=price,
+                attributes={"published_unit": unit},
+            )
+        ]
+    return []
+
+
 def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every category we price on AWS, for one region."""
     points = load_compute_prices(region_key, path)
@@ -449,6 +554,9 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_storage_prices,
         load_egress_prices,
         load_loadbalancer_prices,
+        load_cache_prices,
+        load_monitoring_prices,
+        load_dns_prices,
     ):
         try:
             points.extend(loader(region_key))

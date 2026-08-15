@@ -148,6 +148,11 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         storage_gb=requirement.storage_gb,
         egress_gb=requirement.egress_gb,
         load_balancer=requirement.needs_database and count > 1,
+        # A read-heavy app in front of a database wants a cache, and anything
+        # in production is monitored. Both are heuristic, like the sizing.
+        cache_vcpu=2 if requirement.needs_database else None,
+        cache_memory_gb=2.0 if requirement.needs_database else None,
+        monitored_metrics=30 if requirement.needs_database else 10,
     )
 
 

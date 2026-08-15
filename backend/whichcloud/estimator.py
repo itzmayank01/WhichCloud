@@ -42,6 +42,11 @@ class ArchitectureSpec:
     egress_gb: float = 0.0
     load_balancer: bool = False
 
+    # A cache in front of the database, and metrics for the whole thing.
+    cache_vcpu: int | None = None
+    cache_memory_gb: float | None = None
+    monitored_metrics: int = 0
+
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
     use_spot: bool = False
@@ -203,6 +208,33 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.items.append(_metered_line("Egress", point, spec.egress_gb))
         else:
             result.missing.append("egress")
+
+    # ---- cache ----
+    if spec.cache_vcpu:
+        point = store.cheapest_compute_like(
+            provider=provider,
+            region=region,
+            category="cache",
+            min_vcpu=spec.cache_vcpu,
+            min_memory_gb=spec.cache_memory_gb or 0.0,
+            dsn=dsn,
+        )
+        if point:
+            result.items.append(_hourly_line("Cache", point, 1))
+        else:
+            result.missing.append(
+                f"cache {spec.cache_vcpu}vCPU/{(spec.cache_memory_gb or 0):g}GB"
+            )
+
+    # ---- monitoring ----
+    if spec.monitored_metrics:
+        point = store.cheapest_in_category(provider, region, "monitoring", dsn=dsn)
+        if point:
+            result.items.append(
+                _metered_line("Monitoring", point, spec.monitored_metrics)
+            )
+        else:
+            result.missing.append("monitoring")
 
     # ---- load balancer ----
     if spec.load_balancer:

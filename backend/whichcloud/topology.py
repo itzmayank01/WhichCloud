@@ -25,6 +25,8 @@ _KIND_BY_PREFIX = {
     "Object storage": "storage",
     "Egress": "network",
     "Load balancer": "loadbalancer",
+    "Cache": "cache",
+    "Monitoring": "monitoring",
 }
 
 
@@ -157,7 +159,8 @@ def build(
     topology.nodes.append(
         Node(id="users", label="Users", kind="client", monthly_usd=Decimal(0))
     )
-    for kind in ("network", "loadbalancer", "compute", "database", "storage"):
+    for kind in ("network", "loadbalancer", "compute", "cache", "database",
+                 "storage", "monitoring"):
         if kind in by_kind:
             topology.nodes.append(by_kind[kind])
 
@@ -184,6 +187,8 @@ def build(
     if "loadbalancer" in present and "compute" in present:
         topology.edges.append(Edge("loadbalancer", "compute"))
 
+    if "compute" in present and "cache" in present:
+        topology.edges.append(Edge("compute", "cache"))
     if "compute" in present and "database" in present:
         topology.edges.append(Edge("compute", "database"))
 

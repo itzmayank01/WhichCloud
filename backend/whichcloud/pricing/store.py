@@ -204,6 +204,31 @@ def cheapest_database(
     return _to_point(row) if row else None
 
 
+def cheapest_compute_like(
+    provider: str,
+    region: str,
+    category: str,
+    min_vcpu: int,
+    min_memory_gb: float = 0.0,
+    dsn: str | None = None,
+) -> PricePoint | None:
+    """Cheapest node in a category that meets a vCPU/memory spec.
+
+    Cache nodes are sized like compute but priced in their own category, so
+    they need spec matching rather than a flat cheapest-in-category lookup.
+    """
+    with connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT * FROM price_points
+               WHERE provider=%s AND region=%s AND category=%s
+                 AND vcpu >= %s AND memory_gb >= %s
+               ORDER BY price_usd ASC LIMIT 1""",
+            (provider, region, category, min_vcpu, min_memory_gb),
+        )
+        row = cur.fetchone()
+    return _to_point(row) if row else None
+
+
 def cheapest_in_category(
     provider: str, region: str, category: str, dsn: str | None = None
 ) -> PricePoint | None:

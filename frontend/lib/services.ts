@@ -18,6 +18,8 @@ const SERVICES: Record<string, Record<string, Service>> = {
     compute: { name: "Amazon ECS on EC2", short: "ECS" },
     database: { name: "Amazon RDS for PostgreSQL", short: "RDS" },
     storage: { name: "Amazon S3", short: "S3" },
+    cache: { name: "Amazon ElastiCache", short: "ElastiCache" },
+    monitoring: { name: "Amazon CloudWatch", short: "CloudWatch" },
   },
   azure: {
     client: { name: "Users", short: "Users" },
@@ -26,6 +28,8 @@ const SERVICES: Record<string, Record<string, Service>> = {
     compute: { name: "Azure Virtual Machines", short: "Virtual Machines" },
     database: { name: "Azure Database for PostgreSQL", short: "PostgreSQL" },
     storage: { name: "Azure Blob Storage", short: "Blob Storage" },
+    cache: { name: "Azure Cache for Redis", short: "Cache for Redis" },
+    monitoring: { name: "Azure Monitor", short: "Monitor" },
   },
   gcp: {
     client: { name: "Users", short: "Users" },
@@ -34,6 +38,8 @@ const SERVICES: Record<string, Record<string, Service>> = {
     compute: { name: "Compute Engine", short: "Compute Engine" },
     database: { name: "Cloud SQL for PostgreSQL", short: "Cloud SQL" },
     storage: { name: "Cloud Storage", short: "Cloud Storage" },
+    cache: { name: "Memorystore", short: "Memorystore" },
+    monitoring: { name: "Cloud Monitoring", short: "Monitoring" },
   },
 };
 
