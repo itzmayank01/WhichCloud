@@ -115,10 +115,12 @@ export function MultiCloudArchitecture({
               role="tab"
               aria-selected={on}
               onClick={() => setActive(p)}
-              className={`group relative overflow-hidden rounded-xl border text-left transition-all duration-150 ${
+              className={`group relative overflow-hidden rounded-xl border bg-white text-left transition-all duration-150 ${
                 on
-                  ? "border-accent bg-white shadow-[0_4px_16px_-6px_rgba(36,81,217,.28)]"
-                  : "border-line bg-white hover:border-line-strong hover:shadow-[0_2px_10px_-6px_rgba(11,13,18,.18)]"
+                  ? "border-accent shadow-[0_4px_16px_-6px_rgba(36,81,217,.28)]"
+                  : wins
+                    ? "border-save/45 shadow-[0_2px_10px_-6px_rgba(11,122,69,.25)] hover:border-save/70"
+                    : "border-line hover:border-line-strong hover:shadow-[0_2px_10px_-6px_rgba(11,13,18,.18)]"
               }`}
             >
               {/* Selection reads as a marked edge rather than a filled panel,
@@ -133,15 +135,25 @@ export function MultiCloudArchitecture({
               />
 
               <div className="px-5 pb-4 pt-5">
-                <div className="flex items-center gap-2">
+                {/* One line, always. Letting the name wrap around the badge
+                    pushes that card's total below the other two, and three
+                    figures meant to be compared at a glance have to sit on
+                    the same baseline. */}
+                <div className="flex h-6 items-center gap-2">
                   {chrome?.logo && (
-                    <Icon icon={chrome.logo} width={18} height={18} aria-hidden />
+                    <Icon
+                      icon={chrome.logo}
+                      width={18}
+                      height={18}
+                      className="shrink-0"
+                      aria-hidden
+                    />
                   )}
-                  <span className="text-[15px] font-semibold tracking-[-0.01em]">
+                  <span className="truncate text-[15px] font-semibold tracking-[-0.01em]">
                     {chrome?.label ?? p}
                   </span>
                   {wins && (
-                    <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-white">
+                    <span className="ml-auto shrink-0 rounded-full bg-save px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-white">
                       Cheapest
                     </span>
                   )}
@@ -150,9 +162,13 @@ export function MultiCloudArchitecture({
                 {/* A partial total is a floor, not a price. Showing it as a
                     bare figure invites comparison against the complete ones,
                     which is exactly the wrong conclusion. */}
+                {/* The cheapest total is the answer this section was built to
+                    give, so it is the only figure that carries colour. Green
+                    on the winner and ink on the rest means the eye lands on
+                    it before reading a single label. */}
                 <div
                   className={`tnum mt-3 font-mono text-[32px] font-semibold leading-none tracking-[-0.02em] ${
-                    o.complete ? "" : "text-ink-3"
+                    !o.complete ? "text-ink-3" : wins ? "text-save" : "text-ink"
                   }`}
                 >
                   {!o.complete && (
@@ -171,7 +187,11 @@ export function MultiCloudArchitecture({
                         className="block h-full rounded-full transition-all duration-500"
                         style={{
                           width: `${usedPct}%`,
-                          background: over ? "var(--spend)" : "var(--accent)",
+                          background: over
+                            ? "var(--spend)"
+                            : wins
+                              ? "var(--save)"
+                              : "var(--accent)",
                         }}
                       />
                     </div>
@@ -179,8 +199,12 @@ export function MultiCloudArchitecture({
                       <span className={over ? "text-spend" : "text-ink-3"}>
                         {usedPct}% of {money(budgetValue, 0)}
                       </span>
-                      <span className={wins ? "text-accent" : "text-ink-3"}>
-                        {wins ? "baseline" : `+${money(delta, 0)}`}
+                      <span
+                        className={
+                          wins ? "font-semibold text-save" : "text-ink-3"
+                        }
+                      >
+                        {wins ? "cheapest" : `+${money(delta, 0)}`}
                       </span>
                     </div>
                   </>
