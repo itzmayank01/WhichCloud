@@ -159,7 +159,7 @@ function Tile({
       </span>
 
       {node.detail && (
-        <span className="mt-1 font-mono text-[13px] leading-tight text-ink-3">
+        <span className="mt-1 font-mono text-[13px] leading-tight text-ink-3 font-medium">
           {node.detail}
         </span>
       )}
@@ -172,13 +172,13 @@ function Tile({
                 {money(node.monthly_usd)}
               </span>
               {node.share > 0.01 && (
-                <span className="tnum font-mono text-[13px] text-ink-3">
+                <span className="tnum font-mono text-[13px] text-ink-3 font-medium">
                   {Math.round(node.share * 100)}%
                 </span>
               )}
             </>
           ) : (
-            <span className="font-mono text-[13px] text-caution">not priced</span>
+            <span className="font-mono text-[13px] text-caution font-medium">not priced</span>
           )}
         </span>
       )}
@@ -335,15 +335,15 @@ export function ArchitectureDiagram({
                   className="h-2.5 w-2.5 rounded-[3px]"
                   style={{ background: colour as string }}
                 />
-                <span className="text-[13.5px] text-ink-3">{label}</span>
+                <span className="text-[13.5px] text-ink-3 font-medium">{label}</span>
               </span>
             ))}
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full bg-accent" />
-              <span className="text-[13.5px] text-ink-3">optimized</span>
+              <span className="text-[13.5px] text-ink-3 font-medium">optimized</span>
             </span>
           </div>
-          {caption && <span className="font-mono text-[13px] text-ink-3">{caption}</span>}
+          {caption && <span className="font-mono text-[13px] text-ink-3 font-medium">{caption}</span>}
         </div>
       </div>
     </div>

@@ -59,46 +59,46 @@ export function HoverBoard({
       ) : (
         <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
           <div className="min-w-[200px]">
-            <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3">
+            <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3 font-medium">
               {node.kind}
             </div>
             <div className="mt-1 text-[17px] font-medium leading-tight">
               {serviceName(provider, node.kind, node.label)}
             </div>
             {node.sku && (
-              <div className="mt-1 font-mono text-[13px] text-ink-2">{node.sku}</div>
+              <div className="mt-1 font-mono text-[13px] text-ink-2 font-medium">{node.sku}</div>
             )}
           </div>
 
           <div>
-            <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3">
+            <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3 font-medium">
               Monthly
             </div>
             <div className="tnum mt-1 font-mono text-[24px] leading-none">
               {node.priced ? money(node.monthly_usd) : "—"}
             </div>
             {node.priced && total > 0 && (
-              <div className="tnum mt-1 font-mono text-[13px] text-ink-2">
+              <div className="tnum mt-1 font-mono text-[13px] text-ink-2 font-medium">
                 {Math.round(node.share * 100)}% of {money(total, 0)}
               </div>
             )}
           </div>
 
           <div className="max-w-[380px] flex-1">
-            <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3">
+            <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3 font-medium">
               What it is
             </div>
-            <p className="mt-1 text-[14px] leading-relaxed text-ink-2">
+            <p className="mt-1 text-[14px] leading-relaxed text-ink-2 font-medium">
               {NOTE[node.kind] ?? "Part of the architecture."}
             </p>
             {node.optimized_by.length > 0 && (
-              <p className="mt-2 flex items-center gap-2 text-[13.5px] text-accent">
+              <p className="mt-2 flex items-center gap-2 text-[13.5px] text-accent font-medium">
                 <span className="h-2 w-2 rounded-full bg-accent" />
                 Optimized by {node.optimized_by.join(", ")}
               </p>
             )}
             {!node.priced && (
-              <p className="mt-2 text-[13.5px] text-caution">
+              <p className="mt-2 text-[13.5px] text-caution font-medium">
                 No published price for this on {provider.toUpperCase()} — shown so
                 the gap is visible rather than hidden.
               </p>

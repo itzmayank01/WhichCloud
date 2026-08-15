@@ -70,7 +70,7 @@ async function ProviderCostCard() {
       {/* tabs */}
       <div className="mx-5 flex gap-5 border-b border-neutral-100">
         <span className="border-b-2 border-neutral-900 pb-2 text-[13px] font-medium text-neutral-900">Overview</span>
-        <span className="pb-2 text-[13px] font-normal text-neutral-400">Anomalies</span>
+        <span className="pb-2 text-[13px] font-normal text-neutral-400 font-medium">Anomalies</span>
       </div>
 
       <div className="flex flex-1 flex-col px-5 pb-5 pt-4">
@@ -239,7 +239,7 @@ async function EngineCard() {
 
             {/* input bar */}
             <div className="mt-3 flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 py-2.5">
-              <span className="flex-1 text-[13px] text-neutral-400">Describe your app…</span>
+              <span className="flex-1 text-[13px] text-neutral-400 font-medium">Describe your app…</span>
               <span className="grid h-6 w-6 place-items-center rounded-md bg-neutral-900">
                 <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M8 12V4M5 7l3-3 3 3" /></svg>
               </span>
@@ -361,7 +361,7 @@ export function ProductShot() {
 export function ProviderBar() {
   return (
     <div className="mx-auto max-w-4xl text-center">
-      <p className="font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3">
+      <p className="font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3 font-medium">
         Pricing sourced directly from
       </p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-x-14 gap-y-5">
@@ -406,7 +406,7 @@ export function FeatureBlock({
         }`}
       >
         <div>
-          <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent">
+          <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
             {eyebrow}
           </div>
           <h3 className="mt-3 text-balance text-[clamp(1.5rem,2.6vw,2rem)] font-semibold leading-tight tracking-[-0.02em]">
@@ -488,7 +488,7 @@ export function Footer() {
           </p>
           <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            <span className="font-mono text-[13.5px] text-ink-2">All prices current</span>
+            <span className="font-mono text-[13.5px] text-ink-2 font-medium">All prices current</span>
           </div>
         </div>
 
@@ -512,7 +512,7 @@ export function Footer() {
       </div>
 
       <div className="mx-auto mt-12 max-w-6xl border-t border-line pt-6">
-        <p className="font-mono text-[13.5px] leading-relaxed text-ink-3">
+        <p className="font-mono text-[13.5px] leading-relaxed text-ink-3 font-medium">
           Prices are public list rates from provider APIs · sizing is a documented
           heuristic · estimates, not quotes
         </p>

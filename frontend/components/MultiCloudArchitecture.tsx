@@ -120,7 +120,7 @@ export function MultiCloudArchitecture({
                 <span className="ml-1 text-[15px] font-normal text-ink-3">/mo</span>
               </div>
               {!o.complete && (
-                <div className="mt-2 font-mono text-[13px] text-caution">
+                <div className="mt-2 font-mono text-[13px] text-caution font-medium">
                   {o.missing.length} component{o.missing.length === 1 ? "" : "s"} unpriced
                 </div>
               )}

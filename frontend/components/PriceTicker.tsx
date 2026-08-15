@@ -22,14 +22,14 @@ export async function PriceTicker() {
     <div className="flex shrink-0 items-center gap-8 pr-8">
       {rows.map((r, i) => (
         <span key={`${r.provider}-${r.sku}-${i}`} className="flex shrink-0 items-baseline gap-2.5">
-          <span className="font-mono text-[13px] uppercase tracking-[0.08em] text-ink-3">
+          <span className="font-mono text-[13px] uppercase tracking-[0.08em] text-ink-3 font-medium">
             {r.provider}
           </span>
-          <span className="font-mono text-[14px] text-ink-2">{r.sku}</span>
+          <span className="font-mono text-[14px] text-ink-2 font-medium">{r.sku}</span>
           <span className="tnum font-mono text-[15px] font-medium text-ink">
             {money(r.monthly_usd)}
           </span>
-          <span className="text-[13px] text-ink-3">/mo</span>
+          <span className="text-[13px] text-ink-3 font-medium">/mo</span>
           <span className="ml-4 h-3 w-px bg-line-strong" aria-hidden />
         </span>
       ))}
