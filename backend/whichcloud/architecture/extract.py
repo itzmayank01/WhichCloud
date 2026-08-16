@@ -10,6 +10,7 @@ of what a model thought they meant is not.
 import hashlib
 import os
 
+from whichcloud.architecture.readers import candidates, configured, is_exhausted
 from whichcloud.architecture.schema import Architecture
 from whichcloud.intake import IntakeError, Provider
 from whichcloud.pricing import store
@@ -20,6 +21,9 @@ from whichcloud.pricing import store
 SCHEMA_VERSION = "1"
 
 _MODEL = "gemini-2.5-flash"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+OPENAI_MODEL = "gpt-4.1-mini"
+ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
 
 _INSTRUCTION = """\
 Extract the architecture described below.
@@ -39,11 +43,11 @@ Description:
 """
 
 
-def _gemini(description: str, client=None) -> Architecture:
+def _gemini(description: str, client=None, key: str | None = None) -> Architecture:
     from google import genai
 
     if client is None:
-        key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        key = key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise IntakeError("GEMINI_API_KEY is not set.")
         client = genai.Client(api_key=key)
@@ -67,7 +71,123 @@ def _gemini(description: str, client=None) -> Architecture:
     return Architecture.model_validate_json(result.text)
 
 
-_EXTRACTORS = {"gemini": _gemini}
+def _openai_compatible(
+    description: str, key: str, base_url: str | None, model: str
+) -> Architecture:
+    """Groq and OpenAI both speak this, so one function serves both.
+
+    Chat completions with a JSON schema rather than the newer parse helper,
+    because Groq implements the older surface and this has to work on each.
+    """
+    from openai import OpenAI
+
+    client = OpenAI(api_key=key, base_url=base_url)
+    result = client.chat.completions.create(
+        model=model,
+        temperature=0,
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "architecture",
+                "schema": Architecture.model_json_schema(),
+                "strict": False,
+            },
+        },
+        messages=[{"role": "user", "content": _INSTRUCTION + description}],
+    )
+    return Architecture.model_validate_json(result.choices[0].message.content or "{}")
+
+
+def _groq(description: str, client=None, key: str | None = None) -> Architecture:
+    key = key or os.getenv("GROQ_API_KEY", "")
+    if not key:
+        raise IntakeError("GROQ_API_KEY is not set.")
+    return _openai_compatible(
+        description, key, "https://api.groq.com/openai/v1", GROQ_MODEL
+    )
+
+
+def _openai(description: str, client=None, key: str | None = None) -> Architecture:
+    key = key or os.getenv("OPENAI_API_KEY", "")
+    if not key:
+        raise IntakeError("OPENAI_API_KEY is not set.")
+    return _openai_compatible(description, key, None, OPENAI_MODEL)
+
+
+def _anthropic(description: str, client=None, key: str | None = None) -> Architecture:
+    import anthropic
+
+    key = key or os.getenv("ANTHROPIC_API_KEY", "")
+    if not key:
+        raise IntakeError("ANTHROPIC_API_KEY is not set.")
+
+    result = anthropic.Anthropic(api_key=key).messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=8192,
+        temperature=0,
+        tools=[
+            {
+                "name": "architecture",
+                "description": "The architecture the description sets out",
+                "input_schema": Architecture.model_json_schema(),
+            }
+        ],
+        tool_choice={"type": "tool", "name": "architecture"},
+        messages=[{"role": "user", "content": _INSTRUCTION + description}],
+    )
+    for block in result.content:
+        if block.type == "tool_use":
+            return Architecture.model_validate(block.input)
+    raise IntakeError("the model returned no architecture")
+
+
+_EXTRACTORS = {
+    "gemini": _gemini,
+    "groq": _groq,
+    "openai": _openai,
+    "anthropic": _anthropic,
+}
+
+
+def _read_with_failover(description: str, reader: Provider | None, client=None):
+    """Walk the chain until one provider answers.
+
+    Only quota and rate-limit failures move on. Anything else -- a
+    description the model cannot parse, a bug here -- fails the same way
+    everywhere, and trying all four turns one clear error into four slow ones.
+    """
+    if client is not None:                       # an injected client is the test's
+        return _EXTRACTORS[reader or "gemini"](description, client)
+
+    chain = candidates(reader)
+    if not chain:
+        raise IntakeError(
+            "No model credentials found. Set GEMINI_API_KEY or GROQ_API_KEY "
+            "in the environment; extra keys can be added as GEMINI_API_KEY_2 "
+            "and so on, and are used when the first is exhausted."
+        )
+
+    exhausted: list[str] = []
+    for candidate in chain:
+        extractor = _EXTRACTORS.get(candidate.provider)
+        if extractor is None:
+            continue
+        try:
+            return extractor(description, None, candidate.key)
+        except Exception as exc:
+            if is_exhausted(exc):
+                exhausted.append(candidate.label)
+                continue
+            raise IntakeError(
+                f"{candidate.label} could not read that: {str(exc)[:200]}"
+            ) from exc
+
+    raise IntakeError(
+        "Every configured model is out of quota right now ("
+        + ", ".join(exhausted)
+        + "). Descriptions read earlier still open instantly from the cache. "
+        "Add another key as GEMINI_API_KEY_2 or GROQ_API_KEY to keep going."
+    )
 
 
 def cache_key(description: str, reader: str) -> str:
@@ -112,23 +232,7 @@ def extract_architecture(
         if stored:
             return Architecture.model_validate_json(stored)
 
-    try:
-        arch = _EXTRACTORS[reader](description, client)
-    except IntakeError:
-        raise
-    except Exception as exc:
-        # The provider's own errors arrive as library exceptions. Left
-        # unhandled they become a 500 with no CORS headers, which a browser
-        # reports as "Failed to fetch" -- a network problem, which it is not.
-        # A daily quota running out is an ordinary thing that should say so.
-        detail = str(exc)
-        if "RESOURCE_EXHAUSTED" in detail or "429" in detail:
-            raise IntakeError(
-                "The model's daily free-tier quota is used up (20 requests a "
-                "day). Descriptions read earlier still open instantly from the "
-                "cache; new ones need the quota to reset or a billed key."
-            ) from exc
-        raise IntakeError(f"the reader could not parse that: {detail[:200]}") from exc
+    arch = _read_with_failover(description, reader, client)
 
     if use_cache:
         try:

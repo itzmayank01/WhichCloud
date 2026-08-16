@@ -351,11 +351,17 @@ def health() -> dict:
     if not total:
         raise HTTPException(503, "price catalog is empty — run ingest_prices.py")
 
+    from .architecture.readers import configured
+
     return {
         "status": "ok",
         "prices": total,
         "providers": sorted({r["provider"] for r in rows}),
         "last_updated": max(r["fetched"] for r in rows).isoformat(),
+        # Counts only, never the keys. Lets the interface say "three readers
+        # configured" and lets you see a new key took effect without a restart
+        # being a matter of faith.
+        "readers": configured(),
     }
 
 
