@@ -124,6 +124,106 @@ export function ChatBubble3D({ size = 36, className }: { size?: number; classNam
   );
 }
 
+/**
+ * The two side-panel marks, lit to match ChatBubble3D so the three panels
+ * read as one set.
+ *
+ * Both light from the top left, so the gradient is declared in userSpaceOnUse
+ * across the whole 40x40 box rather than per shape. Filling each bar from its
+ * own objectBoundingBox gradient would light every bar identically and give
+ * three light sources in one picture, which is the thing that makes an icon
+ * look assembled rather than modelled.
+ */
+
+/** Rising bars, the cost comparison. */
+export function ChartBars3D({ size = 36, className }: { size?: number; className?: string }) {
+  const bars = [
+    { x: 6.5, y: 21, h: 13 },
+    { x: 16.5, y: 8, h: 26 },
+    { x: 26.5, y: 25, h: 9 },
+  ];
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 40 40"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`shrink-0 ${className ?? ""}`}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="wc-bar-body" x1="6" y1="6" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#5A8BF7" />
+          <stop offset="0.5" stopColor="#2F62E8" />
+          <stop offset="1" stopColor="#1B3FC4" />
+        </linearGradient>
+      </defs>
+      {bars.map((b) => (
+        <g key={b.x}>
+          <rect x={b.x} y={b.y} width="7" height={b.h} rx="2.6" fill="url(#wc-bar-body)" />
+          {/* Lit cap, inset so it stops short of the rounded corner. */}
+          <rect
+            x={b.x + 1.1}
+            y={b.y + 1.1}
+            width="4.8"
+            height="2.6"
+            rx="1.3"
+            fill="#FFFFFF"
+            fillOpacity="0.34"
+          />
+          {/* Right edge only: the side facing away from the light. */}
+          <rect
+            x={b.x + 5.9}
+            y={b.y + 2.4}
+            width="1.1"
+            height={b.h - 4.2}
+            fill="#12309B"
+            fillOpacity="0.22"
+          />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** A line falling to the right, the saving. */
+export function TrendDown3D({ size = 36, className }: { size?: number; className?: string }) {
+  const LINE = "M5.5 11.5 L15.8 21.8 L22.4 15.2 L33 25.8";
+  const HEAD = "M33 18.6 V25.8 H25.8";
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 40 40"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`shrink-0 ${className ?? ""}`}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="wc-trend-body" x1="6" y1="8" x2="33" y2="30" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#5A8BF7" />
+          <stop offset="0.5" stopColor="#2F62E8" />
+          <stop offset="1" stopColor="#1B3FC4" />
+        </linearGradient>
+      </defs>
+      {/* Three passes of the same path make the stroke read as a rounded bar:
+          the underside first, then the body over it, then a sheen along the
+          top. Offsetting rather than blurring keeps it crisp at 36px. */}
+      <g transform="translate(0 0.9)" opacity="0.3">
+        <path d={LINE} stroke="#12309B" strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={HEAD} stroke="#12309B" strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+      <path d={LINE} stroke="url(#wc-trend-body)" strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={HEAD} stroke="url(#wc-trend-body)" strokeWidth="4.4" strokeLinecap="round" strokeLinejoin="round" />
+      <g transform="translate(0 -0.85)" opacity="0.36">
+        <path d={LINE} stroke="#FFFFFF" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </svg>
+  );
+}
+
 /** A speech bubble around a star — the sentence you type, rated. */
 export function AskBadge({ size = 22, className }: { size?: number; className?: string }) {
   return (

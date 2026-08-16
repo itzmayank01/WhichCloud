@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "@iconify/react";
-import { ChatBubble3D } from "@/components/landing/Badges";
+import { ChartBars3D, ChatBubble3D, TrendDown3D } from "@/components/landing/Badges";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -412,20 +412,8 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
    which is what the panel is about -- a currency symbol only says the panel
    concerns money, which the figures already say. */
 const HEAD_ICON: Record<string, React.ReactNode> = {
-  chart: (
-    <>
-      <path d="M3 21h18" />
-      <path d="M7 21V11" />
-      <path d="M12 21V4" />
-      <path d="M17 21v-6" />
-    </>
-  ),
-  save: (
-    <>
-      <path d="M3 7l6.5 6.5 4-4L21 17" />
-      <path d="M21 12v5h-5" />
-    </>
-  ),
+  chart: <ChartBars3D size={36} />,
+  save: <TrendDown3D size={36} />,
 };
 
 function Card({
@@ -502,20 +490,7 @@ function Card({
       >
       <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-3">
         <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-wash">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-[18px] w-[18px] text-accent"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              {HEAD_ICON[icon]}
-            </svg>
-          </span>
+          {HEAD_ICON[icon]}
           <div className="min-w-0">
             <p className="font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-3">
               {eyebrow}
