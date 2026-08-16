@@ -20,7 +20,7 @@ const LABEL: Record<string, string> = {
 
 export async function HeroShowcaseSection() {
   try {
-    const [compare, catalog, techs, health] = await Promise.all([
+    const [compare, techs] = await Promise.all([
       api.compare({
         goal: "an online shop",
         workload_type: "web",
@@ -29,9 +29,7 @@ export async function HeroShowcaseSection() {
         storage_gb: 200,
         egress_gb: 500,
       }),
-      api.catalog({ region: "india", min_vcpu: 2, min_memory_gb: 4, limit: 60 }),
       api.techniques().catch(() => ({ count: 0, techniques: [] })),
-      api.health().catch(() => ({ prices: 0, providers: [] as string[] })),
     ]);
 
     const balanced = Object.entries(compare.clouds)
@@ -57,41 +55,47 @@ export async function HeroShowcaseSection() {
       (b.option.applied?.length ?? 0) > (a.option.applied?.length ?? 0) ? b : a,
     );
 
-    // One row per cloud, cheapest first, so the sample is not all one provider.
-    const seen = new Set<string>();
-    const sample = [...(catalog.rows ?? [])]
-      .sort((a, b) => a.monthly_usd - b.monthly_usd)
-      .filter((r) => (seen.has(r.provider) ? false : (seen.add(r.provider), true)))
-      .slice(0, 5);
+    /* Only services every cloud prices go into the chart, so the bars compare
+       like with like. A segment present on one cloud and absent on another
+       would make the shorter bar look cheaper when it is only less complete. */
+    const shared = balanced
+      .map((r) => new Set(r.option.items.map((i) => i.label.replace(/ ×.*$/, ""))))
+      .reduce((a, b) => new Set([...a].filter((x) => b.has(x))));
+
+    const categories = [...shared].sort();
 
     const data: ShowcaseData = {
-      catalog: {
-        rows: sample.map((r) => ({
-          provider: r.provider,
-          name: r.name || r.sku,
-          vcpu: r.vcpu ?? null,
-          memory: r.memory_gb ?? null,
-          monthly: r.monthly_usd,
-        })),
-        /* health.prices is the catalog; catalog.count is only how many rows
-           came back, which is the limit that was asked for. Reporting 60 for
-           a catalog of several thousand would be wrong in the direction that
-           matters least to notice and most to fix. */
-        total: health.prices || catalog.count || sample.length,
-        clouds:
-          health.providers?.length ||
-          new Set((catalog.rows ?? []).map((r) => r.provider)).size,
+      chart: {
+        categories,
+        clouds: balanced
+          .sort((a, b) => a.option.monthly_usd - b.option.monthly_usd)
+          .map((r) => {
+            const segments = categories.map((label) => ({
+              label,
+              value: r.option.items
+                .filter((i) => i.label.replace(/ ×.*$/, "") === label)
+                .reduce((sum, i) => sum + i.monthly_usd, 0),
+            }));
+            return {
+              id: r.id,
+              label: LABEL[r.id] ?? r.id,
+              total: segments.reduce((sum, s) => sum + s.value, 0),
+              segments,
+            };
+          }),
       },
-      techniquesTested: techs.count ?? 0,
+      quote: "an online shop for India, traffic comes in spikes",
       breakdown: [...win.items]
         .sort((a, b) => b.monthly_usd - a.monthly_usd)
         .slice(0, 5)
         .map((i) => ({
           label: i.label.replace(/ ×.*$/, ""),
+          sku: i.sku ?? "—",
           monthly: i.monthly_usd,
         })),
       total: win.monthly_usd,
       saved: richest.option.measured_saving_usd,
+      techniquesTested: techs.count ?? 0,
       applied: (richest.option.applied ?? [])
         .filter((a) => (a.saved_monthly_usd ?? 0) > 0)
         .sort((a, b) => (b.saved_monthly_usd ?? 0) - (a.saved_monthly_usd ?? 0))
