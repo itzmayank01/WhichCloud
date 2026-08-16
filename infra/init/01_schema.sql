@@ -50,3 +50,28 @@ CREATE TABLE IF NOT EXISTS techniques (
 
 CREATE INDEX IF NOT EXISTS idx_techniques_embedding
     ON techniques USING hnsw (embedding vector_cosine_ops);
+
+-- Extracted architectures, keyed by what produced them.
+--
+-- A model asked the same question twice does not reliably answer the same
+-- way. Measured on one description at temperature 0: three runs gave 23, 22
+-- and 23 nodes, with 48, 32 and 48 edges. Greedy decoding is not reproducible
+-- serving, and no provider guarantees it is.
+--
+-- That is fatal for this product in a way it would not be for a chatbot: a
+-- user re-opening their own saved architecture must see the same system they
+-- saw yesterday, or nothing built on top of it -- a diagram, a cost, a
+-- Terraform file -- can be trusted to mean anything.
+--
+-- So the first answer is kept and reused. The key covers the model and schema
+-- version as well as the text, so changing either produces a new extraction
+-- rather than silently serving one made under different rules.
+CREATE TABLE IF NOT EXISTS architecture_cache (
+    key           TEXT PRIMARY KEY,            -- sha256(description|reader|model|schema)
+    description   TEXT NOT NULL,
+    reader        TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    payload       JSONB NOT NULL,              -- the Architecture, as returned
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);

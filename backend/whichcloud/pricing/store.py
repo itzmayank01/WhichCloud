@@ -333,3 +333,39 @@ def provenance(dsn: str | None = None) -> list[dict]:
                 """
             ).fetchall()
         ]
+
+
+def cached_architecture(key: str, dsn: str | None = None) -> str | None:
+    """The stored extraction for this key, or None."""
+    with connect(dsn) as conn:
+        row = conn.execute(
+            "SELECT payload FROM architecture_cache WHERE key = %s", (key,)
+        ).fetchone()
+    return json.dumps(row["payload"]) if row else None
+
+
+def cache_architecture(
+    key: str,
+    description: str,
+    reader: str,
+    model: str,
+    schema_version: str,
+    payload: str,
+    dsn: str | None = None,
+) -> None:
+    """Keep an extraction so the same description answers the same way.
+
+    ON CONFLICT DO NOTHING rather than overwriting: the first answer is the
+    one already shown to the user, and replacing it with a later one is
+    exactly the drift this table exists to prevent.
+    """
+    with connect(dsn) as conn:
+        conn.execute(
+            """
+            INSERT INTO architecture_cache
+                (key, description, reader, model, schema_version, payload)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (key) DO NOTHING
+            """,
+            (key, description, reader, model, schema_version, payload),
+        )

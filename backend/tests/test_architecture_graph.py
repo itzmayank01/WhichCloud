@@ -114,3 +114,18 @@ def test_an_unpriced_node_is_absent_not_zero():
 def test_regions_never_fall_below_one():
     """A description that does not say still describes one region."""
     assert build_graph(Architecture(regions=0)).regions == 1
+
+
+def test_a_plural_and_its_singular_are_one_node():
+    """Descriptions switch between "NAT Gateway" and "NAT Gateways" for one
+    thing; both were observed for the same architecture across runs. Two
+    boxes for one service is the visible symptom."""
+    assert slug("NAT Gateway") == slug("NAT Gateways") == "nat-gateway"
+    assert slug("VPC endpoint") == slug("VPC endpoints")
+
+
+def test_words_ending_in_s_are_not_mangled():
+    """Kinesis is not a plural Kinesi."""
+    assert slug("Amazon Kinesis") == "amazon-kinesis"
+    assert slug("Access Analyzer") == "access-analyzer"
+    assert slug("Direct Connect Gateways") == "direct-connect-gateway"

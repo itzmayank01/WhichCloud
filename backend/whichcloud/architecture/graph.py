@@ -62,8 +62,17 @@ def slug(name: str) -> str:
     Stable matters: the id is what edges, groups and the interface all point
     at, so it has to come out the same for the same name every time rather
     than depending on the order things were seen in.
+
+    The trailing plural is dropped because descriptions switch between "NAT
+    Gateway" and "NAT Gateways" for one thing, and both were observed in the
+    same architecture across runs. Left alone they become two boxes for one
+    service. Only a bare trailing "s" is removed -- "Access" and "Kinesis"
+    keep theirs, and a word that is genuinely plural still resolves to the
+    same id as its singular, which is the point.
     """
     out = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    if len(out) > 3 and out.endswith("s") and not out.endswith(("ss", "us", "is")):
+        out = out[:-1]
     return out or "node"
 
 
