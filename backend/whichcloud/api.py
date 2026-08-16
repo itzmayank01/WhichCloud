@@ -309,6 +309,14 @@ class DescribeIn(BaseModel):
     reader: Literal["gemini", "anthropic", "openai"] | None = None
 
 
+class ArchitectureIn(BaseModel):
+    description: str
+    reader: Literal["gemini", "anthropic", "openai"] | None = None
+    #: Re-read rather than reuse the stored answer. Off by default, because
+    #: the stored answer is the one the user has already seen.
+    refresh: bool = False
+
+
 # ── routes ──────────────────────────────────────────────────────────────
 
 
@@ -513,6 +521,82 @@ def compare_route(body: RecommendIn) -> dict:
             provider: [_option_out(o, provider).model_dump() for o in options]
             for provider, options in results.items()
         },
+    }
+
+
+@app.post("/architecture")
+def architecture_route(body: ArchitectureIn) -> dict:
+    """A description, drawn.
+
+    Separate from /describe, which answers "what would this cost" and keeps
+    only what it can price -- six nodes out of a twenty six service
+    description. This answers "what did you describe", so it keeps everything
+    named whether or not the catalog can price it.
+
+    The coordinates are computed here rather than in the browser. Layout is
+    deterministic and depends on nothing the client knows, so doing it once on
+    the server means every viewer of the same architecture sees the same
+    picture, and the interface is left with drawing rather than deciding.
+    """
+    from .architecture.extract import extract_architecture
+    from .architecture.graph import build_graph
+    from .architecture.layout import build_layout
+    from .intake import IntakeError
+
+    if not body.description.strip():
+        raise HTTPException(400, "description is empty")
+
+    try:
+        arch = extract_architecture(
+            body.description,
+            reader=body.reader or "gemini",
+            refresh=body.refresh,
+        )
+    except IntakeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    graph = build_graph(arch)
+    layout = build_layout(graph)
+
+    return {
+        "canvas": {"width": layout.width, "height": layout.height},
+        "regions": graph.regions,
+        "azs_per_region": graph.azs_per_region,
+        "external": graph.external,
+        "counts": {
+            "services": len(layout.nodes),
+            "edges": len(layout.edges),
+            "groups": len(layout.groups),
+            "priced": graph.priced_count,
+        },
+        "bands": [{"tier": b.tier, "y": b.y, "h": b.h} for b in layout.bands],
+        # Outermost first: the interface paints them in order so nesting lands
+        # on top without having to sort anything itself.
+        "groups": [
+            {
+                "id": g.id, "kind": g.kind, "label": g.label, "depth": g.depth,
+                "x": g.x, "y": g.y, "w": g.w, "h": g.h,
+            }
+            for g in layout.groups
+        ],
+        "nodes": [
+            {
+                "id": n.id, "label": n.label, "tier": n.tier,
+                "purpose": n.purpose, "priced": n.priced,
+                "monthly_usd": n.monthly_usd, "sku": n.sku,
+                "x": n.x, "y": n.y, "w": n.w, "h": n.h,
+            }
+            for n in layout.nodes
+        ],
+        # Already routed. A polyline, not two endpoints, so the client does not
+        # have to work out where an arrow should meet a box.
+        "edges": [
+            {
+                "source": e.source, "target": e.target, "flow": e.flow,
+                "points": [{"x": x, "y": y} for x, y in e.points],
+            }
+            for e in layout.edges
+        ],
     }
 
 

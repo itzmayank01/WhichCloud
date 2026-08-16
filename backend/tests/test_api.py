@@ -242,3 +242,65 @@ def test_provenance_splits_the_catalog_by_origin(client):
     # Fetched has to dominate; if it ever does not, the claim on the landing
     # page is no longer true and this should fail rather than render quietly.
     assert body["split"]["fetched"] / body["total"] > 0.9
+
+
+def test_architecture_rejects_an_empty_description(client):
+    assert client.post("/architecture", json={"description": "   "}).status_code == 400
+
+
+def test_architecture_geometry_is_self_consistent(client, monkeypatch):
+    """Whatever the reader returns, the drawn result has to be coherent:
+    every edge endpoint must name a node that exists, and nothing may be
+    positioned outside the canvas the response declares."""
+    from whichcloud.architecture.schema import Architecture, Boundary, Service
+
+    def fake(description, reader="gemini", client=None, **kw):
+        return Architecture(
+            services=[
+                Service(name="Route 53", tier="edge", flow="sync",
+                        connects_to=["Amazon EKS"]),
+                Service(name="Amazon EKS", tier="compute", flow="sync",
+                        connects_to=["Aurora"]),
+                Service(name="Aurora", tier="data", flow="sync"),
+            ],
+            boundaries=[Boundary(kind="vpc", name="prod", contains=["Amazon EKS"])],
+            regions=3,
+        )
+
+    monkeypatch.setattr(
+        "whichcloud.architecture.extract.extract_architecture", fake
+    )
+    body = client.post("/architecture", json={"description": "a shop"}).json()
+
+    ids = {n["id"] for n in body["nodes"]}
+    assert body["counts"]["services"] == len(body["nodes"]) == 3
+    assert body["regions"] == 3
+
+    for edge in body["edges"]:
+        assert edge["source"] in ids and edge["target"] in ids
+        assert len(edge["points"]) >= 2
+
+    w, h = body["canvas"]["width"], body["canvas"]["height"]
+    for box in body["nodes"] + body["groups"]:
+        assert 0 <= box["x"] and box["x"] + box["w"] <= w
+        assert 0 <= box["y"] and box["y"] + box["h"] <= h
+
+
+def test_architecture_groups_are_outermost_first(client, monkeypatch):
+    """The interface paints them in order and relies on nesting landing on
+    top, so it must not have to sort them itself."""
+    from whichcloud.architecture.schema import Architecture, Boundary, Service
+
+    def fake(description, reader="gemini", client=None, **kw):
+        return Architecture(
+            services=[Service(name="EKS", tier="compute", flow="sync")],
+            boundaries=[
+                Boundary(kind="region", name="r", contains=["v"]),
+                Boundary(kind="vpc", name="v", contains=["EKS"]),
+            ],
+        )
+
+    monkeypatch.setattr("whichcloud.architecture.extract.extract_architecture", fake)
+    groups = client.post("/architecture", json={"description": "x"}).json()["groups"]
+
+    assert [g["depth"] for g in groups] == sorted(g["depth"] for g in groups)
