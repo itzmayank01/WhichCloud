@@ -159,6 +159,14 @@ async function get<T>(path: string, revalidate = 300): Promise<T> {
   return response.json();
 }
 
+async function del<T>(path: string): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(`DELETE ${path} failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     method: "POST",
@@ -220,6 +228,15 @@ export type ArchitectureView = {
   edges: ArchEdge[];
 };
 
+export type SavedArchitecture = {
+  id: string;
+  title: string;
+  description: string;
+  services: number;
+  regions: number;
+  created_at: string;
+};
+
 export type Provenance = {
   total: number;
   split: Record<string, number>;
@@ -252,6 +269,20 @@ export const api = {
 
   architecture: (body: Record<string, unknown>) =>
     post<ArchitectureView>("/architecture", body),
+
+  saveArchitecture: (body: Record<string, unknown>) =>
+    post<SavedArchitecture>("/architecture/save", body),
+
+  savedArchitectures: (owner: string) =>
+    get<{ saved: SavedArchitecture[] }>(
+      `/architecture/saved?owner=${encodeURIComponent(owner)}`,
+      0,
+    ),
+
+  deleteArchitecture: (id: string, owner: string) =>
+    del<{ deleted: boolean }>(
+      `/architecture/saved/${id}?owner=${encodeURIComponent(owner)}`,
+    ),
 };
 
 /** Prices are the product. Format them once, consistently, everywhere. */

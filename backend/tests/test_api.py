@@ -304,3 +304,45 @@ def test_architecture_groups_are_outermost_first(client, monkeypatch):
     groups = client.post("/architecture", json={"description": "x"}).json()["groups"]
 
     assert [g["depth"] for g in groups] == sorted(g["depth"] for g in groups)
+
+
+def test_saved_architectures_are_isolated_by_owner(client):
+    """The owner is part of the query, not a check before it. Anything else
+    lets one person read or delete another's work."""
+    a = client.post(
+        "/architecture/save",
+        json={"owner": "user_a", "title": "A", "description": "a thing"},
+    ).json()
+
+    assert client.get("/architecture/saved", params={"owner": "user_b"}).json()["saved"] == []
+
+    # A stranger's delete removes nothing and reports so.
+    gone = client.delete(
+        f"/architecture/saved/{a['id']}", params={"owner": "user_b"}
+    ).json()
+    assert gone["deleted"] is False
+
+    mine = client.get("/architecture/saved", params={"owner": "user_a"}).json()["saved"]
+    assert any(row["id"] == a["id"] for row in mine)
+
+    assert client.delete(
+        f"/architecture/saved/{a['id']}", params={"owner": "user_a"}
+    ).json()["deleted"] is True
+
+
+def test_saving_requires_an_owner_and_a_description(client):
+    assert client.post(
+        "/architecture/save", json={"owner": " ", "description": "x"}
+    ).status_code == 400
+    assert client.post(
+        "/architecture/save", json={"owner": "u", "description": "  "}
+    ).status_code == 400
+
+
+def test_an_untitled_save_is_named_from_its_description(client):
+    """A list of "Untitled" is not a list."""
+    body = client.post(
+        "/architecture/save",
+        json={"owner": "user_t", "title": "", "description": "a multi-region shop"},
+    ).json()
+    assert body["title"] == "a multi-region shop"

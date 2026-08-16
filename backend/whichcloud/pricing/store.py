@@ -369,3 +369,58 @@ def cache_architecture(
             """,
             (key, description, reader, model, schema_version, payload),
         )
+
+
+def save_architecture(
+    owner: str,
+    title: str,
+    description: str,
+    services: int,
+    regions: int,
+    dsn: str | None = None,
+) -> dict:
+    """Keep an architecture for someone, and hand back what was kept."""
+    with connect(dsn) as conn:
+        row = conn.execute(
+            """
+            INSERT INTO saved_architectures
+                (owner, title, description, services, regions)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, title, description, services, regions, created_at
+            """,
+            (owner, title, description, services, regions),
+        ).fetchone()
+    return dict(row)
+
+
+def list_architectures(owner: str, dsn: str | None = None) -> list[dict]:
+    """Someone's saved architectures, newest first."""
+    with connect(dsn) as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT id, title, description, services, regions, created_at
+                FROM saved_architectures
+                WHERE owner = %s
+                ORDER BY created_at DESC
+                LIMIT 100
+                """,
+                (owner,),
+            ).fetchall()
+        ]
+
+
+def delete_architecture(owner: str, architecture_id: str, dsn: str | None = None) -> bool:
+    """Remove one, if it belongs to this owner.
+
+    The owner is part of the WHERE clause rather than checked beforehand, so
+    an id belonging to somebody else deletes nothing instead of racing between
+    the check and the delete.
+    """
+    with connect(dsn) as conn:
+        row = conn.execute(
+            "DELETE FROM saved_architectures WHERE owner = %s AND id = %s RETURNING id",
+            (owner, architecture_id),
+        ).fetchone()
+    return row is not None

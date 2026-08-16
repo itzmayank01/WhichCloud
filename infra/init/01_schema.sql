@@ -75,3 +75,27 @@ CREATE TABLE IF NOT EXISTS architecture_cache (
     payload       JSONB NOT NULL,              -- the Architecture, as returned
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Architectures someone chose to keep.
+--
+-- Distinct from architecture_cache, which is keyed by the text and shared by
+-- everyone who describes the same system. This is a person saying "this one
+-- is mine, let me back into it" -- so it is keyed by owner and carries a name
+-- they gave it.
+--
+-- The description is stored rather than the drawn result. The cache turns a
+-- description back into the same architecture, so keeping the geometry too
+-- would be a second copy that could drift from the first. What is saved is
+-- the question; the answer is looked up.
+CREATE TABLE IF NOT EXISTS saved_architectures (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner       TEXT NOT NULL,               -- the identity provider's user id
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL,
+    services    INTEGER NOT NULL DEFAULT 0,  -- for the list, without redrawing
+    regions     INTEGER NOT NULL DEFAULT 1,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_owner
+    ON saved_architectures (owner, created_at DESC);

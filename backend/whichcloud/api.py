@@ -309,6 +309,25 @@ class DescribeIn(BaseModel):
     reader: Literal["gemini", "anthropic", "openai"] | None = None
 
 
+class SaveArchitectureIn(BaseModel):
+    """Who is saving, what they called it, and the description itself.
+
+    `owner` arrives from the caller rather than being derived from a token.
+    The identity provider sits in front of this service, and the browser never
+    reaches it directly -- but that means this endpoint trusts its caller, so
+    it must not be exposed publicly without a check in front of it.
+    """
+
+    owner: str
+    #: Optional, because the route names an untitled save after its own
+    #: description. Requiring it here would reject the case that behaviour
+    #: exists to handle.
+    title: str = ""
+    description: str
+    services: int = 0
+    regions: int = 1
+
+
 class ArchitectureIn(BaseModel):
     description: str
     reader: Literal["gemini", "anthropic", "openai"] | None = None
@@ -598,6 +617,51 @@ def architecture_route(body: ArchitectureIn) -> dict:
             for e in layout.edges
         ],
     }
+
+
+@app.post("/architecture/save")
+def save_architecture_route(body: SaveArchitectureIn) -> dict:
+    """Keep an architecture so it can be reopened rather than re-described."""
+    if not body.owner.strip():
+        raise HTTPException(400, "owner is required")
+    if not body.description.strip():
+        raise HTTPException(400, "description is empty")
+
+    title = body.title.strip() or body.description.strip()[:60]
+    try:
+        saved = store.save_architecture(
+            body.owner, title, body.description, body.services, body.regions
+        )
+    except Exception as exc:
+        raise HTTPException(503, f"could not save: {exc}") from exc
+
+    saved["id"] = str(saved["id"])
+    saved["created_at"] = saved["created_at"].isoformat()
+    return saved
+
+
+@app.get("/architecture/saved")
+def saved_architectures_route(owner: str = Query(...)) -> dict:
+    """Everything this owner has kept, newest first."""
+    try:
+        rows = store.list_architectures(owner)
+    except Exception as exc:
+        raise HTTPException(503, f"could not read saved: {exc}") from exc
+
+    for row in rows:
+        row["id"] = str(row["id"])
+        row["created_at"] = row["created_at"].isoformat()
+    return {"saved": rows}
+
+
+@app.delete("/architecture/saved/{architecture_id}")
+def delete_architecture_route(architecture_id: str, owner: str = Query(...)) -> dict:
+    """Remove one. Silently does nothing if it is not this owner's."""
+    try:
+        removed = store.delete_architecture(owner, architecture_id)
+    except Exception as exc:
+        raise HTTPException(503, f"could not delete: {exc}") from exc
+    return {"deleted": removed}
 
 
 @app.post("/describe", response_model=RecommendationOut)

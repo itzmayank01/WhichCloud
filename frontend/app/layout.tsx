@@ -134,6 +134,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 </SignUpButton>
               </Show>
               <Show when="signed-in">
+                <Link
+                  href="/dashboard"
+                  className="rounded-lg bg-accent px-4 py-2 text-[15.5px] font-medium text-white transition-opacity hover:opacity-90"
+                >
+                  Workspace
+                </Link>
                 <UserButton />
               </Show>
             </div>
