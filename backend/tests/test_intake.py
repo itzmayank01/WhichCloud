@@ -276,8 +276,10 @@ def test_no_credentials_names_both_options(monkeypatch):
 
 
 def test_unknown_provider_is_rejected():
+    # "openai" used to stand in for an unknown provider here. It is a real
+    # reader now, so the example has to be something that genuinely is not.
     with pytest.raises(IntakeError, match="Unknown provider"):
-        parse_description("a shop", provider="openai")
+        parse_description("a shop", provider="llama")
 
 
 # ── gemini transport ────────────────────────────────────────────────────
