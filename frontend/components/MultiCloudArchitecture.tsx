@@ -50,6 +50,13 @@ const REGION_CITY: Record<string, string> = {
   "us-east-1": "N. Virginia",
   eastus: "Virginia",
   "us-east1": "S. Carolina",
+  // EU West is three countries, not three cities, which is worth showing.
+  "eu-west-1": "Ireland",
+  westeurope: "Netherlands",
+  "europe-west1": "Belgium",
+  "ap-southeast-1": "Singapore",
+  southeastasia: "Singapore",
+  "asia-southeast1": "Singapore",
 };
 
 const REGION_LABEL: Record<string, string> = {
