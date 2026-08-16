@@ -21,7 +21,12 @@ import { useEffect, useRef, useState } from "react";
  */
 
 export type ShowcaseData = {
-  providers: { id: string; label: string; monthly: number; cheapest: boolean }[];
+  catalog: {
+    rows: { provider: string; name: string; vcpu: number | null; memory: number | null; monthly: number }[];
+    total: number;
+    clouds: number;
+  };
+  techniquesTested: number;
   breakdown: { label: string; monthly: number }[];
   total: number;
   saved: number;
@@ -79,58 +84,58 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
     };
   }, []);
 
-  const maxProvider = Math.max(...data.providers.map((p) => p.monthly), 1);
   const maxLine = Math.max(...data.breakdown.map((b) => b.monthly), 1);
 
   return (
     <div ref={host} className="relative mx-auto max-w-6xl">
-      <div className="grid items-start gap-4 lg:grid-cols-12">
-        {/* ── left: the same workload on each cloud ── */}
+      <div className="grid items-stretch gap-4 lg:grid-cols-3">
+        {/* ── left: the catalog these figures come from ── */}
+        {/* Was a per-cloud comparison, which is the section further down the
+            page rendered twice. This shows the thing underneath all of it
+            instead: the rows themselves. */}
         <Panel
           shown={shown}
           delay={0}
-          className="lg:col-span-5 lg:mt-10"
-          eyebrow="Price comparison"
-          title="The same app, on each cloud"
+          eyebrow="Price catalog"
+          title="Real rates, not estimates"
         >
           <div className="flex items-baseline gap-2.5">
             <span className="tnum font-mono text-[26px] font-semibold leading-none">
-              {money(data.total)}
+              {data.catalog.total.toLocaleString()}
             </span>
-            <span className="rounded bg-save/10 px-1.5 py-0.5 font-mono text-[11.5px] font-semibold text-save">
-              −{money(data.saved)}/mo
+            <span className="text-[13px] text-ink-2">
+              prices · {data.catalog.clouds} clouds
             </span>
           </div>
           <p className="mt-1 text-[12.5px] text-ink-3">
-            Cheapest complete option, after optimizations
+            Published on-demand rates, read from each provider
           </p>
 
-          <div className="mt-4 space-y-2.5">
-            {data.providers.map((p, i) => (
-              <div key={p.id}>
-                <div className="flex items-center justify-between text-[13px]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Icon icon={LOGO[p.id] ?? LOGO.aws} width={14} height={14} aria-hidden />
-                    <span className="text-ink-2">{p.label}</span>
-                  </span>
-                  <span
-                    className={`tnum font-mono text-[13px] font-semibold ${
-                      p.cheapest ? "text-save" : "text-ink"
-                    }`}
-                  >
-                    {money(p.monthly)}
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sunk">
-                  <span
-                    className="block h-full rounded-full transition-[width] duration-[900ms] ease-out"
-                    style={{
-                      width: shown ? `${(p.monthly / maxProvider) * 100}%` : "0%",
-                      transitionDelay: `${240 + i * 130}ms`,
-                      background: p.cheapest ? "var(--save)" : "var(--accent)",
-                    }}
-                  />
-                </div>
+          <div className="mt-4 space-y-0">
+            {data.catalog.rows.map((r, i) => (
+              <div
+                key={`${r.provider}-${r.name}`}
+                className={`flex items-center gap-2 border-t border-line py-2 transition-all duration-500 ${
+                  shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
+                }`}
+                style={{ transitionDelay: `${260 + i * 90}ms` }}
+              >
+                <Icon
+                  icon={LOGO[r.provider] ?? LOGO.aws}
+                  width={14}
+                  height={14}
+                  className="shrink-0"
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">
+                  {r.name}
+                </span>
+                <span className="tnum shrink-0 font-mono text-[11.5px] text-ink-3">
+                  {r.vcpu ?? "—"}v · {r.memory ? `${r.memory}G` : "—"}
+                </span>
+                <span className="tnum shrink-0 font-mono text-[12.5px] font-semibold text-ink">
+                  {money(r.monthly, 2)}
+                </span>
               </div>
             ))}
           </div>
@@ -138,12 +143,12 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
 
         {/* ── centre: the estimate, floating ── */}
         <div
-          className={`lg:col-span-4 lg:z-20 transition-all duration-[700ms] ease-out ${
+          className={`transition-all duration-[700ms] ease-out ${
             shown ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
           }`}
           style={{ transitionDelay: "120ms" }}
         >
-          <div className="rounded-2xl border border-line bg-surface elev-4">
+          <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-4">
             <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
               <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent">
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -153,12 +158,12 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
               <span className="text-[14.5px] font-semibold">Your estimate</span>
             </div>
 
-            <div className="px-4 py-4">
+            <div className="flex flex-1 flex-col px-4 py-4">
               <p className="rounded-lg bg-sunk px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink-2">
                 “an online shop for India, traffic comes in spikes”
               </p>
 
-              <div className="mt-4 space-y-2">
+              <div className="mt-4 flex-1 space-y-2">
                 {data.breakdown.map((b, i) => (
                   <div key={b.label} className="flex items-center gap-2.5">
                     <span className="w-[86px] shrink-0 truncate text-[12.5px] text-ink-3">
@@ -194,11 +199,20 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
         <Panel
           shown={shown}
           delay={240}
-          className="lg:col-span-3 lg:mt-16"
           eyebrow="Measured savings"
           title="Ways to pay less"
         >
-          <div className="space-y-3">
+          <div className="flex items-baseline gap-2.5">
+            <span className="tnum font-mono text-[26px] font-semibold leading-none text-save">
+              −{money(data.saved, 2)}
+            </span>
+            <span className="text-[13px] text-ink-2">a month</span>
+          </div>
+          <p className="mt-1 text-[12.5px] text-ink-3">
+            Each one priced against the option it replaced
+          </p>
+
+          <div className="mt-4 space-y-3">
             {data.applied.map((a, i) => (
               <div
                 key={a.name}
@@ -226,6 +240,13 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
               </div>
             ))}
           </div>
+
+          {/* The ones that did not apply are part of the answer: a tool that
+              only ever reports wins is not measuring anything. */}
+          <p className="mt-4 border-t border-line pt-3 font-mono text-[11.5px] text-ink-3">
+            {data.techniquesTested} techniques tested ·{" "}
+            {data.applied.length} applied here
+          </p>
         </Panel>
       </div>
     </div>
@@ -249,19 +270,19 @@ function Panel({
 }) {
   return (
     <div
-      className={`${className} transition-all duration-[700ms] ease-out ${
+      className={`${className} h-full transition-all duration-[700ms] ease-out ${
         shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
       }`}
       style={{ transitionDelay: `${delay}ms` }}
     >
-      <div className="rounded-2xl border border-line bg-surface elev-2">
+      <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-2">
         <div className="border-b border-line px-4 py-3">
           <p className="font-mono text-[11.5px] uppercase tracking-[0.1em] text-ink-3">
             {eyebrow}
           </p>
           <p className="mt-0.5 text-[14.5px] font-semibold">{title}</p>
         </div>
-        <div className="px-4 py-4">{children}</div>
+        <div className="flex flex-1 flex-col px-4 py-4">{children}</div>
       </div>
     </div>
   );
