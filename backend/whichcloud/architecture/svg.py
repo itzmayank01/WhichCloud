@@ -11,15 +11,19 @@ lives on this side, and reading the DOM back would mean reconstructing
 geometry the server computed in the first place -- and would inherit whatever
 the viewport happened to be doing at the time.
 
-Logos are deliberately absent. They are fetched by the interface at runtime
-from an icon service, and inlining them here would mean either bundling
-several hundred marks or making the export wait on a third party. The category
-colour carries the same information at a glance, and the service name is
-written out in full.
+Icons are embedded as data URIs rather than linked. An SVG that references
+files beside it stops being one file: mail it, drop it in a document, open it
+on another machine and the marks are gone. AWS's own icons are vendored in the
+frontend's public directory, and the eighty five of them together are smaller
+than one screenshot of the diagram they draw.
 """
 
 from __future__ import annotations
 
+import base64
+import functools
+import re
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from whichcloud.architecture.layout import Layout, badge_point
@@ -67,6 +71,135 @@ TIER_LABEL: dict[Tier, str] = {
     "cicd": "DELIVERY",
     "observability": "OBSERVABILITY",
 }
+
+#: Where the official AWS marks are vendored. Shared with the interface, which
+#: serves the same files -- one copy, so the page and the export cannot drift
+#: into showing different icons for the same service.
+ICON_DIR = (
+    Path(__file__).resolve().parents[3] / "frontend" / "public" / "icons" / "aws"
+)
+
+#: keyword -> vendored filename. Kept in step with lib/serviceIcon.ts, which
+#: resolves the same names for the page.
+ICON_KEYS: dict[str, str] = {
+    "elastic kubernetes": "elastickubernetesservice",
+    "elastic container registry": "elasticcontainerregistry",
+    "elastic container": "elasticcontainerservice",
+    "elastic load balanc": "elasticloadbalancing",
+    "elastic beanstalk": "elasticbeanstalk",
+    "certificate manager": "certificatemanager",
+    "identity and access": "identityandaccessmanagement",
+    "key management": "keymanagementservice",
+    "secrets manager": "secretsmanager",
+    "systems manager": "systemsmanager",
+    "storage gateway": "storagegateway",
+    "step functions": "stepfunctions",
+    "lake formation": "lakeformation",
+    "network firewall": "networkfirewall",
+    "transit gateway": "transitgateway",
+    "direct connect": "directconnect",
+    "global accelerator": "globalaccelerator",
+    "trusted advisor": "trustedadvisor",
+    "control tower": "controltower",
+    "nat gateway": "vpcnatgateway",
+    "api gateway": "apigateway",
+    "auto scaling": "autoscaling",
+    "cloudformation": "cloudformation",
+    "elasticache": "elasticache",
+    "opensearch": "opensearchservice",
+    "open search": "opensearchservice",
+    "codepipeline": "codepipeline",
+    "codeartifact": "codeartifact",
+    "cloudfront": "cloudfront",
+    "cloudwatch": "cloudwatch",
+    "cloudtrail": "cloudtrail",
+    "documentdb": "documentdb",
+    "eventbridge": "eventbridge",
+    "codecommit": "codecommit",
+    "codedeploy": "codedeploy",
+    "sagemaker": "sagemakerai",
+    "rekognition": "rekognition",
+    "comprehend": "comprehend",
+    "guardduty": "guardduty",
+    "securityhub": "securityhub",
+    "security hub": "securityhub",
+    "beanstalk": "elasticbeanstalk",
+    "lightsail": "lightsail",
+    "memorydb": "memorydb",
+    "keyspaces": "keyspaces",
+    "timestream": "timestream",
+    "firehose": "datafirehose",
+    "cloudhsm": "cloudhsm",
+    "codebuild": "codebuild",
+    "route 53": "route53",
+    "route53": "route53",
+    "dynamodb": "dynamodb",
+    "redshift": "redshift",
+    "inspector": "inspector",
+    "amplify": "amplify",
+    "appsync": "appsync",
+    "aurora": "aurora",
+    "athena": "athena",
+    "bedrock": "bedrock",
+    "backup": "backup",
+    "cognito": "cognito",
+    "fargate": "fargate",
+    "kinesis": "kinesis",
+    "neptune": "neptune",
+    "textract": "textract",
+    "kafka": "managedstreamingforapachekafka",
+    "lambda": "lambda",
+    "config": "config",
+    "batch": "batch",
+    "macie": "macie",
+    "polly": "polly",
+    "redis": "elasticache",
+    "shield": "shield",
+    "x-ray": "xray",
+    "xray": "xray",
+    "glue": "glue",
+    "msk": "managedstreamingforapachekafka",
+    "sqs": "simplequeueservice",
+    "sns": "simplenotificationservice",
+    "eks": "elastickubernetesservice",
+    "ecs": "elasticcontainerservice",
+    "ecr": "elasticcontainerregistry",
+    "efs": "efs",
+    "elb": "elasticloadbalancing",
+    "emr": "emr",
+    "ec2": "ec2",
+    "iam": "identityandaccessmanagement",
+    "kms": "keymanagementservice",
+    "rds": "rds",
+    "vpc": "vpc",
+    "waf": "waf",
+    "fsx": "fsx",
+    "s3": "simplestorageservice",
+    "mq": "mq",
+}
+
+#: Longest first, so a specific name is never beaten by a substring of it --
+#: otherwise "API Gateway" matches "api" and "OpenSearch" loses to "search".
+_SORTED_KEYS = sorted(ICON_KEYS, key=len, reverse=True)
+
+
+@functools.lru_cache(maxsize=256)
+def _data_uri(filename: str) -> str | None:
+    """The vendored PNG, base64 encoded. Cached: one icon serves many boxes."""
+    path = ICON_DIR / f"{filename}.png"
+    if not path.exists():
+        return None
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+
+
+def icon_for(label: str) -> str | None:
+    """The official mark for this service, embedded, or None if there is none."""
+    name = re.sub(r"[^a-z0-9 /-]", " ", label.lower())
+    for key in _SORTED_KEYS:
+        if key in name:
+            return _data_uri(ICON_KEYS[key])
+    return None
+
 
 #: Roughly the width of one character at 13px in the chosen family. Used only
 #: to decide where to break a label; being slightly wrong costs a line break
@@ -243,42 +376,52 @@ def render(layout: Layout, title: str = "Architecture") -> str:
         )
 
     # ── service boxes ──
+    # Icon first and large, name beneath it, both centred. AWS draws services
+    # this way because the mark is what a reader scans for -- a 17px glyph
+    # tucked beside the text is decoration rather than identification.
     for node in layout.nodes:
         colour = TIER_COLOR.get(node.tier, "#64748B")
         out.append(
             f'<rect x="{node.x}" y="{node.y}" width="{node.w}" height="{node.h}" '
-            f'rx="11" fill="#ffffff" stroke="#D6DAE1" stroke-width="1.3"/>'
+            f'rx="10" fill="#ffffff" stroke="#DDE2E9" stroke-width="1.2"/>'
         )
-        # The category bar, clipped to the card's rounded top corners.
+        # A thin bar of the service's AWS category colour, so the kind of
+        # thing a box is survives being read at a distance.
         out.append(
-            f'<path d="M{node.x + 11} {node.y} h{node.w - 22} '
-            f"a11 11 0 0 1 11 11 v0 h-{node.w} v0 "
-            f'a11 11 0 0 1 11 -11 z" fill="{colour}"/>'
+            f'<path d="M{node.x + 10} {node.y} h{node.w - 20} '
+            f"a10 10 0 0 1 10 10 v0 h-{node.w} v0 "
+            f'a10 10 0 0 1 10 -10 z" fill="{colour}"/>'
         )
 
-        y = node.y + 26
-        for line in _wrap(node.label, node.w - 26, limit=2):
+        icon = icon_for(node.label)
+        text_x = node.x + 13
+        if icon:
             out.append(
-                f'<text x="{node.x + 13}" y="{y}" font-family="system-ui,sans-serif" '
+                f'<image x="{node.x + 13}" y="{node.y + 18}" width="40" '
+                f'height="40" href="{icon}" preserveAspectRatio="xMidYMid meet"/>'
+            )
+            text_x = node.x + 62
+
+        available = node.w - (text_x - node.x) - 12
+        y = node.y + 34
+        for line in _wrap(node.label, available, limit=2):
+            out.append(
+                f'<text x="{text_x}" y="{y}" font-family="system-ui,sans-serif" '
                 f'font-size="13.5" font-weight="600" fill="#12161C">'
                 f"{escape(line)}</text>"
             )
             y += 16
 
-        for line in _wrap(node.purpose, node.w - 26, limit=1):
+        for line in _wrap(node.purpose, available, limit=1):
             out.append(
-                f'<text x="{node.x + 13}" y="{y + 2}" '
-                f'font-family="system-ui,sans-serif" font-size="11.5" fill="#6B7480">'
-                f"{escape(line)}</text>"
+                f'<text x="{text_x}" y="{y + 2}" font-family="system-ui,sans-serif" '
+                f'font-size="11.5" fill="#6B7480">{escape(line)}</text>'
             )
             y += 15
 
-        # Only priced services say anything about money. Writing "not priced"
-        # on every box made the catalog's gap the loudest repeated text on the
-        # diagram, which is not what the diagram is about.
         if node.priced and node.monthly_usd is not None:
             out.append(
-                f'<text x="{node.x + 13}" y="{node.y + node.h - 10}" '
+                f'<text x="{text_x}" y="{y + 2}" '
                 f'font-family="ui-monospace,monospace" font-size="10.5" '
                 f'fill="#1F9D55">${node.monthly_usd:,.2f}/mo</text>'
             )

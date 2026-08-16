@@ -271,7 +271,20 @@ def test_exported_svg_is_well_formed_and_complete():
     assert root.attrib["width"] == str(lay.width)
     # Titles and labels reach the file through XML escaping, not raw.
     assert "Test &amp; &lt;check&gt;" in doc
-    assert doc.count('rx="11"') == len(lay.nodes)
+    assert doc.count('rx="10"') == len(lay.nodes)
+
+
+def test_exported_icons_are_embedded_not_linked():
+    """An SVG that references files beside it stops being one file: mail it,
+    open it elsewhere, and the marks are gone."""
+    from whichcloud.architecture.svg import render
+
+    lay = layout_of(svc("Amazon S3", "data", component="Data"))
+    doc = render(lay)
+
+    assert "data:image/png;base64," in doc
+    assert 'href="/icons' not in doc
+    assert "http" not in doc.split("<image")[1][:200]
 
 
 def test_a_long_label_wraps_rather_than_overflowing():
