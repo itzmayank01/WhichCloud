@@ -21,9 +21,13 @@ import { useEffect, useRef, useState } from "react";
 export function Reveal({
   children,
   className = "",
+  style,
 }: {
   children: React.ReactNode;
   className?: string;
+  /* Carries the --i stagger index when a Reveal is one of a row, so a grid
+     can deal its cards in rather than snapping in as a block. */
+  style?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(false);
@@ -61,7 +65,7 @@ export function Reveal({
   }, []);
 
   return (
-    <div ref={ref} data-revealed={shown} className={className}>
+    <div ref={ref} data-revealed={shown} className={className} style={style}>
       {children}
     </div>
   );

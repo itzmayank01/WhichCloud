@@ -11,6 +11,7 @@ import { HeroFreshness } from "@/components/landing/HeroFreshness";
 import { HeroShowcaseSection } from "@/components/landing/HeroShowcaseSection";
 import { AskBadge, ChartBadge } from "@/components/landing/Badges";
 import { Provenance } from "@/components/landing/Provenance";
+import { Techniques } from "@/components/landing/Techniques";
 import {
   FeatureBlock,
   Footer,
@@ -336,7 +337,14 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="optimizations" className="px-6 pb-24">
+      {/* the eight the stats band counts, actually named */}
+      <section className="border-t border-line bg-sunk px-6 py-24">
+        <Suspense fallback={<Loading height={420} />}>
+          <Techniques />
+        </Suspense>
+      </section>
+
+      <section id="optimizations" className="px-6 pt-24 pb-24">
         <div className="mx-auto flex max-w-6xl flex-col gap-6">
           <FeatureBlock
             eyebrow="Trade-offs"

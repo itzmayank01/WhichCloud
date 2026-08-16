@@ -107,6 +107,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 Optimizations
               </Link>
               <Link
+                href="/#provenance"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
+                Provenance
+              </Link>
+              <Link
                 href="/estimate"
                 className="rounded-sm transition-colors hover:text-ink"
               >
