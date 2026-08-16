@@ -216,6 +216,11 @@ export type ArchGroup = {
   x: number; y: number; w: number; h: number;
 };
 
+export type ArchComponent = {
+  name: string;
+  x: number; y: number; w: number; h: number;
+};
+
 export type ArchitectureView = {
   canvas: { width: number; height: number };
   regions: number;
@@ -223,6 +228,7 @@ export type ArchitectureView = {
   external: string[];
   counts: { services: number; edges: number; groups: number; priced: number };
   bands: { tier: Tier; y: number; h: number }[];
+  components: ArchComponent[];
   groups: ArchGroup[];
   nodes: ArchNode[];
   edges: ArchEdge[];

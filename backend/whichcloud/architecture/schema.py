@@ -60,6 +60,20 @@ class Service(BaseModel):
 
     name: str = Field(description="The service as named, e.g. 'Amazon MSK'")
     tier: Tier
+    #: The functional group this belongs to -- "Web UI", "Data", "Delivery".
+    #: AWS's own reference architectures are organised this way rather than by
+    #: layer, and it is what makes them readable: a reader looking for how
+    #: search works finds one box containing the whole of it, instead of
+    #: tracing a service out of the compute row, down to the data row and back
+    #: up. Tier still decides vertical order inside a component.
+    component: str = Field(
+        default="",
+        description=(
+            "Functional grouping, two or three words, e.g. 'Web UI', "
+            "'Data', 'Cost reporting', 'Image deployment'. Services that "
+            "work together to do one job share a component."
+        ),
+    )
     connects_to: list[str] = Field(
         default_factory=list,
         description="Names of services this one talks to, as written in `name`",

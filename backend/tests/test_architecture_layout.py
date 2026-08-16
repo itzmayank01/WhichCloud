@@ -2,15 +2,14 @@
 
 from whichcloud.architecture import Architecture, Boundary, Service
 from whichcloud.architecture.graph import build_graph
-from whichcloud.architecture.layout import (
-    MAX_PER_ROW,
-    NODE_W,
-    build_layout,
-)
+from whichcloud.architecture.layout import COMPONENT_COLS, build_layout
 
 
-def svc(name, tier="compute", flow="sync", connects=()):
-    return Service(name=name, tier=tier, flow=flow, connects_to=list(connects))
+def svc(name, tier="compute", flow="sync", connects=(), component=""):
+    return Service(
+        name=name, tier=tier, flow=flow,
+        connects_to=list(connects), component=component,
+    )
 
 
 def layout_of(*services, boundaries=()):
@@ -36,35 +35,72 @@ def test_the_same_graph_lays_out_identically_every_time():
     assert (a.width, a.height) == (b.width, b.height)
 
 
-def test_tiers_run_down_the_page():
+def test_components_are_ordered_by_how_early_their_work_happens():
+    """Edge-facing groups first, support last -- the reading order of an AWS
+    reference diagram."""
     lay = layout_of(
-        svc("CloudWatch", "observability"), svc("Aurora", "data"), svc("Route 53", "edge")
+        svc("CloudWatch", "observability", component="Observability"),
+        svc("Aurora", "data", component="Data"),
+        svc("Route 53", "edge", component="Edge"),
     )
-    ys = {n.label: n.y for n in lay.nodes}
+    order = [c.name for c in lay.components]
 
-    assert ys["Route 53"] < ys["Aurora"] < ys["CloudWatch"]
+    assert order == ["Edge", "Data", "Observability"]
 
 
-def test_a_crowded_tier_wraps_instead_of_running_off_the_canvas():
-    """Eight boxes in one row would force the whole diagram to scale down
-    until nothing on it could be read."""
-    crowded = [svc(f"svc{i}", "security") for i in range(8)]
+def test_tier_still_orders_services_inside_a_component():
+    """Within a group a request still reads downward."""
+    lay = layout_of(
+        svc("CloudWatch", "observability", component="One"),
+        svc("Route 53", "edge", component="One"),
+        svc("Aurora", "data", component="One"),
+    )
+    placed = sorted(lay.nodes, key=lambda n: (n.y, n.x))
+
+    assert [n.label for n in placed] == ["Route 53", "Aurora", "CloudWatch"]
+
+
+def test_services_of_one_component_sit_inside_its_box():
+    lay = layout_of(
+        svc("A", "compute", component="Web UI"),
+        svc("B", "data", component="Web UI"),
+        svc("C", "data", component="Data"),
+    )
+    box = next(c for c in lay.components if c.name == "Web UI")
+    inside = [n for n in lay.nodes if n.label in ("A", "B")]
+
+    for node in inside:
+        assert box.x <= node.x and node.x + node.w <= box.x + box.w
+        assert box.y <= node.y and node.y + node.h <= box.y + box.h
+
+
+def test_ungrouped_services_are_collected_rather_than_dropped():
+    lay = layout_of(svc("Loose", "compute"), svc("Grouped", "compute", component="Web"))
+
+    assert len(lay.nodes) == 2
+    assert "Other" in [c.name for c in lay.components]
+
+
+def test_a_large_component_wraps_into_a_grid():
+    """Eight boxes in one row would force the diagram to scale down until
+    nothing on it could be read."""
+    crowded = [svc(f"svc{i}", "security", component="Security") for i in range(8)]
     lay = layout_of(*crowded)
 
-    rows = {n.y for n in lay.nodes}
-    assert len(rows) == 2
-    per_row = [sum(1 for n in lay.nodes if n.y == y) for y in sorted(rows)]
-    assert max(per_row) <= MAX_PER_ROW
-    # Split evenly: 6 and 2 reads as a mistake, 4 and 4 as a decision.
-    assert per_row == [4, 4]
+    rows = sorted({n.y for n in lay.nodes})
+    per_row = [sum(1 for n in lay.nodes if n.y == y) for y in rows]
+
+    assert max(per_row) <= COMPONENT_COLS
+    assert sum(per_row) == 8
 
 
-def test_the_canvas_grows_with_the_widest_row():
-    narrow = layout_of(svc("a"), svc("b"))
-    wide = layout_of(*[svc(f"s{i}") for i in range(MAX_PER_ROW)])
+def test_the_canvas_grows_with_its_contents():
+    narrow = layout_of(svc("a", component="One"))
+    wide = layout_of(
+        *[svc(f"s{i}", component=f"C{i}") for i in range(3)]
+    )
 
     assert wide.width > narrow.width
-    assert wide.width >= MAX_PER_ROW * NODE_W
 
 
 def test_nothing_is_placed_outside_the_canvas():
@@ -75,14 +111,37 @@ def test_nothing_is_placed_outside_the_canvas():
         assert 0 <= n.y and n.y + n.h <= lay.height
 
 
-def test_an_edge_down_the_page_is_an_elbow_not_a_diagonal():
-    """A diagonal across rows crosses everything between them."""
-    lay = layout_of(svc("Route 53", "edge", connects=["Aurora"]), svc("Aurora", "data"))
-    points = lay.edges[0].points
+def test_every_segment_of_a_route_is_axis_aligned():
+    """No diagonals. A diagonal across the page crosses everything between,
+    and these diagrams are read by following a line with the eye."""
+    lay = layout_of(
+        svc("Route 53", "edge", connects=["Aurora"], component="Edge"),
+        svc("Aurora", "data", component="Data"),
+        svc("EKS", "compute", connects=["Aurora"], component="Compute"),
+    )
 
-    assert len(points) == 4
-    assert points[0][1] < points[-1][1]          # runs downward
-    assert points[1][1] == points[2][1]          # via a horizontal mid-segment
+    for edge in lay.edges:
+        for (x1, y1), (x2, y2) in zip(edge.points, edge.points[1:]):
+            assert x1 == x2 or y1 == y2, "a segment runs diagonally"
+
+
+def test_a_route_starts_and_ends_on_the_boxes_it_joins():
+    lay = layout_of(
+        svc("Route 53", "edge", connects=["Aurora"], component="Edge"),
+        svc("Aurora", "data", component="Data"),
+    )
+    edge = lay.edges[0]
+    src, dst = lay.node(edge.source), lay.node(edge.target)
+
+    def touches(point, box):
+        x, y = point
+        return (
+            box.x - 1 <= x <= box.x + box.w + 1
+            and box.y - 1 <= y <= box.y + box.h + 1
+        )
+
+    assert touches(edge.points[0], src)
+    assert touches(edge.points[-1], dst)
 
 
 def test_an_edge_within_a_row_leaves_from_the_side():
@@ -181,15 +240,17 @@ def test_groups_are_inside_the_canvas_too():
 def test_edges_move_with_the_nodes_when_the_canvas_shifts():
     """Translating nodes without their arrows would detach every line."""
     lay = layout_of(
-        svc("Route 53", "edge", connects=["Aurora"]),
-        svc("Aurora", "data"),
+        svc("Route 53", "edge", connects=["Aurora"], component="Edge"),
+        svc("Aurora", "data", component="Data"),
         boundaries=[
             Boundary(kind="account", name="a", contains=["r"]),
             Boundary(kind="region", name="r", contains=["Route 53", "Aurora"]),
         ],
     )
     src = lay.node("route-53")
-    assert lay.edges[0].points[0] == (src.cx, src.y + src.h)
+    start = lay.edges[0].points[0]
+    assert src.x <= start[0] <= src.x + src.w
+    assert src.y <= start[1] <= src.y + src.h
 
 
 def test_exported_svg_is_well_formed_and_complete():
@@ -286,12 +347,12 @@ def test_no_arrow_crosses_an_unrelated_box_in_a_dense_diagram():
 def test_a_detoured_line_still_starts_and_ends_on_its_boxes():
     """Routing around must not detach the arrow from what it connects."""
     lay = layout_of(
-        svc("Edge", "edge", connects=["Store"]),
-        svc("Middle", "compute"),
-        svc("Store", "data"),
+        svc("Edge", "edge", connects=["Store"], component="A"),
+        svc("Middle", "compute", component="B"),
+        svc("Store", "data", component="C"),
     )
     edge = lay.edges[0]
     src, dst = lay.node(edge.source), lay.node(edge.target)
 
-    assert edge.points[0] == (src.cx, src.y + src.h)
-    assert edge.points[-1] == (dst.cx, dst.y)
+    assert src.x <= edge.points[0][0] <= src.x + src.w
+    assert dst.x <= edge.points[-1][0] <= dst.x + dst.w

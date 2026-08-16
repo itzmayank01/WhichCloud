@@ -595,6 +595,12 @@ def architecture_route(body: ArchitectureIn) -> dict:
             "priced": graph.priced_count,
         },
         "bands": [{"tier": b.tier, "y": b.y, "h": b.h} for b in layout.bands],
+        # Functional groups -- "Web UI component", "Data component" -- which
+        # are what organise an AWS reference diagram. Drawn behind everything.
+        "components": [
+            {"name": c.name, "x": c.x, "y": c.y, "w": c.w, "h": c.h}
+            for c in layout.components
+        ],
         # Outermost first: the interface paints them in order so nesting lands
         # on top without having to sort anything itself.
         "groups": [

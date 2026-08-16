@@ -121,8 +121,26 @@ def render(layout: Layout, title: str = "Architecture") -> str:
         )
     out.append("</defs>")
 
+    # ── functional components ──
+    # Drawn first, so everything else lands on top of them. These are the
+    # organising idea of the picture: a reader looking for how search works
+    # finds one box holding all of it.
+    for component in layout.components:
+        out.append(
+            f'<rect x="{component.x}" y="{component.y}" width="{component.w}" '
+            f'height="{component.h}" rx="12" fill="#FBFCFD" stroke="#9BB4D8" '
+            f'stroke-width="1.3" stroke-dasharray="7 5"/>'
+        )
+        out.append(
+            f'<text x="{component.x + 16}" y="{component.y + 22}" '
+            f'font-family="system-ui,sans-serif" font-size="14" '
+            f'font-weight="600" fill="#4A6285">'
+            f"{escape(component.name)} component</text>"
+        )
+
     # ── tier bands ──
-    for i, band in enumerate(layout.bands):
+    # Only when there are no components to organise the picture instead.
+    for i, band in enumerate(layout.bands if not layout.components else []):
         if i % 2 == 1:
             out.append(
                 f'<rect x="0" y="{band.y}" width="{layout.width}" '

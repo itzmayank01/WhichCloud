@@ -18,7 +18,7 @@ from whichcloud.pricing import store
 #: Bumped whenever the schema changes shape. It is part of the cache key, so
 #: an old extraction made under different rules is never served as if it were
 #: made under the current ones.
-SCHEMA_VERSION = "2"   # 2: connections are required, not optional
+SCHEMA_VERSION = "3"   # 3: functional components
 
 #: The rolling alias, not a pinned version. A pinned one ages out: keys made
 #: today cannot call gemini-2.5-flash at all -- Google returns "no longer
@@ -45,6 +45,12 @@ Rules:
   the relationship between two they did name does not.
 - Put VPCs, subnets, regions and availability zones in `boundaries`, not in
   `services`. They contain services; they are not services.
+- Group services into functional `component`s, the way AWS's own reference
+  architectures do: "Web UI", "Data", "Search", "Cost reporting", "Image
+  deployment". Services that cooperate to do one job share a component. Aim
+  for three to seven components, each holding two to six services; a component
+  per service is not a grouping, and one component holding everything is not
+  either.
 - Put non-cloud tools such as GitHub Actions or third-party gateways in
   `external`.
 - `regions` and `azs_per_region` are numbers. "three regions" is 3.
@@ -88,25 +94,53 @@ def _openai_compatible(
 ) -> Architecture:
     """Groq and OpenAI both speak this, so one function serves both.
 
-    Chat completions with a JSON schema rather than the newer parse helper,
-    because Groq implements the older surface and this has to work on each.
+    Structured output is requested two ways because providers differ on which
+    they implement, and the difference is not discoverable in advance: Groq's
+    Llama models reject `json_schema` outright and want `json_object` with the
+    shape described in the prompt instead. Rather than hardcode which provider
+    gets which -- a table that goes stale every time a model is added -- the
+    stricter form is tried first and the looser one used if it is refused.
     """
+    import json
+
     from openai import OpenAI
 
     client = OpenAI(api_key=key, base_url=base_url)
-    result = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "architecture",
-                "schema": Architecture.model_json_schema(),
-                "strict": False,
+    schema = Architecture.model_json_schema()
+    prompt = _INSTRUCTION + description
+
+    try:
+        result = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "architecture",
+                    "schema": schema,
+                    "strict": False,
+                },
             },
-        },
-        messages=[{"role": "user", "content": _INSTRUCTION + description}],
-    )
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as exc:
+        if "json_schema" not in str(exc):
+            raise
+        result = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"{prompt}\n\nReturn JSON matching this schema "
+                        f"exactly:\n{json.dumps(schema)}"
+                    ),
+                }
+            ],
+        )
+
     return Architecture.model_validate_json(result.choices[0].message.content or "{}")
 
 

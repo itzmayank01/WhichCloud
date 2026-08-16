@@ -54,6 +54,27 @@ CANVAS_PAD = 56
 #: Room above each row of boxes for the tier's label.
 BAND_LABEL_H = 22
 
+# ── component packing ──
+#
+# AWS's reference architectures group by function -- "Web UI component",
+# "Data component" -- rather than by layer, and that is what makes them
+# readable: someone looking for how search works finds one box containing all
+# of it, instead of tracing a service out of the compute row, down to the data
+# row and back up.
+#
+#: Services per row inside a component. Three keeps a component roughly square,
+#: which packs better than a long strip and matches how these are drawn.
+COMPONENT_COLS = 3
+COMPONENT_PAD = 20
+COMPONENT_LABEL_H = 30
+COMPONENT_GAP = 44
+ROW_GAP_INNER = 22
+
+#: The canvas wraps to a new row of components past this. Wide enough for
+#: three average components side by side; beyond that a reader is scrolling
+#: rather than reading.
+MAX_CANVAS_W = 1700
+
 
 @dataclass
 class PlacedNode:
@@ -101,6 +122,17 @@ class PlacedGroup:
 
 
 @dataclass
+class PlacedComponent:
+    """A functional group's box: "Web UI component", "Data component"."""
+
+    name: str
+    x: int
+    y: int
+    w: int
+    h: int
+
+
+@dataclass
 class Band:
     """A tier's horizontal lane, so the eye can find "the data layer"."""
 
@@ -117,6 +149,7 @@ class Layout:
     edges: list[PlacedEdge] = field(default_factory=list)
     groups: list[PlacedGroup] = field(default_factory=list)
     bands: list[Band] = field(default_factory=list)
+    components: list[PlacedComponent] = field(default_factory=list)
 
     def node(self, node_id: str) -> PlacedNode | None:
         for n in self.nodes:
@@ -351,36 +384,57 @@ def _depth_of(group_id: str, parents: dict[str, str]) -> int:
     return depth
 
 
+def _component_size(count: int) -> tuple[int, int, int, int]:
+    """(box width, box height, columns, rows) for a component of this size."""
+    cols = min(COMPONENT_COLS, max(1, count))
+    rows = -(-count // cols)
+    inner_w = cols * NODE_W + (cols - 1) * GAP_X
+    inner_h = rows * NODE_H + (rows - 1) * ROW_GAP_INNER
+    return (
+        inner_w + COMPONENT_PAD * 2,
+        inner_h + COMPONENT_PAD * 2 + COMPONENT_LABEL_H,
+        cols,
+        rows,
+    )
+
+
 def build_layout(graph: ArchitectureGraph) -> Layout:
-    """Coordinates for everything in the graph."""
-    rows: list[list[GraphNode]] = []
-    band_of_row: list[Tier] = []
-    for tier, nodes in graph.tiers():
-        for row in _wrap(nodes):
-            rows.append(row)
-            band_of_row.append(tier)
+    """Coordinates for everything in the graph.
 
-    rows = _order_rows(rows, graph)
+    Components are packed left to right and wrapped, in the order the graph
+    returns them -- edge-facing first, support last. Inside a component,
+    services are laid out in a small grid ordered by tier, so a request still
+    reads downward within the group it belongs to.
+    """
+    components = graph.components()
+    if not components:
+        return _fit(Layout(width=CANVAS_PAD * 2, height=CANVAS_PAD * 2))
 
-    widest = max((len(r) for r in rows), default=1)
-    content_w = widest * NODE_W + (widest - 1) * GAP_X
-    width = content_w + CANVAS_PAD * 2
-
-    # ── place ──
     placed: list[PlacedNode] = []
-    bands: list[Band] = []
+    boxes: list[PlacedComponent] = []
+
+    x = CANVAS_PAD
     y = CANVAS_PAD
-    for row, tier in zip(rows, band_of_row):
-        row_w = len(row) * NODE_W + (len(row) - 1) * GAP_X
-        x = (width - row_w) // 2       # rows are centred, so the diagram has an axis
-        top = y + BAND_LABEL_H
+    row_height = 0
+    widest = 0
 
-        if not bands or bands[-1].tier != tier:
-            bands.append(Band(tier=tier, y=y, h=BAND_LABEL_H + NODE_H))
-        else:
-            bands[-1].h = top + NODE_H - bands[-1].y
+    for name, members in components:
+        box_w, box_h, cols, _ = _component_size(len(members))
 
-        for node in row:
+        # Wrap when this component would run past the canvas, unless it is the
+        # first on the row -- one that is wider than the limit still has to go
+        # somewhere, and shunting it to an empty row changes nothing.
+        if x > CANVAS_PAD and x + box_w > MAX_CANVAS_W:
+            x = CANVAS_PAD
+            y += row_height + COMPONENT_GAP
+            row_height = 0
+
+        boxes.append(PlacedComponent(name=name, x=x, y=y, w=box_w, h=box_h))
+
+        inner_x = x + COMPONENT_PAD
+        inner_y = y + COMPONENT_PAD + COMPONENT_LABEL_H
+        for index, node in enumerate(members):
+            col, row = index % cols, index // cols
             placed.append(
                 PlacedNode(
                     id=node.id,
@@ -390,15 +444,19 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
                     priced=node.priced,
                     monthly_usd=float(node.monthly_usd) if node.priced else None,
                     sku=node.sku,
-                    x=x,
-                    y=top,
+                    x=inner_x + col * (NODE_W + GAP_X),
+                    y=inner_y + row * (NODE_H + ROW_GAP_INNER),
                 )
             )
-            x += NODE_W + GAP_X
-        y = top + NODE_H + ROW_GAP
 
-    height = (y - ROW_GAP) + CANVAS_PAD
-    layout = Layout(width=width, height=height, nodes=placed, bands=bands)
+        x += box_w + COMPONENT_GAP
+        row_height = max(row_height, box_h)
+        widest = max(widest, x - COMPONENT_GAP)
+
+    width = widest + CANVAS_PAD
+    height = y + row_height + CANVAS_PAD
+
+    layout = Layout(width=width, height=height, nodes=placed, components=boxes)
 
     # ── edges ──
     for edge in graph.edges:
@@ -413,17 +471,12 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
                 )
             )
 
-    # ── groups ──
-    # A group's box is the extent of what it holds. Drawn deepest first so an
-    # outer region ends up containing the boxes of everything nested in it,
-    # rather than only the nodes it names directly.
-    parents = {
-        child: group.id for group in graph.groups for child in group.child_ids
-    }
-    boxes: dict[str, tuple[int, int, int, int]] = {}
-    for group in sorted(
-        graph.groups, key=lambda g: -_depth_of(g.id, parents)
-    ):
+    # ── boundaries ──
+    # Drawn deepest first so an outer region ends up containing the boxes of
+    # everything nested in it, not only the nodes it names directly.
+    parents = {c: g.id for g in graph.groups for c in g.child_ids}
+    drawn: dict[str, tuple[int, int, int, int]] = {}
+    for group in sorted(graph.groups, key=lambda g: -_depth_of(g.id, parents)):
         xs: list[int] = []
         ys: list[int] = []
         for node_id in group.node_ids:
@@ -432,39 +485,34 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
                 xs += [node.x, node.x + node.w]
                 ys += [node.y, node.y + node.h]
         for child in group.child_ids:
-            if child in boxes:
-                cx, cy, cw, ch = boxes[child]
+            if child in drawn:
+                cx, cy, cw, ch = drawn[child]
                 xs += [cx, cx + cw]
                 ys += [cy, cy + ch]
         if not xs:
-            continue  # a boundary holding nothing placeable is not drawn
+            continue
 
         depth = _depth_of(group.id, parents)
-        pad = GROUP_PAD * (depth + 1)
+        pad = GROUP_PAD * (depth + 1) + COMPONENT_PAD
         box = (
             min(xs) - pad,
-            min(ys) - pad - BAND_LABEL_H,
+            min(ys) - pad - COMPONENT_LABEL_H,
             max(xs) - min(xs) + pad * 2,
-            max(ys) - min(ys) + pad * 2 + BAND_LABEL_H,
+            max(ys) - min(ys) + pad * 2 + COMPONENT_LABEL_H,
         )
-        boxes[group.id] = box
+        drawn[group.id] = box
         layout.groups.append(
             PlacedGroup(
-                id=group.id,
-                kind=group.kind,
-                label=group.label,
-                depth=depth,
-                x=box[0],
-                y=box[1],
-                w=box[2],
-                h=box[3],
+                id=group.id, kind=group.kind, label=group.label, depth=depth,
+                x=box[0], y=box[1], w=box[2], h=box[3],
             )
         )
 
-    # Outermost first, so the interface can paint them in order and have the
-    # nested ones land on top.
     layout.groups.sort(key=lambda g: g.depth)
+    return _fit(layout)
 
+
+def _fit(layout: Layout) -> Layout:
     _fit_canvas(layout)
     return layout
 
@@ -481,13 +529,14 @@ def _fit_canvas(layout: Layout) -> None:
     Rather than guess the overhang in advance, which depends on how deeply the
     description happens to nest, measure what was produced and translate.
     """
-    if not layout.nodes and not layout.groups:
+    if not layout.nodes and not layout.groups and not layout.components:
         return
 
-    xs = [n.x for n in layout.nodes] + [g.x for g in layout.groups]
-    ys = [n.y for n in layout.nodes] + [g.y for g in layout.groups]
-    right = [n.x + n.w for n in layout.nodes] + [g.x + g.w for g in layout.groups]
-    bottom = [n.y + n.h for n in layout.nodes] + [g.y + g.h for g in layout.groups]
+    everything = [*layout.nodes, *layout.groups, *layout.components]
+    xs = [b.x for b in everything]
+    ys = [b.y for b in everything]
+    right = [b.x + b.w for b in everything]
+    bottom = [b.y + b.h for b in everything]
 
     dx = CANVAS_PAD - min(xs)
     dy = CANVAS_PAD - min(ys)
@@ -499,6 +548,9 @@ def _fit_canvas(layout: Layout) -> None:
         for group in layout.groups:
             group.x += dx
             group.y += dy
+        for component in layout.components:
+            component.x += dx
+            component.y += dy
         for band in layout.bands:
             band.y += dy
         for edge in layout.edges:

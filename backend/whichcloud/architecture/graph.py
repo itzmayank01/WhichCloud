@@ -81,6 +81,7 @@ class GraphNode:
     id: str
     label: str
     tier: Tier
+    component: str = ""
     purpose: str = ""
     #: Absent rather than zero when the catalog cannot price it. Zero is a
     #: price; this is the absence of one, and the two must not render alike.
@@ -120,6 +121,28 @@ class ArchitectureGraph:
     @property
     def priced_count(self) -> int:
         return sum(1 for n in self.nodes if n.priced)
+
+    def components(self) -> list[tuple[str, list[GraphNode]]]:
+        """Nodes grouped by functional component, in request order.
+
+        Components are ordered by the earliest tier any member sits in, so the
+        edge-facing group comes first and support groups last -- the reading
+        order of an AWS reference diagram. Anything the reader did not assign
+        a component to is collected at the end rather than dropped.
+        """
+        grouped: dict[str, list[GraphNode]] = {}
+        for node in self.nodes:
+            grouped.setdefault(node.component or "Other", []).append(node)
+
+        def rank(entry: tuple[str, list[GraphNode]]) -> tuple[int, str]:
+            name, members = entry
+            earliest = min(TIER_ORDER.index(n.tier) for n in members)
+            # "Other" last whatever it holds: it is a remainder, not a group.
+            return (99 if name == "Other" else earliest, name)
+
+        for members in grouped.values():
+            members.sort(key=lambda n: TIER_ORDER.index(n.tier))
+        return sorted(grouped.items(), key=rank)
 
     def tiers(self) -> list[tuple[Tier, list[GraphNode]]]:
         """Nodes grouped into rows, empty tiers omitted."""
@@ -163,6 +186,7 @@ def build_graph(arch: Architecture) -> ArchitectureGraph:
                 id=node_id,
                 label=service.name,
                 tier=service.tier,
+                component=service.component,
                 purpose=service.purpose,
             )
         )

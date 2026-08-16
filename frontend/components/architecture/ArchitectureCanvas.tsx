@@ -174,8 +174,39 @@ export function ArchitectureCanvas({
               ))}
             </defs>
 
-            {/* Bands first: the ground everything sits on. */}
-            {view.bands.map((band, i) => (
+            {/* Functional components: the organising idea of the picture,
+                so they go down first and everything lands on top. A reader
+                looking for how search works finds one box holding all of it,
+                rather than tracing a service across three tier rows. */}
+            {view.components.map((component) => (
+              <g key={component.name}>
+                <rect
+                  x={component.x}
+                  y={component.y}
+                  width={component.w}
+                  height={component.h}
+                  rx={12}
+                  fill="var(--sunk)"
+                  fillOpacity={0.55}
+                  stroke="#9BB4D8"
+                  strokeWidth={1.3}
+                  strokeDasharray="7 5"
+                />
+                <text
+                  x={component.x + 16}
+                  y={component.y + 22}
+                  fill="#4A6285"
+                  fontSize={14}
+                  fontWeight={600}
+                >
+                  {component.name} component
+                </text>
+              </g>
+            ))}
+
+            {/* Tier bands only when there are no components to organise the
+                picture instead -- two schemes at once organise nothing. */}
+            {(view.components.length ? [] : view.bands).map((band, i) => (
               <g key={`${band.tier}-${band.y}`}>
                 {i % 2 === 1 && (
                   <rect
