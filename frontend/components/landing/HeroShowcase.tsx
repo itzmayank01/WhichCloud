@@ -141,8 +141,9 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
         <Card
           shown={shown}
           delay={0}
-          z={0}
+          zClass="z-0"
           className="lg:col-start-1 lg:col-span-6 lg:row-start-1 lg:mt-14"
+          slide="left"
           icon="chart"
           eyebrow="Cost report"
           title="Costs by provider and service"
@@ -235,7 +236,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
 
         {/* ── centre: the estimate, floating across both ── */}
         <div
-          className={`relative hover:z-30 lg:col-start-4 lg:col-span-5 lg:row-start-1 lg:z-20 transition-all duration-[750ms] ease-out ${
+          className={`relative lg:col-start-4 lg:col-span-6 lg:row-start-1 lg:z-20 transition-all duration-[750ms] ease-out ${
             shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
           }`}
           style={{ transitionDelay: "140ms" }}
@@ -307,8 +308,9 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
         <Card
           shown={shown}
           delay={280}
-          z={10}
-          className="lg:col-start-9 lg:col-span-4 lg:row-start-1 lg:mt-24"
+          zClass="z-10"
+          className="lg:col-start-8 lg:col-span-5 lg:row-start-1 lg:mt-24"
+          slide="right"
           icon="save"
           eyebrow="Measured savings"
           title="Ways to pay less"
@@ -367,8 +369,9 @@ function Card({
   children,
   shown,
   delay,
-  z,
+  zClass,
   className = "",
+  slide,
   icon,
   eyebrow,
   title,
@@ -376,22 +379,41 @@ function Card({
   children: React.ReactNode;
   shown: boolean;
   delay: number;
-  z: number;
+  /* A class, not an inline style: inline zIndex outranks hover:z-30, so the
+     panel would step out from under the centre and stay beneath it. */
+  zClass: string;
   className?: string;
+  /* Which way this panel steps out from under the centre when pointed at. */
+  slide?: "left" | "right";
   icon: keyof typeof HEAD_ICON;
   eyebrow: string;
   title: string;
 }) {
   return (
-    /* hover:z-30 lets whichever panel you point at come to the front, so an
-       overlap never hides something you are trying to read. */
+    /* The centre panel sits over both of these. Pointing at one brings it to
+       the front and steps it out from underneath, so the whole card can be
+       read without anything being clicked.
+
+       The slide lives on an inner element because the outer one is already
+       using a transform for the reveal, and two transforms on one element
+       overwrite rather than compose -- the same thing that silently dropped
+       an animation earlier in this project. */
     <div
-      className={`${className} group relative transition-all duration-[750ms] ease-out hover:z-30 ${
+      className={`${className} ${zClass} group relative transition-all duration-[750ms] ease-out hover:z-30 ${
         shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
       }`}
-      style={{ transitionDelay: `${delay}ms`, zIndex: z }}
+      style={{ transitionDelay: `${delay}ms` }}
     >
-      <div className="rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-200 group-hover:elev-4">
+      <div
+        className={`transition-transform duration-300 ease-out ${
+          slide === "left"
+            ? "lg:group-hover:-translate-x-8"
+            : slide === "right"
+              ? "lg:group-hover:translate-x-8"
+              : ""
+        }`}
+      >
+      <div className="rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-4">
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunk">
             <svg viewBox="0 0 24 24" className="h-4 w-4 text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -406,6 +428,7 @@ function Card({
           </div>
         </div>
         <div className="px-4 py-4">{children}</div>
+      </div>
       </div>
     </div>
   );
