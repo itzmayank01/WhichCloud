@@ -45,19 +45,22 @@ const LOGO: Record<string, string> = {
   gcp: "logos:google-cloud",
 };
 
-/* One colour per service, held here so the chart, its legend and the itemised
-   list below cannot drift apart. */
-const SERVICE_COLOR: Record<string, string> = {
-  Database: "#2451d9",
-  Compute: "#7d3fd6",
-  Egress: "#d94f8a",
-  Cache: "#e08a2e",
-  "Load balancer": "#0f9d8a",
-  "Object storage": "#4a8c1c",
-  Monitoring: "#8b93a1",
-};
-const fallbackColor = "#b0b7c3";
-const colorFor = (label: string) => SERVICE_COLOR[label] ?? fallbackColor;
+/* A light palette, assigned by size: the biggest line on the bill always gets
+   the first colour, so the same band means the same thing across all three
+   bars. Kept pale on purpose -- these are large filled areas, and saturated
+   blocks at this size fight the figures they are supposed to support. Held in
+   one place so the chart, its legend and the itemised list cannot drift
+   apart. */
+const RAMP = [
+  "#9cc4ef",
+  "#f0c489",
+  "#eda6c8",
+  "#a6d9cd",
+  "#c3b7ee",
+  "#bcdda6",
+  "#dcdee4",
+];
+const fallbackColor = "#c3cad6";
 
 const CAT_ICON: Record<string, string> = {
   compute: "M7 7h10v10H7zM9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m-2 6h2m14-6h2m-2 6h2",
@@ -103,6 +106,22 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
       window.clearTimeout(fallback);
     };
   }, []);
+
+  /* Rank the services by what they cost across every cloud, then hand out
+     the ramp in that order, so the darkest band is always the largest line on
+     the bill wherever it appears. */
+  const rank = new Map<string, number>();
+  [...data.chart.categories]
+    .sort((a, b) => {
+      const sum = (label: string) =>
+        data.chart.clouds.reduce(
+          (t, c) => t + (c.segments.find((s) => s.label === label)?.value ?? 0),
+          0,
+        );
+      return sum(b) - sum(a);
+    })
+    .forEach((label, i) => rank.set(label, i));
+  const colorFor = (label: string) => RAMP[rank.get(label) ?? 99] ?? fallbackColor;
 
   const peak = Math.max(...data.chart.clouds.map((c) => c.total), 1);
   /* The bars are flex items. Without shrink-0 flexbox compresses them to fit
@@ -156,8 +175,30 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
             ))}
           </div>
 
-          {/* stacked bars, one per cloud */}
-          <div className="mt-4 flex items-end justify-around gap-6" style={{ height: CHART_H }}>
+          {/* stacked bars, one per cloud, over a ruled grid */}
+          <div className="relative mt-4 flex" style={{ height: CHART_H }}>
+            {/* the axis, and the lines it labels */}
+            <div className="relative w-11 shrink-0">
+              {[1, 0.5, 0].map((f) => (
+                <span
+                  key={f}
+                  className="absolute right-1.5 -translate-y-1/2 font-mono text-[10px] text-ink-3"
+                  style={{ top: `${(1 - f) * BAR_MAX + 20}px` }}
+                >
+                  ${Math.round((peak * f) / 10) * 10}
+                </span>
+              ))}
+            </div>
+            <div className="relative flex-1">
+              {[1, 0.5, 0].map((f) => (
+                <span
+                  key={f}
+                  aria-hidden
+                  className="absolute inset-x-0 border-t border-dashed border-line"
+                  style={{ top: `${(1 - f) * BAR_MAX + 20}px` }}
+                />
+              ))}
+              <div className="relative flex h-full items-end justify-around gap-6">
             {data.chart.clouds.map((cloud, ci) => (
               <div key={cloud.id} className="flex h-full flex-1 flex-col items-center justify-end">
                 <span className="tnum mb-1.5 font-mono text-[12px] font-semibold text-ink">
@@ -187,12 +228,14 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
                 </span>
               </div>
             ))}
+              </div>
+            </div>
           </div>
         </Card>
 
         {/* ── centre: the estimate, floating across both ── */}
         <div
-          className={`lg:col-start-5 lg:col-span-5 lg:row-start-1 lg:z-20 transition-all duration-[750ms] ease-out ${
+          className={`relative hover:z-30 lg:col-start-4 lg:col-span-5 lg:row-start-1 lg:z-20 transition-all duration-[750ms] ease-out ${
             shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
           }`}
           style={{ transitionDelay: "140ms" }}
@@ -340,13 +383,15 @@ function Card({
   title: string;
 }) {
   return (
+    /* hover:z-30 lets whichever panel you point at come to the front, so an
+       overlap never hides something you are trying to read. */
     <div
-      className={`${className} transition-all duration-[750ms] ease-out ${
+      className={`${className} group relative transition-all duration-[750ms] ease-out hover:z-30 ${
         shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
       }`}
       style={{ transitionDelay: `${delay}ms`, zIndex: z }}
     >
-      <div className="rounded-2xl border border-line bg-surface elev-2">
+      <div className="rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-200 group-hover:elev-4">
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunk">
             <svg viewBox="0 0 24 24" className="h-4 w-4 text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
