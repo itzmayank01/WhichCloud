@@ -298,3 +298,38 @@ def stats(dsn: str | None = None) -> list[dict]:
                ORDER BY provider, region, category"""
         )
         return cur.fetchall()
+
+
+def provenance(dsn: str | None = None) -> list[dict]:
+    """How each price in the catalog got here.
+
+    Three ways, and the distinction is the point of the project rather than
+    bookkeeping. `fetched` came back from a provider's own pricing API and is
+    stored as it arrived. `composed` is a provider selling a resource by its
+    parts -- Cloud SQL quotes vCPU and RAM separately, so a 2-vCPU/8GB
+    instance is their vCPU rate times two plus their RAM rate times eight,
+    every term of it theirs. `derived` applies a documented multiplier to a
+    fetched rate: Azure bills an HA standby as a second instance, so the
+    multi-AZ figure is 2x the primary.
+
+    Nothing is predicted, interpolated or averaged, and there is no fourth
+    bucket -- a price that cannot be reached one of these three ways is
+    reported missing rather than guessed.
+    """
+    with connect(dsn) as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT CASE
+                         WHEN attributes ? 'composed' THEN 'composed'
+                         WHEN attributes ? 'derived'  THEN 'derived'
+                         ELSE 'fetched'
+                       END AS kind,
+                       count(*) AS n
+                FROM price_points
+                GROUP BY 1
+                ORDER BY n DESC
+                """
+            ).fetchall()
+        ]

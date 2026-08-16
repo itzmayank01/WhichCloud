@@ -230,3 +230,15 @@ def test_budget_flag_reflects_the_stated_budget(client):
 def test_no_budget_means_no_verdict(client):
     body = client.post("/recommend", json={"goal": "shop"}).json()
     assert all(o["within_budget"] is None for o in body["options"])
+
+
+def test_provenance_splits_the_catalog_by_origin(client):
+    """The split must add up to the catalog, or the page misreports itself."""
+    body = client.get("/provenance").json()
+
+    assert body["total"] == sum(body["split"].values())
+    # Every bucket is one of the three the project actually distinguishes.
+    assert set(body["split"]) <= {"fetched", "composed", "derived"}
+    # Fetched has to dominate; if it ever does not, the claim on the landing
+    # page is no longer true and this should fail rather than render quietly.
+    assert body["split"]["fetched"] / body["total"] > 0.9

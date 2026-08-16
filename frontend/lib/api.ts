@@ -173,8 +173,15 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
   return response.json();
 }
 
+export type Provenance = {
+  total: number;
+  split: Record<string, number>;
+};
+
 export const api = {
   health: () => get<Health>("/health", 60),
+
+  provenance: () => get<Provenance>("/provenance", 300),
 
   catalog: (params: Record<string, string | number> = {}) => {
     const query = new URLSearchParams(

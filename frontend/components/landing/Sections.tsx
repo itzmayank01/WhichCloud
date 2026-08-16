@@ -447,29 +447,40 @@ export function FeatureBlock({
 /* ──────────────────────── stats band ──────────────────────── */
 
 export async function Stats() {
-  let prices = 0;
+  /* The price count and the AWS validation ratio used to sit here. Both now
+     belong to the Provenance section below, which shows them with their
+     working; repeating them here would put the same figure on the page twice
+     and make the weaker, unsupported copy the one a reader meets first. What
+     is left is the claim -- the evidence follows it. */
+  let techniques = 0;
+  let markets = 0;
   try {
-    prices = (await api.health()).prices;
+    [techniques, markets] = await Promise.all([
+      api.techniques().then((t) => t.count),
+      api.regions().then((r) => Object.keys(r).length),
+    ]);
   } catch {
     /* renders as — */
   }
 
-  /* `count` drives a figure that counts up; the rest are set as written.
-     807/807 is a ratio and 0 is the point being made -- neither reads better
-     for being animated. */
   const items: {
     figure: string;
     count?: number;
     suffix?: string;
     label: string;
   }[] = [
-    { figure: "807/807", label: "exact match vs AWS's own price list" },
-    {
-      figure: prices ? prices.toLocaleString() : "n/a",
-      count: prices || undefined,
-      label: "prices in the catalog",
-    },
     { figure: "3", count: 3, label: "providers compared in one query" },
+    {
+      figure: markets ? String(markets) : "n/a",
+      count: markets || undefined,
+      label: "markets priced end to end",
+    },
+    {
+      figure: techniques ? String(techniques) : "n/a",
+      count: techniques || undefined,
+      label: "optimizations tested against your workload",
+    },
+    /* 0 is the point being made and does not read better for counting up. */
     { figure: "0", label: "hardcoded prices in the source" },
   ];
 

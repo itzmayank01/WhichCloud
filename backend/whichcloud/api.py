@@ -332,6 +332,29 @@ def health() -> dict:
     }
 
 
+@app.get("/provenance")
+def provenance() -> dict:
+    """Where the catalog's numbers came from.
+
+    Exists so the site can show its working rather than assert it. The split
+    is counted from the catalog on every call, so it cannot drift away from
+    what is actually stored the way a figure typed into a page would.
+    """
+    try:
+        rows = store.provenance()
+    except Exception as exc:
+        raise HTTPException(503, f"price catalog unreachable: {exc}") from exc
+
+    total = sum(r["n"] for r in rows)
+    if not total:
+        raise HTTPException(503, "price catalog is empty — run ingest_prices.py")
+
+    return {
+        "total": total,
+        "split": {r["kind"]: r["n"] for r in rows},
+    }
+
+
 @app.get("/regions")
 def regions() -> dict:
     """Regions the catalog can actually price, and their provider mappings.

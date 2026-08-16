@@ -10,6 +10,7 @@ import { PipelineSection } from "@/components/landing/PipelineSection";
 import { HeroFreshness } from "@/components/landing/HeroFreshness";
 import { HeroShowcaseSection } from "@/components/landing/HeroShowcaseSection";
 import { AskBadge, ChartBadge } from "@/components/landing/Badges";
+import { Provenance } from "@/components/landing/Provenance";
 import {
   FeatureBlock,
   Footer,
@@ -370,6 +371,13 @@ export default function Home() {
         <Suspense fallback={<Loading height={260} />}>
             <Stats />
           </Suspense>
+      </section>
+
+      {/* the working behind the claim the stats band just made */}
+      <section id="provenance" className="border-t border-line px-6 py-24">
+        <Suspense fallback={<Loading height={620} />}>
+          <Provenance />
+        </Suspense>
       </section>
 
       {/* honest limits */}
