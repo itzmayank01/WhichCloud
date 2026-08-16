@@ -143,6 +143,16 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
 
   return (
     <div ref={host} className="relative mx-auto max-w-7xl">
+      {/* Light behind the centre panel. Depth needs somewhere for the light to
+          come from, or the tilt just looks like a rendering mistake. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 -z-10 hidden h-[460px] w-[820px] -translate-x-1/2 -translate-y-1/2 lg:block"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, rgba(36,81,217,.10), rgba(36,81,217,.03) 45%, transparent 70%)",
+        }}
+      />
       {/* Widths are stated rather than shared out. flex-1 with basis-0 divides
           the free space equally, and a negative margin *is* free space, so
           the overlap it created was handed back to all three panels and came
@@ -150,7 +160,15 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           one card gapped on slide and the other did not. Three widths of 36%
           overlapping 4% each side sum to 100% and are symmetric by
           construction. */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-center lg:gap-0">
+      {/* A shallow stage. The side panels are turned a few degrees towards
+          the reader and set back; the centre faces front and sits forward of
+          both. Depth here is doing the same job the overlap was doing on its
+          own -- saying which panel is the subject -- but it survives being
+          looked at, where a drop shadow alone reads as a sticker. */}
+      <div
+        className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-center lg:gap-0"
+        style={{ perspective: "1300px", transformStyle: "preserve-3d" }}
+      >
         {/* ── left: what it costs on each cloud ── */}
         <Card
           shown={shown}
@@ -282,7 +300,9 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           className={`relative lg:z-20 lg:-mx-[4%] lg:-my-7 lg:w-[36%] lg:min-w-0 lg:shrink-0 transition-all duration-[750ms] ease-out ${
             shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
           }`}
-          style={{ transitionDelay: "140ms" }}
+          style={{
+            transitionDelay: "140ms",
+          }}
         >
           <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface elev-4">
             {/* One pass of light across the top edge, timed with the rows
@@ -436,6 +456,8 @@ function Card({
   eyebrow: string;
   title: string;
 }) {
+  const [hovered, setHovered] = useState(false);
+
   return (
     /* Pointing at a side panel steps it out from under the centre without
        changing what is in front of what. The stacking order stays fixed, so
@@ -456,17 +478,33 @@ function Card({
         shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
       }`}
       style={{ transitionDelay: `${delay}ms` }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
+      {/* One transform, not two. Tailwind's translate and rotate utilities
+          compose, but a hand-written `transform` on the same element replaces
+          them outright, so both the turn and the slide are written here
+          together. Pointing at a card turns it flat and brings it forward as
+          it steps out. */}
       <div
-        className={`h-full transition-transform duration-300 ease-out ${
-          slide === "left"
-            ? "lg:group-hover:-translate-x-8"
-            : slide === "right"
-              ? "lg:group-hover:translate-x-8"
-              : ""
-        }`}
+        className="h-full transition-transform duration-[420ms] ease-out"
+        style={{
+          /* Rotation only, no translateZ. Moving a card along Z scales it
+             under perspective, which made the centre 468px wide against 406
+             for the sides and grew the overlap from 41px to 62px -- it broke
+             the equal sizing and clipped more of the panels underneath. The
+             turn is what reads as depth; the shadow tiers carry the rest. */
+          transform: hovered
+            ? "perspective(1300px) rotateY(0deg) translateX(" +
+              (slide === "left" ? "-32px" : slide === "right" ? "32px" : "0px") +
+              ")"
+            : "perspective(1300px) rotateY(" +
+              (slide === "left" ? "9deg" : slide === "right" ? "-9deg" : "0deg") +
+              ")",
+          transformOrigin: slide === "left" ? "right center" : "left center",
+        }}
       >
-      <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-4">
+      <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-3">
         <div className="flex items-center gap-3 border-b border-line px-5 py-4">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-wash">
             <svg
@@ -491,7 +529,17 @@ function Card({
             </p>
           </div>
         </div>
-        <div className="flex flex-1 flex-col px-5 py-5 sm:px-6">{children}</div>
+        <div
+          className={`flex flex-1 flex-col px-5 py-5 sm:px-6 ${
+            slide === "left"
+              ? "lg:pr-[58px]"
+              : slide === "right"
+                ? "lg:pl-[58px]"
+                : ""
+          }`}
+        >
+          {children}
+        </div>
       </div>
       </div>
     </div>
