@@ -33,7 +33,12 @@ from whichcloud.architecture.schema import BoundaryKind, Flow, Tier
 # off is not one someone can hand to a colleague.
 NODE_W = 212
 NODE_H = 84
-GAP_X = 26
+# Wide enough to route a line between two columns. At 26 the gap was 26 and
+# the clearance 14, so a corridor centred between two boxes sat 13px from each
+# -- under the clearance, which made every lane count as blocked and left the
+# router with nowhere to go. Gutters are what a diagram uses to breathe and to
+# carry its own wiring.
+GAP_X = 48
 ROW_GAP = 104
 
 #: Beyond this a row is wrapped rather than allowed to run off the canvas.
@@ -173,30 +178,163 @@ def _order_rows(
     return ordered
 
 
-def _route(source: PlacedNode, target: PlacedNode) -> list[tuple[int, int]]:
+#: How close a line may pass to a box it is not connected to.
+CLEARANCE = 12
+
+
+def _blocked(x: int, y1: int, y2: int, boxes: list[PlacedNode], skip: set[str]) -> bool:
+    """Does a vertical run at x, between y1 and y2, cross any box?"""
+    top, bottom = (y1, y2) if y1 <= y2 else (y2, y1)
+    for box in boxes:
+        if box.id in skip:
+            continue
+        if box.x - CLEARANCE < x < box.x + box.w + CLEARANCE:
+            if box.y - CLEARANCE < bottom and box.y + box.h + CLEARANCE > top:
+                return True
+    return False
+
+
+def _clear_elbow(
+    source: PlacedNode, target: PlacedNode, boxes: list[PlacedNode], mid: int
+) -> bool:
+    """Does the plain elbow cross anything?
+
+    An elbow has two vertical runs, not one: down the source's column to the
+    midline, then down the target's column from it. Checking a single lane
+    across the whole span -- which is what an earlier version did -- passes
+    routes whose second leg goes straight through a box, and measured 23
+    crossings on a real diagram while reporting none.
+    """
+    skip = {source.id, target.id}
+    return not (
+        _blocked(source.cx, source.y + source.h, mid, boxes, skip)
+        or _blocked(target.cx, mid, target.y, boxes, skip)
+    )
+
+
+def _free_lane(
+    source: PlacedNode,
+    target: PlacedNode,
+    boxes: list[PlacedNode],
+    canvas_w: int,
+    top: int,
+    bottom: int,
+) -> int | None:
+    """The clear vertical corridor nearest the source, anywhere on the canvas.
+
+    An earlier version searched only a few hundred pixels either side of the
+    source and gave up, which on a tall diagram is the wrong place to look:
+    rows hold different numbers of boxes and are centred, so a gap in one row
+    sits behind a box in the next, and the only corridor running the whole
+    height is often the page margin. Failing to find one meant falling back to
+    a route that goes straight through whatever is in the way.
+
+    Scanning the full width costs a few thousand comparisons per edge, which
+    is nothing against drawing a line through a box someone is trying to read.
+    """
+    skip = {source.id, target.id}
+    best: int | None = None
+    best_distance = 10**9
+
+    for lane in range(10, max(11, canvas_w - 10), 8):
+        distance = abs(lane - source.cx)
+        if distance >= best_distance:
+            continue
+        if not _blocked(lane, top, bottom, boxes, skip):
+            best, best_distance = lane, distance
+
+    return best
+
+
+def _route(
+    source: PlacedNode,
+    target: PlacedNode,
+    boxes: list[PlacedNode] | None = None,
+    canvas_w: int = 0,
+) -> list[tuple[int, int]]:
     """Where the arrow actually goes.
 
     Down the page is the common case and gets an elbow rather than a diagonal,
     because a diagonal across three rows crosses everything between them. A
     link within one row leaves from the side instead, which is what keeps a
     replication arrow between two databases from being drawn through them.
+
+    When the elbow would pass through a box that is neither end, the line
+    steps sideways into a clear corridor first. Boxes are what a reader is
+    trying to read; a line through one costs more than the detour does.
     """
+    boxes = boxes or []
+
     if target.y > source.y + source.h:          # target is below
         mid = (source.y + source.h + target.y) // 2
+        if _clear_elbow(source, target, boxes, mid):
+            return [
+                (source.cx, source.y + source.h),
+                (source.cx, mid),
+                (target.cx, mid),
+                (target.cx, target.y),
+            ]
+
+        # Step out of the source, run down a clear corridor, step back in.
+        # The stubs are short, so they stay inside the gap below the box they
+        # leave and above the one they meet.
+        out_y = source.y + source.h + 16
+        in_y = target.y - 16
+        lane = _free_lane(source, target, boxes, canvas_w, out_y, in_y)
+        if lane is None:
+            return [
+                (source.cx, source.y + source.h),
+                (source.cx, mid),
+                (target.cx, mid),
+                (target.cx, target.y),
+            ]
         return [
             (source.cx, source.y + source.h),
-            (source.cx, mid),
-            (target.cx, mid),
+            (source.cx, out_y),
+            (lane, out_y),
+            (lane, in_y),
+            (target.cx, in_y),
             (target.cx, target.y),
         ]
+
     if target.y + target.h < source.y:          # target is above
+        # Same treatment as downward. Leaving this branch naive is what left
+        # thirteen lines running through boxes while the downward ones were
+        # clean: an edge from the security row back up to compute crosses
+        # every row between, and half a diagram's edges point upward.
         mid = (target.y + target.h + source.y) // 2
+        skip = {source.id, target.id}
+        clear = not (
+            _blocked(source.cx, mid, source.y, boxes, skip)
+            or _blocked(target.cx, target.y + target.h, mid, boxes, skip)
+        )
+        if clear:
+            return [
+                (source.cx, source.y),
+                (source.cx, mid),
+                (target.cx, mid),
+                (target.cx, target.y + target.h),
+            ]
+
+        out_y = source.y - 16
+        in_y = target.y + target.h + 16
+        lane = _free_lane(source, target, boxes, canvas_w, in_y, out_y)
+        if lane is None:
+            return [
+                (source.cx, source.y),
+                (source.cx, mid),
+                (target.cx, mid),
+                (target.cx, target.y + target.h),
+            ]
         return [
             (source.cx, source.y),
-            (source.cx, mid),
-            (target.cx, mid),
+            (source.cx, out_y),
+            (lane, out_y),
+            (lane, in_y),
+            (target.cx, in_y),
             (target.cx, target.y + target.h),
         ]
+
     # same row: leave from the facing sides
     if target.x >= source.x:
         return [(source.x + source.w, source.cy), (target.x, target.cy)]
@@ -267,7 +405,12 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
         source, target = layout.node(edge.source), layout.node(edge.target)
         if source and target:
             layout.edges.append(
-                PlacedEdge(edge.source, edge.target, edge.flow, _route(source, target))
+                PlacedEdge(
+                    edge.source,
+                    edge.target,
+                    edge.flow,
+                    _route(source, target, placed, width),
+                )
             )
 
     # ── groups ──

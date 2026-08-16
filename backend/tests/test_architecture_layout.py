@@ -230,3 +230,68 @@ def test_wrapping_an_empty_purpose_yields_nothing():
     from whichcloud.architecture.svg import _wrap
 
     assert _wrap("", 186) == []
+
+
+def _crosses_a_box(points, boxes, endpoints):
+    """Does any vertical run of this polyline pass through an unrelated box?"""
+    for (x1, y1), (x2, y2) in zip(points, points[1:]):
+        if x1 != x2:
+            continue  # horizontal runs sit in the gap between rows
+        top, bottom = sorted((y1, y2))
+        for box in boxes:
+            if box.id in endpoints:
+                continue
+            if box.x < x1 < box.x + box.w and box.y < bottom and box.y + box.h > top:
+                return box.id
+    return None
+
+
+def test_a_line_steps_around_a_box_in_its_way():
+    """A straight drop past an intervening row goes through whatever sits
+    there, which is what makes a dense diagram look like a wiring fault."""
+    lay = layout_of(
+        svc("Edge", "edge", connects=["Store"]),
+        # Directly between them, in the source's column.
+        svc("Middle", "compute"),
+        svc("Store", "data"),
+    )
+    edge = lay.edges[0]
+    hit = _crosses_a_box(edge.points, lay.nodes, {edge.source, edge.target})
+
+    assert hit is None, f"the arrow is drawn through {hit}"
+
+
+def test_no_arrow_crosses_an_unrelated_box_in_a_dense_diagram():
+    """The case that matters: many rows, many boxes, every line checked."""
+    services = [
+        svc("R53", "edge", connects=["EKS", "Aurora"]),
+        svc("CDN", "edge", connects=["EKS"]),
+        svc("GW", "api", connects=["EKS"]),
+        svc("EKS", "compute", connects=["Aurora", "Redis", "S3"]),
+        svc("Aurora", "data"),
+        svc("Redis", "data"),
+        svc("S3", "data"),
+        svc("Watch", "observability"),
+    ]
+    lay = layout_of(*services)
+
+    offenders = [
+        (e.source, e.target, _crosses_a_box(e.points, lay.nodes, {e.source, e.target}))
+        for e in lay.edges
+    ]
+    bad = [o for o in offenders if o[2]]
+    assert bad == [], f"arrows drawn through boxes: {bad}"
+
+
+def test_a_detoured_line_still_starts_and_ends_on_its_boxes():
+    """Routing around must not detach the arrow from what it connects."""
+    lay = layout_of(
+        svc("Edge", "edge", connects=["Store"]),
+        svc("Middle", "compute"),
+        svc("Store", "data"),
+    )
+    edge = lay.edges[0]
+    src, dst = lay.node(edge.source), lay.node(edge.target)
+
+    assert edge.points[0] == (src.cx, src.y + src.h)
+    assert edge.points[-1] == (dst.cx, dst.y)

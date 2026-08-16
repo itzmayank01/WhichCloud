@@ -112,7 +112,23 @@ def extract_architecture(
         if stored:
             return Architecture.model_validate_json(stored)
 
-    arch = _EXTRACTORS[reader](description, client)
+    try:
+        arch = _EXTRACTORS[reader](description, client)
+    except IntakeError:
+        raise
+    except Exception as exc:
+        # The provider's own errors arrive as library exceptions. Left
+        # unhandled they become a 500 with no CORS headers, which a browser
+        # reports as "Failed to fetch" -- a network problem, which it is not.
+        # A daily quota running out is an ordinary thing that should say so.
+        detail = str(exc)
+        if "RESOURCE_EXHAUSTED" in detail or "429" in detail:
+            raise IntakeError(
+                "The model's daily free-tier quota is used up (20 requests a "
+                "day). Descriptions read earlier still open instantly from the "
+                "cache; new ones need the quota to reset or a billed key."
+            ) from exc
+        raise IntakeError(f"the reader could not parse that: {detail[:200]}") from exc
 
     if use_cache:
         try:
