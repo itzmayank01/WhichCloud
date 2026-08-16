@@ -76,7 +76,12 @@ export function MultiCloudArchitecture({
      lie the rest of the site avoids. */
   const [byProvider, setByProvider] = useState(initial);
   const [region, setRegion] = useState(initialRegion);
-  const [budgetValue, setBudgetValue] = useState(400);
+  /* Held as text, not a number. Coercing every keystroke with Number()
+     turned an empty field into 0, so clearing it and typing 1000 left the
+     zero in front and read "01000". The string is what the reader typed; the
+     number is derived from it. */
+  const [budgetText, setBudgetText] = useState("400");
+  const budgetValue = Math.max(0, Number(budgetText) || 0);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const first = useRef(true);
@@ -173,12 +178,17 @@ export function MultiCloudArchitecture({
           <span className="flex items-center rounded-lg border border-line bg-surface pl-2.5">
             <span className="font-mono text-[14px] text-ink-3">$</span>
             <input
-              type="number"
-              min={0}
-              step={50}
-              value={budgetValue}
-              onChange={(e) => setBudgetValue(Math.max(0, Number(e.target.value)))}
-              className="tnum w-[86px] bg-transparent py-1.5 pl-1 pr-2.5 font-mono text-[14px] font-medium text-ink"
+              type="text"
+              inputMode="numeric"
+              value={budgetText}
+              onChange={(e) => {
+                // Digits only, and no leading zeros to accumulate in front of
+                // what was typed.
+                const digits = e.target.value.replace(/[^\d]/g, "").slice(0, 7);
+                setBudgetText(digits.replace(/^0+(?=\d)/, ""));
+              }}
+              onBlur={() => setBudgetText(String(budgetValue || 0))}
+              className="tnum w-[86px] bg-transparent py-1.5 pl-1 pr-2.5 font-mono text-[14px] font-medium text-ink outline-none"
               aria-label="Monthly budget in dollars"
             />
             <span className="pr-2.5 font-mono text-[13px] text-ink-3">/mo</span>
@@ -213,11 +223,10 @@ export function MultiCloudArchitecture({
           // How much of the reference budget this consumes, and how it
           // compares to the cheapest complete option. Both are derived here
           // rather than stated, so neither can drift from the figures.
-          const usedPct = Math.min(
-            100,
-            Math.round((o.monthly_usd / budgetValue) * 100),
-          );
-          const over = o.monthly_usd > budgetValue;
+          const usedPct = budgetValue
+            ? Math.min(100, Math.round((o.monthly_usd / budgetValue) * 100))
+            : 0;
+          const over = budgetValue > 0 && o.monthly_usd > budgetValue;
           const delta =
             cheapest && o.complete && !wins
               ? o.monthly_usd - byProvider[cheapest].monthly_usd
@@ -320,8 +329,13 @@ export function MultiCloudArchitecture({
                       />
                     </div>
                     <div className="mt-2 flex items-baseline justify-between font-mono text-[12.5px] font-medium">
+                      {/* An empty budget has nothing to be a percentage of.
+                          "0% of $0" is not a smaller claim than the real one,
+                          it is a meaningless one. */}
                       <span className={over ? "text-spend" : "text-ink-3"}>
-                        {usedPct}% of {money(budgetValue, 0)}
+                        {budgetValue > 0
+                          ? `${usedPct}% of ${money(budgetValue, 0)}`
+                          : "no budget set"}
                       </span>
                       <span
                         className={
