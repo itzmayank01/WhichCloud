@@ -173,6 +173,53 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
   return response.json();
 }
 
+/** Tiers arrive in reading order; the union keeps the renderer honest. */
+export type Tier =
+  | "edge" | "api" | "compute" | "data" | "async"
+  | "analytics" | "ml" | "security" | "cicd" | "observability";
+
+export type Flow = "sync" | "async" | "replication" | "control";
+
+export type ArchNode = {
+  id: string;
+  label: string;
+  tier: Tier;
+  purpose: string;
+  priced: boolean;
+  /** null when the catalog cannot price it — which is not the same as free. */
+  monthly_usd: number | null;
+  sku: string | null;
+  x: number; y: number; w: number; h: number;
+};
+
+export type ArchEdge = {
+  source: string;
+  target: string;
+  flow: Flow;
+  /** Already routed server-side, so the client draws rather than decides. */
+  points: { x: number; y: number }[];
+};
+
+export type ArchGroup = {
+  id: string;
+  kind: "account" | "region" | "az" | "vpc" | "subnet";
+  label: string;
+  depth: number;
+  x: number; y: number; w: number; h: number;
+};
+
+export type ArchitectureView = {
+  canvas: { width: number; height: number };
+  regions: number;
+  azs_per_region: number;
+  external: string[];
+  counts: { services: number; edges: number; groups: number; priced: number };
+  bands: { tier: Tier; y: number; h: number }[];
+  groups: ArchGroup[];
+  nodes: ArchNode[];
+  edges: ArchEdge[];
+};
+
 export type Provenance = {
   total: number;
   split: Record<string, number>;
@@ -202,6 +249,9 @@ export const api = {
 
   /** The same requirement priced on every cloud. */
   compare: (body: Record<string, unknown>) => post<Comparison>("/compare", body),
+
+  architecture: (body: Record<string, unknown>) =>
+    post<ArchitectureView>("/architecture", body),
 };
 
 /** Prices are the product. Format them once, consistently, everywhere. */
