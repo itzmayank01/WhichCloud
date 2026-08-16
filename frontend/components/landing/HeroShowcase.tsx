@@ -141,18 +141,20 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
 
   return (
     <div ref={host} className="relative mx-auto max-w-6xl">
-      {/* Three equal columns that overlap by a fixed amount, rather than grid
-          spans: spans of 12 cannot divide into three equal panels that also
-          overlap, which is why the widths were 517, 517 and 430. flex-1 with
-          basis-0 makes them exactly equal whatever the content, and
-          items-stretch makes them the same height. */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-0">
+      {/* Widths are stated rather than shared out. flex-1 with basis-0 divides
+          the free space equally, and a negative margin *is* free space, so
+          the overlap it created was handed back to all three panels and came
+          out asymmetric -- 34px on one side, 56px on the other, which meant
+          one card gapped on slide and the other did not. Three widths of 36%
+          overlapping 4% each side sum to 100% and are symmetric by
+          construction. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-center lg:gap-0">
         {/* ── left: what it costs on each cloud ── */}
         <Card
           shown={shown}
           delay={0}
           zClass="z-0"
-          className="lg:min-w-0 lg:flex-1 lg:basis-0"
+          className="lg:w-[36%] lg:min-w-0 lg:shrink-0"
           slide="left"
           icon="chart"
           eyebrow="Cost report"
@@ -238,7 +240,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
 
         {/* ── centre: the estimate, floating across both ── */}
         <div
-          className={`relative lg:z-20 lg:-mx-10 lg:min-w-0 lg:flex-1 lg:basis-0 transition-all duration-[750ms] ease-out ${
+          className={`relative lg:z-20 lg:-mx-[4%] lg:w-[36%] lg:min-w-0 lg:shrink-0 transition-all duration-[750ms] ease-out ${
             shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
           }`}
           style={{ transitionDelay: "140ms" }}
@@ -312,7 +314,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           shown={shown}
           delay={280}
           zClass="z-10"
-          className="lg:min-w-0 lg:flex-1 lg:basis-0"
+          className="lg:w-[36%] lg:min-w-0 lg:shrink-0"
           slide="right"
           icon="save"
           eyebrow="Measured savings"
@@ -419,6 +421,11 @@ function Card({
        the composition never reshuffles under the cursor; the card simply
        moves far enough that more of it is showing.
 
+       The step is deliberately smaller than the overlap.
+       Sliding further than the cards overlap pulls them apart and opens a
+       strip of background between them mid-animation, which reads as the
+       layout breaking rather than as a card moving.
+
        The slide lives on an inner element because the outer one is already
        using a transform for the reveal, and two transforms on one element
        overwrite rather than compose -- the same thing that silently dropped
@@ -432,9 +439,9 @@ function Card({
       <div
         className={`h-full transition-transform duration-300 ease-out ${
           slide === "left"
-            ? "lg:group-hover:-translate-x-14"
+            ? "lg:group-hover:-translate-x-8"
             : slide === "right"
-              ? "lg:group-hover:translate-x-14"
+              ? "lg:group-hover:translate-x-8"
               : ""
         }`}
       >

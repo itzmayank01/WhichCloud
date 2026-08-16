@@ -22,12 +22,17 @@ export async function HeroShowcaseSection() {
   try {
     const [compare, techs] = await Promise.all([
       api.compare({
-        goal: "an online shop",
-        workload_type: "web",
-        traffic_pattern: "spiky",
-        traffic_scale: "medium",
-        storage_gb: 200,
-        egress_gb: 500,
+        /* Deliberately not the workload the comparison section further down
+           prices. Both were showing the same online shop, so the same three
+           totals appeared twice on one page and the second set looked like a
+           repeat rather than a second answer. This one is larger and
+           steadier, which also shows the engine choosing differently. */
+        goal: "a video streaming API",
+        workload_type: "api",
+        traffic_pattern: "steady",
+        traffic_scale: "high",
+        storage_gb: 2000,
+        egress_gb: 5000,
       }),
       api.techniques().catch(() => ({ count: 0, techniques: [] })),
     ]);
@@ -84,7 +89,7 @@ export async function HeroShowcaseSection() {
             };
           }),
       },
-      quote: "an online shop for India, traffic comes in spikes",
+      quote: "a video streaming API for India, busy all day",
       breakdown: [...win.items]
         .sort((a, b) => b.monthly_usd - a.monthly_usd)
         .slice(0, 5)
