@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon } from "@iconify/react";
+import { ChatBubble3D } from "@/components/landing/Badges";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -313,12 +314,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
               className="estimate-scan pointer-events-none absolute left-0 top-0 z-10 h-[2px] w-1/3 bg-gradient-to-r from-transparent via-accent to-transparent"
             />
             <div className="flex items-center gap-3 border-b border-line px-5 py-4 sm:px-6">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
-                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  <path d="M7 9h8M7 13h5" />
-                </svg>
-              </span>
+              <ChatBubble3D size={36} />
               <span className="flex-1 text-[15.5px] font-semibold tracking-[-0.015em]">Your estimate</span>
               <span className="font-mono text-[11.5px] text-ink-3">india</span>
             </div>

@@ -57,6 +57,73 @@ export function ChartBadge({ size = 22, className }: { size?: number; className?
   );
 }
 
+/**
+ * The estimate panel's mark: a speech bubble with a rounded, lit body rather
+ * than a flat outline on a tile.
+ *
+ * The depth is three cheap tricks, not a raster: a diagonal gradient down the
+ * body, a soft white sheen across the top third, and a darker rim that only
+ * covers the bottom and right edges. At 36px that is enough to read as a
+ * rounded object; anything finer would be thrown away at this size.
+ *
+ * Gradient ids are namespaced because ids are global to the document -- a
+ * second component defining "a" would silently repaint this one.
+ */
+export function ChatBubble3D({ size = 36, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 40 40"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`shrink-0 ${className ?? ""}`}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="wc-bub-body" x1="6" y1="2" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#5A8BF7" />
+          <stop offset="0.5" stopColor="#2F62E8" />
+          <stop offset="1" stopColor="#1B3FC4" />
+        </linearGradient>
+        <linearGradient id="wc-bub-sheen" x1="20" y1="3" x2="20" y2="17" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" stopOpacity="0.42" />
+          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="wc-bub-dot" x1="20" y1="10" x2="20" y2="18" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" />
+          <stop offset="1" stopColor="#DDE1EA" />
+        </linearGradient>
+      </defs>
+
+      {/* Body and tail are one path so the gradient runs unbroken through the
+          join instead of stopping at a seam. */}
+      <path
+        d="M9 3 H31 A7 7 0 0 1 38 10 V20 A7 7 0 0 1 31 27 H20.5 L12.6 35.4 A1.6 1.6 0 0 1 9.9 34.3 V27 H9 A7 7 0 0 1 2 20 V10 A7 7 0 0 1 9 3 Z"
+        fill="url(#wc-bub-body)"
+      />
+      {/* Sheen, inset so it sits inside the body's edge rather than on it. */}
+      <path
+        d="M9.6 4 H30.4 A6.4 6.4 0 0 1 36.8 10.4 V15 A80 80 0 0 0 3.2 15 V10.4 A6.4 6.4 0 0 1 9.6 4 Z"
+        fill="url(#wc-bub-sheen)"
+      />
+      {/* Lit rim: bottom and right only, which is what makes it read as round
+          rather than as a shape with a border. */}
+      <path
+        d="M38 14 V20 A7 7 0 0 1 31 27 H20.5 L12.6 35.4"
+        stroke="#12309B"
+        strokeOpacity="0.28"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <circle cx="12.5" cy="14.5" r="3.3" fill="url(#wc-bub-dot)" />
+      <circle cx="20" cy="14.5" r="3.3" fill="url(#wc-bub-dot)" />
+      <circle cx="27.5" cy="14.5" r="3.3" fill="url(#wc-bub-dot)" />
+    </svg>
+  );
+}
+
 /** A speech bubble around a star — the sentence you type, rated. */
 export function AskBadge({ size = 22, className }: { size?: number; className?: string }) {
   return (
