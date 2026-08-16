@@ -243,6 +243,13 @@ def cheapest_in_category(
     return _to_point(row) if row else None
 
 
+def priced_regions(dsn: str | None = None) -> set[str]:
+    """Provider-level regions that have at least one price."""
+    with connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT region FROM price_points")
+        return {row["region"] for row in cur.fetchall()}
+
+
 def db_now(dsn: str | None = None):
     """The database's clock.
 

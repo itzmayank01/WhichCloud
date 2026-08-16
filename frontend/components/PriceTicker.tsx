@@ -1,4 +1,5 @@
 import { api, money, type CatalogRow } from "@/lib/api";
+import Link from "next/link";
 import { InlineIcon } from "@/components/landing/InlineIcon";
 
 /**
@@ -34,7 +35,14 @@ export async function PriceTicker() {
   const strip = (
     <div className="flex shrink-0 items-center gap-8 pr-8">
       {rows.map((r, i) => (
-        <span key={`${r.provider}-${r.sku}-${i}`} className="flex shrink-0 items-baseline gap-2.5">
+        /* Each row goes to the index it came from. The band was the one thing
+           on the page already inviting the eye and the only one that led
+           nowhere. */
+        <Link
+          key={`${r.provider}-${r.sku}-${i}`}
+          href="/prices"
+          className="flex shrink-0 items-baseline gap-2.5 rounded-sm transition-opacity hover:opacity-70"
+        >
           <InlineIcon
             icon={MARK[r.provider] ?? MARK.aws}
             size={15}
@@ -46,7 +54,7 @@ export async function PriceTicker() {
           </span>
           <span className="text-[13px] text-ink-3 font-medium">/mo</span>
           <span className="ml-4 h-3 w-px bg-line-strong" aria-hidden />
-        </span>
+        </Link>
       ))}
     </div>
   );

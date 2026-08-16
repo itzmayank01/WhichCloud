@@ -7,8 +7,11 @@ import { api, type Option } from "@/lib/api";
  */
 export async function CloudArchitectures() {
   let byProvider: Record<string, Option> = {};
+  let regions: string[] = [];
 
   try {
+    const regionMap = await api.regions().catch(() => ({}));
+    regions = Object.keys(regionMap ?? {});
     const compare = await api.compare({
       goal: "an online shop",
       workload_type: "web",
@@ -32,5 +35,11 @@ export async function CloudArchitectures() {
   }
 
   if (!Object.keys(byProvider).length) return null;
-  return <MultiCloudArchitecture byProvider={byProvider} />;
+  return (
+    <MultiCloudArchitecture
+      byProvider={byProvider}
+      initialRegion="india"
+      regions={regions}
+    />
+  );
 }

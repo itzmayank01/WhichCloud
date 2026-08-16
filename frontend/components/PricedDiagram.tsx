@@ -5,6 +5,7 @@ import { Icon } from "@iconify/react";
 import { ServiceIcon } from "@/components/ServiceIcon";
 import { money, type Node as ApiNode, type Option } from "@/lib/api";
 import { serviceName } from "@/lib/services";
+import { HoverBoard } from "@/components/HoverBoard";
 
 /**
  * The priced architecture, drawn on the same fixed canvas as the showcase.
@@ -147,7 +148,17 @@ export function PricedDiagram({
   const groups = GROUPS.filter((g) => g.kinds.some((k) => present.has(k)));
   const flows = FLOW.filter(([a, b]) => present.has(a) && present.has(b));
 
+  /* The diagram already knew which box was under the cursor and did nothing
+     with it beyond lighting the arrows. HoverBoard was written for exactly
+     this and had never been put on the page: it answers the next question --
+     what is this costing me, what share of the bill is it, did an
+     optimization touch it -- without navigating away from the shape being
+     read. It occupies fixed space so the diagram never reflows underneath
+     the cursor. */
+  const active = nodes.find((n) => n.id === hovered) ?? null;
+
   return (
+    <div className="flex flex-col gap-3">
     <div ref={shell} className="rounded-xl border border-line bg-white p-4">
       <div style={{ overflowX: "auto", overflowY: "hidden" }}>
       {/* A CSS transform does not change an element's layout box: the canvas
@@ -281,6 +292,9 @@ export function PricedDiagram({
       </div>
       </div>
       </div>
+    </div>
+
+      <HoverBoard node={active} provider={provider} total={total} />
     </div>
   );
 }

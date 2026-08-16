@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { PricedDiagram } from "@/components/PricedDiagram";
-import { money, type Option } from "@/lib/api";
+import { api, money, type Option } from "@/lib/api";
 
 /**
  * The priced comparison: one workload, three clouds, a budget to check it
@@ -40,11 +40,71 @@ const CHROME: Record<
 
 
 
+const REGION_LABEL: Record<string, string> = {
+  india: "India",
+  "us-east": "US East",
+  "eu-west": "EU West",
+  singapore: "Singapore",
+};
+
 export function MultiCloudArchitecture({
-  byProvider,
+  byProvider: initial,
+  initialRegion = "india",
+  regions = [],
 }: {
   byProvider: Record<string, Option>;
+  initialRegion?: string;
+  regions?: string[];
 }) {
+  /* The comparison is fetched again in the browser when the region or the
+     budget changes. Everything else on this page plays at the reader; this is
+     the one place they can ask it something and have it answer, and the
+     answer is a real call rather than a filter over pre-loaded data -- prices
+     genuinely differ by region and pretending otherwise would be the same
+     lie the rest of the site avoids. */
+  const [byProvider, setByProvider] = useState(initial);
+  const [region, setRegion] = useState(initialRegion);
+  const [budgetValue, setBudgetValue] = useState(400);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const first = useRef(true);
+
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+
+    api
+      .compare({
+        goal: "an online shop",
+        workload_type: "web",
+        traffic_pattern: "spiky",
+        traffic_scale: "medium",
+        storage_gb: 200,
+        egress_gb: 500,
+        region,
+      })
+      .then((compare) => {
+        if (cancelled) return;
+        const next: Record<string, Option> = {};
+        for (const [provider, options] of Object.entries(compare.clouds)) {
+          const balanced = options.find((o) => o.label === "Balanced") ?? options[0];
+          if (balanced) next[provider] = balanced;
+        }
+        if (Object.keys(next).length) setByProvider(next);
+      })
+      .catch(() => !cancelled && setFailed(true))
+      .finally(() => !cancelled && setLoading(false));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [region]);
+
   const providers = Object.keys(byProvider).filter((p) => byProvider[p]);
   const complete = providers.filter((p) => byProvider[p].complete);
   const cheapest = complete.length
@@ -53,11 +113,6 @@ export function MultiCloudArchitecture({
       )
     : null;
   const incomplete = providers.filter((p) => !byProvider[p].complete);
-
-  // A fixed reference budget, stated rather than typed: this is a showcase,
-  // and an input that only recolours a label is a control with nothing behind
-  // it. The real budget is part of the requirement on the estimate page.
-  const budgetValue = 400;
 
   // Generated from the same figures shown above, so the sentence cannot drift
   // from the numbers — and only complete options are ever compared.
@@ -83,11 +138,52 @@ export function MultiCloudArchitecture({
 
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-[15px] text-ink-2">
-        Priced against a{" "}
-        <span className="font-mono font-medium text-ink">$400/month</span>{" "}
-        reference budget.
-      </p>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        {regions.length > 1 && (
+          <label className="flex items-center gap-2.5 text-[14.5px] text-ink-2">
+            Region
+            <select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[14px] font-medium text-ink"
+            >
+              {regions.map((r) => (
+                <option key={r} value={r}>
+                  {REGION_LABEL[r] ?? r}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label className="flex items-center gap-2.5 text-[14.5px] text-ink-2">
+          Budget
+          <span className="flex items-center rounded-lg border border-line bg-surface pl-2.5">
+            <span className="font-mono text-[14px] text-ink-3">$</span>
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={budgetValue}
+              onChange={(e) => setBudgetValue(Math.max(0, Number(e.target.value)))}
+              className="tnum w-[86px] bg-transparent py-1.5 pl-1 pr-2.5 font-mono text-[14px] font-medium text-ink"
+              aria-label="Monthly budget in dollars"
+            />
+            <span className="pr-2.5 font-mono text-[13px] text-ink-3">/mo</span>
+          </span>
+        </label>
+
+        {loading && (
+          <span className="font-mono text-[13px] font-medium text-ink-3">
+            re-pricing…
+          </span>
+        )}
+        {failed && (
+          <span className="font-mono text-[13px] font-medium text-caution">
+            could not re-price that region
+          </span>
+        )}
+      </div>
 
             {/* Three across only once each card can hold a provider's full name
           beside its badge. Measured: the name ellipsises to "Go…" at 225px of

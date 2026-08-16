@@ -334,8 +334,25 @@ def health() -> dict:
 
 @app.get("/regions")
 def regions() -> dict:
-    """Region keys and how they map to each provider."""
-    return REGIONS
+    """Regions the catalog can actually price, and their provider mappings.
+
+    Only regions with prices in the catalog are returned. REGIONS is the set
+    this service knows how to map; it is not the set it can answer for, and
+    the difference matters: the landing page offers these as choices and
+    counts them as a capability, so advertising a region with no rows behind
+    it produces a comparison of zeros and a claim that is not true.
+    """
+    from .pricing.store import priced_regions
+
+    try:
+        available = priced_regions()
+    except Exception:
+        # No catalog reachable means no region can be priced. Returning the
+        # configured map here would put choices in front of a reader that
+        # answer with zeros, which is worse than offering none.
+        return {}
+
+    return {k: v for k, v in REGIONS.items() if any(r in available for r in v.values())}
 
 
 @app.get("/catalog")
