@@ -136,11 +136,11 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
      inline heights stayed correct while every bar rendered the same size, so
      the chart quietly stopped showing its own data. The room left for the
      label above and the logo below is subtracted rather than guessed at. */
-  const CHART_H = 176;
+  const CHART_H = 168;
   const BAR_MAX = CHART_H - 50;
 
   return (
-    <div ref={host} className="relative mx-auto max-w-6xl">
+    <div ref={host} className="relative mx-auto max-w-7xl">
       {/* Widths are stated rather than shared out. flex-1 with basis-0 divides
           the free space equally, and a negative margin *is* free space, so
           the overlap it created was handed back to all three panels and came
@@ -236,28 +236,65 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
               </div>
             </div>
           </div>
+
+          {/* The totals as figures, under the chart that compares them. A bar
+              answers "which is cheaper"; the row answers "by how much", and
+              the reference panel carries both for the same reason. */}
+          <div className="mt-5 border-t border-line pt-3">
+            {data.chart.clouds.map((c, i) => (
+              <div
+                key={c.id}
+                className={`flex items-center justify-between py-1.5 transition-all duration-500 ${
+                  shown ? "opacity-100" : "opacity-0"
+                }`}
+                style={{ transitionDelay: `${560 + i * 90}ms` }}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <span
+                    className="h-2 w-2 rounded-[2px]"
+                    style={{ background: i === 0 ? "var(--save)" : "var(--border-strong)" }}
+                  />
+                  <span className="text-[13px] text-ink-2">{c.label}</span>
+                </span>
+                <span className="flex items-baseline gap-2.5">
+                  <span className="tnum font-mono text-[11.5px] text-ink-3">
+                    {i === 0
+                      ? "cheapest"
+                      : `+${money(c.total - data.chart.clouds[0].total)}`}
+                  </span>
+                  <span
+                    className={`tnum font-mono text-[13.5px] font-semibold ${
+                      i === 0 ? "text-save" : "text-ink"
+                    }`}
+                  >
+                    {money(c.total, 2)}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
         </Card>
 
         {/* ── centre: the estimate, floating across both ── */}
         <div
-          className={`relative lg:z-20 lg:-mx-[4%] lg:w-[36%] lg:min-w-0 lg:shrink-0 transition-all duration-[750ms] ease-out ${
+          className={`relative lg:z-20 lg:-mx-[4%] lg:-my-7 lg:w-[36%] lg:min-w-0 lg:shrink-0 transition-all duration-[750ms] ease-out ${
             shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
           }`}
           style={{ transitionDelay: "140ms" }}
         >
           <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-4">
-            <div className="flex items-center gap-3 border-b border-line px-5 py-4">
+            <div className="flex items-center gap-3 border-b border-line px-5 py-4 sm:px-6">
               <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
                 <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   <path d="M7 9h8M7 13h5" />
                 </svg>
               </span>
-              <span className="flex-1 text-[15px] font-semibold">Your estimate</span>
+              <span className="flex-1 text-[15.5px] font-semibold tracking-[-0.015em]">Your estimate</span>
               <span className="font-mono text-[11.5px] text-ink-3">india</span>
             </div>
 
-            <div className="flex flex-1 flex-col px-5 py-4">
+            <div className="flex flex-1 flex-col px-6 py-5">
               <p className="text-[13.5px] leading-relaxed text-ink-2">
                 You described{" "}
                 <span className="font-mono text-[13px] text-ink">“{data.quote}”</span>.
@@ -281,7 +318,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
                       }`}
                       style={{ transitionDelay: `${460 + i * 90}ms` }}
                     >
-                      <td className="py-2 text-[13px]">
+                      <td className="py-2.5 text-[13.5px]">
                         <span className="inline-flex items-center gap-2">
                           <span
                             className="h-2 w-2 shrink-0 rounded-[2px]"
@@ -290,8 +327,8 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
                           <span className="text-ink-2">{b.label}</span>
                         </span>
                       </td>
-                      <td className="py-2 font-mono text-[12px] text-ink-3">{b.sku}</td>
-                      <td className="tnum py-2 text-right font-mono text-[13px] font-semibold text-ink">
+                      <td className="py-2.5 font-mono text-[12.5px] text-ink-3">{b.sku}</td>
+                      <td className="tnum py-2.5 text-right font-mono text-[13.5px] font-semibold text-ink">
                         {money(b.monthly, 2)}
                       </td>
                     </tr>
@@ -465,12 +502,12 @@ function Card({
             <p className="font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-3">
               {eyebrow}
             </p>
-            <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.01em]">
+            <p className="mt-0.5 truncate text-[15px] font-semibold tracking-[-0.015em]">
               {title}
             </p>
           </div>
         </div>
-        <div className="flex flex-1 flex-col px-5 py-5">{children}</div>
+        <div className="flex flex-1 flex-col px-5 py-5 sm:px-6">{children}</div>
       </div>
       </div>
     </div>
