@@ -1,4 +1,4 @@
-import { ClerkProvider, Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { AuthNav } from "@/components/auth/AuthNav";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -75,7 +75,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <ClerkProvider>
           <header className="sticky top-0 z-30 flex h-16 items-center gap-8 border-b border-line bg-canvas/85 px-6 backdrop-blur">
             <Link href="/" aria-label="WhichCloud home">
               <Wordmark />
@@ -121,21 +120,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </nav>
 
             <div className="ml-auto flex items-center gap-4">
-              <Show when="signed-out">
-                <SignInButton>
-                  <button className="text-sm text-ink-2 transition-colors hover:text-ink">
-                    Sign in
-                  </button>
-                </SignInButton>
-                <SignUpButton>
-                  <button className="rounded-lg bg-accent px-4 py-2 text-[15.5px] font-medium text-white transition-opacity hover:opacity-90">
-                    Get started
-                  </button>
-                </SignUpButton>
-              </Show>
-              <Show when="signed-in">
-                <UserButton />
-              </Show>
+              <AuthNav />
             </div>
           </header>
 
@@ -143,7 +128,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             {children}
           </main>
 
-        </ClerkProvider>
       </body>
     </html>
   );
