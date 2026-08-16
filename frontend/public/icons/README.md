@@ -20,3 +20,19 @@ are used instead.
 Sources:
 - https://learn.microsoft.com/azure/architecture/icons/
 - https://cloud.google.com/icons
+
+## aws/
+
+AWS's official architecture icons, 85 of the 868 they publish, vendored by
+`backend/scripts/fetch_aws_icons.py` from awslabs/aws-icons-for-plantuml --
+AWS's own repository. Re-run that script to add more; the `WANTED` set at the
+top is the list.
+
+These are the marks AWS's published reference architectures are drawn with. A
+diagram built from approximations of them reads as an imitation of one, which
+is why Iconify's 62-icon `logos` set was replaced: it also left four services
+in a real description with no icon at all.
+
+Vendored rather than hotlinked. A diagram has to render with no network, and a
+raw.githubusercontent URL is a dependency on someone else's uptime for artwork
+that changes about twice a year.

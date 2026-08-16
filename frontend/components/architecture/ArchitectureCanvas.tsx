@@ -186,8 +186,7 @@ export function ArchitectureCanvas({
                   width={component.w}
                   height={component.h}
                   rx={12}
-                  fill="var(--sunk)"
-                  fillOpacity={0.55}
+                  fill="#FBFCFD"
                   stroke="#9BB4D8"
                   strokeWidth={1.3}
                   strokeDasharray="7 5"
@@ -214,7 +213,7 @@ export function ArchitectureCanvas({
                     y={band.y}
                     width={view.canvas.width}
                     height={band.h}
-                    fill="var(--sunk)"
+                    fill="var(--surface-sunk)"
                     opacity={0.45}
                   />
                 )}
@@ -223,7 +222,7 @@ export function ArchitectureCanvas({
                   y={band.y + 14}
                   fill="var(--ink-3)"
                   fontSize={11.5}
-                  fontFamily="var(--font-geist-mono), monospace"
+                  fontFamily="ui-monospace, monospace"
                   letterSpacing="0.12em"
                 >
                   {TIER_LABEL[band.tier].toUpperCase()}
@@ -253,7 +252,7 @@ export function ArchitectureCanvas({
                     y={group.y + 20}
                     fill={style.stroke}
                     fontSize={11.5}
-                    fontFamily="var(--font-geist-mono), monospace"
+                    fontFamily="ui-monospace, monospace"
                     letterSpacing="0.07em"
                   >
                     {group.kind.toUpperCase()} · {group.label}
@@ -291,7 +290,7 @@ export function ArchitectureCanvas({
             return (
               <div
                 key={node.id}
-                className="absolute overflow-hidden rounded-xl border border-line-strong bg-surface elev-1"
+                className="absolute overflow-hidden rounded-xl border border-line-strong bg-white elev-1"
                 style={{
                   left: node.x,
                   top: node.y,
@@ -303,46 +302,58 @@ export function ArchitectureCanvas({
                   transitionDelay: on ? `${Math.min(i, 6) * 18}ms` : "0ms",
                 }}
               >
-                {/* The category, as a bar along the top. Colour does the work
-                    a reader would otherwise do by reading every label. */}
                 <span
                   className="absolute inset-x-0 top-0 h-[3px]"
                   style={{ background: TIER_COLOR[node.tier] }}
                   aria-hidden
                 />
-                <div className="flex h-full flex-col justify-center px-3 pt-[3px]">
-                  <div className="flex items-center gap-2">
+                {/* Icon first and large, name beneath it. AWS's own diagrams
+                    lead with the mark because that is what a reader scans
+                    for; a 17px glyph tucked beside the text is decoration. */}
+                <div className="flex h-full items-center gap-3 px-3 pt-[3px]">
+                  {icon ? (
+                    /* AWS's own mark, shown on its own rather than in a tinted
+                       tile: the artwork already carries the service's colour,
+                       and a second background behind it fights with that. */
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={icon}
+                      alt=""
+                      width={40}
+                      height={40}
+                      className="h-10 w-10 shrink-0 object-contain"
+                    />
+                  ) : (
                     <span
-                      className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md"
-                      style={{ background: `${TIER_COLOR[node.tier]}14` }}
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-lg"
+                      style={{ background: `${TIER_COLOR[node.tier]}16` }}
                     >
                       <Icon
-                        icon={icon ?? TIER_GLYPH[node.tier]}
-                        width={17}
-                        height={17}
-                        style={icon ? undefined : { color: TIER_COLOR[node.tier] }}
+                        icon={TIER_GLYPH[node.tier]}
+                        width={24}
+                        height={24}
+                        style={{ color: TIER_COLOR[node.tier] }}
                         aria-hidden
                       />
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-tight text-ink">
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-semibold leading-tight text-ink">
                       {node.label}
                     </span>
-                  </div>
-                  {node.purpose && (
-                    <p className="mt-1 line-clamp-2 pl-[34px] text-[11.5px] leading-snug text-ink-3">
-                      {node.purpose}
-                    </p>
-                  )}
-                  {/* Unpriced is stated rather than left blank: a blank reads
-                      as free, and most services here are not in the catalog. */}
-                  <span
-                    className={`mt-1 pl-[34px] font-mono text-[10.5px] ${
-                      node.priced ? "text-save" : "text-ink-3"
-                    }`}
-                  >
-                    {node.priced && node.monthly_usd !== null
-                      ? `$${node.monthly_usd.toFixed(2)}/mo`
-                      : "not priced"}
+                    {node.purpose && (
+                      <span className="mt-0.5 line-clamp-2 block text-[11.5px] leading-snug text-ink-3">
+                        {node.purpose}
+                      </span>
+                    )}
+                    {/* Only priced services say anything about money. Writing
+                        "not priced" on every box turned the catalog's gap
+                        into the loudest repeated text on the diagram. */}
+                    {node.priced && node.monthly_usd !== null && (
+                      <span className="mt-0.5 block font-mono text-[10.5px] text-save">
+                        ${node.monthly_usd.toFixed(2)}/mo
+                      </span>
+                    )}
                   </span>
                 </div>
               </div>

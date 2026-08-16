@@ -211,16 +211,15 @@ def render(layout: Layout, title: str = "Architecture") -> str:
             )
             y += 15
 
-        price = (
-            f"${node.monthly_usd:,.2f}/mo"
-            if node.priced and node.monthly_usd is not None
-            else "not priced"
-        )
-        out.append(
-            f'<text x="{node.x + 13}" y="{node.y + node.h - 10}" '
-            f'font-family="ui-monospace,monospace" font-size="10.5" '
-            f'fill="{"#1F9D55" if node.priced else "#9AA4B2"}">{escape(price)}</text>'
-        )
+        # Only priced services say anything about money. Writing "not priced"
+        # on every box made the catalog's gap the loudest repeated text on the
+        # diagram, which is not what the diagram is about.
+        if node.priced and node.monthly_usd is not None:
+            out.append(
+                f'<text x="{node.x + 13}" y="{node.y + node.h - 10}" '
+                f'font-family="ui-monospace,monospace" font-size="10.5" '
+                f'fill="#1F9D55">${node.monthly_usd:,.2f}/mo</text>'
+            )
 
     out.append("</svg>")
     return "\n".join(out)

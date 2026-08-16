@@ -1,98 +1,131 @@
 /**
- * A service's own logo, found from the name a description used.
+ * A service's own mark, found from the name a description used.
  *
- * The names arriving here are whatever someone wrote: "Aurora PostgreSQL
- * Global Database", "Amazon MSK", "SQS/SNS". So this matches on keywords
- * contained in the name rather than expecting an exact identifier, and the
- * keys are tried longest first -- otherwise "API Gateway" matches "api" and
- * gets the wrong mark, and "OpenSearch" loses to "search".
+ * These are AWS's official architecture icons, vendored under
+ * public/icons/aws by scripts/fetch_aws_icons.py. The reference architectures
+ * AWS publishes are drawn with exactly this artwork -- the orange Lambda
+ * square, the green S3 bucket -- and a diagram built from approximations
+ * reads as an imitation of one rather than as the thing itself. Iconify's
+ * `logos` set carries 62 AWS marks and left four of twenty three services in
+ * a real description with no icon at all; this carries 85 of the 868 AWS
+ * publishes, chosen as the ones that turn up in descriptions.
  *
- * Every entry below was checked against the icon set rather than guessed. The
- * `logos` collection carries 62 AWS marks; a name with no match returns null
- * and the caller falls back to a tier glyph, which is honest -- an approximate
- * logo is worse than no logo, because it asserts a service that is not there.
+ * The names arriving here are whatever somebody wrote -- "Aurora PostgreSQL
+ * Global Database", "Amazon MSK", "SQS/SNS" -- so matching is on keywords
+ * contained in the name, tried longest first. Otherwise "API Gateway" matches
+ * "api" and "OpenSearch" loses to "search".
+ *
+ * A name with no match returns null and the caller falls back to a glyph for
+ * the tier, which is honest: an approximate logo asserts a service that is
+ * not in the architecture.
  */
 
+/** keyword → the vendored file's basename */
 const AWS: Record<string, string> = {
-  "api gateway": "aws-api-gateway",
-  "secrets manager": "aws-secrets-manager",
-  "certificate manager": "aws-certificate-manager",
-  "systems manager": "aws-systems-manager",
-  "step functions": "aws-step-functions",
-  "lake formation": "aws-lake-formation",
-  "elastic beanstalk": "aws-elastic-beanstalk",
-  "load balancer": "aws-elb",
-  "elasticache": "aws-elasticache",
-  "cloudformation": "aws-cloudformation",
-  "documentdb": "aws-documentdb",
-  "cloudfront": "aws-cloudfront",
-  "cloudwatch": "aws-cloudwatch",
-  "cloudtrail": "aws-cloudtrail",
-  "eventbridge": "aws-eventbridge",
-  "opensearch": "aws-open-search",
-  "open search": "aws-open-search",
-  "codepipeline": "aws-codepipeline",
-  "quicksight": "aws-quicksight",
-  "cloudsearch": "aws-cloudsearch",
-  "app mesh": "aws-app-mesh",
-  "timestream": "aws-timestream",
-  "codecommit": "aws-codecommit",
-  "codedeploy": "aws-codedeploy",
-  "keyspaces": "aws-keyspaces",
-  "lightsail": "aws-lightsail",
-  "route 53": "aws-route53",
-  "route53": "aws-route53",
-  "dynamodb": "aws-dynamodb",
-  "codebuild": "aws-codebuild",
-  "codestar": "aws-codestar",
-  "kubernetes": "aws-eks",
-  "opsworks": "aws-opsworks",
-  "redshift": "aws-redshift",
-  "cognito": "aws-cognito",
-  "appsync": "aws-appsync",
-  "appflow": "aws-appflow",
-  "amplify": "aws-amplify",
-  "neptune": "aws-neptune",
-  "glacier": "aws-glacier",
-  "kinesis": "aws-kinesis",
-  "fargate": "aws-fargate",
-  "aurora": "aws-aurora",
-  "athena": "aws-athena",
-  "backup": "aws-backup",
-  "shield": "aws-shield",
-  "config": "aws-config",
-  "batch": "aws-batch",
-  "redis": "aws-elasticache",
-  "kafka": "aws-msk",
-  "x-ray": "aws-xray",
-  "xray": "aws-xray",
-  "glue": "aws-glue",
-  "lambda": "aws-lambda",
-  "waf": "aws-waf",
-  "iam": "aws-iam",
-  "kms": "aws-kms",
-  "rds": "aws-rds",
-  "sqs": "aws-sqs",
-  "sns": "aws-sns",
-  "ses": "aws-ses",
-  "eks": "aws-eks",
-  "ecs": "aws-ecs",
-  "ec2": "aws-ec2",
-  "msk": "aws-msk",
-  "elb": "aws-elb",
-  "vpc": "aws-vpc",
-  "s3": "aws-s3",
-  "mq": "aws-mq",
+  "elastic kubernetes": "elastickubernetesservice",
+  "elastic container registry": "elasticcontainerregistry",
+  "elastic container": "elasticcontainerservice",
+  "elastic load balanc": "elasticloadbalancing",
+  "elastic beanstalk": "elasticbeanstalk",
+  "certificate manager": "certificatemanager",
+  "identity and access": "identityandaccessmanagement",
+  "key management": "keymanagementservice",
+  "secrets manager": "secretsmanager",
+  "systems manager": "systemsmanager",
+  "storage gateway": "storagegateway",
+  "step functions": "stepfunctions",
+  "lake formation": "lakeformation",
+  "network firewall": "networkfirewall",
+  "transit gateway": "transitgateway",
+  "direct connect": "directconnect",
+  "global accelerator": "globalaccelerator",
+  "trusted advisor": "trustedadvisor",
+  "control tower": "controltower",
+  "nat gateway": "vpcnatgateway",
+  "api gateway": "apigateway",
+  "auto scaling": "autoscaling",
+  "cloudformation": "cloudformation",
+  "elasticache": "elasticache",
+  "opensearch": "opensearchservice",
+  "open search": "opensearchservice",
+  "codepipeline": "codepipeline",
+  "codeartifact": "codeartifact",
+  "cloudfront": "cloudfront",
+  "cloudwatch": "cloudwatch",
+  "cloudtrail": "cloudtrail",
+  "documentdb": "documentdb",
+  "eventbridge": "eventbridge",
+  "codecommit": "codecommit",
+  "codedeploy": "codedeploy",
+  "sagemaker": "sagemakerai",
+  "rekognition": "rekognition",
+  "comprehend": "comprehend",
+  "guardduty": "guardduty",
+  "securityhub": "securityhub",
+  "security hub": "securityhub",
+  "beanstalk": "elasticbeanstalk",
+  "lightsail": "lightsail",
+  "memorydb": "memorydb",
+  "keyspaces": "keyspaces",
+  "timestream": "timestream",
+  "firehose": "datafirehose",
+  "cloudhsm": "cloudhsm",
+  "codebuild": "codebuild",
+  "route 53": "route53",
+  "route53": "route53",
+  "dynamodb": "dynamodb",
+  "redshift": "redshift",
+  "inspector": "inspector",
+  "amplify": "amplify",
+  "appsync": "appsync",
+  "aurora": "aurora",
+  "athena": "athena",
+  "bedrock": "bedrock",
+  "backup": "backup",
+  "cognito": "cognito",
+  "fargate": "fargate",
+  "kinesis": "kinesis",
+  "neptune": "neptune",
+  "textract": "textract",
+  "kafka": "managedstreamingforapachekafka",
+  "lambda": "lambda",
+  "config": "config",
+  "batch": "batch",
+  "macie": "macie",
+  "polly": "polly",
+  "redis": "elasticache",
+  "shield": "shield",
+  "x-ray": "xray",
+  "xray": "xray",
+  "glue": "glue",
+  "msk": "managedstreamingforapachekafka",
+  "sqs": "simplequeueservice",
+  "sns": "simplenotificationservice",
+  "eks": "elastickubernetesservice",
+  "ecs": "elasticcontainerservice",
+  "ecr": "elasticcontainerregistry",
+  "efs": "efs",
+  "elb": "elasticloadbalancing",
+  "emr": "emr",
+  "ec2": "ec2",
+  "iam": "identityandaccessmanagement",
+  "kms": "keymanagementservice",
+  "rds": "rds",
+  "vpc": "vpc",
+  "waf": "waf",
+  "fsx": "fsx",
+  "s3": "simplestorageservice",
+  "mq": "mq",
 };
 
 /* Longest first, so a specific name is never beaten by a substring of it. */
 const KEYS = Object.keys(AWS).sort((a, b) => b.length - a.length);
 
-/** The Iconify name for this service, or null if there is no honest match. */
+/** Path to the official mark for this service, or null if there is none. */
 export function iconFor(label: string): string | null {
   const name = label.toLowerCase().replace(/[^a-z0-9 /-]/g, " ");
   for (const key of KEYS) {
-    if (name.includes(key)) return `logos:${AWS[key]}`;
+    if (name.includes(key)) return `/icons/aws/${AWS[key]}.png`;
   }
   return null;
 }
