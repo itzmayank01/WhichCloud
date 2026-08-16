@@ -5,6 +5,19 @@ import pytest
 from whichcloud.architecture import readers
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_keys(monkeypatch):
+    """Start every test from an empty environment.
+
+    Without this the developer's own keys leak in: a machine with four Gemini
+    keys configured makes a test that sets two see six, and the failure looks
+    like a bug in the code rather than in the test.
+    """
+    for _, variable in readers.CHAIN:
+        for name in (variable, *(f"{variable}_{n}" for n in range(2, 10))):
+            monkeypatch.delenv(name, raising=False)
+
+
 def test_extra_keys_are_picked_up_in_order(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "first")
     monkeypatch.setenv("GEMINI_API_KEY_2", "second")
@@ -82,3 +95,85 @@ def test_configured_reports_counts_never_keys(monkeypatch):
     counts = readers.configured()
     assert counts["gemini"] == 1
     assert "secret-value" not in str(counts)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "404 NOT_FOUND models/gemini-2.5-flash is no longer available to new users",
+        "The model does not exist",
+        "model not available for this key",
+        "unsupported model",
+    ],
+)
+def test_a_key_without_access_to_the_model_hands_on(message):
+    """Keys issued at different times have different model access. A key that
+    cannot call the model is a fact about that key, not about the description,
+    so it must not stop the chain -- this exact 404 blocked all ten keys."""
+    assert readers.is_exhausted(Exception(message))
+
+
+def test_every_key_is_tried_whatever_the_failure(monkeypatch):
+    """The chain must not depend on recognising an error.
+
+    Three separate failures each stopped all ten keys before this: a quota
+    429, a 404 for a model the key could not call, and a 503 for a busy
+    model. Each was fixed by adding a phrase and waiting to be surprised
+    again, so the rule is now that anything moves on.
+    """
+    from whichcloud.architecture import extract as ex
+
+    monkeypatch.setenv("GEMINI_API_KEY", "a,b,c")
+    monkeypatch.setenv("GROQ_API_KEY", "d")
+
+    tried: list[str] = []
+
+    def failing(description, client=None, key=None):
+        tried.append(key)
+        raise RuntimeError("something nobody predicted")
+
+    def working(description, client=None, key=None):
+        tried.append(key)
+        return "an architecture"
+
+    monkeypatch.setitem(ex._EXTRACTORS, "gemini", failing)
+    monkeypatch.setitem(ex._EXTRACTORS, "groq", working)
+
+    assert ex._read_with_failover("a shop", None) == "an architecture"
+    assert tried == ["a", "b", "c", "d"]
+
+
+def test_when_all_are_out_of_capacity_it_says_so(monkeypatch):
+    from whichcloud.architecture import extract as ex
+    from whichcloud.intake import IntakeError
+
+    monkeypatch.setenv("GEMINI_API_KEY", "a,b")
+
+    def exhausted(description, client=None, key=None):
+        raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    monkeypatch.setitem(ex._EXTRACTORS, "gemini", exhausted)
+
+    with pytest.raises(IntakeError, match="out of capacity"):
+        ex._read_with_failover("a shop", None)
+
+
+def test_a_real_error_is_surfaced_over_a_quota_one(monkeypatch):
+    """When some keys are merely spent and one hit a genuine fault, the fault
+    is the useful thing to report."""
+    from whichcloud.architecture import extract as ex
+    from whichcloud.intake import IntakeError
+
+    monkeypatch.setenv("GEMINI_API_KEY", "spent,broken")
+    calls = {"n": 0}
+
+    def mixed(description, client=None, key=None):
+        calls["n"] += 1
+        raise RuntimeError(
+            "429 quota" if calls["n"] == 1 else "schema validation blew up"
+        )
+
+    monkeypatch.setitem(ex._EXTRACTORS, "gemini", mixed)
+
+    with pytest.raises(IntakeError, match="schema validation blew up"):
+        ex._read_with_failover("a shop", None)

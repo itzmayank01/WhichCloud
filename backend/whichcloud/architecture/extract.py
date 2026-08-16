@@ -18,9 +18,14 @@ from whichcloud.pricing import store
 #: Bumped whenever the schema changes shape. It is part of the cache key, so
 #: an old extraction made under different rules is never served as if it were
 #: made under the current ones.
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"   # 2: connections are required, not optional
 
-_MODEL = "gemini-2.5-flash"
+#: The rolling alias, not a pinned version. A pinned one ages out: keys made
+#: today cannot call gemini-2.5-flash at all -- Google returns "no longer
+#: available to new users" -- so a version that works for the oldest key in
+#: the chain 404s for the newest. The alias is whatever is current for each
+#: key, which is the only thing true of all of them.
+_MODEL = "gemini-flash-latest"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 OPENAI_MODEL = "gpt-4.1-mini"
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
@@ -31,6 +36,13 @@ Extract the architecture described below.
 Rules:
 - Include EVERY cloud service the text names. Do not add services it does not
   name, however obviously they might belong.
+- Connect them. Every service should name what it talks to in `connects_to`,
+  following the request and data flow these services have when used together,
+  even where the text lists them without saying how they join up. A named
+  service that connects to nothing is almost always wrong -- an architecture
+  is its connections, and a page of unlinked boxes is an inventory.
+  Adding a service that was not named changes what someone described; drawing
+  the relationship between two they did name does not.
 - Put VPCs, subnets, regions and availability zones in `boundaries`, not in
   `services`. They contain services; they are not services.
 - Put non-cloud tools such as GitHub Actions or third-party gateways in
@@ -150,11 +162,20 @@ _EXTRACTORS = {
 
 
 def _read_with_failover(description: str, reader: Provider | None, client=None):
-    """Walk the chain until one provider answers.
+    """Try every configured key until one answers.
 
-    Only quota and rate-limit failures move on. Anything else -- a
-    description the model cannot parse, a bug here -- fails the same way
-    everywhere, and trying all four turns one clear error into four slow ones.
+    An earlier version only moved on for failures matching a list of known
+    phrases -- quota, rate limit, credit balance. That list was wrong three
+    times running: a key that could not call the model returned 404 "no longer
+    available to new users", and a busy model returned 503 "experiencing high
+    demand". Each time one key stopped all ten, and each time the fix was to
+    add another phrase and wait to be surprised again.
+
+    So the rule is inverted. Any failure moves to the next candidate, because
+    a second key costs a second or two and the alternative is telling someone
+    their description failed when a working key was sitting unused. Errors are
+    still classified, but only to write a useful message once everything has
+    been tried.
     """
     if client is not None:                       # an injected client is the test's
         return _EXTRACTORS[reader or "gemini"](description, client)
@@ -167,7 +188,7 @@ def _read_with_failover(description: str, reader: Provider | None, client=None):
             "and so on, and are used when the first is exhausted."
         )
 
-    exhausted: list[str] = []
+    failures: list[tuple[str, Exception]] = []
     for candidate in chain:
         extractor = _EXTRACTORS.get(candidate.provider)
         if extractor is None:
@@ -175,19 +196,23 @@ def _read_with_failover(description: str, reader: Provider | None, client=None):
         try:
             return extractor(description, None, candidate.key)
         except Exception as exc:
-            if is_exhausted(exc):
-                exhausted.append(candidate.label)
-                continue
-            raise IntakeError(
-                f"{candidate.label} could not read that: {str(exc)[:200]}"
-            ) from exc
+            failures.append((candidate.label, exc))
 
+    # Everything failed. If it was all capacity, say so plainly -- that is a
+    # wait, not a bug. Otherwise surface the first real error, which is the
+    # one most likely to describe the actual problem.
+    if all(is_exhausted(exc) for _, exc in failures):
+        raise IntakeError(
+            "Every configured model is out of capacity right now ("
+            + ", ".join(label for label, _ in failures)
+            + "). Descriptions read earlier still open instantly from the "
+            "cache. Add another key as GEMINI_API_KEY_2 or GROQ_API_KEY."
+        )
+
+    label, exc = next((f for f in failures if not is_exhausted(f[1])), failures[0])
     raise IntakeError(
-        "Every configured model is out of quota right now ("
-        + ", ".join(exhausted)
-        + "). Descriptions read earlier still open instantly from the cache. "
-        "Add another key as GEMINI_API_KEY_2 or GROQ_API_KEY to keep going."
-    )
+        f"No configured model could read that. {label} said: {str(exc)[:250]}"
+    ) from exc
 
 
 def cache_key(description: str, reader: str) -> str:

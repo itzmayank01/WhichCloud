@@ -53,6 +53,22 @@ EXHAUSTED = (
     "credit balance",
     "billing",
     "payment",
+    # A key that cannot call the model is a fact about that key, not about the
+    # description. Keys issued at different times have different model access,
+    # so one refusing must hand on to the next rather than stopping the chain.
+    "not found",
+    "not available",
+    "does not exist",
+    "404",
+    "unsupported",
+    # Transient capacity. Every one of these was discovered by being stopped
+    # by it, which is why the chain no longer depends on this list being
+    # complete -- it now decides the wording, not whether to continue.
+    "unavailable",
+    "503",
+    "high demand",
+    "try again later",
+    "temporarily",
 )
 
 
