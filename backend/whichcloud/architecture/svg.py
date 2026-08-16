@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from xml.sax.saxutils import escape
 
-from whichcloud.architecture.layout import Layout
+from whichcloud.architecture.layout import Layout, badge_point
 from whichcloud.architecture.schema import Flow, Tier
 
 #: AWS's published architecture-icon palette, so an exported diagram sits
@@ -121,6 +121,45 @@ def render(layout: Layout, title: str = "Architecture") -> str:
         )
     out.append("</defs>")
 
+    # ── the provider boundary, and the people outside it ──
+    if layout.cloud:
+        c = layout.cloud
+        out.append(
+            f'<rect x="{c.x}" y="{c.y}" width="{c.w}" height="{c.h}" rx="6" '
+            f'fill="none" stroke="#232F3E" stroke-width="1.6"/>'
+        )
+        out.append(
+            f'<rect x="{c.x + 12}" y="{c.y + 10}" width="26" height="22" rx="4" '
+            f'fill="#232F3E"/>'
+        )
+        out.append(
+            f'<text x="{c.x + 25}" y="{c.y + 25}" text-anchor="middle" '
+            f'font-family="system-ui,sans-serif" font-size="10" font-weight="700" '
+            f'fill="#FF9900">aws</text>'
+        )
+        out.append(
+            f'<text x="{c.x + 46}" y="{c.y + 26}" '
+            f'font-family="system-ui,sans-serif" font-size="15" font-weight="600" '
+            f'fill="#232F3E">{escape(c.label)}</text>'
+        )
+
+    if layout.actor:
+        a = layout.actor
+        cx = a.x + a.w // 2
+        out.append(
+            f'<circle cx="{cx}" cy="{a.y + 26}" r="11" fill="none" '
+            f'stroke="#5A6B7F" stroke-width="2"/>'
+        )
+        out.append(
+            f'<path d="M{cx - 20} {a.y + 62} a20 20 0 0 1 40 0" fill="none" '
+            f'stroke="#5A6B7F" stroke-width="2"/>'
+        )
+        out.append(
+            f'<text x="{cx}" y="{a.y + 84}" text-anchor="middle" '
+            f'font-family="system-ui,sans-serif" font-size="13" fill="#3F4B5B">'
+            f"{escape(a.label)}</text>"
+        )
+
     # ── functional components ──
     # Drawn first, so everything else lands on top of them. These are the
     # organising idea of the picture: a reader looking for how search works
@@ -178,6 +217,29 @@ def render(layout: Layout, title: str = "Architecture") -> str:
             f'<path d="{points}" fill="none" stroke="{colour}" stroke-width="1.8"'
             f'{dash_attr} stroke-linecap="round" stroke-linejoin="round" '
             f'marker-end="url(#a-{edge.flow})" opacity="0.8"/>'
+        )
+
+    # ── step numbers ──
+    # Placed on the arrow, at the corner where it turns, which is where there
+    # is room. AWS numbers these so a reader can follow the sequence rather
+    # than merely look at the picture.
+    placed_badges: set[tuple[int, int]] = set()
+    for edge in sorted(
+        (e for e in layout.edges if e.step), key=lambda e: e.step or 0
+    ):
+        if len(edge.points) < 2:
+            continue
+        bx, by = badge_point(edge.points, layout.nodes, placed_badges)
+        placed_badges.add((bx, by))
+        x, y = bx - 11, by - 11
+        out.append(
+            f'<rect x="{x}" y="{y}" width="22" height="22" rx="4" '
+            f'fill="#2F62E8"/>'
+        )
+        out.append(
+            f'<text x="{x + 11}" y="{y + 15}" text-anchor="middle" '
+            f'font-family="system-ui,sans-serif" font-size="12" font-weight="700" '
+            f'fill="#ffffff">{edge.step}</text>'
         )
 
     # ── service boxes ──

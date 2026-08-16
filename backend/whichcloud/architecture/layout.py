@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from whichcloud.architecture.graph import ArchitectureGraph, GraphNode
+from whichcloud.architecture.graph import TIER_ORDER, ArchitectureGraph, GraphNode
 from whichcloud.architecture.schema import BoundaryKind, Flow, Tier
 
 # Box and spacing sizes. Widened from 176 after watching real labels truncate:
@@ -70,6 +70,13 @@ COMPONENT_LABEL_H = 30
 COMPONENT_GAP = 44
 ROW_GAP_INNER = 22
 
+#: The actor and the gap between it and the cloud boundary.
+ACTOR_W = 96
+ACTOR_H = 96
+ACTOR_GAP = 56
+CLOUD_PAD = 26
+CLOUD_LABEL_H = 34
+
 #: The canvas wraps to a new row of components past this. Wide enough for
 #: three average components side by side; beyond that a reader is scrolling
 #: rather than reading.
@@ -107,6 +114,15 @@ class PlacedEdge:
     #: Polyline, already routed. The interface draws it rather than working
     #: out where an arrow should meet a box.
     points: list[tuple[int, int]] = field(default_factory=list)
+    #: Position in the request path, or None for links that are not on it.
+    #: AWS's reference diagrams number the sequence so a reader can follow it
+    #: rather than merely look at it -- the difference between a picture and
+    #: an explanation.
+    #:
+    #: Declared last on purpose: inserted before `points` it silently captured
+    #: the routed polyline from the positional call below, leaving every edge
+    #: with no geometry and a list where its number should be.
+    step: int | None = None
 
 
 @dataclass
@@ -115,6 +131,85 @@ class PlacedGroup:
     kind: BoundaryKind
     label: str
     depth: int
+    x: int
+    y: int
+    w: int
+    h: int
+
+
+def badge_point(
+    points: list[tuple[int, int]],
+    boxes: list[PlacedNode] | None = None,
+    taken: set[tuple[int, int]] | None = None,
+) -> tuple[int, int]:
+    """Where a step number sits on its arrow.
+
+    Segments are tried longest first, and the first one whose midpoint is
+    clear of every box and of every badge already placed wins.
+
+    Two earlier versions of this were wrong in instructive ways. The middle
+    index of the polyline lands on a corner -- exactly where lines meet and a
+    box usually is. The longest segment alone is better but still crosses
+    boxes, because the longest run of a same-row link passes straight over
+    whatever sits between its ends. Length is a proxy for room; what is
+    actually wanted is room.
+    """
+    if len(points) < 2:
+        return points[0] if points else (0, 0)
+
+    boxes = boxes or []
+    taken = taken if taken is not None else set()
+
+    segments = sorted(
+        zip(points, points[1:]),
+        key=lambda pair: -(abs(pair[0][0] - pair[1][0]) + abs(pair[0][1] - pair[1][1])),
+    )
+
+    def clear(x: int, y: int) -> bool:
+        if any(b.x - 4 < x < b.x + b.w + 4 and b.y - 4 < y < b.y + b.h + 4 for b in boxes):
+            return False
+        return all(abs(x - tx) > 24 or abs(y - ty) > 24 for tx, ty in taken)
+
+    for (x1, y1), (x2, y2) in segments:
+        # Along the segment rather than only at its centre: a long run blocked
+        # in the middle is usually open a third of the way along.
+        for fraction in (0.5, 0.35, 0.65, 0.25, 0.75):
+            x = int(x1 + (x2 - x1) * fraction)
+            y = int(y1 + (y2 - y1) * fraction)
+            if clear(x, y):
+                return (x, y)
+
+    # Nothing on the line is clear, which happens when a link's whole route
+    # runs over boxes. Step sideways off the line rather than sit on a label:
+    # a badge beside its arrow is still obviously that arrow's, and a badge on
+    # top of a service name obscures the thing the diagram is naming.
+    (x1, y1), (x2, y2) = segments[0]
+    mid_x, mid_y = (x1 + x2) // 2, (y1 + y2) // 2
+    horizontal = y1 == y2
+    for offset in (18, -18, 30, -30, 42, -42):
+        x = mid_x if horizontal else mid_x + offset
+        y = mid_y + offset if horizontal else mid_y
+        if clear(x, y):
+            return (x, y)
+    return (mid_x, mid_y)
+
+
+@dataclass
+class PlacedActor:
+    """The people outside the cloud. Every one of these diagrams starts here."""
+
+    label: str
+    x: int
+    y: int
+    w: int
+    h: int
+
+
+@dataclass
+class PlacedCloud:
+    """The provider boundary everything else sits inside."""
+
+    label: str
     x: int
     y: int
     w: int
@@ -150,6 +245,8 @@ class Layout:
     groups: list[PlacedGroup] = field(default_factory=list)
     bands: list[Band] = field(default_factory=list)
     components: list[PlacedComponent] = field(default_factory=list)
+    actor: PlacedActor | None = None
+    cloud: PlacedCloud | None = None
 
     def node(self, node_id: str) -> PlacedNode | None:
         for n in self.nodes:
@@ -398,6 +495,69 @@ def _component_size(count: int) -> tuple[int, int, int, int]:
     )
 
 
+def _number_the_path(graph: ArchitectureGraph, layout: Layout) -> None:
+    """Number the request path, in the order a request travels it.
+
+    Only the synchronous edges are numbered. Numbering all of them -- the
+    telemetry, the replication, the deployment pipeline -- puts a badge on
+    every line and numbers nothing, because the sequence a reader is trying to
+    follow is the one a request takes.
+
+    Walked breadth-first from wherever traffic enters, which is a node with no
+    synchronous edge arriving at it. A graph where everything has an incoming
+    edge has no entry, so the earliest tier is used instead of giving up.
+    """
+    sync = [e for e in layout.edges if e.flow == "sync"]
+    if not sync:
+        return
+
+    outgoing: dict[str, list[PlacedEdge]] = {}
+    has_incoming: set[str] = set()
+    for edge in sync:
+        outgoing.setdefault(edge.source, []).append(edge)
+        has_incoming.add(edge.target)
+
+    # Entry points, earliest tier first: traffic arrives at the edge, so that
+    # is where the numbering has to start. Ties break left to right.
+    order = {n.id: (TIER_ORDER.index(n.tier), n.x) for n in layout.nodes}
+    starts = sorted(
+        (n.id for n in layout.nodes if n.id not in has_incoming),
+        key=lambda i: order[i],
+    )
+    if not starts:
+        starts = [min(layout.nodes, key=lambda n: (n.y, n.x)).id]
+
+    step = 1
+    numbered: set[int] = set()
+    visited: set[str] = set()
+
+    # Each entry's path is followed to its end before the next one begins.
+    # Seeding one queue with every entry interleaves them, so a diagram counts
+    # 1 at the CDN, 2 in the identity service and 3 in the build pipeline --
+    # three unrelated journeys sharing a numbering, which is worse than none.
+    for start in starts:
+        if start in visited:
+            continue
+        queue = [start]
+        visited.add(start)
+        while queue:
+            node_id = queue.pop(0)
+            # Left to right, so two branches out of one box are numbered the
+            # way they are read rather than the order they were extracted in.
+            for edge in sorted(
+                outgoing.get(node_id, []),
+                key=lambda e: (layout.node(e.target).x if layout.node(e.target) else 0),
+            ):
+                if id(edge) in numbered:
+                    continue
+                numbered.add(id(edge))
+                edge.step = step
+                step += 1
+                if edge.target not in visited:
+                    visited.add(edge.target)
+                    queue.append(edge.target)
+
+
 def build_layout(graph: ArchitectureGraph) -> Layout:
     """Coordinates for everything in the graph.
 
@@ -464,10 +624,10 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
         if source and target:
             layout.edges.append(
                 PlacedEdge(
-                    edge.source,
-                    edge.target,
-                    edge.flow,
-                    _route(source, target, placed, width),
+                    source=edge.source,
+                    target=edge.target,
+                    flow=edge.flow,
+                    points=_route(source, target, placed, width),
                 )
             )
 
@@ -509,6 +669,34 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
         )
 
     layout.groups.sort(key=lambda g: g.depth)
+    _number_the_path(graph, layout)
+
+    # ── the provider boundary, and the people outside it ──
+    # Every reference architecture is framed this way: users on the outside,
+    # everything the provider runs inside a labelled box. Without it a diagram
+    # is a pile of services with no edge to the system.
+    if layout.nodes:
+        extent = [*layout.nodes, *layout.groups, *layout.components]
+        left = min(b.x for b in extent)
+        top = min(b.y for b in extent)
+        right = max(b.x + b.w for b in extent)
+        bottom = max(b.y + b.h for b in extent)
+
+        layout.cloud = PlacedCloud(
+            label="AWS Cloud",
+            x=left - CLOUD_PAD,
+            y=top - CLOUD_PAD - CLOUD_LABEL_H,
+            w=(right - left) + CLOUD_PAD * 2,
+            h=(bottom - top) + CLOUD_PAD * 2 + CLOUD_LABEL_H,
+        )
+        layout.actor = PlacedActor(
+            label="Users",
+            x=layout.cloud.x - ACTOR_GAP - ACTOR_W,
+            y=layout.cloud.y + (layout.cloud.h - ACTOR_H) // 2,
+            w=ACTOR_W,
+            h=ACTOR_H,
+        )
+
     return _fit(layout)
 
 
@@ -533,6 +721,10 @@ def _fit_canvas(layout: Layout) -> None:
         return
 
     everything = [*layout.nodes, *layout.groups, *layout.components]
+    if layout.cloud:
+        everything.append(layout.cloud)
+    if layout.actor:
+        everything.append(layout.actor)
     xs = [b.x for b in everything]
     ys = [b.y for b in everything]
     right = [b.x + b.w for b in everything]
@@ -551,6 +743,10 @@ def _fit_canvas(layout: Layout) -> None:
         for component in layout.components:
             component.x += dx
             component.y += dy
+        for box in (layout.cloud, layout.actor):
+            if box:
+                box.x += dx
+                box.y += dy
         for band in layout.bands:
             band.y += dy
         for edge in layout.edges:

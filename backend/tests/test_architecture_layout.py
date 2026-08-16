@@ -356,3 +356,84 @@ def test_a_detoured_line_still_starts_and_ends_on_its_boxes():
 
     assert src.x <= edge.points[0][0] <= src.x + src.w
     assert dst.x <= edge.points[-1][0] <= dst.x + dst.w
+
+
+def test_the_request_path_is_numbered_from_where_traffic_enters():
+    lay = layout_of(
+        svc("Route 53", "edge", connects=["CloudFront"], component="Edge"),
+        svc("CloudFront", "edge", connects=["EKS"], component="Edge"),
+        svc("EKS", "compute", connects=["Aurora"], component="App"),
+        svc("Aurora", "data", component="Data"),
+    )
+    steps = {(e.source, e.target): e.step for e in lay.edges if e.step}
+
+    assert steps[("route-53", "cloudfront")] == 1
+    assert steps[("cloudfront", "eks")] == 2
+    assert steps[("eks", "aurora")] == 3
+
+
+def test_only_the_request_path_is_numbered():
+    """Numbering the telemetry and the build pipeline too puts a badge on
+    every line and numbers nothing -- the sequence a reader follows is the one
+    a request takes."""
+    lay = layout_of(
+        svc("Route 53", "edge", connects=["EKS"], component="Edge"),
+        svc("EKS", "compute", connects=["MSK"], flow="async", component="App"),
+        svc("MSK", "async", component="Async"),
+    )
+    numbered = [e for e in lay.edges if e.step]
+
+    assert all(e.flow == "sync" for e in numbered)
+
+
+def test_each_path_is_finished_before_the_next_begins():
+    """Seeding one queue with every entry point interleaves them, so a diagram
+    counts 1 at the CDN, 2 in the build pipeline and 3 back at the CDN --
+    unrelated journeys sharing a numbering, which is worse than none."""
+    lay = layout_of(
+        svc("Route 53", "edge", connects=["CloudFront"], component="Edge"),
+        svc("CloudFront", "edge", connects=["EKS"], component="Edge"),
+        svc("EKS", "compute", component="App"),
+        svc("GitHub", "cicd", connects=["ECR"], component="CI"),
+        svc("ECR", "cicd", component="CI"),
+    )
+    steps = {(e.source, e.target): e.step for e in lay.edges if e.step}
+
+    # The edge path takes 1 and 2; the build pipeline follows it.
+    assert steps[("route-53", "cloudfront")] == 1
+    assert steps[("cloudfront", "eks")] == 2
+    assert steps[("github", "ecr")] == 3
+
+
+def test_the_cloud_boundary_encloses_everything():
+    lay = layout_of(svc("EKS", "compute", component="App"))
+
+    assert lay.cloud is not None
+    for node in lay.nodes:
+        assert lay.cloud.x < node.x
+        assert lay.cloud.y < node.y
+        assert lay.cloud.x + lay.cloud.w > node.x + node.w
+
+
+def test_the_actor_stands_outside_the_cloud():
+    """Users are not inside the provider's boundary. Every reference
+    architecture is framed this way and it is the whole point of the frame."""
+    lay = layout_of(svc("EKS", "compute", component="App"))
+
+    assert lay.actor is not None
+    assert lay.actor.x + lay.actor.w <= lay.cloud.x
+    assert lay.actor.x >= 0
+
+
+def test_a_badge_avoids_the_boxes_and_the_other_badges():
+    from whichcloud.architecture.layout import badge_point
+
+    lay = layout_of(
+        *[svc(f"s{i}", "compute", connects=[f"s{i + 1}"], component="C") for i in range(5)],
+        svc("s5", "data", component="D"),
+    )
+    taken: set[tuple[int, int]] = set()
+    for edge in sorted((e for e in lay.edges if e.step), key=lambda e: e.step or 0):
+        point = badge_point(edge.points, lay.nodes, taken)
+        assert point not in taken
+        taken.add(point)
