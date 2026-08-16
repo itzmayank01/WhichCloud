@@ -179,7 +179,11 @@ export const api = {
   },
 
   techniques: () => get<{ count: number; techniques: Technique[] }>("/techniques"),
-  regions: () => get<Record<string, Record<string, string>>>("/regions", 3600),
+  /* Sixty seconds, not an hour. This list is derived from what the catalog
+     holds, so it changes the moment a region is ingested -- caching it for an
+     hour meant the switcher kept offering two regions while the service had
+     four, which looks like the control is broken rather than stale. */
+  regions: () => get<Record<string, Record<string, string>>>("/regions", 60),
 
   recommend: (body: Record<string, unknown>) =>
     post<Recommendation>("/recommend", body),

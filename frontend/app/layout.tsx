@@ -15,10 +15,13 @@ const sans = Geist({
   subsets: ["latin"],
   display: "swap",
 });
+/* No weight list. Both of these are variable fonts, so they carry their whole
+   weight range in one file; asking for static instances made the loader look
+   for cuts Google does not serve for Geist Mono, and the dev server failed to
+   resolve the font module at all. */
 const mono = Geist_Mono({
   variable: "--font-mono-family",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
   display: "swap",
 });
 
