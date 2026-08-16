@@ -36,6 +36,7 @@ export type ShowcaseData = {
   total: number;
   saved: number;
   techniquesTested: number;
+  catalogSize: number;
   applied: { name: string; saved: number; versus: string; category: string }[];
   advisory: string[];
 };
@@ -82,10 +83,6 @@ const money = (n: number, dp = 0) =>
 
 export function HeroShowcase({ data }: { data: ShowcaseData }) {
   const [shown, setShown] = useState(false);
-  /* Re-keys the estimate rows so their entrance animation plays again. The
-     panel is meant to look like it is still working rather than like a
-     screenshot of a result, and re-costing is the thing it would be doing. */
-  const [pass, setPass] = useState(0);
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -134,13 +131,6 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
     })
     .forEach((label, i) => rank.set(label, i));
   const colorFor = (label: string) => RAMP[rank.get(label) ?? 99] ?? fallbackColor;
-
-  useEffect(() => {
-    if (!shown) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    const id = window.setInterval(() => setPass((p) => p + 1), 4400);
-    return () => window.clearInterval(id);
-  }, [shown]);
 
   const peak = Math.max(...data.chart.clouds.map((c) => c.total), 1);
   /* The bars are flex items. Without shrink-0 flexbox compresses them to fit
@@ -313,55 +303,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
               <span className="font-mono text-[11.5px] text-ink-3">india</span>
             </div>
 
-            <div className="flex flex-1 flex-col px-6 py-5">
-              <p className="text-[13.5px] leading-relaxed text-ink-2">
-                You described{" "}
-                <span className="font-mono text-[13px] text-ink">“{data.quote}”</span>.
-                Here is what that costs, service by service.
-              </p>
-
-              <table className="mt-4 w-full flex-1 border-collapse">
-                <thead>
-                  <tr className="border-b border-line text-[11px] uppercase tracking-[0.07em] text-ink-3">
-                    <th className="pb-1.5 text-left font-medium">Service</th>
-                    <th className="pb-1.5 text-left font-medium">What it runs</th>
-                    <th className="pb-1.5 text-right font-medium">Monthly</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.breakdown.map((b, i) => (
-                    <tr
-                      key={`${b.label}-${pass}`}
-                      className={`border-b border-line last:border-0 ${
-                        shown ? "estimate-row" : "opacity-0"
-                      }`}
-                      style={{ animationDelay: `${i * 110}ms` }}
-                    >
-                      <td className="py-2.5 text-[13.5px]">
-                        <span className="inline-flex items-center gap-2">
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-[2px]"
-                            style={{ background: colorFor(b.label) }}
-                          />
-                          <span className="text-ink-2">{b.label}</span>
-                        </span>
-                      </td>
-                      <td className="py-2.5 font-mono text-[12.5px] text-ink-3">{b.sku}</td>
-                      <td className="tnum py-2.5 text-right font-mono text-[13.5px] font-semibold text-ink">
-                        {money(b.monthly, 2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="mt-3 flex items-baseline justify-between border-t border-line pt-3">
-                <span className="text-[13px] text-ink-2">Every month</span>
-                <span className="tnum font-mono text-[20px] font-semibold">
-                  {money(data.total, 2)}
-                </span>
-              </div>
-            </div>
+            <EstimateRun data={data} shown={shown} colorFor={colorFor} />
           </div>
         </div>
 
@@ -552,6 +494,200 @@ function Card({
         <div className="flex flex-1 flex-col px-5 py-5 sm:px-6">{children}</div>
       </div>
       </div>
+    </div>
+  );
+}
+
+
+/* ── the estimate, working ──────────────────────────────────────────────
+ *
+ * The panel used to fade its rows in and out on a timer, which was quick
+ * enough to read as a flicker and said nothing about what was happening. It
+ * now works through the actual pipeline a request goes through -- read, look
+ * up, test, price -- ticking each step off as it completes, and only then
+ * shows the costed result. Then it starts again.
+ *
+ * The steps are the real ones, and the counts under them are real: the
+ * catalog it searches, the techniques it tests, the services it prices. It
+ * is a re-enactment of the request, not a loading animation dressed up as
+ * one.
+ */
+
+const STEP_MS = 850;
+const RESULT_HOLD_MS = 4200;
+
+function EstimateRun({
+  data,
+  shown,
+  colorFor,
+}: {
+  data: ShowcaseData;
+  shown: boolean;
+  colorFor: (label: string) => string;
+}) {
+  const steps = [
+    { title: "Read the description", detail: "workload, traffic, region" },
+    {
+      title: "Search the price catalog",
+      detail: data.catalogSize
+        ? `${data.catalogSize.toLocaleString()} prices, ${data.chart.clouds.length} clouds`
+        : `${data.chart.clouds.length} clouds`,
+    },
+    {
+      title: "Test the optimizations",
+      detail: `${data.techniquesTested} techniques`,
+    },
+    {
+      title: "Price every service",
+      detail: `${data.breakdown.length} services`,
+    },
+  ];
+
+  /* -1 before it starts, 0..n-1 while working, n once the result is up. */
+  const [at, setAt] = useState(-1);
+  const timers = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (!shown) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setAt(steps.length);
+      return;
+    }
+
+    let cancelled = false;
+    const clear = () => {
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    };
+
+    const run = () => {
+      clear();
+      setAt(-1);
+      steps.forEach((_, i) => {
+        timers.current.push(
+          window.setTimeout(() => !cancelled && setAt(i), 500 + i * STEP_MS),
+        );
+      });
+      const done = 500 + steps.length * STEP_MS;
+      timers.current.push(
+        window.setTimeout(() => !cancelled && setAt(steps.length), done),
+      );
+      timers.current.push(
+        window.setTimeout(() => !cancelled && run(), done + RESULT_HOLD_MS),
+      );
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+      clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, steps.length]);
+
+  const finished = at >= steps.length;
+
+  return (
+    <div className="flex flex-1 flex-col px-6 py-5">
+      {/* what was asked */}
+      <div className="flex justify-end">
+        <p className="max-w-[86%] rounded-xl rounded-br-sm bg-sunk px-3.5 py-2.5 text-right font-mono text-[12.5px] leading-relaxed text-ink-2">
+          {data.quote}
+        </p>
+      </div>
+
+      {!finished ? (
+        <div className="mt-5 flex-1">
+          <p className="working-text text-[13.5px] font-medium">Working…</p>
+
+          <div className="mt-3.5 space-y-3.5">
+            {steps.map((s, i) => {
+              const started = at >= i;
+              const done = at > i;
+              if (!started) return null;
+              return (
+                <div key={s.title} className="step-in flex gap-2.5">
+                  <span className="relative flex flex-col items-center">
+                    <span
+                      className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full transition-colors duration-300 ${
+                        done ? "bg-save" : "border-2 border-line-strong bg-surface"
+                      }`}
+                    >
+                      {done && (
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="tick-pop h-3 w-3"
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth="3.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                        >
+                          <path d="M20 6 9 17l-5-5" />
+                        </svg>
+                      )}
+                    </span>
+                    {i < steps.length - 1 && (
+                      <span className="mt-1 w-px flex-1 bg-line" aria-hidden />
+                    )}
+                  </span>
+                  <div className="-mt-0.5 pb-0.5">
+                    <p className="text-[13.5px] font-medium leading-snug text-ink">
+                      {s.title}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[11.5px] text-ink-3">
+                      {s.detail}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="step-in mt-5 flex flex-1 flex-col">
+          <table className="w-full flex-1 border-collapse">
+            <thead>
+              <tr className="border-b border-line text-[11px] uppercase tracking-[0.07em] text-ink-3">
+                <th className="pb-1.5 text-left font-medium">Service</th>
+                <th className="pb-1.5 text-left font-medium">What it runs</th>
+                <th className="pb-1.5 text-right font-medium">Monthly</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.breakdown.map((b, i) => (
+                <tr
+                  key={b.label}
+                  className="step-in border-b border-line last:border-0"
+                  style={{ animationDelay: `${i * 70}ms` }}
+                >
+                  <td className="py-2.5 text-[13.5px]">
+                    <span className="inline-flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-[2px]"
+                        style={{ background: colorFor(b.label) }}
+                      />
+                      <span className="text-ink-2">{b.label}</span>
+                    </span>
+                  </td>
+                  <td className="py-2.5 font-mono text-[12.5px] text-ink-3">{b.sku}</td>
+                  <td className="tnum py-2.5 text-right font-mono text-[13.5px] font-semibold text-ink">
+                    {money(b.monthly, 2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="mt-3 flex items-baseline justify-between border-t border-line pt-3">
+            <span className="text-[13px] text-ink-2">Every month</span>
+            <span className="tnum font-mono text-[20px] font-semibold">
+              {money(data.total, 2)}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

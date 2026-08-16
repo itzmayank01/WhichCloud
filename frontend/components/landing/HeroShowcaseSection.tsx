@@ -20,7 +20,7 @@ const LABEL: Record<string, string> = {
 
 export async function HeroShowcaseSection() {
   try {
-    const [compare, techs] = await Promise.all([
+    const [compare, techs, health] = await Promise.all([
       api.compare({
         /* Deliberately not the workload the comparison section further down
            prices. Both were showing the same online shop, so the same three
@@ -35,6 +35,7 @@ export async function HeroShowcaseSection() {
         egress_gb: 5000,
       }),
       api.techniques().catch(() => ({ count: 0, techniques: [] })),
+      api.health().catch(() => ({ prices: 0, providers: [] as string[] })),
     ]);
 
     const balanced = Object.entries(compare.clouds)
@@ -101,6 +102,7 @@ export async function HeroShowcaseSection() {
       total: win.monthly_usd,
       saved: richest.option.measured_saving_usd,
       techniquesTested: techs.count ?? 0,
+      catalogSize: health.prices ?? 0,
       applied: (richest.option.applied ?? [])
         .filter((a) => (a.saved_monthly_usd ?? 0) > 0)
         .sort((a, b) => (b.saved_monthly_usd ?? 0) - (a.saved_monthly_usd ?? 0))

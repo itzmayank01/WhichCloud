@@ -331,3 +331,80 @@ html {
     transform: none;
   }
 }
+
+/* ── the estimate working through its steps ── */
+
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.step-in {
+  animation: step-in 0.4s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes tick-pop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tick-pop {
+  animation: tick-pop 0.34s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+/* "Working…" reads as live because the shimmer never settles. */
+@keyframes working-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.working-text {
+  background: linear-gradient(
+    90deg,
+    var(--ink-3) 0%,
+    var(--ink-3) 35%,
+    var(--accent) 50%,
+    var(--ink-3) 65%,
+    var(--ink-3) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: working-sweep 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-in,
+  .tick-pop {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .working-text {
+    animation: none;
+    color: var(--ink-3);
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
