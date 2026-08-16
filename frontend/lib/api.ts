@@ -270,6 +270,17 @@ export const api = {
   architecture: (body: Record<string, unknown>) =>
     post<ArchitectureView>("/architecture", body),
 
+  /** The diagram as a file. Returns the SVG source, not a parsed object. */
+  architectureSvg: async (body: Record<string, unknown>): Promise<string> => {
+    const response = await fetch(`${BASE}/architecture/export.svg`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`export failed: ${response.status}`);
+    return response.text();
+  },
+
   saveArchitecture: (body: Record<string, unknown>) =>
     post<SavedArchitecture>("/architecture/save", body),
 

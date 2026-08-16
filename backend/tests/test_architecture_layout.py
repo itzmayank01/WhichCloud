@@ -190,3 +190,43 @@ def test_edges_move_with_the_nodes_when_the_canvas_shifts():
     )
     src = lay.node("route-53")
     assert lay.edges[0].points[0] == (src.cx, src.y + src.h)
+
+
+def test_exported_svg_is_well_formed_and_complete():
+    """The export leaves this machine and gets opened in other tools, so it
+    has to be valid XML rather than merely look right in one renderer."""
+    import xml.etree.ElementTree as ET
+
+    from whichcloud.architecture.svg import render
+
+    lay = layout_of(
+        svc("Route 53", "edge", connects=["Aurora"]),
+        svc("Aurora", "data"),
+        boundaries=[Boundary(kind="vpc", name="prod", contains=["Aurora"])],
+    )
+    doc = render(lay, title="Test & <check>")
+
+    root = ET.fromstring(doc)          # raises if malformed
+    assert root.attrib["width"] == str(lay.width)
+    # Titles and labels reach the file through XML escaping, not raw.
+    assert "Test &amp; &lt;check&gt;" in doc
+    assert doc.count('rx="11"') == len(lay.nodes)
+
+
+def test_a_long_label_wraps_rather_than_overflowing():
+    """SVG text does not wrap, so a name longer than its box would run across
+    the next one. Real service names are long: "Aurora PostgreSQL Global
+    Database" is typical."""
+    from whichcloud.architecture.svg import _wrap
+
+    lines = _wrap("Aurora PostgreSQL Global Database", 186, limit=2)
+
+    assert len(lines) == 2
+    assert lines[0].startswith("Aurora")
+    assert all(len(line) < 32 for line in lines)
+
+
+def test_wrapping_an_empty_purpose_yields_nothing():
+    from whichcloud.architecture.svg import _wrap
+
+    assert _wrap("", 186) == []

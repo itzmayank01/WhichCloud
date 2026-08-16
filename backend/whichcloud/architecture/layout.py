@@ -26,11 +26,13 @@ from dataclasses import dataclass, field
 from whichcloud.architecture.graph import ArchitectureGraph, GraphNode
 from whichcloud.architecture.schema import BoundaryKind, Flow, Tier
 
-# Box and spacing sizes. A node is wide enough for a service name at a
-# readable size without truncation -- "Aurora PostgreSQL Global Database" is
-# the kind of label these actually carry.
-NODE_W = 176
-NODE_H = 76
+# Box and spacing sizes. Widened from 176 after watching real labels truncate:
+# "Global Accelerator" became "Global Accelerat…" and a one-line purpose lost
+# its last word. Service names in these descriptions run long -- "Aurora
+# PostgreSQL Global Database" is typical -- and a diagram whose labels are cut
+# off is not one someone can hand to a colleague.
+NODE_W = 212
+NODE_H = 84
 GAP_X = 26
 ROW_GAP = 104
 

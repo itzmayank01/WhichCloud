@@ -619,6 +619,40 @@ def architecture_route(body: ArchitectureIn) -> dict:
     }
 
 
+@app.post("/architecture/export.svg")
+def export_architecture_route(body: ArchitectureIn):
+    """The same diagram as a file someone can keep.
+
+    SVG rather than an image, because it opens in draw.io, Figma and
+    Illustrator as editable shapes -- the export is a starting point rather
+    than a picture of one.
+    """
+    from fastapi.responses import Response
+
+    from .architecture.extract import extract_architecture
+    from .architecture.graph import build_graph
+    from .architecture.layout import build_layout
+    from .architecture.svg import render
+    from .intake import IntakeError
+
+    if not body.description.strip():
+        raise HTTPException(400, "description is empty")
+
+    try:
+        arch = extract_architecture(
+            body.description, reader=body.reader or "gemini", refresh=body.refresh
+        )
+    except IntakeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    svg = render(build_layout(build_graph(arch)))
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Content-Disposition": 'attachment; filename="architecture.svg"'},
+    )
+
+
 @app.post("/architecture/save")
 def save_architecture_route(body: SaveArchitectureIn) -> dict:
     """Keep an architecture so it can be reopened rather than re-described."""

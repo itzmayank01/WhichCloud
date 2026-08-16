@@ -43,6 +43,27 @@ const TIER_LABEL: Record<Tier, string> = {
   observability: "Observability",
 };
 
+/* AWS's own category colours, which is what makes a reference architecture
+   readable at a glance: compute is orange, databases magenta, networking
+   purple, security red. Every box being the same white made the diagram one
+   undifferentiated field, so a reader had to consult each label to find the
+   data layer instead of seeing it.
+
+   Taken from AWS's published architecture-icon palette rather than invented,
+   so a diagram drawn here sits beside one drawn in draw.io without clashing. */
+const TIER_COLOR: Record<Tier, string> = {
+  edge: "#8C4FFF",           // networking & content delivery
+  api: "#8C4FFF",
+  compute: "#ED7100",        // compute
+  data: "#C925D1",           // database
+  async: "#E7157B",          // application integration
+  analytics: "#8C4FFF",
+  ml: "#01A88D",             // machine learning
+  security: "#DD344C",       // security, identity & compliance
+  cicd: "#3334B9",           // developer tools
+  observability: "#E7157B",  // management & governance
+};
+
 /* The mark shown when a service has no logo of its own. Says what kind of
    thing it is rather than pretending to be a specific product. */
 const TIER_GLYPH: Record<Tier, string> = {
@@ -239,7 +260,7 @@ export function ArchitectureCanvas({
             return (
               <div
                 key={node.id}
-                className="absolute flex flex-col justify-center rounded-xl border border-line-strong bg-surface px-3 elev-1"
+                className="absolute overflow-hidden rounded-xl border border-line-strong bg-surface elev-1"
                 style={{
                   left: node.x,
                   top: node.y,
@@ -251,34 +272,48 @@ export function ArchitectureCanvas({
                   transitionDelay: on ? `${Math.min(i, 6) * 18}ms` : "0ms",
                 }}
               >
-                <div className="flex items-center gap-2">
-                  <Icon
-                    icon={icon ?? TIER_GLYPH[node.tier]}
-                    width={20}
-                    height={20}
-                    className={icon ? "" : "text-ink-3"}
-                    aria-hidden
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-tight text-ink">
-                    {node.label}
+                {/* The category, as a bar along the top. Colour does the work
+                    a reader would otherwise do by reading every label. */}
+                <span
+                  className="absolute inset-x-0 top-0 h-[3px]"
+                  style={{ background: TIER_COLOR[node.tier] }}
+                  aria-hidden
+                />
+                <div className="flex h-full flex-col justify-center px-3 pt-[3px]">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md"
+                      style={{ background: `${TIER_COLOR[node.tier]}14` }}
+                    >
+                      <Icon
+                        icon={icon ?? TIER_GLYPH[node.tier]}
+                        width={17}
+                        height={17}
+                        style={icon ? undefined : { color: TIER_COLOR[node.tier] }}
+                        aria-hidden
+                      />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-tight text-ink">
+                      {node.label}
+                    </span>
+                  </div>
+                  {node.purpose && (
+                    <p className="mt-1 line-clamp-2 pl-[34px] text-[11.5px] leading-snug text-ink-3">
+                      {node.purpose}
+                    </p>
+                  )}
+                  {/* Unpriced is stated rather than left blank: a blank reads
+                      as free, and most services here are not in the catalog. */}
+                  <span
+                    className={`mt-1 pl-[34px] font-mono text-[10.5px] ${
+                      node.priced ? "text-save" : "text-ink-3"
+                    }`}
+                  >
+                    {node.priced && node.monthly_usd !== null
+                      ? `$${node.monthly_usd.toFixed(2)}/mo`
+                      : "not priced"}
                   </span>
                 </div>
-                {node.purpose && (
-                  <p className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-ink-3">
-                    {node.purpose}
-                  </p>
-                )}
-                {/* Unpriced is stated rather than left blank: a blank reads as
-                    free, and most services here are simply not in the catalog. */}
-                <span
-                  className={`mt-1 font-mono text-[10.5px] ${
-                    node.priced ? "text-save" : "text-ink-3"
-                  }`}
-                >
-                  {node.priced && node.monthly_usd !== null
-                    ? `$${node.monthly_usd.toFixed(2)}/mo`
-                    : "not priced"}
-                </span>
               </div>
             );
           })}

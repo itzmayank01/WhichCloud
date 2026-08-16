@@ -61,6 +61,24 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
     }
   }
 
+  /* The file is built server-side and handed over as a blob. A diagram that
+     can only be looked at on the page that made it is a demo; one that can go
+     into a report or a pull request is a tool. SVG because draw.io, Figma and
+     Illustrator open it as editable shapes rather than a picture of them. */
+  async function download() {
+    try {
+      const svg = await api.architectureSvg({ description });
+      const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "architecture.svg";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Could not export that one");
+    }
+  }
+
   async function remove(id: string) {
     try {
       await api.deleteArchitecture(id, owner);
@@ -135,6 +153,14 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
             className="rounded-lg border border-line-strong bg-surface px-5 py-2.5 text-[15.5px] font-medium text-ink transition-colors hover:bg-sunk"
           >
             Skip animation
+          </button>
+        )}
+        {view && done && (
+          <button
+            onClick={download}
+            className="rounded-lg border border-line-strong bg-surface px-5 py-2.5 text-[15.5px] font-medium text-ink transition-colors hover:bg-sunk"
+          >
+            Download SVG
           </button>
         )}
         {view && done && (
