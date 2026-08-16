@@ -258,7 +258,9 @@ export function EstimateWorkbench() {
             type="button"
             onClick={run}
             disabled={busy || (mode === "describe" && !description.trim())}
-            className="rounded-lg bg-accent px-6 py-3 text-[15px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            /* shrink-0 and nowrap: a long error message beside it squeezed
+               the button until "Price it" broke over two lines. */
+            className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-6 py-3 text-[15px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {busy ? "Pricing…" : "Price it"}
           </button>

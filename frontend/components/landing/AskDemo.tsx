@@ -36,30 +36,36 @@ const READERS = [
 ];
 
 /* A mark per prompt, so the three read as different questions at a glance.
-   Drawn rather than emoji: emoji render in whatever the operating system
-   ships, so the same three characters are a different weight, palette and
-   era on every machine, and none of them match the rest of the interface. */
+   Drawn and filled rather than emoji: emoji render in whatever the operating
+   system ships, so the same three characters are a different weight, palette
+   and era on every machine. These are two-tone so they carry the same visual
+   weight as the illustrated marks they are modelled on, without depending on
+   the reader's font stack. */
 function PromptIcon({ kind }: { kind: number }) {
-  const paths = [
-    // a bill: cost
-    "M2 7h20v10H2zM12 12a2.5 2.5 0 1 0 0 .01M6 10v.01M18 14v.01",
-    // a bolt: speed
-    "M13 2 4.1 12.7a1 1 0 0 0 .8 1.6H11l-1 7.7 8.9-10.7a1 1 0 0 0-.8-1.6H12z",
-    // a globe: region
-    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z",
-  ];
+  if (kind === 1) {
+    return (
+      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" aria-hidden>
+        <path d="M13.2 2 5.4 12.2a.9.9 0 0 0 .7 1.45h3.4L8.3 21.4a.55.55 0 0 0 .98.42l7.86-10.25a.9.9 0 0 0-.72-1.45h-3.5l1.2-7.63A.55.55 0 0 0 13.2 2z" fill="#f0a92e" />
+        <path d="M9.5 13.65H6.1a.9.9 0 0 1-.7-1.45L13.2 2l-1.05 6.6-2.65 5.05z" fill="#f7cf7a" />
+      </svg>
+    );
+  }
+  if (kind === 2) {
+    return (
+      <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" aria-hidden>
+        <circle cx="12" cy="12" r="9.4" fill="#7dc3f0" />
+        <path d="M12 2.6c5.19 0 9.4 4.21 9.4 9.4s-4.21 9.4-9.4 9.4V2.6z" fill="#3d97d8" />
+        <path d="M4.2 8.6h15.6M4.2 15.4h15.6" stroke="#fff" strokeWidth="1.05" strokeLinecap="round" opacity=".8" />
+        <path d="M12 2.6c2.6 3 2.6 15.8 0 18.8-2.6-3-2.6-15.8 0-18.8z" fill="#fff" opacity=".45" />
+      </svg>
+    );
+  }
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-[17px] w-[17px] text-accent"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d={paths[kind] ?? paths[0]} />
+    <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" aria-hidden>
+      <path d="M8.6 7.4h6.8c2.4 1.9 4.3 4.9 4.3 8 0 3.4-3.3 5.4-7.7 5.4s-7.7-2-7.7-5.4c0-3.1 1.9-6.1 4.3-8z" fill="#4a72e4" />
+      <path d="M12 7.4H8.6c-2.4 1.9-4.3 4.9-4.3 8 0 3.4 3.3 5.4 7.7 5.4V7.4z" fill="#7d9aec" />
+      <path d="M8.9 3.1c.35.9 1.1 1.6 1.95 1.95-.85.35-1.6 1.05-1.95 1.9-.35-.85-1.05-1.55-1.9-1.9.85-.35 1.55-1.05 1.9-1.95zM15.1 3.1c.35.9 1.05 1.6 1.9 1.95-.85.35-1.55 1.05-1.9 1.9-.35-.85-1.1-1.55-1.95-1.9.85-.35 1.6-1.05 1.95-1.95z" fill="#2451d9" />
+      <path d="M12 11.1v6.9M13.9 12.6h-2.7a1.35 1.35 0 0 0 0 2.7h1.6a1.35 1.35 0 0 1 0 2.7H10" stroke="#fff" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </svg>
   );
 }
