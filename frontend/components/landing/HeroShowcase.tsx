@@ -513,8 +513,13 @@ function Card({
  * one.
  */
 
-const STEP_MS = 850;
-const RESULT_HOLD_MS = 4200;
+/* Paced to be read rather than noticed. A step every 1.4s is roughly how long
+   it takes to look at a line and take it in; the result then holds for seven
+   seconds, which is long enough to read the whole table without waiting for
+   it to come back round. A full pass is about fourteen seconds. */
+const STEP_MS = 1400;
+const RESULT_HOLD_MS = 7000;
+const START_MS = 700;
 
 function EstimateRun({
   data,
@@ -565,10 +570,10 @@ function EstimateRun({
       setAt(-1);
       steps.forEach((_, i) => {
         timers.current.push(
-          window.setTimeout(() => !cancelled && setAt(i), 500 + i * STEP_MS),
+          window.setTimeout(() => !cancelled && setAt(i), START_MS + i * STEP_MS),
         );
       });
-      const done = 500 + steps.length * STEP_MS;
+      const done = START_MS + steps.length * STEP_MS;
       timers.current.push(
         window.setTimeout(() => !cancelled && setAt(steps.length), done),
       );
@@ -660,7 +665,7 @@ function EstimateRun({
                 <tr
                   key={b.label}
                   className="step-in border-b border-line last:border-0"
-                  style={{ animationDelay: `${i * 70}ms` }}
+                  style={{ animationDelay: `${i * 130}ms` }}
                 >
                   <td className="py-2.5 text-[13.5px]">
                     <span className="inline-flex items-center gap-2">
