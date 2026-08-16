@@ -90,6 +90,17 @@ class ComputeQuery:
 # GCP's Mumbai by moving Azure to westindia would have cost the reader 24% on
 # price and 42% of the machine types to make two city names agree. The
 # interface names the region each figure comes from instead.
+#
+# The other India regions were measured too, and deliberately not added:
+#
+#   AWS   ap-south-2  Hyderabad   +0.0% vs Mumbai, 490 types against 807
+#   GCP   asia-south2 Delhi       +0.0% vs Mumbai, 425 types against 470
+#
+# Both price every India region identically, so a second one buys no insight
+# and costs machine types -- adding them would put choices in the interface
+# that cannot change an answer. Azure is the exception, varying up to 37%
+# across its three, which is exactly why which Azure region we use is a
+# decision worth recording and the others are not.
 REGIONS: dict[str, dict[str, str]] = {
     "india": {"aws": "ap-south-1", "azure": "centralindia", "gcp": "asia-south1"},
     "us-east": {"aws": "us-east-1", "azure": "eastus", "gcp": "us-east1"},
