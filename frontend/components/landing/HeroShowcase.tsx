@@ -39,6 +39,13 @@ export type ShowcaseData = {
   applied: { name: string; saved: number; versus: string; category: string }[];
 };
 
+/** Axis labels. The full names live on the panels that have room for them. */
+const SHORT: Record<string, string> = {
+  aws: "AWS",
+  azure: "Azure",
+  gcp: "Google",
+};
+
 const LOGO: Record<string, string> = {
   aws: "logos:aws",
   azure: "logos:microsoft-azure",
@@ -129,8 +136,8 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
      inline heights stayed correct while every bar rendered the same size, so
      the chart quietly stopped showing its own data. The room left for the
      label above and the logo below is subtracted rather than guessed at. */
-  const CHART_H = 150;
-  const BAR_MAX = CHART_H - 46;
+  const CHART_H = 176;
+  const BAR_MAX = CHART_H - 50;
 
   return (
     <div ref={host} className="relative mx-auto max-w-6xl">
@@ -151,34 +158,23 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           eyebrow="Cost report"
           title="Costs by provider and service"
         >
-          <div className="flex items-baseline gap-2.5">
-            <span className="tnum font-mono text-[28px] font-semibold leading-none">
+          <p className="font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-3">
+            Cheapest complete option
+          </p>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="tnum font-mono text-[30px] font-semibold leading-none tracking-[-0.02em]">
               {money(data.total, 2)}
             </span>
-            <span className="rounded bg-save/10 px-1.5 py-0.5 font-mono text-[11.5px] font-semibold text-save">
-              −{money(data.saved, 2)}
-            </span>
+            <span className="text-[12.5px] text-ink-3">/mo</span>
           </div>
-          <p className="mt-1 text-[12.5px] text-ink-3">
-            Cheapest complete option, per month
+          <p className="mt-1.5 font-mono text-[12px] font-medium text-save">
+            −{money(data.saved, 2)} after optimizations
           </p>
 
-          {/* legend */}
-          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1.5">
-            {data.chart.categories.map((c) => (
-              <span
-                key={c}
-                className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-2"
-              >
-                <span
-                  className="h-2 w-2 rounded-[2px]"
-                  style={{ background: colorFor(c) }}
-                />
-                {c}
-              </span>
-            ))}
-          </div>
-
+          {/* No legend here. Seven services wrapped to two lines in a card
+              this wide, and the estimate panel beside it already lists every
+              service against its colour -- a second key competing for the
+              space the chart needs. */}
           {/* stacked bars, one per cloud, over a ruled grid */}
           <div className="relative mt-4 flex" style={{ height: CHART_H }}>
             {/* the axis, and the lines it labels */}
@@ -226,9 +222,12 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
                     />
                   ))}
                 </div>
-                <span className="mt-2 inline-flex items-center gap-1.5">
+                {/* Short names on the axis: "Microsoft Azure" wrapped to two
+                    lines under a 54px bar and pushed the row out of line. The
+                    mark carries the rest. */}
+                <span className="mt-2 inline-flex items-center gap-1.5 whitespace-nowrap">
                   <Icon icon={LOGO[cloud.id] ?? LOGO.aws} width={13} height={13} aria-hidden />
-                  <span className="text-[11.5px] text-ink-3">{cloud.label}</span>
+                  <span className="text-[11.5px] text-ink-3">{SHORT[cloud.id] ?? cloud.label}</span>
                 </span>
               </div>
             ))}
@@ -245,7 +244,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           style={{ transitionDelay: "140ms" }}
         >
           <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-4">
-            <div className="flex items-center gap-2.5 border-b border-line px-5 py-3.5">
+            <div className="flex items-center gap-3 border-b border-line px-5 py-4">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent">
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -318,14 +317,17 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           eyebrow="Measured savings"
           title="Ways to pay less"
         >
-          <div className="flex items-baseline gap-2">
-            <span className="tnum font-mono text-[24px] font-semibold leading-none text-save">
+          <p className="font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-3">
+            Measured against what it replaced
+          </p>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="tnum font-mono text-[30px] font-semibold leading-none tracking-[-0.02em] text-save">
               −{money(data.saved, 2)}
             </span>
-            <span className="text-[12.5px] text-ink-2">a month</span>
+            <span className="text-[12.5px] text-ink-3">/mo</span>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="mt-5 flex-1 space-y-3.5">
             {data.applied.map((a, i) => (
               <div
                 key={a.name}
@@ -338,7 +340,9 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
                   <path d={CAT_ICON[a.category] ?? CAT_ICON.compute} />
                 </svg>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12.5px] font-medium text-ink">{a.name}</p>
+                  <p className="text-[12.5px] font-medium leading-snug text-ink">
+                    {a.name}
+                  </p>
                   {/* Naming what it beat is what makes the figure beside it a
                       measurement rather than a claim. */}
                   <p className="mt-0.5 truncate font-mono text-[11px] text-ink-3">
@@ -417,20 +421,22 @@ function Card({
         }`}
       >
       <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-4">
-        <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunk">
-            <svg viewBox="0 0 24 24" className="h-4 w-4 text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <div className="flex items-center gap-3 border-b border-line px-5 py-4">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-line bg-sunk">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-ink-3" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d={HEAD_ICON[icon]} />
             </svg>
           </span>
           <div className="min-w-0">
-            <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+            <p className="font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-3">
               {eyebrow}
             </p>
-            <p className="truncate text-[14.5px] font-semibold">{title}</p>
+            <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.01em]">
+              {title}
+            </p>
           </div>
         </div>
-        <div className="flex flex-1 flex-col px-4 py-4">{children}</div>
+        <div className="flex flex-1 flex-col px-5 py-5">{children}</div>
       </div>
       </div>
     </div>
