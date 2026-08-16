@@ -11,7 +11,12 @@
 // default, and Node resolves "localhost" to ::1 first — which nothing is
 // listening on. The result is a connection refused that looks like the API
 // is down when it is running fine.
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+/* 8010, not 8000. Another project on this machine runs a SurrealDB container
+   published on 8000 with restart:always, so whichever of the two started
+   first took the port and the other silently failed to bind -- which is why
+   the API was intermittently unreachable rather than consistently broken.
+   Moving ours removes the race without touching the other project. */
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8010";
 
 export type Health = {
   status: string;
