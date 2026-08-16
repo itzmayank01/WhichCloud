@@ -75,6 +75,21 @@ class ComputeQuery:
 
 # Our region keys mapped to each provider's code. The engine speaks in these
 # neutral keys so a cross-cloud comparison is always apples-to-apples.
+# A market, and the region each provider is represented by inside it. These
+# are not always the same city, and that is deliberate: the question a reader
+# is asking is "what does this cost in India", not "what does this cost in
+# Mumbai specifically".
+#
+# Azure India measured, lowest on-demand meter per SKU:
+#
+#   centralindia  Pune      1,328 SKUs   cheapest
+#   southindia    Chennai   1,014 SKUs   +36.6%
+#   westindia     Mumbai      770 SKUs   +23.8%
+#
+# So Pune is both the cheapest and the best covered, and matching AWS's and
+# GCP's Mumbai by moving Azure to westindia would have cost the reader 24% on
+# price and 42% of the machine types to make two city names agree. The
+# interface names the region each figure comes from instead.
 REGIONS: dict[str, dict[str, str]] = {
     "india": {"aws": "ap-south-1", "azure": "centralindia", "gcp": "asia-south1"},
     "us-east": {"aws": "us-east-1", "azure": "eastus", "gcp": "us-east1"},

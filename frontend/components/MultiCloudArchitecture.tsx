@@ -40,6 +40,18 @@ const CHROME: Record<
 
 
 
+/* Which city each provider region actually is. A reader choosing "India"
+   should be able to see that the three prices are not all from the same
+   city -- AWS and GCP are Mumbai, Azure is Pune -- rather than assume it. */
+const REGION_CITY: Record<string, string> = {
+  "ap-south-1": "Mumbai",
+  centralindia: "Pune",
+  "asia-south1": "Mumbai",
+  "us-east-1": "N. Virginia",
+  eastus: "Virginia",
+  "us-east1": "S. Carolina",
+};
+
 const REGION_LABEL: Record<string, string> = {
   india: "India",
   "us-east": "US East",
@@ -341,6 +353,8 @@ export function MultiCloudArchitecture({
               >
                 <span>{on ? "Showing architecture" : "View architecture"}</span>
                 <span className="tnum font-mono text-[11.5px]">
+                  {o.region}
+                  {REGION_CITY[o.region] ? ` · ${REGION_CITY[o.region]}` : ""} ·{" "}
                   {o.items.length} services
                 </span>
               </div>
