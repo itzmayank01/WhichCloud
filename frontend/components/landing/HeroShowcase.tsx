@@ -134,15 +134,18 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
 
   return (
     <div ref={host} className="relative mx-auto max-w-6xl">
-      {/* The three sit in one grid row and overlap by column, so the centre
-          panel crosses both neighbours instead of sitting between them. */}
-      <div className="grid gap-4 lg:grid-cols-12 lg:gap-0">
+      {/* Three equal columns that overlap by a fixed amount, rather than grid
+          spans: spans of 12 cannot divide into three equal panels that also
+          overlap, which is why the widths were 517, 517 and 430. flex-1 with
+          basis-0 makes them exactly equal whatever the content, and
+          items-stretch makes them the same height. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-0">
         {/* ── left: what it costs on each cloud ── */}
         <Card
           shown={shown}
           delay={0}
           zClass="z-0"
-          className="lg:col-start-1 lg:col-span-6 lg:row-start-1 lg:mt-14"
+          className="lg:min-w-0 lg:flex-1 lg:basis-0"
           slide="left"
           icon="chart"
           eyebrow="Cost report"
@@ -236,12 +239,12 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
 
         {/* ── centre: the estimate, floating across both ── */}
         <div
-          className={`relative lg:col-start-4 lg:col-span-6 lg:row-start-1 lg:z-20 transition-all duration-[750ms] ease-out ${
+          className={`relative lg:z-20 lg:-mx-10 lg:min-w-0 lg:flex-1 lg:basis-0 transition-all duration-[750ms] ease-out ${
             shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
           }`}
           style={{ transitionDelay: "140ms" }}
         >
-          <div className="rounded-2xl border border-line bg-surface elev-4">
+          <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-4">
             <div className="flex items-center gap-2.5 border-b border-line px-5 py-3.5">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent">
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -252,14 +255,14 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
               <span className="font-mono text-[11.5px] text-ink-3">india</span>
             </div>
 
-            <div className="px-5 py-4">
+            <div className="flex flex-1 flex-col px-5 py-4">
               <p className="text-[13.5px] leading-relaxed text-ink-2">
                 You described{" "}
                 <span className="font-mono text-[13px] text-ink">“{data.quote}”</span>.
                 Here is what that costs, service by service.
               </p>
 
-              <table className="mt-4 w-full border-collapse">
+              <table className="mt-4 w-full flex-1 border-collapse">
                 <thead>
                   <tr className="border-b border-line text-[11px] uppercase tracking-[0.07em] text-ink-3">
                     <th className="pb-1.5 text-left font-medium">Service</th>
@@ -309,7 +312,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           shown={shown}
           delay={280}
           zClass="z-10"
-          className="lg:col-start-8 lg:col-span-5 lg:row-start-1 lg:mt-24"
+          className="lg:min-w-0 lg:flex-1 lg:basis-0"
           slide="right"
           icon="save"
           eyebrow="Measured savings"
@@ -405,7 +408,7 @@ function Card({
       style={{ transitionDelay: `${delay}ms` }}
     >
       <div
-        className={`transition-transform duration-300 ease-out ${
+        className={`h-full transition-transform duration-300 ease-out ${
           slide === "left"
             ? "lg:group-hover:-translate-x-8"
             : slide === "right"
@@ -413,7 +416,7 @@ function Card({
               : ""
         }`}
       >
-      <div className="rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-4">
+      <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-4">
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-sunk">
             <svg viewBox="0 0 24 24" className="h-4 w-4 text-ink-2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -427,7 +430,7 @@ function Card({
             <p className="truncate text-[14.5px] font-semibold">{title}</p>
           </div>
         </div>
-        <div className="px-4 py-4">{children}</div>
+        <div className="flex flex-1 flex-col px-4 py-4">{children}</div>
       </div>
       </div>
     </div>
