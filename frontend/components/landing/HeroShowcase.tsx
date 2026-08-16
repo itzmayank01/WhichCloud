@@ -245,9 +245,10 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
         >
           <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-4">
             <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-              <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  <path d="M7 9h8M7 13h5" />
                 </svg>
               </span>
               <span className="flex-1 text-[15px] font-semibold">Your estimate</span>
@@ -367,9 +368,25 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
   );
 }
 
-const HEAD_ICON: Record<string, string> = {
-  chart: "M3 3v18h18M7 15l3.5-3.5 3 3L20 8",
-  save: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+/* Drawn at the same weight and on the same grid as the rest of the interface.
+   The bars mean a cost report; the falling line means a bill coming down,
+   which is what the panel is about -- a currency symbol only says the panel
+   concerns money, which the figures already say. */
+const HEAD_ICON: Record<string, React.ReactNode> = {
+  chart: (
+    <>
+      <path d="M3 21h18" />
+      <path d="M7 21V11" />
+      <path d="M12 21V4" />
+      <path d="M17 21v-6" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M3 7l6.5 6.5 4-4L21 17" />
+      <path d="M21 12v5h-5" />
+    </>
+  ),
 };
 
 function Card({
@@ -397,16 +414,17 @@ function Card({
   title: string;
 }) {
   return (
-    /* The centre panel sits over both of these. Pointing at one brings it to
-       the front and steps it out from underneath, so the whole card can be
-       read without anything being clicked.
+    /* Pointing at a side panel steps it out from under the centre without
+       changing what is in front of what. The stacking order stays fixed, so
+       the composition never reshuffles under the cursor; the card simply
+       moves far enough that more of it is showing.
 
        The slide lives on an inner element because the outer one is already
        using a transform for the reveal, and two transforms on one element
        overwrite rather than compose -- the same thing that silently dropped
        an animation earlier in this project. */
     <div
-      className={`${className} ${zClass} group relative transition-all duration-[750ms] ease-out hover:z-30 ${
+      className={`${className} ${zClass} group relative transition-all duration-[750ms] ease-out ${
         shown ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
       }`}
       style={{ transitionDelay: `${delay}ms` }}
@@ -414,17 +432,26 @@ function Card({
       <div
         className={`h-full transition-transform duration-300 ease-out ${
           slide === "left"
-            ? "lg:group-hover:-translate-x-8"
+            ? "lg:group-hover:-translate-x-14"
             : slide === "right"
-              ? "lg:group-hover:translate-x-8"
+              ? "lg:group-hover:translate-x-14"
               : ""
         }`}
       >
       <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-2 transition-shadow duration-300 group-hover:elev-4">
         <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-line bg-sunk">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-ink-3" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d={HEAD_ICON[icon]} />
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-wash">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-[18px] w-[18px] text-accent"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              {HEAD_ICON[icon]}
             </svg>
           </span>
           <div className="min-w-0">
