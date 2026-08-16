@@ -1,4 +1,5 @@
 import { api, money, type CatalogRow } from "@/lib/api";
+import { InlineIcon } from "@/components/landing/InlineIcon";
 
 /**
  * A continuously scrolling band of live prices.
@@ -7,7 +8,19 @@ import { api, money, type CatalogRow } from "@/lib/api";
  * figure here is a real row from the catalog, and the strip is duplicated so
  * the loop is seamless without JavaScript — CSS translates one copy the width
  * of the other and starts again.
+ *
+ * It does not pause under the cursor. Pausing is the usual courtesy for a
+ * marquee, on the assumption the reader wants to finish the line they are on;
+ * here the band is scenery rather than something to read, and stopping dead
+ * whenever the pointer crosses it looked like the page had hung.
  */
+/** The mark stands in for the provider's name, which the wordmarks carry. */
+const MARK: Record<string, string> = {
+  aws: "logos:aws",
+  azure: "logos:microsoft-azure",
+  gcp: "logos:google-cloud",
+};
+
 export async function PriceTicker() {
   let rows: CatalogRow[] = [];
   try {
@@ -22,9 +35,11 @@ export async function PriceTicker() {
     <div className="flex shrink-0 items-center gap-8 pr-8">
       {rows.map((r, i) => (
         <span key={`${r.provider}-${r.sku}-${i}`} className="flex shrink-0 items-baseline gap-2.5">
-          <span className="font-mono text-[13px] uppercase tracking-[0.08em] text-ink-3 font-medium">
-            {r.provider}
-          </span>
+          <InlineIcon
+            icon={MARK[r.provider] ?? MARK.aws}
+            size={15}
+            className="shrink-0 self-center"
+          />
           <span className="font-mono text-[14px] text-ink-2 font-medium">{r.sku}</span>
           <span className="tnum font-mono text-[15px] font-medium text-ink">
             {money(r.monthly_usd)}
@@ -41,7 +56,7 @@ export async function PriceTicker() {
       {/* edges fade so the loop point is never visible */}
       <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-canvas to-transparent" />
       <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-canvas to-transparent" />
-      <div className="flex w-max animate-[ticker_48s_linear_infinite] hover:[animation-play-state:paused]">
+      <div className="flex w-max animate-[ticker_48s_linear_infinite]">
         {strip}
         {strip}
       </div>
