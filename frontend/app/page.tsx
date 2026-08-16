@@ -8,6 +8,7 @@ import { CountUp } from "@/components/landing/CountUp";
 import { AskDemoSection } from "@/components/landing/AskDemoSection";
 import { PipelineSection } from "@/components/landing/PipelineSection";
 import { HeroFreshness } from "@/components/landing/HeroFreshness";
+import { HeroShowcaseSection } from "@/components/landing/HeroShowcaseSection";
 import {
   FeatureBlock,
   Footer,
@@ -188,6 +189,13 @@ export default function Home() {
           }
         >
           <HeroFreshness />
+        </Suspense>
+      </section>
+
+      {/* the product, as three panels, directly under the hero */}
+      <section className="px-6 pb-20">
+        <Suspense fallback={<Loading height={300} />}>
+          <HeroShowcaseSection />
         </Suspense>
       </section>
 
