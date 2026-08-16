@@ -37,6 +37,7 @@ export type ShowcaseData = {
   saved: number;
   techniquesTested: number;
   applied: { name: string; saved: number; versus: string; category: string }[];
+  advisory: string[];
 };
 
 /** Axis labels. The full names live on the panels that have room for them. */
@@ -81,6 +82,10 @@ const money = (n: number, dp = 0) =>
 
 export function HeroShowcase({ data }: { data: ShowcaseData }) {
   const [shown, setShown] = useState(false);
+  /* Re-keys the estimate rows so their entrance animation plays again. The
+     panel is meant to look like it is still working rather than like a
+     screenshot of a result, and re-costing is the thing it would be doing. */
+  const [pass, setPass] = useState(0);
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -129,6 +134,13 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
     })
     .forEach((label, i) => rank.set(label, i));
   const colorFor = (label: string) => RAMP[rank.get(label) ?? 99] ?? fallbackColor;
+
+  useEffect(() => {
+    if (!shown) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const id = window.setInterval(() => setPass((p) => p + 1), 4400);
+    return () => window.clearInterval(id);
+  }, [shown]);
 
   const peak = Math.max(...data.chart.clouds.map((c) => c.total), 1);
   /* The bars are flex items. Without shrink-0 flexbox compresses them to fit
@@ -282,7 +294,14 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           }`}
           style={{ transitionDelay: "140ms" }}
         >
-          <div className="flex h-full flex-col rounded-2xl border border-line bg-surface elev-4">
+          <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface elev-4">
+            {/* One pass of light across the top edge, timed with the rows
+                below it, so the panel reads as still working rather than as a
+                screenshot of a result. Nothing reflows while it runs. */}
+            <span
+              aria-hidden
+              className="estimate-scan pointer-events-none absolute left-0 top-0 z-10 h-[2px] w-1/3 bg-gradient-to-r from-transparent via-accent to-transparent"
+            />
             <div className="flex items-center gap-3 border-b border-line px-5 py-4 sm:px-6">
               <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
                 <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -312,11 +331,11 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
                 <tbody>
                   {data.breakdown.map((b, i) => (
                     <tr
-                      key={b.label}
-                      className={`border-b border-line last:border-0 transition-all duration-500 ${
-                        shown ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0"
+                      key={`${b.label}-${pass}`}
+                      className={`border-b border-line last:border-0 ${
+                        shown ? "estimate-row" : "opacity-0"
                       }`}
-                      style={{ transitionDelay: `${460 + i * 90}ms` }}
+                      style={{ animationDelay: `${i * 110}ms` }}
                     >
                       <td className="py-2.5 text-[13.5px]">
                         <span className="inline-flex items-center gap-2">
@@ -396,10 +415,33 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
             ))}
           </div>
 
+          {data.advisory.length > 0 && (
+            <div className="mt-4 border-t border-line pt-3.5">
+              <p className="font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-3">
+                Also worth doing, not priceable
+              </p>
+              <div className="mt-2 space-y-1.5">
+                {data.advisory.map((name, i) => (
+                  <p
+                    key={name}
+                    className={`flex gap-2 text-[12px] leading-snug text-ink-2 transition-all duration-500 ${
+                      shown ? "translate-x-0 opacity-100" : "translate-x-3 opacity-0"
+                    }`}
+                    style={{ transitionDelay: `${900 + i * 110}ms` }}
+                  >
+                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-ink-3" />
+                    {name}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* The ones that did not apply are part of the answer: a tool that
               only ever reports wins is not measuring anything. */}
           <p className="mt-4 border-t border-line pt-3 font-mono text-[11px] text-ink-3">
-            {data.techniquesTested} tested · {data.applied.length} applied
+            {data.techniquesTested} tested · {data.applied.length} measured ·{" "}
+            {data.advisory.length} advisory
           </p>
         </Card>
       </div>

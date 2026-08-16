@@ -111,6 +111,12 @@ export async function HeroShowcaseSection() {
           versus: a.versus_sku ?? "the default",
           category: a.category ?? "compute",
         })),
+      /* Techniques that apply but whose saving cannot be priced from a rate
+         card. Worth showing precisely because they have no figure: it is the
+         difference between what this tool measured and what it merely
+         recommends, and collapsing the two would make the measured column
+         mean less. */
+      advisory: (richest.option.advisory ?? []).slice(0, 3).map((a) => a.name),
     };
 
     return <HeroShowcase data={data} />;

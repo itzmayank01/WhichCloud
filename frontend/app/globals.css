@@ -279,3 +279,55 @@ html {
   color: var(--ink);
 }
 
+
+/* ── the estimate re-costing itself ──
+   The centre panel replays its line items every few seconds so the page has
+   something happening in it without anything moving that a reader might be
+   part-way through. Rows only fade and lift; nothing reflows. */
+
+@keyframes estimate-row {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  18%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.estimate-row {
+  animation: estimate-row 4.4s ease-out both;
+}
+
+@keyframes estimate-scan {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  38% {
+    transform: translateX(220%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(220%);
+    opacity: 0;
+  }
+}
+
+.estimate-scan {
+  animation: estimate-scan 4.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .estimate-row,
+  .estimate-scan {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
