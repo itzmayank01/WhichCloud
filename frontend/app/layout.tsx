@@ -78,18 +78,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Wordmark />
             </Link>
 
-            {/* Three of these pointed at routes that do not exist, so most of
-                the navigation 404'd. They address sections of the page that
-                are actually built; the routes go back in when the pages do. */}
+            {/* Price index is a real page again. The other two still address
+                sections of the landing page, and become routes when those
+                pages exist. */}
             <nav
               aria-label="Main"
               className="hidden gap-7 text-[15.5px] text-ink-2 md:flex"
             >
               <Link
-                href="/#pricing"
+                href="/prices"
                 className="rounded-sm transition-colors hover:text-ink"
               >
-                Compare clouds
+                Price index
               </Link>
               <Link
                 href="/#architecture"

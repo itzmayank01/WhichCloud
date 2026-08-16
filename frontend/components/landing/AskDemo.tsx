@@ -201,7 +201,11 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
           </p>
 
           {/* the three prompts */}
-          <div className="mt-4 grid grid-cols-3 gap-2.5">
+          {/* Three across only where three fit. Measured on the rendered
+              panel: at 375px a fixed three-column grid gives each prompt 93px
+              of width and 131px of height, which is a column of single words.
+              They stack below sm instead. */}
+          <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
             {scenarios.slice(0, 3).map((s, i) => {
               const active = i === index;
               return (

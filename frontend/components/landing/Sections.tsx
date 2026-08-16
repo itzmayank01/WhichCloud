@@ -366,8 +366,8 @@ export function ProviderBar() {
   return (
     <div className="mx-auto max-w-4xl text-center">
       <h2 className="text-balance text-[clamp(1.7rem,3.6vw,2.5rem)] font-semibold leading-[1.14] tracking-[-0.025em]">
-        How we can saved <span className="tnum text-save">$999</span> From Which
-        Cloud Annually
+        How we saved <span className="tnum text-save">$999</span> a year with
+        WhichCloud
       </h2>
       <p className="mt-12 font-mono text-[14px] uppercase tracking-[0.14em] text-ink-3 font-medium">
         Pricing sourced directly from
@@ -519,6 +519,7 @@ const FOOTER: {
   {
     heading: "Product",
     links: [
+      { label: "Price index", href: "/prices" },
       { label: "Compare clouds", href: "/#pricing" },
       { label: "Architecture", href: "/#architecture" },
       { label: "Optimizations", href: "/#optimizations" },

@@ -171,10 +171,10 @@ export default function Home() {
             Price my app
           </Link>
           <Link
-            href="/#pricing"
+            href="/prices"
             className="rounded-lg border border-line-strong bg-surface px-6 py-3 text-[17px] font-medium text-ink transition-colors hover:bg-sunk active:bg-line"
           >
-            See the comparison
+            Browse prices
           </Link>
         </div>
 
@@ -389,10 +389,10 @@ export default function Home() {
             Price my app
           </Link>
           <Link
-            href="/#pricing"
+            href="/prices"
             className="rounded-lg border border-line-strong bg-surface px-7 py-3.5 text-[17px] font-medium text-ink transition-colors hover:bg-sunk active:bg-line"
           >
-            See the comparison
+            Browse prices
           </Link>
         </div>
         <p className="mt-8 font-mono text-[14.5px] text-ink-3">
