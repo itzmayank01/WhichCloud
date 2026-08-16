@@ -9,6 +9,7 @@ import { AskDemoSection } from "@/components/landing/AskDemoSection";
 import { PipelineSection } from "@/components/landing/PipelineSection";
 import { HeroFreshness } from "@/components/landing/HeroFreshness";
 import { HeroShowcaseSection } from "@/components/landing/HeroShowcaseSection";
+import { AskBadge, ChartBadge } from "@/components/landing/Badges";
 import {
   FeatureBlock,
   Footer,
@@ -206,7 +207,8 @@ export default function Home() {
       <section id="pricing" className="px-6 pb-24 pt-16">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8 max-w-2xl">
-            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+            <div className="flex items-center gap-2.5 font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+              <ChartBadge />
               Priced, across three clouds
             </div>
             <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
@@ -274,7 +276,8 @@ export default function Home() {
       <section className="border-t border-line bg-canvas px-6 py-24">
         <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
           <div>
-            <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+            <div className="flex items-center gap-2.5 font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+              <AskBadge />
               Plain English
             </div>
             <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em]">
