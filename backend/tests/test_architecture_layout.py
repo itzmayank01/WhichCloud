@@ -679,3 +679,54 @@ def test_the_layout_never_invents_a_node():
     lay = build_layout(graph)
 
     assert {n.id for n in lay.nodes} == {n.id for n in graph.nodes}
+
+
+def test_the_actor_is_joined_to_the_system():
+    """The figure was drawn beside a boundary with no line into it, so the
+    diagram opened with users who touch nothing. Every reference architecture
+    begins with exactly that arrow: traffic has to be shown arriving."""
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_nested_arch()))
+
+    assert lay.actor_edge is not None
+    assert lay.node(lay.actor_edge.target) is not None
+    assert len(lay.actor_edge.points) >= 2
+
+
+def test_the_actor_arrow_reaches_the_first_box_traffic_touches():
+    from whichcloud.architecture import Architecture
+    from whichcloud.architecture.graph import build_graph
+
+    arch = Architecture(
+        services=[
+            svc("CloudFront", "edge", connects=["ELB"], component="Edge"),
+            svc("ELB", "api", connects=["ECS"], component="Edge"),
+            svc("ECS", "compute", component="App"),
+        ]
+    )
+    lay = build_layout(build_graph(arch))
+
+    assert lay.actor_edge.target == "cloudfront"
+
+
+def test_the_actor_arrow_is_not_a_numbered_step():
+    """It is where traffic arrives, not a step between two services.
+    Numbering it shifts every other number by one."""
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_nested_arch()))
+
+    assert lay.actor_edge.step is None
+    assert min((e.step for e in lay.edges if e.step), default=1) == 1
+
+
+def test_the_actor_arrow_moves_with_the_canvas():
+    """Translating everything else and leaving it behind detaches it."""
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_nested_arch()))
+    target = lay.node(lay.actor_edge.target)
+
+    assert lay.actor_edge.points[-1][0] <= target.x + target.w
+    assert all(x >= 0 and y >= 0 for x, y in lay.actor_edge.points)

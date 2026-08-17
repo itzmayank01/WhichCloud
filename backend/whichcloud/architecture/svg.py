@@ -449,7 +449,7 @@ def render(layout: Layout, title: str = "Architecture") -> str:
         )
 
     # ── edges, under the boxes so no line crosses a label ──
-    for edge in layout.edges:
+    for edge in ([layout.actor_edge] if layout.actor_edge else []) + layout.edges:
         colour, dash = FLOW_STROKE.get(edge.flow, FLOW_STROKE["sync"])
         width = FLOW_WIDTH.get(edge.flow, 1.8)
         dash_attr = f' stroke-dasharray="{dash}"' if dash else ""

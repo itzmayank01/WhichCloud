@@ -74,6 +74,10 @@ COMPONENT_LABEL_H = 30
 COMPONENT_GAP = 44
 ROW_GAP_INNER = 30
 
+#: The source id on the arrow from the actor. It is not a node -- there is no
+#: box for the people -- so anything walking edges has to know to skip it.
+ACTOR_SOURCE = "__users__"
+
 #: The actor and the gap between it and the cloud boundary.
 ACTOR_W = 96
 ACTOR_H = 96
@@ -251,6 +255,11 @@ class Layout:
     components: list[PlacedComponent] = field(default_factory=list)
     actor: PlacedActor | None = None
     cloud: PlacedCloud | None = None
+    #: The arrow from the people into the system. Kept out of `edges` because
+    #: it has no source node: putting it there meant everything walking edges
+    #: -- numbering, routing, every test indexing edges[0] -- had to know
+    #: about a source that is not a box.
+    actor_edge: PlacedEdge | None = None
 
     def node(self, node_id: str) -> PlacedNode | None:
         for n in self.nodes:
@@ -499,6 +508,43 @@ def _component_size(count: int) -> tuple[int, int, int, int]:
     )
 
 
+def _connect_the_actor(layout: Layout) -> None:
+    """Draw the arrow from the people into the system.
+
+    The actor was drawn and left unattached, so a diagram opened with a figure
+    labelled Users standing beside a boundary with no line into it -- and
+    every reference architecture begins with exactly that line. Traffic has to
+    be shown arriving from somewhere or the first box is where the story
+    starts, which is not true.
+
+    It lands on whatever has no synchronous edge arriving at it and sits
+    earliest in the request path, which is the box traffic actually reaches
+    first.
+    """
+    if not layout.actor or not layout.nodes:
+        return
+
+    has_incoming = {e.target for e in layout.edges if e.flow == "sync"}
+    entry_candidates = [n for n in layout.nodes if n.id not in has_incoming]
+    if not entry_candidates:
+        entry_candidates = layout.nodes
+
+    # Earliest tier first, then nearest the actor, which is leftmost.
+    entry = min(
+        entry_candidates, key=lambda n: (TIER_ORDER.index(n.tier), n.x, n.y)
+    )
+
+    start = (layout.actor.x + layout.actor.w, layout.actor.y + layout.actor.h // 2)
+    points = (
+        [start, (entry.x, entry.cy)]
+        if start[1] == entry.cy
+        else [start, (entry.x - 24, start[1]), (entry.x - 24, entry.cy), (entry.x, entry.cy)]
+    )
+    layout.actor_edge = PlacedEdge(
+        source=ACTOR_SOURCE, target=entry.id, flow="sync", points=points
+    )
+
+
 def _number_the_path(graph: ArchitectureGraph, layout: Layout) -> None:
     """Number the request path, in the order a request travels it.
 
@@ -511,6 +557,9 @@ def _number_the_path(graph: ArchitectureGraph, layout: Layout) -> None:
     synchronous edge arriving at it. A graph where everything has an incoming
     edge has no entry, so the earliest tier is used instead of giving up.
     """
+    # The arrow from the people is the entry, not a step between services.
+    # Numbering it shifts every other number by one and makes the sequence a
+    # reader follows disagree with the one they were shown before.
     sync = [e for e in layout.edges if e.flow == "sync"]
     if not sync:
         return
@@ -676,7 +725,6 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
         )
 
     layout.groups.sort(key=lambda g: g.depth)
-    _number_the_path(graph, layout)
 
     # ── the provider boundary, and the people outside it ──
     # Every reference architecture is framed this way: users on the outside,
@@ -703,6 +751,9 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
             w=ACTOR_W,
             h=ACTOR_H,
         )
+
+    _number_the_path(graph, layout)
+    _connect_the_actor(layout)
 
     return _fit(layout)
 
@@ -972,6 +1023,7 @@ def _nested_layout(graph: ArchitectureGraph) -> Layout:
         y=layout.cloud.y + (layout.cloud.h - ACTOR_H) // 2,
         w=ACTOR_W, h=ACTOR_H,
     )
+    _connect_the_actor(layout)
     return _fit(layout)
 
 
@@ -1026,6 +1078,10 @@ def _fit_canvas(layout: Layout) -> None:
             band.y += dy
         for edge in layout.edges:
             edge.points = [(x + dx, y + dy) for x, y in edge.points]
+        if layout.actor_edge:
+            layout.actor_edge.points = [
+                (x + dx, y + dy) for x, y in layout.actor_edge.points
+            ]
 
     layout.width = max(right) + dx + CANVAS_PAD
     layout.height = max(bottom) + dy + CANVAS_PAD

@@ -311,7 +311,9 @@ def _drawn(option: Option, provider: str) -> dict | None:
              "badge": (dict(zip(("x", "y"), badge_point(e.points, layout.nodes)))
                        if e.step else None),
              "points": [{"x": x, "y": y} for x, y in e.points]}
-            for e in layout.edges
+            # The arrow from the people comes first and carries no number: it
+            # is where traffic arrives, not a step between two services.
+            for e in ([layout.actor_edge] if layout.actor_edge else []) + layout.edges
         ],
     }
 
