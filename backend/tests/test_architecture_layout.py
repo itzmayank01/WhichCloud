@@ -760,3 +760,55 @@ def test_edge_services_outside_the_network_are_placed_before_it():
 
     assert at["CloudFront"] < vpc.y, "the CDN should meet the request before the network"
     assert at["CloudWatch"] > vpc.y, "telemetry is read after the request path"
+
+
+def _componentised():
+    from whichcloud.architecture import Architecture
+
+    return Architecture(
+        services=[
+            svc("CloudFront", "edge", connects=["AppSync"], component="Web UI"),
+            svc("AppSync", "api", connects=["Lambda"], component="Web UI"),
+            svc("Lambda", "compute", connects=["Neptune"], component="Data"),
+            svc("Neptune", "data", component="Data"),
+            svc("CodeBuild", "cicd", component="Delivery"),
+        ],
+        boundaries=[
+            Boundary(kind="vpc", name="VPC", contains=["Private subnet"]),
+            Boundary(kind="subnet", name="Private subnet", contains=["Lambda", "Neptune"]),
+        ],
+    )
+
+
+def test_components_survive_a_description_that_has_a_network():
+    """Treating the two as alternatives meant a description with a VPC lost
+    its functional grouping and became an inventory of where things live
+    rather than a picture of what they do. AWS's own diagrams have both."""
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_componentised()))
+
+    assert {c.name for c in lay.components} >= {"Web UI", "Data"}
+
+
+def test_a_network_boundary_wraps_the_components_inside_it():
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_componentised()))
+    subnet = next(g for g in lay.groups if g.kind == "subnet")
+    data = next(c for c in lay.components if c.name == "Data")
+    web = next(c for c in lay.components if c.name == "Web UI")
+
+    assert subnet.x <= data.x and data.x + data.w <= subnet.x + subnet.w
+    assert subnet.y <= data.y and data.y + data.h <= subnet.y + subnet.h
+    # And does not swallow one that lives outside the network.
+    assert not (subnet.y <= web.y and web.y + web.h <= subnet.y + subnet.h)
+
+
+def test_a_boundary_is_drawn_once():
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_componentised()))
+    ids = [g.id for g in lay.groups]
+
+    assert len(ids) == len(set(ids))

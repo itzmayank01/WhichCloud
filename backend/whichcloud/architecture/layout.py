@@ -619,12 +619,30 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
     services are laid out in a small grid ordered by tier, so a request still
     reads downward within the group it belongs to.
     """
-    if _has_network_nesting(graph):
+    # Components are the unit of layout even when there is a network, which is
+    # how AWS's own diagrams are built: "Web UI component" and "Cost
+    # component" sit outside the VPC, "Data component" and "Discovery
+    # component" sit inside it. Treating the two as alternatives -- pack by
+    # component OR nest by network -- meant a description with a VPC lost its
+    # functional grouping entirely and became an inventory of where things
+    # live rather than a picture of what they do.
+    #
+    # The nested layout is still used when a description has network structure
+    # and no components to organise it with. Two zones of subnets is a real
+    # shape and worth drawing as one.
+    if _has_network_nesting(graph) and not _has_components(graph):
         return _nested_layout(graph)
 
     components = graph.components()
     if not components:
         return _fit(Layout(width=CANVAS_PAD * 2, height=CANVAS_PAD * 2))
+
+    # Components sharing a network boundary are placed next to each other, so
+    # the box drawn round them afterwards is one rectangle rather than one
+    # that reaches across the page to collect a stray. Order within a boundary
+    # is untouched, so the request still reads in sequence.
+    network = _network_of(graph)
+    components.sort(key=lambda entry: (network.get(entry[0], ""),))
 
     placed: list[PlacedNode] = []
     boxes: list[PlacedComponent] = []
@@ -634,8 +652,19 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
     row_height = 0
     widest = 0
 
+    previous_network: str | None = None
     for name, members in components:
         box_w, box_h, cols, _ = _component_size(len(members))
+        this_network = network.get(name, "")
+
+        # A new row whenever the boundary changes, so components sharing one
+        # stay together and the box drawn round them is a rectangle rather
+        # than a shape reaching across the page to collect a stray.
+        if previous_network is not None and this_network != previous_network:
+            x = CANVAS_PAD
+            y += row_height + COMPONENT_GAP
+            row_height = 0
+        previous_network = this_network
 
         # Wrap when this component would run past the canvas, unless it is the
         # first on the row -- one that is wider than the limit still has to go
@@ -687,12 +716,40 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
                 )
             )
 
-    # ── boundaries ──
+    # ── network boundaries, drawn around the components inside them ──
+    # This is what makes the picture read as AWS's do: the VPC is a box around
+    # "Data component" and "Discovery component", not a separate arrangement
+    # competing with them. A boundary with no component inside is not drawn --
+    # there is nothing for it to contain.
+    for group in graph.groups:
+        if group.kind not in ("vpc", "subnet", "az", "region"):
+            continue
+        inside = [
+            box for box in boxes if network.get(box.name) == group.id
+        ]
+        if not inside:
+            continue
+        pad = COMPONENT_PAD + 12
+        left = min(b.x for b in inside) - pad
+        top = min(b.y for b in inside) - pad - COMPONENT_LABEL_H
+        layout.groups.append(
+            PlacedGroup(
+                id=group.id, kind=group.kind, label=group.label, depth=0,
+                x=left, y=top,
+                w=max(b.x + b.w for b in inside) - left + pad,
+                h=max(b.y + b.h for b in inside) - top + pad,
+            )
+        )
+
+    # ── boundaries around loose nodes ──
     # Drawn deepest first so an outer region ends up containing the boxes of
     # everything nested in it, not only the nodes it names directly.
     parents = {c: g.id for g in graph.groups for c in g.child_ids}
     drawn: dict[str, tuple[int, int, int, int]] = {}
+    already_drawn = {g.id for g in layout.groups}
     for group in sorted(graph.groups, key=lambda g: -_depth_of(g.id, parents)):
+        if group.id in already_drawn:
+            continue
         xs: list[int] = []
         ys: list[int] = []
         for node_id in group.node_ids:
@@ -932,6 +989,43 @@ def _place(
             cursor_x += child.w + BOX_GAP
         else:
             cursor_y += child.h + BOX_GAP
+
+
+def _has_components(graph: ArchitectureGraph) -> bool:
+    """Did the reader group the services into functional components?
+
+    One component holding everything is not a grouping -- it is the absence of
+    one wearing a name -- so it does not count.
+    """
+    named = {n.component for n in graph.nodes if n.component}
+    return len(named) >= 2
+
+
+def _network_of(graph: ArchitectureGraph) -> dict[str, str]:
+    """Which network boundary each component's services mostly sit in.
+
+    A component is placed as a unit, so it belongs to whichever boundary holds
+    most of it. Splitting one across a VPC edge would draw half a component
+    inside the network and half outside, which is not a thing a system does.
+    """
+    by_node = {
+        node_id: group.id
+        for group in graph.groups
+        if group.kind in ("vpc", "subnet", "az")
+        for node_id in group.node_ids
+    }
+    tally: dict[str, dict[str, int]] = {}
+    for node in graph.nodes:
+        boundary = by_node.get(node.id)
+        if boundary:
+            component = node.component or "Other"
+            tally.setdefault(component, {}).setdefault(boundary, 0)
+            tally[component][boundary] += 1
+
+    return {
+        component: max(counts, key=lambda b: counts[b])
+        for component, counts in tally.items()
+    }
 
 
 def _has_network_nesting(graph: ArchitectureGraph) -> bool:
