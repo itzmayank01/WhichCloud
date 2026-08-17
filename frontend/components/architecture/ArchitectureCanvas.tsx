@@ -20,12 +20,21 @@ import { iconFor } from "@/lib/serviceIcon";
  * - Interactive step playback, node hover highlights, and layer filtering
  */
 
+/* Navy and heavier for the request path. AWS draws it in near black at a
+   weight that survives printing; a thin grey line reads as a hairline and
+   disappears against the tinted subnet fills. */
 const FLOW_CONFIG: Record<Flow, { stroke: string; dash?: string; width: number; label: string; particleColor: string }> = {
-  sync: { stroke: "#4B5563", width: 1.6, label: "Request path", particleColor: "#2563EB" },
-  async: { stroke: "#9333EA", width: 1.6, dash: "6 4", label: "Event / Queue", particleColor: "#A855F7" },
-  replication: { stroke: "#0284C7", width: 1.6, dash: "4 4", label: "Replication", particleColor: "#38BDF8" },
-  control: { stroke: "#9CA3AF", width: 1.3, dash: "2 4", label: "Control plane", particleColor: "#9CA3AF" },
+  sync: { stroke: "#232F3E", width: 2.2, label: "Request path", particleColor: "#2563EB" },
+  async: { stroke: "#8B5CF6", width: 1.8, dash: "7 5", label: "Event / Queue", particleColor: "#A855F7" },
+  replication: { stroke: "#0EA5E9", width: 1.8, dash: "3 4", label: "Replication", particleColor: "#38BDF8" },
+  control: { stroke: "#8896A6", width: 1.5, dash: "2 4", label: "Control plane", particleColor: "#9CA3AF" },
 };
+
+/* How far back from a corner an arrow starts to turn. stroke-linejoin only
+   softens a corner by the stroke width, which at 2px is invisible; a drawn
+   curve is what makes an elbow read as a route the eye follows round rather
+   than two lines that happen to meet. */
+const CORNER_R = 9;
 
 const TIER_COLOR: Record<Tier, string> = {
   edge: "#8C4FFF",
@@ -83,7 +92,31 @@ function BoundaryBadge({ x, y, icon }: { x: number; y: number; icon: string }) {
 
 function formatPoints(points: { x: number; y: number }[]): string {
   if (!points || points.length === 0) return "";
-  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  if (points.length < 3) {
+    return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  }
+
+  const out = [`M${points[0].x} ${points[0].y}`];
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const cur = points[i];
+    const next = points[i + 1];
+
+    const inLen = Math.max(1, Math.abs(cur.x - prev.x) + Math.abs(cur.y - prev.y));
+    const outLen = Math.max(1, Math.abs(next.x - cur.x) + Math.abs(next.y - cur.y));
+    /* Clamped to half the shorter segment, so a tight elbow curves less
+       rather than overshooting into the segment beyond it. */
+    const r = Math.min(CORNER_R, inLen / 2, outLen / 2);
+
+    const ax = cur.x - ((cur.x - prev.x) * r) / inLen;
+    const ay = cur.y - ((cur.y - prev.y) * r) / inLen;
+    const bx = cur.x + ((next.x - cur.x) * r) / outLen;
+    const by = cur.y + ((next.y - cur.y) * r) / outLen;
+
+    out.push(`L${ax} ${ay}`, `Q${cur.x} ${cur.y} ${bx} ${by}`);
+  }
+  out.push(`L${points[points.length - 1].x} ${points[points.length - 1].y}`);
+  return out.join(" ");
 }
 
 export function ArchitectureCanvas({
@@ -226,11 +259,21 @@ export function ArchitectureCanvas({
                     viewBox="0 0 12 12"
                     refX="10"
                     refY="6"
-                    markerWidth="6"
-                    markerHeight="6"
+                    markerWidth="8"
+                    markerHeight="8"
                     orient="auto-start-reverse"
                   >
-                    <path d="M 1 2 L 10 6 L 1 10 z" fill={cfg.stroke} />
+                    {/* An open chevron, not a filled triangle. A solid head at
+                        this scale reads as a blob on the end of a line; two
+                        strokes meeting at a point read as a direction. */}
+                    <path
+                      d="M3.5 2.5 L9.5 6 L3.5 9.5"
+                      fill="none"
+                      stroke={cfg.stroke}
+                      strokeWidth={1.9}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </marker>
                 ))}
 

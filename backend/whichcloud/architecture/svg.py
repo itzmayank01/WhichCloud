@@ -44,11 +44,23 @@ TIER_COLOR: dict[Tier, str] = {
     "observability": "#E7157B",
 }
 
+#: Navy rather than grey, and heavier. AWS draws the request path in near
+#: black at a weight that survives being printed; a thin grey line reads as a
+#: hairline and disappears against the tinted subnet fills.
 FLOW_STROKE: dict[Flow, tuple[str, str]] = {
-    "sync": ("#5A6B7F", ""),
-    "async": ("#8B5CF6", "6 4"),
-    "replication": ("#0EA5E9", "2 4"),
-    "control": ("#AAB4C0", "1 4"),
+    "sync": ("#232F3E", ""),
+    "async": ("#8B5CF6", "7 5"),
+    "replication": ("#0EA5E9", "3 4"),
+    "control": ("#8896A6", "2 4"),
+}
+
+#: Stroke width per flow. The request path is the one being followed, so it is
+#: the one drawn heaviest.
+FLOW_WIDTH: dict[Flow, float] = {
+    "sync": 2.2,
+    "async": 1.8,
+    "replication": 1.8,
+    "control": 1.5,
 }
 
 #: AWS's own conventions for the boxes a system sits inside: the VPC is green
@@ -219,6 +231,48 @@ def icon_for(label: str) -> str | None:
 CHAR_W = 6.9
 
 
+#: How far back from a corner an arrow starts to turn. Big enough to read as a
+#: curve at full size, small enough that a short segment is not swallowed by
+#: the two curves at either end of it.
+CORNER_R = 9
+
+
+def rounded_path(points: list[tuple[int, int]], radius: int = CORNER_R) -> str:
+    """A polyline drawn with its corners turned rather than mitred.
+
+    stroke-linejoin only softens a corner by the width of the stroke, which at
+    1.5px is invisible. A drawn curve is what makes an elbow read as a route
+    the eye can follow round rather than two lines that happen to meet.
+
+    The radius is clamped to half the shorter of the two segments meeting at
+    each corner, so a tight elbow curves less rather than overshooting into
+    the segment beyond it.
+    """
+    if len(points) < 3:
+        return " ".join(
+            f"{'M' if i == 0 else 'L'}{x} {y}" for i, (x, y) in enumerate(points)
+        )
+
+    out = [f"M{points[0][0]} {points[0][1]}"]
+    for i in range(1, len(points) - 1):
+        (px, py), (cx, cy), (nx, ny) = points[i - 1], points[i], points[i + 1]
+
+        in_len = max(1, abs(cx - px) + abs(cy - py))
+        out_len = max(1, abs(nx - cx) + abs(ny - cy))
+        r = min(radius, in_len // 2, out_len // 2)
+
+        ax = cx - (cx - px) * r // in_len
+        ay = cy - (cy - py) * r // in_len
+        bx = cx + (nx - cx) * r // out_len
+        by = cy + (ny - cy) * r // out_len
+
+        out.append(f"L{ax} {ay}")
+        out.append(f"Q{cx} {cy} {bx} {by}")
+
+    out.append(f"L{points[-1][0]} {points[-1][1]}")
+    return " ".join(out)
+
+
 def _wrap(text: str, width: int, limit: int = 2) -> list[str]:
     """Break a label to fit the box, on word boundaries.
 
@@ -293,10 +347,15 @@ def render(layout: Layout, title: str = "Architecture") -> str:
     ]
 
     for flow, (colour, _) in FLOW_STROKE.items():
+        # An open chevron, not a filled triangle. A solid arrowhead at this
+        # scale reads as a blob on the end of a line; two strokes meeting at a
+        # point read as a direction, which is what an arrow is for.
         out.append(
-            f'<marker id="a-{flow}" viewBox="0 0 10 10" refX="9" refY="5" '
-            f'markerWidth="5" markerHeight="5" orient="auto-start-reverse">'
-            f'<path d="M0 0 L10 5 L0 10 z" fill="{colour}"/></marker>'
+            f'<marker id="a-{flow}" viewBox="0 0 12 12" refX="10" refY="6" '
+            f'markerWidth="8" markerHeight="8" orient="auto-start-reverse">'
+            f'<path d="M3.5 2.5 L9.5 6 L3.5 9.5" fill="none" stroke="{colour}" '
+            f'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>'
+            f"</marker>"
         )
     out.append("</defs>")
 
@@ -307,26 +366,16 @@ def render(layout: Layout, title: str = "Architecture") -> str:
             f'<rect x="{c.x}" y="{c.y}" width="{c.w}" height="{c.h}" rx="6" '
             f'fill="none" stroke="#232F3E" stroke-width="1.6"/>'
         )
-        # The AWS mark: the wordmark in white with the orange smile beneath
-        # it, on their navy. Previously this was the word alone in orange,
-        # which is not the logo -- the arc is the half people recognise.
-        bx, by = c.x + 12, c.y + 10
-        out.append(f'<rect x="{bx}" y="{by}" width="42" height="36" rx="7" fill="#232F3E"/>')
+        # AWS's own AWS Cloud mark. This had been drawn by hand -- a navy
+        # square, the wordmark, an orange arc for the smile -- which is a
+        # decent likeness and still a likeness. The real file is vendored
+        # beside the others and needs no approximating.
+        bx, by = c.x + 12, c.y + 9
+        mark = _group_uri("aws-cloud")
+        if mark:
+            out.append(f'<image x="{bx}" y="{by}" width="36" height="36" href="{mark}"/>')
         out.append(
-            f'<text x="{bx + 21}" y="{by + 19}" text-anchor="middle" '
-            f'font-family="system-ui,sans-serif" font-size="15" font-weight="800" '
-            f'letter-spacing="-0.5" fill="#ffffff">aws</text>'
-        )
-        # The smile, which is the half of the logo people recognise.
-        out.append(
-            f'<path d="M{bx + 8} {by + 25} q 11 8 22 1" fill="none" '
-            f'stroke="#FF9900" stroke-width="2.6" stroke-linecap="round"/>'
-        )
-        out.append(
-            f'<path d="M{bx + 26} {by + 23} l5 3.2 l-6 2.6 z" fill="#FF9900"/>'
-        )
-        out.append(
-            f'<text x="{c.x + 66}" y="{c.y + 33}" '
+            f'<text x="{c.x + 58}" y="{c.y + 33}" '
             f'font-family="system-ui,sans-serif" font-size="15" font-weight="600" '
             f'fill="#232F3E">{escape(c.label)}</text>'
         )
@@ -402,14 +451,12 @@ def render(layout: Layout, title: str = "Architecture") -> str:
     # ── edges, under the boxes so no line crosses a label ──
     for edge in layout.edges:
         colour, dash = FLOW_STROKE.get(edge.flow, FLOW_STROKE["sync"])
-        points = " ".join(
-            f"{'M' if i == 0 else 'L'}{x} {y}" for i, (x, y) in enumerate(edge.points)
-        )
+        width = FLOW_WIDTH.get(edge.flow, 1.8)
         dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         out.append(
-            f'<path d="{points}" fill="none" stroke="{colour}" stroke-width="1.4"'
-            f'{dash_attr} stroke-linecap="round" stroke-linejoin="round" '
-            f'marker-end="url(#a-{edge.flow})" opacity="0.8"/>'
+            f'<path d="{rounded_path(edge.points)}" fill="none" stroke="{colour}" '
+            f'stroke-width="{width}"{dash_attr} stroke-linecap="round" '
+            f'stroke-linejoin="round" marker-end="url(#a-{edge.flow})"/>'
         )
 
     # ── step numbers ──

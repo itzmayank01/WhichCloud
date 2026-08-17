@@ -536,3 +536,35 @@ def test_a_lone_container_does_not_trigger_nesting():
     lay = build_layout(build_graph(arch))
 
     assert lay.components, "expected the component layout"
+
+
+def test_a_corner_is_drawn_as_a_curve():
+    """stroke-linejoin only softens a corner by the stroke width, which at 2px
+    is invisible. The turn has to be drawn."""
+    from whichcloud.architecture.svg import rounded_path
+
+    assert "Q" in rounded_path([(0, 0), (0, 60), (80, 60)])
+    # A straight run has no corner to turn.
+    assert "Q" not in rounded_path([(0, 0), (100, 0)])
+
+
+def test_a_tight_corner_curves_less_rather_than_overshooting():
+    """A radius larger than the segment would carry the curve past the next
+    corner and back on itself."""
+    from whichcloud.architecture.svg import CORNER_R, rounded_path
+
+    path = rounded_path([(0, 0), (0, 8), (20, 8)])
+    # The curve starts inside the 8px segment, not before it began.
+    assert "L0 4" in path
+    assert CORNER_R > 4
+
+
+def test_every_routed_edge_survives_rounding():
+    from whichcloud.architecture.graph import build_graph
+    from whichcloud.architecture.svg import rounded_path
+
+    lay = build_layout(build_graph(_nested_arch()))
+    for edge in lay.edges:
+        path = rounded_path(edge.points)
+        assert path.startswith("M")
+        assert str(edge.points[-1][0]) in path
