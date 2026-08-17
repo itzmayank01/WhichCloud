@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   money,
@@ -9,6 +9,7 @@ import {
   type Recommendation,
 } from "@/lib/api";
 import { ArchitectureCanvas } from "@/components/architecture/ArchitectureCanvas";
+import { withPrices } from "@/lib/priceMatch";
 
 /**
  * The advisor: a description of a business problem in, three costed options
@@ -74,6 +75,11 @@ export function CostedAdvisor() {
      answers a different question: the tiers say what a standard system of
      this size costs, this says what the system they described looks like. */
   const [described, setDescribed] = useState<ArchitectureView | null>(null);
+  /* How much of the diagram is on screen. It builds rather than appearing so
+     a reader can follow the request from the user inward, which is the order
+     the arrows are numbered in and the order the system actually runs. */
+  const [revealed, setRevealed] = useState(0);
+  const timer = useRef<number | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,10 +119,40 @@ export function CostedAdvisor() {
     }
   }
 
+  /* One full pass in about eight seconds however many services there are.
+     Longer and it stops being a build and becomes a wait; the floor keeps a
+     forty node diagram from flickering past. */
+  useEffect(() => {
+    if (!described) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setRevealed(described.nodes.length);
+      return;
+    }
+
+    setRevealed(0);
+    const step = Math.max(120, Math.min(420, 8000 / Math.max(1, described.nodes.length)));
+    const tick = () =>
+      setRevealed((n) => {
+        if (n >= described.nodes.length) return n;
+        timer.current = window.setTimeout(tick, step);
+        return n + 1;
+      });
+
+    timer.current = window.setTimeout(tick, 300);
+    return () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    };
+  }, [described]);
+
   const advice = result ? recommend(result.options) : null;
   const budget = result?.budget_monthly_usd ?? null;
   const unspent = advice && budget ? budget - advice.pick.monthly_usd : null;
   const shown = result?.options.find((o) => o.label === selected) ?? null;
+  /* The described system with the selected tier's figures on it. Recomputed
+     when the tier changes, so switching to Most reliable moves the database
+     price up on the box it belongs to. */
+  const priced =
+    described && shown ? withPrices(described, shown.items) : null;
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-6 elev-1 sm:p-8">
@@ -285,36 +321,44 @@ export function CostedAdvisor() {
                   from. Showing only the second makes a rich description look
                   like it was ignored; showing only the first leaves the money
                   unexplained. */}
-              {described && (
+              {/* One diagram: the system as described, carrying the
+                  catalog's figures on the services they belong to. Two
+                  drawings -- what you asked for, and a standard arrangement
+                  the money referred to -- asked the reader to hold both and
+                  work out the relationship themselves. */}
+              {priced && (
                 <div className="mt-7">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <h3 className="text-[15.5px] font-semibold">
-                      The system you described
+                      Your architecture, priced
                     </h3>
                     <span className="font-mono text-[12.5px] text-ink-3">
-                      {described.counts.services} services ·{" "}
-                      {described.counts.priced} priced by the catalog
+                      {priced.view.counts.services} services · {priced.priced}{" "}
+                      priced from the catalog
                     </span>
                   </div>
                   <div className="mt-3 overflow-hidden rounded-xl border border-line bg-canvas p-2">
-                    <ArchitectureCanvas view={described} />
+                    <ArchitectureCanvas view={priced.view} revealed={revealed} />
                   </div>
-                  <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">
-                    Drawn as written. The catalog prices seven kinds of service
-                    — compute, database, cache, storage, delivery, load
-                    balancing and monitoring — so the figures below come from
-                    the standard architecture beneath, not from every box here.
-                  </p>
-                </div>
-              )}
-
-              {shown.drawn && (
-                <div className="mt-7">
-                  <h3 className="text-[15.5px] font-semibold">
-                    What the {shown.label.toLowerCase()} price pays for
-                  </h3>
-                  <div className="mt-3 overflow-hidden rounded-xl border border-line bg-canvas p-2">
-                    <ArchitectureCanvas view={shown.drawn} />
+                  <div className="mt-2 flex flex-wrap items-center gap-4">
+                    <button
+                      onClick={() =>
+                        setRevealed(
+                          revealed >= priced.view.nodes.length
+                            ? 0
+                            : priced.view.nodes.length,
+                        )
+                      }
+                      className="text-[13.5px] text-accent hover:underline"
+                    >
+                      {revealed >= priced.view.nodes.length
+                        ? "Replay the flow"
+                        : "Show all at once"}
+                    </button>
+                    <span className="text-[13px] leading-relaxed text-ink-3">
+                      Services the catalog does not price carry no figure —
+                      they are drawn because you named them, not costed.
+                    </span>
                   </div>
                 </div>
               )}
