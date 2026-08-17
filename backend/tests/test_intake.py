@@ -265,8 +265,14 @@ def test_gemini_is_preferred_when_both_keys_are_present(monkeypatch):
 
 
 def test_google_api_key_also_counts(monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    """Clearing the two providers that existed when this was written leaves
+    whatever else the developer has configured to leak in, and the assertion
+    then fails on a key that has nothing to do with what is being tested."""
+    for var in (
+        "GEMINI_API_KEY", "GROQ_API_KEY",
+        "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("GOOGLE_API_KEY", "x")
     from whichcloud.intake import available_providers
 
@@ -274,8 +280,13 @@ def test_google_api_key_also_counts(monkeypatch):
 
 
 def test_no_credentials_names_both_options(monkeypatch):
-    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY",
-                "ANTHROPIC_AUTH_TOKEN"):
+    """Every provider has to be cleared, not the two that existed when this
+    was written -- a key left in the environment means the call succeeds and
+    the test reports that no error was raised."""
+    for var in (
+        "GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY",
+        "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY",
+    ):
         monkeypatch.delenv(var, raising=False)
     with pytest.raises(IntakeError, match="GEMINI_API_KEY"):
         parse_description("a shop")

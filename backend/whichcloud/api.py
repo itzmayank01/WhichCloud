@@ -306,7 +306,7 @@ class RecommendIn(BaseModel):
 
 class DescribeIn(BaseModel):
     description: str
-    reader: Literal["gemini", "anthropic", "openai"] | None = None
+    reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
 
 
 class SaveArchitectureIn(BaseModel):
@@ -330,7 +330,7 @@ class SaveArchitectureIn(BaseModel):
 
 class ArchitectureIn(BaseModel):
     description: str
-    reader: Literal["gemini", "anthropic", "openai"] | None = None
+    reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
     #: Re-read rather than reuse the stored answer. Off by default, because
     #: the stored answer is the one the user has already seen.
     refresh: bool = False

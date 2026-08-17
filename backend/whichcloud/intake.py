@@ -29,6 +29,7 @@ Both providers fill `RequirementDraft`; only the transport differs.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Literal
@@ -38,7 +39,7 @@ from pydantic import BaseModel, Field
 from .pricing.models import REGIONS
 from .requirements import Requirement
 
-Provider = Literal["gemini", "anthropic", "openai"]
+Provider = Literal["gemini", "groq", "anthropic", "openai"]
 
 # Free tier, fast, and comfortably capable of structured extraction.
 #: The rolling alias, not a pinned version. Keys issued today cannot call
@@ -52,6 +53,11 @@ GEMINI_MODEL = "gemini-flash-latest"
 # filling a struct, not designing anything.
 ANTHROPIC_MODEL = "claude-opus-5"
 OPENAI_MODEL = "gpt-4.1-mini"
+
+#: Checked against the account's own model list rather than documentation --
+#: llama-3.3-70b-versatile was gone, and a pinned name that no longer exists
+#: fails identically to a bad key.
+GROQ_MODEL = "openai/gpt-oss-120b"
 ANTHROPIC_EFFORT = "low"
 
 SYSTEM = f"""\
@@ -183,6 +189,11 @@ def available_providers() -> list[Provider]:
     found: list[Provider] = []
     if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
         found.append("gemini")
+    # Before the billed ones: Groq's free tier is measured per minute rather
+    # than per day, so it is the one still answering when the day's Gemini
+    # quota is gone.
+    if os.getenv("GROQ_API_KEY"):
+        found.append("groq")
     if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
         found.append("anthropic")
     if os.getenv("OPENAI_API_KEY"):
@@ -311,8 +322,75 @@ def _extract_openai(description: str, client=None, key: str | None = None) -> Re
     return draft
 
 
+#: A filled example, not the schema. Handed the schema's `properties`, Groq
+#: returned it back with the field descriptions still in place -- {"goal":
+#: {"description": ..., "type": "string"}} -- because a shape full of "type"
+#: and "title" keys reads as the thing to reproduce. An example of the answer
+#: leaves nothing to mirror.
+_GROQ_SHAPE = """Reply with JSON in exactly this form, filled in from the text:
+{"goal":"Online stock and billing system for a retail chain",
+"workload_type":"web","traffic_pattern":"steady","traffic_scale":"medium",
+"region":"india","budget_monthly_usd":500,"storage_gb":100,"egress_gb":50,
+"interruptible":false,"high_availability":true,"arm_compatible":true,
+"provider_preference":"none","compliance":[],
+"assumed":["storage_gb"],"clarifying_question":"How much data do you store?"}
+
+workload_type: web, api, batch, ml, storage, mixed
+traffic_pattern: steady, spiky, unknown
+traffic_scale: low, medium, high
+provider_preference: aws, azure, gcp, none
+budget_monthly_usd: -1 when the text gives no budget.
+assumed: names of fields you had to guess. clarifying_question: "" if none."""
+
+
+def _extract_groq(
+    description: str, client=None, key: str | None = None
+) -> RequirementDraft:
+    """Groq, which speaks OpenAI's protocol.
+
+    Worth having here because its free tier is measured per minute rather than
+    per day: when four Gemini keys are spent for the day, this still answers.
+    A requirement is a short object, so the token limit that stops Groq
+    reading a twenty five service architecture does not apply.
+
+    json_object rather than json_schema. Groq's models reject the strict form,
+    and the shape is small enough to state in the prompt.
+    """
+    try:
+        import openai
+    except ImportError as exc:  # pragma: no cover - dependency is declared
+        raise IntakeError("openai is not installed: pip install openai") from exc
+
+    key = key or os.getenv("GROQ_API_KEY")
+    if not key:
+        raise IntakeError("GROQ_API_KEY is not set.")
+
+    client = client or openai.OpenAI(
+        api_key=key, base_url="https://api.groq.com/openai/v1"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            temperature=0,
+            max_tokens=1500,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": f"{description}\n\n{_GROQ_SHAPE}"},
+            ],
+        )
+    except Exception as exc:
+        raise IntakeError(f"Could not reach Groq: {exc}") from exc
+
+    return RequirementDraft.model_validate_json(
+        response.choices[0].message.content or "{}"
+    )
+
+
 _EXTRACTORS = {
     "gemini": _extract_gemini,
+    "groq": _extract_groq,
     "anthropic": _extract_anthropic,
     "openai": _extract_openai,
 }

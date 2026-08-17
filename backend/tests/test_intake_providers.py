@@ -12,7 +12,15 @@ from whichcloud.intake import _EXTRACTORS, available_providers, parse_descriptio
 
 
 def test_every_advertised_reader_has_an_extractor():
-    assert set(_EXTRACTORS) == {"gemini", "anthropic", "openai"}
+    """The Provider type is what the API accepts; the registry is what can
+    actually run. A name in one and not the other is a 500 waiting for whoever
+    passes it -- which is exactly what adding Groq to the registry and not to
+    the API's literal produced."""
+    from typing import get_args
+
+    from whichcloud.intake import Provider
+
+    assert set(_EXTRACTORS) == set(get_args(Provider))
 
 
 def test_each_extractor_is_callable():
@@ -38,13 +46,23 @@ class TestAvailability:
         ):
             assert available_providers()[0] == "gemini"
 
-    def test_all_three_are_reported(self):
+    def test_every_configured_provider_is_reported(self):
         with patch.dict(
             os.environ,
-            {"GEMINI_API_KEY": "x", "ANTHROPIC_API_KEY": "y", "OPENAI_API_KEY": "z"},
+            {
+                "GEMINI_API_KEY": "x",
+                "GROQ_API_KEY": "g",
+                "ANTHROPIC_API_KEY": "y",
+                "OPENAI_API_KEY": "z",
+            },
             clear=True,
         ):
-            assert set(available_providers()) == {"gemini", "anthropic", "openai"}
+            assert set(available_providers()) == {
+                "gemini",
+                "groq",
+                "anthropic",
+                "openai",
+            }
 
 
 def test_unknown_reader_is_refused_by_name():
