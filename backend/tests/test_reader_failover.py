@@ -126,6 +126,11 @@ def test_every_key_is_tried_whatever_the_failure(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "a,b,c")
     monkeypatch.setenv("GROQ_API_KEY", "d")
 
+    from whichcloud.architecture.schema import Architecture, Service
+
+    answer = Architecture(
+        services=[Service(name="S3", tier="data", flow="sync")]
+    )
     tried: list[str] = []
 
     def failing(description, client=None, key=None):
@@ -134,12 +139,12 @@ def test_every_key_is_tried_whatever_the_failure(monkeypatch):
 
     def working(description, client=None, key=None):
         tried.append(key)
-        return "an architecture"
+        return answer
 
     monkeypatch.setitem(ex._EXTRACTORS, "gemini", failing)
     monkeypatch.setitem(ex._EXTRACTORS, "groq", working)
 
-    assert ex._read_with_failover("a shop", None) == "an architecture"
+    assert ex._read_with_failover("a shop", None) is answer
     assert tried == ["a", "b", "c", "d"]
 
 
@@ -177,3 +182,24 @@ def test_a_real_error_is_surfaced_over_a_quota_one(monkeypatch):
 
     with pytest.raises(IntakeError, match="schema validation blew up"):
         ex._read_with_failover("a shop", None)
+
+
+def test_an_empty_architecture_is_treated_as_a_failure(monkeypatch):
+    """Some models answer a long description with an empty object rather than
+    an error. It validates, so it was returned and then cached -- and since
+    the first answer for a key is kept, a blank diagram became the permanent
+    answer for a twenty six service description."""
+    from whichcloud.architecture import extract as ex
+    from whichcloud.architecture.schema import Architecture, Service
+
+    monkeypatch.setenv("GEMINI_API_KEY", "empty")
+    monkeypatch.setenv("GROQ_API_KEY", "good")
+
+    real = Architecture(services=[Service(name="S3", tier="data", flow="sync")])
+
+    monkeypatch.setitem(
+        ex._EXTRACTORS, "gemini", lambda d, c=None, key=None: Architecture()
+    )
+    monkeypatch.setitem(ex._EXTRACTORS, "groq", lambda d, c=None, key=None: real)
+
+    assert ex._read_with_failover("a shop", None) is real
