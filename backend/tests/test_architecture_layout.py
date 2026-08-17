@@ -730,3 +730,33 @@ def test_the_actor_arrow_moves_with_the_canvas():
 
     assert lay.actor_edge.points[-1][0] <= target.x + target.w
     assert all(x >= 0 and y >= 0 for x, y in lay.actor_edge.points)
+
+
+def test_edge_services_outside_the_network_are_placed_before_it():
+    """A CDN is the first thing a request touches. Placing everything outside
+    the boundaries underneath sent it to the bottom of the page, so the eye
+    went from the users down past the whole VPC, back up into it, and left to
+    right from there. A diagram is read in the order it is laid out."""
+    from whichcloud.architecture import Architecture
+    from whichcloud.architecture.graph import build_graph
+
+    arch = Architecture(
+        services=[
+            svc("CloudFront", "edge", connects=["ELB"]),
+            svc("ELB", "api", connects=["ECS"]),
+            svc("ECS", "compute"),
+            svc("CloudWatch", "observability", flow="control"),
+        ],
+        boundaries=[
+            Boundary(kind="vpc", name="VPC", contains=["AZ 1"]),
+            Boundary(kind="az", name="AZ 1", contains=["Public subnet", "Private subnet"]),
+            Boundary(kind="subnet", name="Public subnet", contains=["ELB"]),
+            Boundary(kind="subnet", name="Private subnet", contains=["ECS"]),
+        ],
+    )
+    lay = build_layout(build_graph(arch))
+    at = {n.label: n.y for n in lay.nodes}
+    vpc = next(g for g in lay.groups if g.kind == "vpc")
+
+    assert at["CloudFront"] < vpc.y, "the CDN should meet the request before the network"
+    assert at["CloudWatch"] > vpc.y, "telemetry is read after the request path"

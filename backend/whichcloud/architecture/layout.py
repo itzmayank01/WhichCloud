@@ -967,14 +967,28 @@ def _nested_layout(graph: ArchitectureGraph) -> Layout:
         _place(root, x, y, nodes, groups)
         y += root.h + BOX_GAP
 
-    # Services in no boundary at all -- a CI pipeline, an external gateway --
-    # go underneath rather than being dropped. They are part of the system
-    # even when they are not inside its network.
+    # Services in no boundary at all -- a CDN, a CI pipeline, an external
+    # gateway -- are part of the system and have to go somewhere. Where
+    # matters: putting them all underneath sent CloudFront, which is the first
+    # thing a request touches, to the bottom of the page, so the eye went from
+    # the users down past the whole VPC, back up into it, and left to right
+    # from there. A diagram is read in the order it is laid out.
+    #
+    # So they are split by where they sit in the request path. Anything at the
+    # edge or the API tier goes above the network, which is where a request
+    # meets it; everything else -- pipelines, telemetry, management -- goes
+    # below, which is where a reader looks after following the request.
     placed_ids = {n.id for n in nodes}
     loose = [n for n in graph.nodes if n.id not in placed_ids]
-    if loose:
-        cols = min(COMPONENT_COLS * 2, len(loose))
-        for index, node in enumerate(loose):
+    before = [n for n in loose if TIER_ORDER.index(n.tier) <= TIER_ORDER.index("api")]
+    after = [n for n in loose if n not in before]
+
+    def place_row(items: list[GraphNode], top: int) -> int:
+        """Lay a row of loose services out, returning the height used."""
+        if not items:
+            return 0
+        cols = min(COMPONENT_COLS * 2, len(items))
+        for index, node in enumerate(items):
             col, row = index % cols, index // cols
             nodes.append(
                 PlacedNode(
@@ -983,9 +997,23 @@ def _nested_layout(graph: ArchitectureGraph) -> Layout:
                     monthly_usd=float(node.monthly_usd) if node.priced else None,
                     sku=node.sku,
                     x=CANVAS_PAD + col * (NODE_W + GAP_X),
-                    y=y + row * (NODE_H + ROW_GAP_INNER),
+                    y=top + row * (NODE_H + ROW_GAP_INNER),
                 )
             )
+        rows = -(-len(items) // cols)
+        return rows * NODE_H + (rows - 1) * ROW_GAP_INNER
+
+    if before:
+        # Above the boundaries, so everything below shifts down to make room.
+        used = place_row(before, CANVAS_PAD)
+        shift = used + BOX_GAP * 2
+        for node in nodes[: len(nodes) - len(before)]:
+            node.y += shift
+        for group in groups:
+            group.y += shift
+        y += shift
+
+    place_row(after, y + BOX_GAP)
 
     width = max((n.x + n.w for n in nodes), default=CANVAS_PAD)
     width = max(width, max((g.x + g.w for g in groups), default=0)) + CANVAS_PAD
