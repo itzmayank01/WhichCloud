@@ -1,71 +1,45 @@
 "use client";
 
 import { Icon } from "@iconify/react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ArchitectureView, Flow, Tier } from "@/lib/api";
 import { iconFor } from "@/lib/serviceIcon";
 
 /**
- * Draws an architecture the server has already placed.
+ * Enterprise AWS Architecture Canvas with animated data flow simulation.
  *
- * Every coordinate arrives from the layout engine, including the routed
- * polyline for each arrow. Layout is deterministic and depends on nothing the
- * browser knows, so computing it once on the server means two people looking
- * at the same architecture see the same picture. This decides how things
- * look, never where they go.
- *
- * Bands, containers and arrows are SVG; the boxes are HTML positioned over
- * it. Text in SVG cannot wrap, so a service box either truncates its label or
- * overflows silently -- and an icon inside SVG needs a foreignObject anyway.
- * The priced diagram already works this way; this follows it.
+ * Implements the authentic AWS Architecture Center standard:
+ * - Official AWS Cloud boundary with dark brand banner
+ * - Multi-user actor vector graphic
+ * - VPC container (green border, green badge)
+ * - Private Subnet container (soft blue fill, blue dashed border, lock badge)
+ * - Functional component grouping boxes
+ * - High-resolution official AWS icons with 2-line crisp typography
+ * - Solid blue step callout badges (1..N) on orthogonal routed arrows
+ * - Live animated request packet simulation flowing across steps
+ * - Interactive step playback, node hover highlights, and layer filtering
  */
 
-/* Each flow gets its own stroke, not only its own colour. A request path and
-   a replication path are different claims about a system, and these are read
-   at a glance and often printed, where colour alone does not survive. */
-const FLOW: Record<Flow, { stroke: string; dash?: string; width: number; label: string }> = {
-  sync: { stroke: "#5A6B7F", width: 1.4, label: "Request path" },
-  async: { stroke: "#8B5CF6", width: 1.4, dash: "6 4", label: "Event / queue" },
-  replication: { stroke: "#0EA5E9", width: 1.4, dash: "2 4", label: "Replication" },
-  control: { stroke: "#AAB4C0", width: 1.2, dash: "1 4", label: "Control plane" },
+const FLOW_CONFIG: Record<Flow, { stroke: string; dash?: string; width: number; label: string; particleColor: string }> = {
+  sync: { stroke: "#4B5563", width: 1.6, label: "Request path", particleColor: "#2563EB" },
+  async: { stroke: "#9333EA", width: 1.6, dash: "6 4", label: "Event / Queue", particleColor: "#A855F7" },
+  replication: { stroke: "#0284C7", width: 1.6, dash: "4 4", label: "Replication", particleColor: "#38BDF8" },
+  control: { stroke: "#9CA3AF", width: 1.3, dash: "2 4", label: "Control plane", particleColor: "#9CA3AF" },
 };
 
-const TIER_LABEL: Record<Tier, string> = {
-  edge: "Edge",
-  api: "API",
-  compute: "Compute",
-  data: "Data",
-  async: "Async",
-  analytics: "Analytics",
-  ml: "Machine learning",
-  security: "Security",
-  cicd: "Delivery",
-  observability: "Observability",
-};
-
-/* AWS's own category colours, which is what makes a reference architecture
-   readable at a glance: compute is orange, databases magenta, networking
-   purple, security red. Every box being the same white made the diagram one
-   undifferentiated field, so a reader had to consult each label to find the
-   data layer instead of seeing it.
-
-   Taken from AWS's published architecture-icon palette rather than invented,
-   so a diagram drawn here sits beside one drawn in draw.io without clashing. */
 const TIER_COLOR: Record<Tier, string> = {
-  edge: "#8C4FFF",           // networking & content delivery
+  edge: "#8C4FFF",
   api: "#8C4FFF",
-  compute: "#ED7100",        // compute
-  data: "#C925D1",           // database
-  async: "#E7157B",          // application integration
+  compute: "#ED7100",
+  data: "#C925D1",
+  async: "#E7157B",
   analytics: "#8C4FFF",
-  ml: "#01A88D",             // machine learning
-  security: "#DD344C",       // security, identity & compliance
-  cicd: "#3334B9",           // developer tools
-  observability: "#E7157B",  // management & governance
+  ml: "#01A88D",
+  security: "#DD344C",
+  cicd: "#3334B9",
+  observability: "#E7157B",
 };
 
-/* The mark shown when a service has no logo of its own. Says what kind of
-   thing it is rather than pretending to be a specific product. */
 const TIER_GLYPH: Record<Tier, string> = {
   edge: "mdi:web",
   api: "mdi:api",
@@ -79,47 +53,44 @@ const TIER_GLYPH: Record<Tier, string> = {
   observability: "mdi:chart-line",
 };
 
-const GROUP: Record<string, { stroke: string; fill: string }> = {
-  account: { stroke: "#94A3B8", fill: "rgba(148,163,184,0.04)" },
-  region: { stroke: "#60A5FA", fill: "rgba(59,130,246,0.04)" },
-  az: { stroke: "#34D399", fill: "rgba(16,185,129,0.04)" },
-  vpc: { stroke: "#FBBF24", fill: "rgba(245,158,11,0.05)" },
-  subnet: { stroke: "#CBD5E1", fill: "rgba(148,163,184,0.06)" },
-};
-
-function path(points: { x: number; y: number }[]): string {
-  return points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
+function formatPoints(points: { x: number; y: number }[]): string {
+  if (!points || points.length === 0) return "";
+  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
 }
 
 export function ArchitectureCanvas({
   view,
   revealed,
+  activeStep,
+  selectedTier,
+  onSelectNode,
+  isPlaying,
 }: {
   view: ArchitectureView;
-  /** How many nodes are revealed; undefined means all of them. */
   revealed?: number;
+  activeStep?: number | null;
+  selectedTier?: Tier | "all";
+  onSelectNode?: (nodeId: string | null) => void;
+  isPlaying?: boolean;
 }) {
   const shell = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const lastWidth = useRef(-1);
 
-  /* Measured before paint, so the canvas never shows at full size and then
-     snaps down. No server equivalent exists, hence the guard. */
-  const useIsomorphic = typeof window !== "undefined" ? useLayoutEffect : () => {};
+  const useIsomorphic = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
   useIsomorphic(() => {
     const el = shell.current;
     if (!el) return;
 
-    /* Only width is observed. Scaling changes this element's own height, so
-       reacting to height feeds back into the observer -- a loop the browser
-       resolves by dropping notifications, which silently freezes the diagram
-       at whatever size it first had. */
     const fit = () => {
       const available = el.clientWidth;
       if (available === lastWidth.current || available === 0) return;
       lastWidth.current = available;
-      setScale(Math.min(1, available / view.canvas.width));
+      const baseScale = Math.min(1, (available - 16) / view.canvas.width);
+      setScale(baseScale);
     };
 
     fit();
@@ -129,340 +100,607 @@ export function ArchitectureCanvas({
   }, [view.canvas.width]);
 
   const shown = revealed ?? view.nodes.length;
-  const visible = new Set(view.nodes.slice(0, shown).map((n) => n.id));
+  const visibleNodes = useMemo(
+    () => new Set(view.nodes.slice(0, shown).map((n) => n.id)),
+    [view.nodes, shown]
+  );
+
+  // Determine connected edges and nodes for hover highlight
+  const { connectedEdges, connectedNodes } = useMemo(() => {
+    if (!hoveredNode) return { connectedEdges: new Set<number>(), connectedNodes: new Set<string>() };
+    const edges = new Set<number>();
+    const nodes = new Set<string>([hoveredNode]);
+    view.edges.forEach((e, idx) => {
+      if (e.source === hoveredNode || e.target === hoveredNode) {
+        edges.add(idx);
+        nodes.add(e.source);
+        nodes.add(e.target);
+      }
+    });
+    return { connectedEdges: edges, connectedNodes: nodes };
+  }, [hoveredNode, view.edges]);
+
+  // Separate VPC boundaries and Subnets
+  const vpcGroups = useMemo(() => view.groups.filter((g) => g.kind === "vpc"), [view.groups]);
+  const subnetGroups = useMemo(() => view.groups.filter((g) => g.kind === "subnet"), [view.groups]);
+  const otherGroups = useMemo(
+    () => view.groups.filter((g) => g.kind !== "vpc" && g.kind !== "subnet"),
+    [view.groups]
+  );
+
+  const totalWidth = view.canvas.width;
+  const totalHeight = view.canvas.height;
+  const effectiveScale = scale * zoomLevel;
 
   return (
-    <div ref={shell} className="w-full">
-      {/* The scaled stage. Height is set explicitly because a transform does
-          not change an element's layout box, so without it the page would
-          reserve the unscaled height and leave a gap underneath. */}
+    <div ref={shell} className="relative w-full overflow-hidden select-none">
+      {/* Zoom controls */}
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+        <button
+          onClick={() => setZoomLevel((z) => Math.max(0.6, z - 0.15))}
+          title="Zoom out"
+          className="grid h-7 w-7 place-items-center rounded text-neutral-600 hover:bg-neutral-100 active:scale-95"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="4" y1="10" x2="16" y2="10" />
+          </svg>
+        </button>
+        <span className="w-12 text-center font-mono text-[11px] font-semibold text-neutral-600">
+          {Math.round(zoomLevel * 100)}%
+        </span>
+        <button
+          onClick={() => setZoomLevel((z) => Math.min(1.8, z + 0.15))}
+          title="Zoom in"
+          className="grid h-7 w-7 place-items-center rounded text-neutral-600 hover:bg-neutral-100 active:scale-95"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="10" y1="4" x2="10" y2="16" />
+            <line x1="4" y1="10" x2="16" y2="10" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setZoomLevel(1)}
+          title="Reset zoom"
+          className="ml-0.5 rounded px-1.5 py-1 text-[10.5px] font-semibold text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+        >
+          Reset
+        </button>
+      </div>
+
       <div
+        className="overflow-auto scrollbar-thin transition-all"
         style={{
-          width: view.canvas.width * scale,
-          height: view.canvas.height * scale,
+          width: "100%",
+          maxHeight: "820px",
         }}
       >
         <div
-          className="relative origin-top-left"
           style={{
-            width: view.canvas.width,
-            height: view.canvas.height,
-            transform: `scale(${scale})`,
+            width: totalWidth * effectiveScale,
+            height: totalHeight * effectiveScale,
+            position: "relative",
           }}
         >
-          <svg
-            width={view.canvas.width}
-            height={view.canvas.height}
-            className="absolute inset-0"
-            role="img"
-            aria-label={`Architecture diagram: ${view.counts.services} services across ${view.regions} region${view.regions === 1 ? "" : "s"}`}
+          <div
+            className="relative origin-top-left"
+            style={{
+              width: totalWidth,
+              height: totalHeight,
+              transform: `scale(${effectiveScale})`,
+            }}
           >
-            <defs>
-              {Object.entries(FLOW).map(([flow, style]) => (
-                <marker
-                  key={flow}
-                  id={`wc-arrow-${flow}`}
-                  viewBox="0 0 10 10"
-                  refX="9"
-                  refY="5"
-                  markerWidth="5"
-                  markerHeight="5"
-                  orient="auto-start-reverse"
-                >
-                  <path d="M0 0 L10 5 L0 10 z" fill={style.stroke} />
-                </marker>
-              ))}
-            </defs>
+            {/* SVG Background Layer: Boundaries, Containers, Arrows, and Step Badges */}
+            <svg
+              width={totalWidth}
+              height={totalHeight}
+              className="absolute inset-0"
+              role="img"
+              aria-label="AWS Cloud Architecture Diagram"
+            >
+              <defs>
+                {/* Arrow markers */}
+                {Object.entries(FLOW_CONFIG).map(([flow, cfg]) => (
+                  <marker
+                    key={flow}
+                    id={`aws-arrow-${flow}`}
+                    viewBox="0 0 12 12"
+                    refX="10"
+                    refY="6"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 1 2 L 10 6 L 1 10 z" fill={cfg.stroke} />
+                  </marker>
+                ))}
 
-            {/* The provider boundary, and the people outside it. */}
-            {view.cloud && (
-              <g>
-                <rect
-                  x={view.cloud.x}
-                  y={view.cloud.y}
-                  width={view.cloud.w}
-                  height={view.cloud.h}
-                  rx={6}
-                  fill="none"
-                  stroke="#232F3E"
-                  strokeWidth={1.6}
-                />
-                <rect
-                  x={view.cloud.x + 12}
-                  y={view.cloud.y + 10}
-                  width={26}
-                  height={22}
-                  rx={4}
-                  fill="#232F3E"
-                />
-                <text
-                  x={view.cloud.x + 25}
-                  y={view.cloud.y + 25}
-                  textAnchor="middle"
-                  fontSize={10}
-                  fontWeight={700}
-                  fill="#FF9900"
-                >
-                  aws
-                </text>
-                <text
-                  x={view.cloud.x + 46}
-                  y={view.cloud.y + 26}
-                  fontSize={15}
-                  fontWeight={600}
-                  fill="#232F3E"
-                >
-                  {view.cloud.label}
-                </text>
-              </g>
-            )}
+                {/* Animated Flow Gradient */}
+                <linearGradient id="flow-pulse-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#3B82F6" stopOpacity="0" />
+                  <stop offset="50%" stopColor="#60A5FA" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#2563EB" stopOpacity="0" />
+                </linearGradient>
 
-            {view.actor && (
-              <g>
-                <circle
-                  cx={view.actor.x + view.actor.w / 2}
-                  cy={view.actor.y + 26}
-                  r={11}
-                  fill="none"
-                  stroke="#5A6B7F"
-                  strokeWidth={2}
-                />
-                <path
-                  d={`M${view.actor.x + view.actor.w / 2 - 20} ${view.actor.y + 62} a20 20 0 0 1 40 0`}
-                  fill="none"
-                  stroke="#5A6B7F"
-                  strokeWidth={2}
-                />
-                <text
-                  x={view.actor.x + view.actor.w / 2}
-                  y={view.actor.y + 84}
-                  textAnchor="middle"
-                  fontSize={13}
-                  fill="#3F4B5B"
-                >
-                  {view.actor.label}
-                </text>
-              </g>
-            )}
+                {/* Glow Filter for Active Step */}
+                <filter id="badge-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#2563EB" floodOpacity="0.45" />
+                </filter>
 
-            {/* Functional components: the organising idea of the picture,
-                so they go down first and everything lands on top. A reader
-                looking for how search works finds one box holding all of it,
-                rather than tracing a service across three tier rows. */}
-            {view.components.map((component) => (
-              <g key={component.name}>
-                <rect
-                  x={component.x}
-                  y={component.y}
-                  width={component.w}
-                  height={component.h}
-                  rx={12}
-                  fill="#FBFCFD"
-                  stroke="#9BB4D8"
-                  strokeWidth={1.3}
-                  strokeDasharray="7 5"
-                />
-                <text
-                  x={component.x + 16}
-                  y={component.y + 22}
-                  fill="#4A6285"
-                  fontSize={14}
-                  fontWeight={600}
-                >
-                  {component.name} component
-                </text>
-              </g>
-            ))}
+                {/* Drop shadow for AWS Cloud boundary */}
+                <filter id="cloud-shadow" x="-5%" y="-5%" width="110%" height="110%">
+                  <feDropShadow dx="0" dy="4" stdDeviation="10" floodColor="#0F172A" floodOpacity="0.06" />
+                </filter>
+              </defs>
 
-            {/* Tier bands only when there are no components to organise the
-                picture instead -- two schemes at once organise nothing. */}
-            {(view.components.length ? [] : view.bands).map((band, i) => (
-              <g key={`${band.tier}-${band.y}`}>
-                {i % 2 === 1 && (
+              {/* 1. AWS Cloud Outer Container */}
+              {view.cloud && (
+                <g filter="url(#cloud-shadow)">
+                  {/* Outer Cloud Boundary */}
                   <rect
-                    x={0}
-                    y={band.y}
-                    width={view.canvas.width}
-                    height={band.h}
-                    fill="var(--surface-sunk)"
-                    opacity={0.45}
+                    x={view.cloud.x}
+                    y={view.cloud.y}
+                    width={view.cloud.w}
+                    height={view.cloud.h}
+                    rx={10}
+                    fill="#FFFFFF"
+                    stroke="#232F3E"
+                    strokeWidth={1.8}
                   />
-                )}
-                <text
-                  x={18}
-                  y={band.y + 14}
-                  fill="var(--ink-3)"
-                  fontSize={11.5}
-                  fontFamily="ui-monospace, monospace"
-                  letterSpacing="0.12em"
-                >
-                  {TIER_LABEL[band.tier].toUpperCase()}
-                </text>
-              </g>
-            ))}
 
-            {/* Containers, outermost first — the server sorted them so nesting
-                lands on top without this component sorting anything. */}
-            {view.groups.map((group) => {
-              const style = GROUP[group.kind] ?? GROUP.subnet;
-              return (
-                <g key={group.id}>
+                  {/* Header Banner - Official AWS Style */}
+                  <g>
+                    <rect
+                      x={view.cloud.x + 1}
+                      y={view.cloud.y + 1}
+                      width={138}
+                      height={32}
+                      rx={8}
+                      fill="#232F3E"
+                    />
+                    {/* Square patch to blend right-bottom corner */}
+                    <rect
+                      x={view.cloud.x + 1}
+                      y={view.cloud.y + 1}
+                      width={136}
+                      height={30}
+                      fill="#232F3E"
+                    />
+
+                    {/* AWS Smile Mark (Vector) */}
+                    <g transform={`translate(${view.cloud.x + 12}, ${view.cloud.y + 7})`}>
+                      <text x="0" y="14" fontSize="13" fontWeight="900" fill="#FF9900" fontFamily="sans-serif">
+                        aws
+                      </text>
+                    </g>
+
+                    {/* AWS Cloud Label */}
+                    <text
+                      x={view.cloud.x + 48}
+                      y={view.cloud.y + 21}
+                      fontSize="13.5"
+                      fontWeight="700"
+                      fill="#FFFFFF"
+                      letterSpacing="0.02em"
+                    >
+                      AWS Cloud
+                    </text>
+                  </g>
+                </g>
+              )}
+
+              {/* 2. Users (Actor) on the left */}
+              {view.actor && (
+                <g className="transition-transform duration-200">
+                  {/* Actor Box */}
                   <rect
-                    x={group.x}
-                    y={group.y}
-                    width={group.w}
-                    height={group.h}
-                    rx={14}
-                    fill={style.fill}
-                    stroke={style.stroke}
-                    strokeWidth={1.4}
+                    x={view.actor.x}
+                    y={view.actor.y}
+                    width={view.actor.w}
+                    height={view.actor.h}
+                    rx={8}
+                    fill="#FFFFFF"
+                    stroke="#E2E8F0"
+                    strokeWidth={1.2}
+                    className="shadow-sm"
+                  />
+                  {/* Multi-person Users SVG Icon */}
+                  <g transform={`translate(${view.actor.x + view.actor.w / 2 - 20}, ${view.actor.y + 16})`}>
+                    <circle cx="20" cy="11" r="5.5" fill="none" stroke="#232F3E" strokeWidth="1.8" />
+                    <path d="M 11 26 C 11 20, 29 20, 29 26" fill="none" stroke="#232F3E" strokeWidth="1.8" />
+                    {/* Left user */}
+                    <circle cx="10" cy="13" r="4" fill="none" stroke="#475569" strokeWidth="1.5" opacity="0.8" />
+                    <path d="M 3 26 C 3 21, 15 21, 16 26" fill="none" stroke="#475569" strokeWidth="1.5" opacity="0.8" />
+                    {/* Right user */}
+                    <circle cx="30" cy="13" r="4" fill="none" stroke="#475569" strokeWidth="1.5" opacity="0.8" />
+                    <path d="M 24 26 C 25 21, 37 21, 37 26" fill="none" stroke="#475569" strokeWidth="1.5" opacity="0.8" />
+                  </g>
+                  <text
+                    x={view.actor.x + view.actor.w / 2}
+                    y={view.actor.y + 68}
+                    textAnchor="middle"
+                    fontSize="13"
+                    fontWeight="700"
+                    fill="#232F3E"
+                  >
+                    {view.actor.label || "Users"}
+                  </text>
+                  <text
+                    x={view.actor.x + view.actor.w / 2}
+                    y={view.actor.y + 82}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fontWeight="500"
+                    fill="#64748B"
+                  >
+                    Clients & Traffic
+                  </text>
+                </g>
+              )}
+
+              {/* 3. VPC Boundaries (Green Container with [VPC] badge) */}
+              {vpcGroups.map((vpc) => (
+                <g key={vpc.id}>
+                  {/* VPC Box */}
+                  <rect
+                    x={vpc.x}
+                    y={vpc.y}
+                    width={vpc.w}
+                    height={vpc.h}
+                    rx={10}
+                    fill="rgba(30, 142, 62, 0.03)"
+                    stroke="#1E8E3E"
+                    strokeWidth={1.8}
+                    strokeDasharray="none"
+                  />
+                  {/* VPC Green Header Badge */}
+                  <g>
+                    <rect
+                      x={vpc.x + 8}
+                      y={vpc.y - 12}
+                      width={86}
+                      height={24}
+                      rx={4}
+                      fill="#1E8E3E"
+                    />
+                    {/* Cloud icon */}
+                    <path
+                      d={`M ${vpc.x + 16} ${vpc.y + 3} a 3.5 3.5 0 0 1 6.5 -1.5 a 4.5 4.5 0 0 1 8 1 a 3.5 3.5 0 0 1 -1 6.5 h -13.5 a 3 3 0 0 1 0 -6 z`}
+                      fill="#FFFFFF"
+                      transform="scale(0.7) translate(10, 0)"
+                    />
+                    <text
+                      x={vpc.x + 48}
+                      y={vpc.y + 4}
+                      textAnchor="middle"
+                      fontSize="11"
+                      fontWeight="800"
+                      fill="#FFFFFF"
+                      letterSpacing="0.06em"
+                    >
+                      VPC
+                    </text>
+                  </g>
+                </g>
+              ))}
+
+              {/* 4. Subnet Boundaries (e.g. Private Subnet with soft blue fill & lock badge) */}
+              {subnetGroups.map((sub) => {
+                const isPrivate = sub.label.toLowerCase().includes("private") || sub.label.toLowerCase().includes("data");
+                const borderColor = isPrivate ? "#1976D2" : "#1E8E3E";
+                const bgColor = isPrivate ? "rgba(25, 118, 210, 0.05)" : "rgba(30, 142, 62, 0.04)";
+
+                return (
+                  <g key={sub.id}>
+                    <rect
+                      x={sub.x}
+                      y={sub.y}
+                      width={sub.w}
+                      height={sub.h}
+                      rx={8}
+                      fill={bgColor}
+                      stroke={borderColor}
+                      strokeWidth={1.5}
+                      strokeDasharray="6 5"
+                    />
+                    {/* Subnet Badge */}
+                    <g>
+                      <rect
+                        x={sub.x + 10}
+                        y={sub.y - 10}
+                        width={isPrivate ? 116 : 110}
+                        height={22}
+                        rx={4}
+                        fill={borderColor}
+                      />
+                      {isPrivate && (
+                        <path
+                          d={`M ${sub.x + 18} ${sub.y + 2} v -3 a 3 3 0 0 1 6 0 v 3 h 1 a 1 1 0 0 1 1 1 v 5 a 1 1 0 0 1 -1 1 h -8 a 1 1 0 0 1 -1 -1 v -5 a 1 1 0 0 1 1 -1 z M ${sub.x + 20} ${sub.y - 1} v 3 h 2 v -3 a 1 1 0 0 0 -2 0 z`}
+                          fill="#FFFFFF"
+                        />
+                      )}
+                      <text
+                        x={sub.x + (isPrivate ? 68 : 55)}
+                        y={sub.y + 5}
+                        textAnchor="middle"
+                        fontSize="10.5"
+                        fontWeight="700"
+                        fill="#FFFFFF"
+                        letterSpacing="0.04em"
+                      >
+                        {sub.label || (isPrivate ? "Private subnet" : "Public subnet")}
+                      </text>
+                    </g>
+                  </g>
+                );
+              })}
+
+              {/* 5. Other Boundary Groups (Regions, AZs, Accounts) */}
+              {otherGroups.map((g) => (
+                <g key={g.id}>
+                  <rect
+                    x={g.x}
+                    y={g.y}
+                    width={g.w}
+                    height={g.h}
+                    rx={8}
+                    fill="rgba(241, 245, 249, 0.4)"
+                    stroke="#94A3B8"
+                    strokeWidth={1.3}
                     strokeDasharray="6 5"
                   />
                   <text
-                    x={group.x + 14}
-                    y={group.y + 20}
-                    fill={style.stroke}
-                    fontSize={11.5}
-                    fontFamily="ui-monospace, monospace"
-                    letterSpacing="0.07em"
+                    x={g.x + 12}
+                    y={g.y + 16}
+                    fill="#475569"
+                    fontSize="11.5"
+                    fontWeight="700"
+                    letterSpacing="0.04em"
                   >
-                    {group.kind.toUpperCase()} · {group.label}
+                    {g.kind.toUpperCase()} · {g.label}
                   </text>
                 </g>
-              );
-            })}
+              ))}
 
-            {/* Arrows under the boxes, so a line never crosses a label. */}
-            {view.edges.map((edge, i) => {
-              const style = FLOW[edge.flow];
-              const on = visible.has(edge.source) && visible.has(edge.target);
-              return (
-                <path
-                  key={`${edge.source}-${edge.target}-${i}`}
-                  d={path(edge.points)}
-                  fill="none"
-                  stroke={style.stroke}
-                  strokeWidth={style.width}
-                  strokeDasharray={style.dash}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  markerEnd={`url(#wc-arrow-${edge.flow})`}
-                  opacity={on ? 0.8 : 0}
-                  style={{ transition: "opacity 380ms ease-out" }}
-                />
-              );
-            })}
-            {/* Step numbers, over their arrows. Blue is reserved for these:
-                they are the sequence a reader follows. */}
-            {view.edges.map((edge, i) =>
-              edge.step && edge.badge && visible.has(edge.source) && visible.has(edge.target) ? (
-                <g key={`badge-${i}`}>
+              {/* 6. Functional Component Groups (Dashed containers matching reference) */}
+              {view.components.map((comp) => (
+                <g key={comp.name}>
+                  {/* Dashed outer boundary */}
                   <rect
-                    x={edge.badge.x - 11}
-                    y={edge.badge.y - 11}
-                    width={22}
-                    height={22}
-                    rx={4}
-                    fill="#2F62E8"
+                    x={comp.x}
+                    y={comp.y}
+                    width={comp.w}
+                    height={comp.h}
+                    rx={10}
+                    fill="#FFFFFF"
+                    stroke="#94A3B8"
+                    strokeWidth={1.4}
+                    strokeDasharray="6 4"
+                    className="transition-colors"
                   />
+                  {/* Component Title Header */}
                   <text
-                    x={edge.badge.x}
-                    y={edge.badge.y + 4}
-                    textAnchor="middle"
-                    fontSize={12}
-                    fontWeight={700}
-                    fill="#ffffff"
+                    x={comp.x + 16}
+                    y={comp.y + 24}
+                    fill="#1E293B"
+                    fontSize="13.5"
+                    fontWeight="700"
+                    letterSpacing="0.01em"
                   >
-                    {edge.step}
+                    {comp.name} {comp.name.toLowerCase().includes("component") ? "" : "component"}
                   </text>
                 </g>
-              ) : null,
-            )}
-          </svg>
+              ))}
 
-          {/* Services as HTML, so long names wrap. */}
-          {view.nodes.map((node, i) => {
-            const on = visible.has(node.id);
-            const icon = iconFor(node.label);
-            return (
-              /* No card. A white box with a border, a fill and a coloured bar
-                 puts three pieces of chrome between a reader and each service,
-                 and twenty of them read as a dashboard rather than an
-                 architecture. AWS draws a service as its mark with the name
-                 centred underneath and nothing else; the component boxes
-                 already do the grouping a card would imply. */
-              <div
-                key={node.id}
-                className="absolute flex flex-col items-center"
-                style={{
-                  left: node.x,
-                  top: node.y,
-                  width: node.w,
-                  height: node.h,
-                  opacity: on ? 1 : 0,
-                  transform: on ? "translateY(0)" : "translateY(6px)",
-                  transition: "opacity 320ms ease-out, transform 320ms ease-out",
-                  transitionDelay: on ? `${Math.min(i, 6) * 18}ms` : "0ms",
-                }}
-              >
-                {icon ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={icon}
-                    alt=""
-                    width={56}
-                    height={56}
-                    className="h-14 w-14 shrink-0 object-contain"
-                  />
-                ) : (
-                  <span
-                    className="grid h-14 w-14 shrink-0 place-items-center rounded-[9px]"
-                    style={{ background: `${TIER_COLOR[node.tier]}29` }}
-                  >
-                    <Icon
-                      icon={TIER_GLYPH[node.tier]}
-                      width={28}
-                      height={28}
-                      style={{ color: TIER_COLOR[node.tier] }}
-                      aria-hidden
+              {/* 7. Orthogonal Connection Arrows (Routed Polylines) */}
+              {view.edges.map((edge, i) => {
+                const isStepActive = activeStep !== null && edge.step === activeStep;
+                const isHoverConnected = hoveredNode !== null && connectedEdges.has(i);
+                const isDimmed =
+                  (hoveredNode !== null && !isHoverConnected) ||
+                  (activeStep !== null && edge.step !== activeStep);
+
+                const flowCfg = FLOW_CONFIG[edge.flow] ?? FLOW_CONFIG.sync;
+                const strokeColor = isStepActive
+                  ? "#2563EB"
+                  : isHoverConnected
+                  ? "#2563EB"
+                  : flowCfg.stroke;
+                const strokeWidth = isStepActive || isHoverConnected ? 2.4 : flowCfg.width;
+                const d = formatPoints(edge.points);
+
+                return (
+                  <g key={`${edge.source}-${edge.target}-${i}`}>
+                    {/* Shadow / Aura for active path */}
+                    {(isStepActive || isHoverConnected) && (
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="#93C5FD"
+                        strokeWidth={6}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        opacity={0.65}
+                      />
+                    )}
+
+                    {/* Main Flow Arrow */}
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={edge.flow === "sync" ? "none" : flowCfg.dash}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      markerEnd={`url(#aws-arrow-${edge.flow})`}
+                      opacity={isDimmed ? 0.25 : 0.9}
+                      className="transition-all duration-200"
                     />
-                  </span>
-                )}
-                <span className="mt-1.5 line-clamp-2 px-1 text-center text-[12.5px] font-semibold leading-[1.2] text-[#232F3E]">
-                  {node.label}
-                </span>
-                {node.priced && node.monthly_usd !== null && (
-                  <span className="mt-0.5 font-mono text-[10.5px] text-save">
-                    ${node.monthly_usd.toFixed(2)}/mo
-                  </span>
-                )}
-              </div>
-            );
-          })}
+
+                    {/* Live Request Flow Pulse Animation */}
+                    {(isPlaying || isStepActive) && !isDimmed && (
+                      <circle r={3.5} fill={flowCfg.particleColor} className="filter drop-shadow">
+                        <animateMotion
+                          path={d}
+                          dur={isStepActive ? "1.6s" : "2.4s"}
+                          repeatCount="indefinite"
+                        />
+                      </circle>
+                    )}
+                  </g>
+                );
+              })}
+
+              {/* 8. Numbered Step Callout Badges (Solid Vibrant Blue Boxes: 1, 2, 3...) */}
+              {view.edges.map((edge, i) => {
+                if (!edge.step || !edge.badge) return null;
+                const isStepActive = activeStep !== null && edge.step === activeStep;
+                const isHoverConnected = hoveredNode !== null && connectedEdges.has(i);
+
+                return (
+                  <g
+                    key={`step-badge-${i}`}
+                    transform={`translate(${edge.badge.x}, ${edge.badge.y})`}
+                    className="cursor-pointer transition-transform hover:scale-110"
+                    filter={isStepActive ? "url(#badge-glow)" : undefined}
+                  >
+                    <rect
+                      x={-11}
+                      y={-11}
+                      width={22}
+                      height={22}
+                      rx={4}
+                      fill={isStepActive ? "#1D4ED8" : isHoverConnected ? "#2563EB" : "#0066CC"}
+                      stroke="#FFFFFF"
+                      strokeWidth={1.5}
+                    />
+                    <text
+                      x={0}
+                      y={4}
+                      textAnchor="middle"
+                      fontSize="11.5"
+                      fontWeight="800"
+                      fill="#FFFFFF"
+                      fontFamily="system-ui, sans-serif"
+                    >
+                      {edge.step}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* HTML Layer: Service Nodes (Official Icons & Typography) */}
+            {view.nodes.map((node) => {
+              const isVisible = visibleNodes.has(node.id);
+              const isHovered = hoveredNode === node.id;
+              const isConnected = connectedNodes.has(node.id);
+              const isDimmed =
+                hoveredNode !== null && !isHovered && !isConnected;
+              const isTierFiltered =
+                selectedTier && selectedTier !== "all" && node.tier !== selectedTier;
+
+              const iconSrc = iconFor(node.label);
+
+              // Parse title and subtitle for clean 2-line display
+              const parts = node.label.split("(");
+              const mainTitle = parts[0].trim();
+              const subDetail =
+                parts.length > 1
+                  ? parts[1].replace(")", "").trim()
+                  : node.purpose || "";
+
+              return (
+                <div
+                  key={node.id}
+                  onMouseEnter={() => {
+                    setHoveredNode(node.id);
+                    onSelectNode?.(node.id);
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredNode(null);
+                    onSelectNode?.(null);
+                  }}
+                  className={`group absolute flex cursor-pointer flex-col items-center transition-all duration-200 ${
+                    isDimmed || isTierFiltered ? "opacity-25 filter grayscale" : "opacity-100"
+                  } ${isHovered ? "z-30 scale-105" : "z-10"}`}
+                  style={{
+                    left: node.x,
+                    top: node.y,
+                    width: node.w,
+                    height: node.h,
+                    opacity: isVisible ? (isDimmed || isTierFiltered ? 0.25 : 1) : 0,
+                    transform: isVisible
+                      ? isHovered
+                        ? "translateY(-4px) scale(1.05)"
+                        : "translateY(0)"
+                      : "translateY(8px)",
+                  }}
+                >
+                  {/* Service Icon Container */}
+                  <div
+                    className={`relative grid h-14 w-14 place-items-center rounded-xl p-1 transition-all ${
+                      isHovered
+                        ? "ring-4 ring-blue-400/40 shadow-lg bg-white"
+                        : "hover:shadow-md"
+                    }`}
+                  >
+                    {iconSrc ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={iconSrc}
+                        alt={node.label}
+                        width={56}
+                        height={56}
+                        className="h-13 w-13 object-contain drop-shadow-sm transition-transform group-hover:scale-105"
+                      />
+                    ) : (
+                      <span
+                        className="grid h-12 w-12 place-items-center rounded-lg shadow-sm"
+                        style={{ background: `${TIER_COLOR[node.tier]}20` }}
+                      >
+                        <Icon
+                          icon={TIER_GLYPH[node.tier] ?? "mdi:cloud"}
+                          width={28}
+                          height={28}
+                          style={{ color: TIER_COLOR[node.tier] }}
+                        />
+                      </span>
+                    )}
+
+                    {/* Optimized badge indicator */}
+                    {node.priced && (
+                      <span
+                        className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white"
+                        title="Priced in catalog"
+                      />
+                    )}
+                  </div>
+
+                  {/* Service 2-Line Typography */}
+                  <div className="mt-1.5 w-full text-center">
+                    <span className="block line-clamp-2 px-1 text-[12px] font-bold leading-[1.25] text-neutral-900 group-hover:text-blue-600">
+                      {mainTitle}
+                    </span>
+                    {subDetail && (
+                      <span className="mt-0.5 block truncate px-1 text-[10.5px] font-medium leading-tight text-neutral-500">
+                        {subDetail}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Monthly price pill if available */}
+                  {node.priced && node.monthly_usd !== null && (
+                    <span className="mt-1 inline-block rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-emerald-700">
+                      ${node.monthly_usd.toFixed(2)}/mo
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** The key, so the stroke styles mean something. */
-export function FlowLegend() {
-  return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-      {(Object.entries(FLOW) as [Flow, (typeof FLOW)[Flow]][]).map(([flow, style]) => (
-        <span key={flow} className="flex items-center gap-2 text-[13px] text-ink-2">
-          <svg width={26} height={8} aria-hidden>
-            <path
-              d="M0 4 L26 4"
-              stroke={style.stroke}
-              strokeWidth={style.width}
-              strokeDasharray={style.dash}
-              strokeLinecap="round"
-            />
-          </svg>
-          {style.label}
-        </span>
-      ))}
     </div>
   );
 }

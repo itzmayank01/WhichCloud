@@ -453,3 +453,86 @@ def test_a_badge_avoids_the_boxes_and_the_other_badges():
         point = badge_point(edge.points, lay.nodes, taken)
         assert point not in taken
         taken.add(point)
+
+
+def _nested_arch():
+    from whichcloud.architecture import Architecture
+
+    return Architecture(
+        services=[
+            svc("ELB", "api", connects=["EC2"]),
+            svc("EC2", "compute", connects=["RDS"]),
+            svc("RDS", "data"),
+            svc("NAT", "security"),
+        ],
+        boundaries=[
+            Boundary(kind="vpc", name="VPC", contains=["AZ 1", "AZ 2"]),
+            Boundary(kind="az", name="AZ 1", contains=["Public subnet 1", "Private subnet 1"]),
+            Boundary(kind="az", name="AZ 2", contains=["Public subnet 2", "Private subnet 2"]),
+            Boundary(kind="subnet", name="Public subnet 1", contains=["ELB"]),
+            Boundary(kind="subnet", name="Private subnet 1", contains=["EC2"]),
+            Boundary(kind="subnet", name="Public subnet 2", contains=["NAT"]),
+            Boundary(kind="subnet", name="Private subnet 2", contains=["RDS"]),
+        ],
+    )
+
+
+def test_a_network_description_nests_its_boundaries():
+    """A VPC is not a shape fitted around scattered boxes; it is the thing
+    they are inside. Drawn the other way round the containers overlap each
+    other and their own contents."""
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_nested_arch()))
+    by_kind = {g.kind: g for g in lay.groups}
+
+    vpc, az = by_kind["vpc"], by_kind["az"]
+    assert vpc.x < az.x and vpc.y < az.y
+    assert vpc.x + vpc.w > az.x + az.w
+    assert vpc.y + vpc.h > az.y + az.h
+
+
+def test_zones_sit_side_by_side_and_their_subnets_stack():
+    """Every multi-AZ diagram is read by comparing one zone against the next,
+    with public above private inside each."""
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_nested_arch()))
+    zones = sorted((g for g in lay.groups if g.kind == "az"), key=lambda g: g.x)
+    subnets = [g for g in lay.groups if g.kind == "subnet"]
+
+    assert zones[0].y == zones[1].y and zones[0].x < zones[1].x
+
+    public = [g for g in subnets if "Public" in g.label]
+    private = [g for g in subnets if "Private" in g.label]
+    assert max(g.y for g in public) < min(g.y for g in private)
+
+
+def test_every_service_lands_inside_the_subnet_that_claims_it():
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_nested_arch()))
+    subnets = [g for g in lay.groups if g.kind == "subnet"]
+
+    for node in lay.nodes:
+        holder = [
+            g for g in subnets
+            if g.x <= node.x and node.x + node.w <= g.x + g.w
+            and g.y <= node.y and node.y + node.h <= g.y + g.h
+        ]
+        assert holder, f"{node.label} sits in no subnet"
+
+
+def test_a_lone_container_does_not_trigger_nesting():
+    """One VPC holding everything is not a hierarchy and gains nothing from
+    being laid out as one."""
+    from whichcloud.architecture import Architecture
+    from whichcloud.architecture.graph import build_graph
+
+    arch = Architecture(
+        services=[svc("EKS", "compute", component="App")],
+        boundaries=[Boundary(kind="vpc", name="VPC", contains=["EKS"])],
+    )
+    lay = build_layout(build_graph(arch))
+
+    assert lay.components, "expected the component layout"

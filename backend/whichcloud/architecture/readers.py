@@ -69,6 +69,14 @@ EXHAUSTED = (
     "high demand",
     "try again later",
     "temporarily",
+    "permission_denied",
+    "permission denied",
+    "denied access",
+    "403",
+    "forbidden",
+    "unauthorized",
+    "invalid_api_key",
+    "401",
 )
 
 

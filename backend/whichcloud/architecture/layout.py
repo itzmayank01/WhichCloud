@@ -570,6 +570,9 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
     services are laid out in a small grid ordered by tier, so a request still
     reads downward within the group it belongs to.
     """
+    if _has_network_nesting(graph):
+        return _nested_layout(graph)
+
     components = graph.components()
     if not components:
         return _fit(Layout(width=CANVAS_PAD * 2, height=CANVAS_PAD * 2))
@@ -701,6 +704,226 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
             h=ACTOR_H,
         )
 
+    return _fit(layout)
+
+
+
+
+# ── boundary-first placement ──────────────────────────────────────────────
+#
+# The other layout packs components and then draws each boundary as a box
+# around wherever its services happened to land. That is backwards for a
+# description with real network structure: a VPC is not a shape fitted around
+# scattered boxes, it is the thing the boxes are inside, and drawn the other
+# way round the containers overlap each other and their contents.
+#
+# So when a description has network nesting -- a VPC, availability zones,
+# subnets -- the boundaries are placed first and the services put inside them.
+# Availability zones sit side by side as columns, because that is what makes a
+# multi-AZ diagram legible: the eye compares one zone against the other.
+# Everything else stacks.
+
+#: Zones go side by side; every other container stacks its children.
+SIDE_BY_SIDE: set[str] = {"az", "region"}
+
+BOX_PAD = 18
+BOX_LABEL_H = 30
+BOX_GAP = 22
+
+
+@dataclass
+class _Box:
+    """A boundary being sized before it is placed."""
+
+    group: GraphGroup
+    nodes: list[GraphNode]
+    children: list["_Box"]
+    w: int = 0
+    h: int = 0
+
+
+def _tree(graph: ArchitectureGraph) -> list[_Box]:
+    """The boundary hierarchy, with each one's own services attached."""
+    by_id = {g.id: g for g in graph.groups}
+    node_by_id = {n.id: n for n in graph.nodes}
+    child_ids = {c for g in graph.groups for c in g.child_ids}
+
+    def build(group: GraphGroup) -> _Box:
+        return _Box(
+            group=group,
+            nodes=[node_by_id[n] for n in group.node_ids if n in node_by_id],
+            children=[build(by_id[c]) for c in group.child_ids if c in by_id],
+        )
+
+    return [build(g) for g in graph.groups if g.id not in child_ids]
+
+
+def _measure(box: _Box) -> None:
+    """Size a box from the bottom up: children first, then itself."""
+    for child in box.children:
+        _measure(child)
+
+    cols = min(COMPONENT_COLS, max(1, len(box.nodes)))
+    rows = -(-len(box.nodes) // cols) if box.nodes else 0
+    nodes_w = cols * NODE_W + (cols - 1) * GAP_X if box.nodes else 0
+    nodes_h = rows * NODE_H + (rows - 1) * ROW_GAP_INNER if box.nodes else 0
+
+    if box.children:
+        # Whether children go side by side is a fact about the children, not
+        # about their parent. Testing the parent's kind put the subnets of an
+        # availability zone in a row, where every multi-AZ diagram stacks
+        # them: public above private, one zone beside the next.
+        side = any(c.group.kind in SIDE_BY_SIDE for c in box.children)
+        if side:
+            kids_w = sum(c.w for c in box.children) + BOX_GAP * (len(box.children) - 1)
+            kids_h = max(c.h for c in box.children)
+        else:
+            kids_w = max(c.w for c in box.children)
+            kids_h = sum(c.h for c in box.children) + BOX_GAP * (len(box.children) - 1)
+    else:
+        kids_w = kids_h = 0
+
+    inner_w = max(nodes_w, kids_w)
+    inner_h = nodes_h + (BOX_GAP if nodes_h and kids_h else 0) + kids_h
+
+    box.w = inner_w + BOX_PAD * 2
+    box.h = inner_h + BOX_PAD * 2 + BOX_LABEL_H
+
+
+def _place(
+    box: _Box, x: int, y: int, nodes: list[PlacedNode], groups: list[PlacedGroup],
+    depth: int = 0,
+) -> None:
+    """Put a measured box down, then everything inside it."""
+    groups.append(
+        PlacedGroup(
+            id=box.group.id, kind=box.group.kind, label=box.group.label,
+            depth=depth, x=x, y=y, w=box.w, h=box.h,
+        )
+    )
+
+    inner_x = x + BOX_PAD
+    inner_y = y + BOX_PAD + BOX_LABEL_H
+
+    if box.nodes:
+        cols = min(COMPONENT_COLS, len(box.nodes))
+        for index, node in enumerate(box.nodes):
+            col, row = index % cols, index // cols
+            nodes.append(
+                PlacedNode(
+                    id=node.id, label=node.label, tier=node.tier,
+                    purpose=node.purpose, priced=node.priced,
+                    monthly_usd=float(node.monthly_usd) if node.priced else None,
+                    sku=node.sku,
+                    x=inner_x + col * (NODE_W + GAP_X),
+                    y=inner_y + row * (NODE_H + ROW_GAP_INNER),
+                )
+            )
+        rows = -(-len(box.nodes) // cols)
+        inner_y += rows * NODE_H + (rows - 1) * ROW_GAP_INNER + BOX_GAP
+
+    if not box.children:
+        return
+
+    side = any(c.group.kind in SIDE_BY_SIDE for c in box.children)
+    cursor_x, cursor_y = inner_x, inner_y
+    for child in box.children:
+        _place(child, cursor_x, cursor_y, nodes, groups, depth + 1)
+        if side:
+            cursor_x += child.w + BOX_GAP
+        else:
+            cursor_y += child.h + BOX_GAP
+
+
+def _has_network_nesting(graph: ArchitectureGraph) -> bool:
+    """Is there real structure to lay out, or only a stray container?
+
+    One VPC holding everything is not a hierarchy and gains nothing from this;
+    a VPC with zones and subnets inside it is exactly what it is for.
+    """
+    kinds = {g.kind for g in graph.groups if g.node_ids or g.child_ids}
+    return len(kinds & {"vpc", "az", "subnet", "region"}) >= 2
+
+
+def _nested_layout(graph: ArchitectureGraph) -> Layout:
+    """Boundaries first, services inside them.
+
+    For a description with real network structure this is the shape of the
+    thing: a VPC holding zones holding subnets holding services. Placing the
+    services first and fitting boxes around them afterwards produces
+    containers that overlap each other and their own contents, because a
+    bounding box drawn round scattered nodes is not a boundary -- it is a
+    shape that happens to enclose them.
+    """
+    roots = _tree(graph)
+    for root in roots:
+        _measure(root)
+
+    nodes: list[PlacedNode] = []
+    groups: list[PlacedGroup] = []
+
+    x = CANVAS_PAD
+    y = CANVAS_PAD
+    for root in roots:
+        _place(root, x, y, nodes, groups)
+        y += root.h + BOX_GAP
+
+    # Services in no boundary at all -- a CI pipeline, an external gateway --
+    # go underneath rather than being dropped. They are part of the system
+    # even when they are not inside its network.
+    placed_ids = {n.id for n in nodes}
+    loose = [n for n in graph.nodes if n.id not in placed_ids]
+    if loose:
+        cols = min(COMPONENT_COLS * 2, len(loose))
+        for index, node in enumerate(loose):
+            col, row = index % cols, index // cols
+            nodes.append(
+                PlacedNode(
+                    id=node.id, label=node.label, tier=node.tier,
+                    purpose=node.purpose, priced=node.priced,
+                    monthly_usd=float(node.monthly_usd) if node.priced else None,
+                    sku=node.sku,
+                    x=CANVAS_PAD + col * (NODE_W + GAP_X),
+                    y=y + row * (NODE_H + ROW_GAP_INNER),
+                )
+            )
+
+    width = max((n.x + n.w for n in nodes), default=CANVAS_PAD)
+    width = max(width, max((g.x + g.w for g in groups), default=0)) + CANVAS_PAD
+    height = max((n.y + n.h for n in nodes), default=CANVAS_PAD)
+    height = max(height, max((g.y + g.h for g in groups), default=0)) + CANVAS_PAD
+
+    layout = Layout(width=width, height=height, nodes=nodes, groups=groups)
+
+    for edge in graph.edges:
+        source, target = layout.node(edge.source), layout.node(edge.target)
+        if source and target:
+            layout.edges.append(
+                PlacedEdge(
+                    source=edge.source, target=edge.target, flow=edge.flow,
+                    points=_route(source, target, nodes, width),
+                )
+            )
+
+    _number_the_path(graph, layout)
+
+    extent = [*layout.nodes, *layout.groups]
+    left = min(b.x for b in extent)
+    top = min(b.y for b in extent)
+    right = max(b.x + b.w for b in extent)
+    bottom = max(b.y + b.h for b in extent)
+    layout.cloud = PlacedCloud(
+        label="AWS Cloud",
+        x=left - CLOUD_PAD, y=top - CLOUD_PAD - CLOUD_LABEL_H,
+        w=(right - left) + CLOUD_PAD * 2,
+        h=(bottom - top) + CLOUD_PAD * 2 + CLOUD_LABEL_H,
+    )
+    layout.actor = PlacedActor(
+        label="Users",
+        x=layout.cloud.x - ACTOR_GAP - ACTOR_W,
+        y=layout.cloud.y + (layout.cloud.h - ACTOR_H) // 2,
+        w=ACTOR_W, h=ACTOR_H,
+    )
     return _fit(layout)
 
 
