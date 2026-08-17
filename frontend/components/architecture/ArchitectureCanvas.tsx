@@ -310,47 +310,21 @@ export function ArchitectureCanvas({
                     strokeWidth={1.8}
                   />
 
-                  {/* The AWS mark, then the label beside it on white.
-                      A navy banner with the wordmark in orange inverts both
-                      halves of the logo: the word is white, the smile is
-                      orange, and "AWS Cloud" is a caption rather than part of
-                      the mark. */}
+                  {/* AWS's own AWS Cloud mark, vendored beside the other
+                      group icons. This was a hand-drawn likeness -- navy
+                      square, wordmark, an orange arc for the smile -- and a
+                      decent likeness is still a likeness. */}
                   <g>
-                    <rect
+                    <image
                       x={view.cloud.x + 12}
-                      y={view.cloud.y + 10}
-                      width={38}
-                      height={32}
-                      rx={3}
-                      fill="#232F3E"
+                      y={view.cloud.y + 9}
+                      width={36}
+                      height={36}
+                      href="/icons/aws-groups/aws-cloud.png"
                     />
                     <text
-                      x={view.cloud.x + 31}
-                      y={view.cloud.y + 26}
-                      textAnchor="middle"
-                      fontSize="13"
-                      fontWeight="700"
-                      fill="#FFFFFF"
-                      fontFamily="system-ui, sans-serif"
-                    >
-                      aws
-                    </text>
-                    {/* The smile, which is the half of the logo people know. */}
-                    <path
-                      d={`M${view.cloud.x + 20} ${view.cloud.y + 32} q 10 6 19 1`}
-                      fill="none"
-                      stroke="#FF9900"
-                      strokeWidth={2.1}
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d={`M${view.cloud.x + 36} ${view.cloud.y + 30} l4 3 l-5 2 z`}
-                      fill="#FF9900"
-                    />
-
-                    <text
-                      x={view.cloud.x + 60}
-                      y={view.cloud.y + 31}
+                      x={view.cloud.x + 58}
+                      y={view.cloud.y + 33}
                       fontSize="15"
                       fontWeight="600"
                       fill="#232F3E"
