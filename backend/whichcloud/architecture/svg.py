@@ -307,17 +307,25 @@ def render(layout: Layout, title: str = "Architecture") -> str:
             f'<rect x="{c.x}" y="{c.y}" width="{c.w}" height="{c.h}" rx="6" '
             f'fill="none" stroke="#232F3E" stroke-width="1.6"/>'
         )
+        # The AWS mark: the wordmark in white with the orange smile beneath
+        # it, on their navy. Previously this was the word alone in orange,
+        # which is not the logo -- the arc is the half people recognise.
+        bx, by = c.x + 12, c.y + 10
+        out.append(f'<rect x="{bx}" y="{by}" width="38" height="32" rx="3" fill="#232F3E"/>')
         out.append(
-            f'<rect x="{c.x + 12}" y="{c.y + 10}" width="26" height="22" rx="4" '
-            f'fill="#232F3E"/>'
+            f'<text x="{bx + 19}" y="{by + 16}" text-anchor="middle" '
+            f'font-family="system-ui,sans-serif" font-size="13" font-weight="700" '
+            f'fill="#ffffff">aws</text>'
         )
         out.append(
-            f'<text x="{c.x + 25}" y="{c.y + 25}" text-anchor="middle" '
-            f'font-family="system-ui,sans-serif" font-size="10" font-weight="700" '
-            f'fill="#FF9900">aws</text>'
+            f'<path d="M{bx + 8} {by + 22} q 10 6 19 1" fill="none" '
+            f'stroke="#FF9900" stroke-width="2.1" stroke-linecap="round"/>'
         )
         out.append(
-            f'<text x="{c.x + 46}" y="{c.y + 26}" '
+            f'<path d="M{bx + 24} {by + 20} l4 3 l-5 2 z" fill="#FF9900"/>'
+        )
+        out.append(
+            f'<text x="{c.x + 60}" y="{c.y + 31}" '
             f'font-family="system-ui,sans-serif" font-size="15" font-weight="600" '
             f'fill="#232F3E">{escape(c.label)}</text>'
         )

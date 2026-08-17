@@ -247,40 +247,51 @@ export function ArchitectureCanvas({
                     strokeWidth={1.8}
                   />
 
-                  {/* Header Banner - Official AWS Style */}
+                  {/* The AWS mark, then the label beside it on white.
+                      A navy banner with the wordmark in orange inverts both
+                      halves of the logo: the word is white, the smile is
+                      orange, and "AWS Cloud" is a caption rather than part of
+                      the mark. */}
                   <g>
                     <rect
-                      x={view.cloud.x + 1}
-                      y={view.cloud.y + 1}
-                      width={138}
+                      x={view.cloud.x + 12}
+                      y={view.cloud.y + 10}
+                      width={38}
                       height={32}
-                      rx={8}
+                      rx={3}
                       fill="#232F3E"
                     />
-                    {/* Square patch to blend right-bottom corner */}
-                    <rect
-                      x={view.cloud.x + 1}
-                      y={view.cloud.y + 1}
-                      width={136}
-                      height={30}
-                      fill="#232F3E"
-                    />
-
-                    {/* AWS Smile Mark (Vector) */}
-                    <g transform={`translate(${view.cloud.x + 12}, ${view.cloud.y + 7})`}>
-                      <text x="0" y="14" fontSize="13" fontWeight="900" fill="#FF9900" fontFamily="sans-serif">
-                        aws
-                      </text>
-                    </g>
-
-                    {/* AWS Cloud Label */}
                     <text
-                      x={view.cloud.x + 48}
-                      y={view.cloud.y + 21}
-                      fontSize="13.5"
+                      x={view.cloud.x + 31}
+                      y={view.cloud.y + 26}
+                      textAnchor="middle"
+                      fontSize="13"
                       fontWeight="700"
                       fill="#FFFFFF"
-                      letterSpacing="0.02em"
+                      fontFamily="system-ui, sans-serif"
+                    >
+                      aws
+                    </text>
+                    {/* The smile, which is the half of the logo people know. */}
+                    <path
+                      d={`M${view.cloud.x + 20} ${view.cloud.y + 32} q 10 6 19 1`}
+                      fill="none"
+                      stroke="#FF9900"
+                      strokeWidth={2.1}
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d={`M${view.cloud.x + 36} ${view.cloud.y + 30} l4 3 l-5 2 z`}
+                      fill="#FF9900"
+                    />
+
+                    <text
+                      x={view.cloud.x + 60}
+                      y={view.cloud.y + 31}
+                      fontSize="15"
+                      fontWeight="600"
+                      fill="#232F3E"
+                      letterSpacing="0.01em"
                     >
                       AWS Cloud
                     </text>
