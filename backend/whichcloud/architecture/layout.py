@@ -756,16 +756,34 @@ def _prune(box: _Box) -> _Box | None:
 
 
 def _tree(graph: ArchitectureGraph) -> list[_Box]:
-    """The boundary hierarchy, with each one's own services attached."""
+    """The boundary hierarchy, with each one's own services attached.
+
+    Built as a tree, which the boundaries are not. A description saying "a
+    public subnet in each availability zone" names one "Public subnet" and
+    lists it inside both zones, so following every parent-child link visited
+    that subnet -- and the services in it -- once per zone. Six services came
+    out as eighteen boxes and the diagram was three times as tall as the
+    system it drew.
+
+    The first parent to claim a boundary keeps it. Which parent wins does not
+    matter much; drawing it once does.
+    """
     by_id = {g.id: g for g in graph.groups}
     node_by_id = {n.id: n for n in graph.nodes}
     child_ids = {c for g in graph.groups for c in g.child_ids}
+    claimed: set[str] = set()
 
     def build(group: GraphGroup) -> _Box:
+        claimed.add(group.id)
+        children = []
+        for child_id in group.child_ids:
+            child = by_id.get(child_id)
+            if child and child_id not in claimed:
+                children.append(build(child))
         return _Box(
             group=group,
             nodes=[node_by_id[n] for n in group.node_ids if n in node_by_id],
-            children=[build(by_id[c]) for c in group.child_ids if c in by_id],
+            children=children,
         )
 
     roots = (build(g) for g in graph.groups if g.id not in child_ids)

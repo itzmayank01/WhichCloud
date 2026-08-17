@@ -639,3 +639,43 @@ def test_a_container_holding_nothing_is_not_drawn():
     assert "Private subnet 1" in labels
     assert "Private subnet 2" not in labels
     assert "AZ 2" not in labels
+
+
+def test_a_boundary_named_in_two_parents_is_drawn_once():
+    """A description saying "a public subnet in each availability zone" names
+    one subnet and lists it inside both zones, which makes the boundaries a
+    graph rather than a tree. Following every link placed that subnet -- and
+    everything in it -- once per zone: six services came out as eighteen
+    boxes and the diagram was three times the height of the system."""
+    from collections import Counter
+
+    from whichcloud.architecture import Architecture
+    from whichcloud.architecture.graph import build_graph
+
+    arch = Architecture(
+        services=[svc("ALB", "api"), svc("EC2", "compute")],
+        boundaries=[
+            Boundary(kind="vpc", name="VPC", contains=["AZ 1", "AZ 2"]),
+            # Both zones claim the same two subnets, as a reader writes it.
+            Boundary(kind="az", name="AZ 1", contains=["Public subnet", "Private subnet"]),
+            Boundary(kind="az", name="AZ 2", contains=["Public subnet", "Private subnet"]),
+            Boundary(kind="subnet", name="Public subnet", contains=["ALB"]),
+            Boundary(kind="subnet", name="Private subnet", contains=["EC2"]),
+        ],
+    )
+    graph = build_graph(arch)
+    lay = build_layout(graph)
+
+    assert len(lay.nodes) == len(graph.nodes) == 2
+    assert not [k for k, v in Counter(n.id for n in lay.nodes).items() if v > 1]
+    assert not [k for k, v in Counter(g.id for g in lay.groups).items() if v > 1]
+
+
+def test_the_layout_never_invents_a_node():
+    """Whatever the boundaries do, one graph node is one box."""
+    from whichcloud.architecture.graph import build_graph
+
+    graph = build_graph(_nested_arch())
+    lay = build_layout(graph)
+
+    assert {n.id for n in lay.nodes} == {n.id for n in graph.nodes}

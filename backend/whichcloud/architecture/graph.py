@@ -165,13 +165,24 @@ def build_graph(arch: Architecture) -> ArchitectureGraph:
     )
 
     # ── nodes ──
-    # A description can name the same service twice -- two Aurora clusters for
-    # different domains. They are different boxes, so the id is suffixed
-    # rather than the second one silently replacing the first, which is the
-    # bug this whole module exists to avoid.
+    # One box per name. A reader asked for a design across three availability
+    # zones returned the same six services eighteen times, once per zone, and
+    # the diagram came out three times as tall for one system.
+    #
+    # This reverses an earlier decision. The suffixing that made a repeated
+    # name into a second box was meant for two databases serving different
+    # domains, and matching on name and purpose together was meant to tell the
+    # cases apart -- but the per-zone repeats come back with slightly
+    # different wording each time, so the pair never matched and every
+    # duplicate survived. Genuinely distinct things need distinct names to be
+    # readable anyway: "Aurora (orders)" and "Aurora (sessions)" tell a reader
+    # which is which, where two boxes both labelled "Aurora" do not.
     by_name: dict[str, str] = {}
     used: set[str] = set()
     for service in arch.services:
+        if service.name in by_name:
+            continue
+
         base = slug(service.name)
         node_id = base
         n = 2

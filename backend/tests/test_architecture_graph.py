@@ -32,12 +32,29 @@ def test_every_service_becomes_its_own_node():
     assert len({n.id for n in graph.nodes}) == 4
 
 
-def test_the_same_service_named_twice_is_two_boxes():
-    """Two Aurora clusters for different domains are two things."""
-    arch = Architecture(services=[svc("Aurora", "data"), svc("Aurora", "data")])
-    ids = [n.id for n in build_graph(arch).nodes]
+def test_one_box_per_name_however_often_it_is_listed():
+    """A reader designing across three availability zones returns the same
+    services once per zone, and drawing each repeat made the diagram three
+    times as tall for one system.
 
-    assert ids == ["aurora", "aurora-2"]
+    This reverses the earlier rule that a repeated name meant a second box.
+    That was for two databases serving different domains, and telling the
+    cases apart by name-and-purpose failed because the per-zone repeats come
+    back worded slightly differently each time. Genuinely distinct things need
+    distinct names to be readable anyway -- two boxes both labelled "Aurora"
+    tell a reader nothing about which is which.
+    """
+    arch = Architecture(
+        services=[svc("Aurora", "data"), svc("Aurora", "data"), svc("Aurora", "data")]
+    )
+    assert [n.id for n in build_graph(arch).nodes] == ["aurora"]
+
+
+def test_distinctly_named_services_stay_distinct():
+    arch = Architecture(
+        services=[svc("Aurora (orders)", "data"), svc("Aurora (sessions)", "data")]
+    )
+    assert len(build_graph(arch).nodes) == 2
 
 
 def test_slug_is_stable_for_the_same_name():

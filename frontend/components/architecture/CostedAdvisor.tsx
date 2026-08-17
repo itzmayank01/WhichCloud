@@ -151,8 +151,17 @@ export function CostedAdvisor() {
   /* The described system with the selected tier's figures on it. Recomputed
      when the tier changes, so switching to Most reliable moves the database
      price up on the box it belongs to. */
-  const priced =
-    described && shown ? withPrices(described, shown.items) : null;
+  /* The described system where there is one, and the standard architecture
+     the prices came from where there is not. A reader who gets no diagram
+     because the architecture reader hit its quota is worse off than one who
+     gets the plainer of the two: the prices are answered either way. */
+  const priced = shown
+    ? described
+      ? withPrices(described, shown.items)
+      : shown.drawn
+        ? { view: shown.drawn, priced: shown.drawn.counts.priced, total: 0 }
+        : null
+    : null;
 
   return (
     <div className="rounded-2xl border border-line bg-surface p-6 elev-1 sm:p-8">
@@ -335,6 +344,7 @@ export function CostedAdvisor() {
                     <span className="font-mono text-[12.5px] text-ink-3">
                       {priced.view.counts.services} services · {priced.priced}{" "}
                       priced from the catalog
+                      {!described && " · standard arrangement"}
                     </span>
                   </div>
                   <div className="mt-3 overflow-hidden rounded-xl border border-line bg-canvas p-2">

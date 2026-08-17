@@ -18,7 +18,7 @@ from whichcloud.pricing import store
 #: Bumped whenever the schema changes shape. It is part of the cache key, so
 #: an old extraction made under different rules is never served as if it were
 #: made under the current ones.
-SCHEMA_VERSION = "4"   # 4: boundaries required, named public/private
+SCHEMA_VERSION = "6"   # 6: one entry per distinct service
 
 #: The rolling alias, not a pinned version. A pinned one ages out: keys made
 #: today cannot call gemini-2.5-flash at all -- Google returns "no longer
@@ -40,6 +40,22 @@ Extract the architecture described below.
 Rules:
 - Include EVERY cloud service the text names. Do not add services it does not
   name, however obviously they might belong.
+- If the text names NO cloud services at all -- somebody describing a business
+  problem rather than a system -- then design one for what they describe.
+  Choose AWS services that fit the workload, the number of people using it and
+  what happens if it stops, and say in `purpose` what each is for. Transcribing
+  a description that names nothing produces nothing, and somebody who says
+  "twelve clinics, ninety staff, cannot be down in clinic hours" has told you
+  what they need even though they named no services.
+  Keep such a design to the services the work actually calls for: a dozen boxes
+  that earn their place, not forty that look thorough.
+- List each distinct service ONCE. A service that runs in three availability
+  zones is still one service: say that in `boundaries`, by naming it in each
+  zone's `contains`, not by repeating it in `services`. Repeating it draws
+  three boxes for one thing and triples the height of the diagram.
+  Two entries with the same name are for genuinely different things -- two
+  databases serving different domains -- and then their `purpose` says which
+  is which.
 - Connect them. Every service should name what it talks to in `connects_to`,
   following the request and data flow these services have when used together,
   even where the text lists them without saying how they join up. A named
