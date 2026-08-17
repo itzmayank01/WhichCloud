@@ -1,5 +1,4 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
-import { ArchitectureWorkbench } from "@/components/architecture/ArchitectureWorkbench";
+import { currentUser } from "@clerk/nextjs/server";
 import { CostedAdvisor } from "@/components/architecture/CostedAdvisor";
 
 /* Behind sign-in, unlike the rest of the site. A description here is sent to
@@ -7,11 +6,10 @@ import { CostedAdvisor } from "@/components/architecture/CostedAdvisor";
    between reading the argument for the product and using it. */
 export const metadata = {
   title: "Workspace — WhichCloud",
-  description: "Describe a system and see it drawn across AWS, Azure and Google.",
+  description: "Describe what you need and get three costed architectures.",
 };
 
 export default async function DashboardPage() {
-  const { userId } = await auth();
   const user = await currentUser();
   const name = user?.firstName ?? user?.username ?? null;
 
@@ -30,25 +28,13 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* The advisor first: it answers the question somebody arrives with --
-          what should I build and can I afford it -- and needs no knowledge of
-          services to use. The workbench below draws a system for someone who
-          already knows what they want, which is the rarer case. */}
+      {/* One thing on this page. The advisor answers the question somebody
+          arrives with -- what should I build and can I afford it -- and needs
+          no knowledge of services to use. A second tool alongside it, with
+          templates and its own prompt, asked the visitor to decide which of
+          two products they wanted before either had answered anything. */}
       <div className="mt-8">
         <CostedAdvisor />
-      </div>
-
-      <div className="mt-14 border-t border-line pt-10">
-        <h2 className="text-[20px] font-semibold tracking-[-0.015em]">
-          Already know what you want to build?
-        </h2>
-        <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-ink-2">
-          Describe the services by name and they are drawn as described —
-          every one, whether or not the price catalog reaches it.
-        </p>
-        <div className="mt-6">
-          <ArchitectureWorkbench owner={userId ?? ""} />
-        </div>
       </div>
     </div>
   );
