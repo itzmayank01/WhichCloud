@@ -45,10 +45,10 @@ TIER_COLOR: dict[Tier, str] = {
 }
 
 FLOW_STROKE: dict[Flow, tuple[str, str]] = {
-    "sync": ("#2F62E8", ""),
-    "async": ("#8B5CF6", "7 5"),
+    "sync": ("#5A6B7F", ""),
+    "async": ("#8B5CF6", "6 4"),
     "replication": ("#0EA5E9", "2 4"),
-    "control": ("#94A3B8", "1 4"),
+    "control": ("#AAB4C0", "1 4"),
 }
 
 GROUP_STROKE: dict[str, str] = {
@@ -347,7 +347,7 @@ def render(layout: Layout, title: str = "Architecture") -> str:
         )
         dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         out.append(
-            f'<path d="{points}" fill="none" stroke="{colour}" stroke-width="1.8"'
+            f'<path d="{points}" fill="none" stroke="{colour}" stroke-width="1.4"'
             f'{dash_attr} stroke-linecap="round" stroke-linejoin="round" '
             f'marker-end="url(#a-{edge.flow})" opacity="0.8"/>'
         )
@@ -375,53 +375,47 @@ def render(layout: Layout, title: str = "Architecture") -> str:
             f'fill="#ffffff">{edge.step}</text>'
         )
 
-    # ── service boxes ──
-    # Icon first and large, name beneath it, both centred. AWS draws services
-    # this way because the mark is what a reader scans for -- a 17px glyph
-    # tucked beside the text is decoration rather than identification.
+    # ── services ──
+    # An icon above a centred name, with no box around it. AWS draws services
+    # this way and it is most of why their diagrams read as diagrams: the
+    # marks are the content, and a card with a border, a fill and a coloured
+    # bar puts three pieces of chrome between the reader and each one. The
+    # component boxes already do the grouping a card would imply.
     for node in layout.nodes:
-        colour = TIER_COLOR.get(node.tier, "#64748B")
-        out.append(
-            f'<rect x="{node.x}" y="{node.y}" width="{node.w}" height="{node.h}" '
-            f'rx="10" fill="#ffffff" stroke="#DDE2E9" stroke-width="1.2"/>'
-        )
-        # A thin bar of the service's AWS category colour, so the kind of
-        # thing a box is survives being read at a distance.
-        out.append(
-            f'<path d="M{node.x + 10} {node.y} h{node.w - 20} '
-            f"a10 10 0 0 1 10 10 v0 h-{node.w} v0 "
-            f'a10 10 0 0 1 10 -10 z" fill="{colour}"/>'
-        )
-
+        centre = node.x + node.w // 2
         icon = icon_for(node.label)
-        text_x = node.x + 13
+
         if icon:
             out.append(
-                f'<image x="{node.x + 13}" y="{node.y + 18}" width="40" '
-                f'height="40" href="{icon}" preserveAspectRatio="xMidYMid meet"/>'
+                f'<image x="{centre - 28}" y="{node.y + 4}" width="56" height="56" '
+                f'href="{icon}" preserveAspectRatio="xMidYMid meet"/>'
             )
-            text_x = node.x + 62
-
-        available = node.w - (text_x - node.x) - 12
-        y = node.y + 34
-        for line in _wrap(node.label, available, limit=2):
+        else:
+            # No official mark: a plain tile in the service's category colour,
+            # which says what kind of thing it is without claiming to be a
+            # product that is not there.
+            colour = TIER_COLOR.get(node.tier, "#64748B")
             out.append(
-                f'<text x="{text_x}" y="{y}" font-family="system-ui,sans-serif" '
-                f'font-size="13.5" font-weight="600" fill="#12161C">'
-                f"{escape(line)}</text>"
+                f'<rect x="{centre - 26}" y="{node.y + 6}" width="52" height="52" '
+                f'rx="9" fill="{colour}" opacity="0.16"/>'
             )
-            y += 16
-
-        for line in _wrap(node.purpose, available, limit=1):
             out.append(
-                f'<text x="{text_x}" y="{y + 2}" font-family="system-ui,sans-serif" '
-                f'font-size="11.5" fill="#6B7480">{escape(line)}</text>'
+                f'<rect x="{centre - 12}" y="{node.y + 24}" width="24" height="17" '
+                f'rx="3" fill="{colour}"/>'
+            )
+
+        y = node.y + 76
+        for line in _wrap(node.label, node.w + 8, limit=2):
+            out.append(
+                f'<text x="{centre}" y="{y}" text-anchor="middle" '
+                f'font-family="system-ui,sans-serif" font-size="12.5" '
+                f'font-weight="600" fill="#232F3E">{escape(line)}</text>'
             )
             y += 15
 
         if node.priced and node.monthly_usd is not None:
             out.append(
-                f'<text x="{text_x}" y="{y + 2}" '
+                f'<text x="{centre}" y="{y + 1}" text-anchor="middle" '
                 f'font-family="ui-monospace,monospace" font-size="10.5" '
                 f'fill="#1F9D55">${node.monthly_usd:,.2f}/mo</text>'
             )

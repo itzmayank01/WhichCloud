@@ -31,14 +31,18 @@ from whichcloud.architecture.schema import BoundaryKind, Flow, Tier
 # its last word. Service names in these descriptions run long -- "Aurora
 # PostgreSQL Global Database" is typical -- and a diagram whose labels are cut
 # off is not one someone can hand to a colleague.
-NODE_W = 212
-NODE_H = 84
+# Proportioned for an icon above a centred label, which is how AWS draws a
+# service: the mark carries the identification and the name confirms it. A card
+# with a border, a fill and a coloured bar reads as a dashboard tile -- the
+# chrome competes with the icon for the attention the icon should have.
+NODE_W = 152
+NODE_H = 116
 # Wide enough to route a line between two columns. At 26 the gap was 26 and
 # the clearance 14, so a corridor centred between two boxes sat 13px from each
 # -- under the clearance, which made every lane count as blocked and left the
 # router with nowhere to go. Gutters are what a diagram uses to breathe and to
 # carry its own wiring.
-GAP_X = 48
+GAP_X = 44
 ROW_GAP = 104
 
 #: Beyond this a row is wrapped rather than allowed to run off the canvas.
@@ -68,7 +72,7 @@ COMPONENT_COLS = 3
 COMPONENT_PAD = 20
 COMPONENT_LABEL_H = 30
 COMPONENT_GAP = 44
-ROW_GAP_INNER = 22
+ROW_GAP_INNER = 30
 
 #: The actor and the gap between it and the cloud boundary.
 ACTOR_W = 96

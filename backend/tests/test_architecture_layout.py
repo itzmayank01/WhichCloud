@@ -271,7 +271,10 @@ def test_exported_svg_is_well_formed_and_complete():
     assert root.attrib["width"] == str(lay.width)
     # Titles and labels reach the file through XML escaping, not raw.
     assert "Test &amp; &lt;check&gt;" in doc
-    assert doc.count('rx="10"') == len(lay.nodes)
+    # Every service is named. Counting boxes would only test the current
+    # drawing style, which changed when services stopped being cards.
+    for node in lay.nodes:
+        assert node.label.split()[0] in doc
 
 
 def test_exported_icons_are_embedded_not_linked():
