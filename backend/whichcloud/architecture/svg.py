@@ -61,12 +61,14 @@ FLOW_STROKE: dict[Flow, tuple[str, str]] = {
 GROUP_STYLE: dict[str, tuple[str, str, bool, str]] = {
     "account": ("#232F3E", "none", True, "account"),
     "region": ("#147EBA", "none", True, "region"),
-    "vpc": ("#248814", "none", False, "cloud"),
-    "az": ("#147EBA", "none", True, "region"),
-    "subnet": ("#147EBA", "#F2F8FC", False, "lock"),
+    "vpc": ("#248814", "none", False, "vpc"),
+    #: No mark on a zone. In AWS's diagrams it is a dashed outline and a
+    #: label, because it is a place rather than a thing you can point at.
+    "az": ("#00A4A6", "none", True, ""),
+    "subnet": ("#147EBA", "#F2F8FC", False, "private-subnet"),
     #: A public subnet is green in AWS's scheme, a private one blue. The
     #: distinction is the point of drawing them separately at all.
-    "subnet-public": ("#248814", "#F2F9F0", False, "lock"),
+    "subnet-public": ("#248814", "#F2F9F0", False, "public-subnet"),
 }
 
 TIER_LABEL: dict[Tier, str] = {
@@ -248,58 +250,35 @@ def _wrap(text: str, width: int, limit: int = 2) -> list[str]:
 BADGE = 26
 
 
+#: AWS's own group marks, vendored beside the service icons. These are the
+#: exact squares their reference architectures use -- the green VPC cloud, the
+#: green padlock on a public subnet, the blue one on a private subnet -- and
+#: hand-drawing approximations of them was the last thing separating a diagram
+#: from theirs.
+GROUP_ICON_DIR = ICON_DIR.parent / "aws-groups"
+
+
+@functools.lru_cache(maxsize=32)
+def _group_uri(name: str) -> str | None:
+    path = GROUP_ICON_DIR / f"{name}.png"
+    if not path.exists():
+        return None
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+
+
 def _badge(x: int, y: int, colour: str, glyph: str) -> str:
-    """A boundary's square mark, in its own colour with a white glyph.
+    """A boundary's mark, at the top left of its box.
 
-    AWS puts one of these at the top left of every container and they are how
-    the kinds are told apart before any label is read: a padlock on a subnet,
-    a cloud holding a padlock on a VPC, and the colour saying whether a subnet
-    faces the internet.
-
-    Drawn as white shapes on the colour rather than outlines, which is what
-    survives being scaled down -- a 1px stroke at this size disappears.
+    AWS's own file where there is one. An availability zone deliberately has
+    none: in their diagrams a zone is a dashed outline and a label, because it
+    is a place rather than a thing you can point at.
     """
-    b = BADGE
-    marks = {
-        # A cloud with a padlock in it: the VPC mark.
-        "cloud": (
-            f'<path d="M{x + 5.4} {y + 15.6} '
-            f"a3.6 3.6 0 0 1 0.9 -7 a5 5 0 0 1 9.5 1.2 "
-            f'a3.1 3.1 0 0 1 -0.5 5.8 z" fill="#ffffff"/>'
-            f'<rect x="{x + 13.2}" y="{y + 13.4}" width="8.4" height="6.4" '
-            f'rx="1.2" fill="#ffffff"/>'
-            f'<path d="M{x + 14.8} {y + 13.4} v-1.9 a2.6 2.6 0 0 1 5.2 0 v1.9" '
-            f'fill="none" stroke="#ffffff" stroke-width="1.5"/>'
-            f'<rect x="{x + 16.9}" y="{y + 15.4}" width="1.4" height="2.6" '
-            f'rx="0.7" fill="{colour}"/>'
-        ),
-        # A padlock: the subnet mark. Green when it faces the internet, blue
-        # when it does not, which is the whole reason to draw them separately.
-        "lock": (
-            f'<rect x="{x + 6.6}" y="{y + 11.6}" width="12.8" height="9.4" '
-            f'rx="1.6" fill="#ffffff"/>'
-            f'<path d="M{x + 9} {y + 11.6} v-2.8 a4 4 0 0 1 8 0 v2.8" '
-            f'fill="none" stroke="#ffffff" stroke-width="2"/>'
-            f'<rect x="{x + 12.2}" y="{y + 14.2}" width="1.6" height="4" '
-            f'rx="0.8" fill="{colour}"/>'
-        ),
-        "region": (
-            f'<circle cx="{x + b / 2}" cy="{y + b / 2}" r="6.4" fill="none" '
-            f'stroke="#ffffff" stroke-width="1.8"/>'
-            f'<path d="M{x + 6.6} {y + b / 2} h12.8" stroke="#ffffff" '
-            f'stroke-width="1.5"/>'
-            f'<path d="M{x + b / 2} {y + 6.6} a8 8 0 0 1 0 12.8 a8 8 0 0 1 0 -12.8" '
-            f'fill="none" stroke="#ffffff" stroke-width="1.5"/>'
-        ),
-        "account": (
-            f'<circle cx="{x + b / 2}" cy="{y + 10}" r="3.6" fill="#ffffff"/>'
-            f'<path d="M{x + 6} {y + 20.5} a7 7 0 0 1 14 0 z" fill="#ffffff"/>'
-        ),
-    }
-    return (
-        f'<rect x="{x}" y="{y}" width="{b}" height="{b}" rx="3" fill="{colour}"/>'
-        + marks.get(glyph, "")
-    )
+    if not glyph:
+        return ""
+    uri = _group_uri(glyph)
+    if uri:
+        return f'<image x="{x}" y="{y}" width="26" height="26" href="{uri}"/>'
+    return f'<rect x="{x}" y="{y}" width="23" height="23" rx="4" fill="{colour}"/>'
 
 
 def render(layout: Layout, title: str = "Architecture") -> str:

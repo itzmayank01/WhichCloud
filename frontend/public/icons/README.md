@@ -36,3 +36,15 @@ in a real description with no icon at all.
 Vendored rather than hotlinked. A diagram has to render with no network, and a
 raw.githubusercontent URL is a dependency on someone else's uptime for artwork
 that changes about twice a year.
+
+## aws-groups/
+
+AWS's official group marks -- AWS Cloud, Account, Region, VPC, Public subnet,
+Private subnet, Auto Scaling group -- from the same AWS Labs repository as the
+service icons.
+
+These are the squares their reference architectures put at the top left of
+every container, and hand-drawn approximations of them were the last thing
+separating a diagram from theirs. An availability zone has no mark on purpose:
+in AWS's diagrams a zone is a dashed outline and a label, being a place rather
+than a thing you can point at.

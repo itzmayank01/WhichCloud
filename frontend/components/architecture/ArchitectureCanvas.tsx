@@ -53,90 +53,32 @@ const TIER_GLYPH: Record<Tier, string> = {
   observability: "mdi:chart-line",
 };
 
-/* AWS's conventions for the boxes a system sits inside: a VPC is solid green,
-   subnets are tinted and carry a padlock -- green when they face the internet,
-   blue when they do not -- and regions and zones are dashed, being places
-   rather than things a boundary is drawn on. */
+/* AWS's own group marks, vendored under public/icons/aws-groups. Drawing
+   approximations of these was the last thing separating a diagram from
+   theirs -- and an availability zone deliberately has none, because in AWS's
+   diagrams a zone is a dashed outline and a label, a place rather than a
+   thing you can point at. */
 function boundaryStyle(kind: string, label: string) {
   const isPublic = /public|dmz/i.test(label);
   switch (kind) {
     case "vpc":
-      return { stroke: "#248814", fill: "none", dashed: false, glyph: "cloud" };
+      return { stroke: "#248814", fill: "none", dashed: false, icon: "vpc" };
     case "subnet":
       return isPublic
-        ? { stroke: "#248814", fill: "#F2F9F0", dashed: false, glyph: "lock" }
-        : { stroke: "#147EBA", fill: "#F2F8FC", dashed: false, glyph: "lock" };
+        ? { stroke: "#248814", fill: "#F2F9F0", dashed: false, icon: "public-subnet" }
+        : { stroke: "#147EBA", fill: "#F2F8FC", dashed: false, icon: "private-subnet" };
     case "account":
-      return { stroke: "#232F3E", fill: "none", dashed: true, glyph: "account" };
+      return { stroke: "#232F3E", fill: "none", dashed: true, icon: "account" };
+    case "az":
+      return { stroke: "#00A4A6", fill: "none", dashed: true, icon: "" };
     default:
-      return { stroke: "#147EBA", fill: "none", dashed: true, glyph: "region" };
+      return { stroke: "#147EBA", fill: "none", dashed: true, icon: "region" };
   }
 }
 
-/* White shapes on the colour rather than outlines: a 1px stroke disappears at
-   this size, and these are read at a glance. */
-function BoundaryBadge({
-  x,
-  y,
-  colour,
-  glyph,
-}: {
-  x: number;
-  y: number;
-  colour: string;
-  glyph: string;
-}) {
-  return (
-    <g>
-      <rect x={x} y={y} width={26} height={26} rx={3} fill={colour} />
-      {glyph === "cloud" && (
-        <>
-          <path
-            d={`M${x + 5.4} ${y + 15.6} a3.6 3.6 0 0 1 0.9 -7 a5 5 0 0 1 9.5 1.2 a3.1 3.1 0 0 1 -0.5 5.8 z`}
-            fill="#ffffff"
-          />
-          <rect x={x + 13.2} y={y + 13.4} width={8.4} height={6.4} rx={1.2} fill="#ffffff" />
-          <path
-            d={`M${x + 14.8} ${y + 13.4} v-1.9 a2.6 2.6 0 0 1 5.2 0 v1.9`}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth={1.5}
-          />
-          <rect x={x + 16.9} y={y + 15.4} width={1.4} height={2.6} rx={0.7} fill={colour} />
-        </>
-      )}
-      {glyph === "lock" && (
-        <>
-          <rect x={x + 6.6} y={y + 11.6} width={12.8} height={9.4} rx={1.6} fill="#ffffff" />
-          <path
-            d={`M${x + 9} ${y + 11.6} v-2.8 a4 4 0 0 1 8 0 v2.8`}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth={2}
-          />
-          <rect x={x + 12.2} y={y + 14.2} width={1.6} height={4} rx={0.8} fill={colour} />
-        </>
-      )}
-      {glyph === "region" && (
-        <>
-          <circle cx={x + 13} cy={y + 13} r={6.4} fill="none" stroke="#ffffff" strokeWidth={1.8} />
-          <path d={`M${x + 6.6} ${y + 13} h12.8`} stroke="#ffffff" strokeWidth={1.5} />
-          <path
-            d={`M${x + 13} ${y + 6.6} a8 8 0 0 1 0 12.8 a8 8 0 0 1 0 -12.8`}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth={1.5}
-          />
-        </>
-      )}
-      {glyph === "account" && (
-        <>
-          <circle cx={x + 13} cy={y + 10} r={3.6} fill="#ffffff" />
-          <path d={`M${x + 6} ${y + 20.5} a7 7 0 0 1 14 0 z`} fill="#ffffff" />
-        </>
-      )}
-    </g>
-  );
+function BoundaryBadge({ x, y, icon }: { x: number; y: number; icon: string }) {
+  if (!icon) return null;
+  return <image x={x} y={y} width={26} height={26} href={`/icons/aws-groups/${icon}.png`} />;
 }
 
 function formatPoints(points: { x: number; y: number }[]): string {
@@ -449,14 +391,9 @@ export function ArchitectureCanvas({
                       strokeWidth={1.5}
                       strokeDasharray={style.dashed ? "6 5" : undefined}
                     />
-                    <BoundaryBadge
-                      x={g.x + 10}
-                      y={g.y + 9}
-                      colour={style.stroke}
-                      glyph={style.glyph}
-                    />
+                    <BoundaryBadge x={g.x + 10} y={g.y + 8} icon={style.icon} />
                     <text
-                      x={g.x + 44}
+                      x={g.x + (style.icon ? 42 : 14)}
                       y={g.y + 27}
                       fontSize="13"
                       fontWeight="600"
