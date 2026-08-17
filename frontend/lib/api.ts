@@ -284,6 +284,10 @@ export const api = {
   /** The same requirement priced on every cloud. */
   compare: (body: Record<string, unknown>) => post<Comparison>("/compare", body),
 
+  /** Plain English straight through to three priced options. */
+  describe: (body: Record<string, unknown>) =>
+    post<Recommendation>("/describe", body),
+
   architecture: (body: Record<string, unknown>) =>
     post<ArchitectureView>("/architecture", body),
 
