@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, money, type Option, type Recommendation } from "@/lib/api";
+import { ArchitectureCanvas } from "@/components/architecture/ArchitectureCanvas";
 
 /**
  * The advisor: a description of a business problem in, three costed options
@@ -230,6 +231,15 @@ export function CostedAdvisor() {
                   </tr>
                 </tbody>
               </table>
+
+              {/* The option, drawn. A table of line items is a bill; this is
+                  the system that bill pays for, with each service carrying
+                  the figure that made up the total. */}
+              {shown.drawn && (
+                <div className="mt-6 overflow-hidden rounded-xl border border-line bg-canvas p-2">
+                  <ArchitectureCanvas view={shown.drawn} />
+                </div>
+              )}
 
               {shown.tradeoffs.length > 0 && (
                 <div className="mt-5 rounded-lg bg-caution-wash px-4 py-3">

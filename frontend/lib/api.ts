@@ -108,6 +108,9 @@ export type Option = {
   advisory: Technique[];
   tradeoffs: string[];
   topology: { nodes: Node[]; edges: Edge[] };
+  /** The option as a laid-out, priced AWS architecture. Null on other clouds
+      until a service-equivalence table exists. */
+  drawn: ArchitectureView | null;
 };
 
 export type Diff = {

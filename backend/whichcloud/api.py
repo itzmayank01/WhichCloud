@@ -144,6 +144,10 @@ class OptionOut(BaseModel):
     advisory: list[TechniqueOut]
     tradeoffs: list[str]
     topology: TopologyOut
+    #: The option as a laid-out AWS architecture, priced. None on the other
+    #: clouds until a service-equivalence table exists -- drawing a GCP option
+    #: with an ECS box in it would be worse than not drawing it.
+    drawn: dict | None = None
 
 
 class RecommendationOut(BaseModel):
@@ -223,6 +227,90 @@ def _diff_out(before: Option, after: Option) -> DiffOut:
     )
 
 
+def _drawn(option: Option, provider: str) -> dict | None:
+    """The option as a laid-out AWS architecture, priced.
+
+    Only AWS for now: the service names, the icons and the network
+    conventions are all AWS's, and mapping a category to "the equivalent
+    service" on another cloud is a table that does not exist yet. Drawing a
+    GCP option with an ECS box in it would be worse than not drawing it.
+    """
+    if provider != "aws":
+        return None
+
+    from decimal import Decimal
+
+    from .architecture.costed import PricedNode, architecture_from
+    from .architecture.graph import attach_prices, build_graph, slug
+    from .architecture.layout import badge_point, build_layout
+
+    # Built the same way the topology output is, rather than read off the
+    # option -- an Option carries a spec and an estimate, and the graph is
+    # derived from those.
+    graph_in = topo.build(option.spec, option.estimate, option.applied)
+    nodes = [
+        PricedNode(
+            kind=n.kind,
+            label=n.label,
+            monthly_usd=float(n.monthly_usd) if n.priced else None,
+            sku=n.sku,
+        )
+        for n in graph_in.nodes
+        if n.kind != "client"
+    ]
+    if not nodes:
+        return None
+
+    arch, prices = architecture_from(nodes, option.spec.database_multi_az)
+    graph = build_graph(arch)
+    attach_prices(
+        graph,
+        {slug(name): (Decimal(str(cost)), sku) for name, (cost, sku) in prices.items()},
+    )
+    layout = build_layout(graph)
+
+    return {
+        "canvas": {"width": layout.width, "height": layout.height},
+        "regions": graph.regions,
+        "azs_per_region": graph.azs_per_region,
+        "external": graph.external,
+        "counts": {
+            "services": len(layout.nodes),
+            "edges": len(layout.edges),
+            "groups": len(layout.groups),
+            "priced": graph.priced_count,
+        },
+        "bands": [],
+        "components": [],
+        "cloud": (
+            {"label": layout.cloud.label, "x": layout.cloud.x, "y": layout.cloud.y,
+             "w": layout.cloud.w, "h": layout.cloud.h} if layout.cloud else None
+        ),
+        "actor": (
+            {"label": layout.actor.label, "x": layout.actor.x, "y": layout.actor.y,
+             "w": layout.actor.w, "h": layout.actor.h} if layout.actor else None
+        ),
+        "groups": [
+            {"id": g.id, "kind": g.kind, "label": g.label, "depth": g.depth,
+             "x": g.x, "y": g.y, "w": g.w, "h": g.h}
+            for g in layout.groups
+        ],
+        "nodes": [
+            {"id": n.id, "label": n.label, "tier": n.tier, "purpose": n.purpose,
+             "priced": n.priced, "monthly_usd": n.monthly_usd, "sku": n.sku,
+             "x": n.x, "y": n.y, "w": n.w, "h": n.h}
+            for n in layout.nodes
+        ],
+        "edges": [
+            {"source": e.source, "target": e.target, "flow": e.flow, "step": e.step,
+             "badge": (dict(zip(("x", "y"), badge_point(e.points, layout.nodes)))
+                       if e.step else None),
+             "points": [{"x": x, "y": y} for x, y in e.points]}
+            for e in layout.edges
+        ],
+    }
+
+
 def _option_out(option: Option, provider: str) -> OptionOut:
     spec = option.spec
     shape = f"{spec.compute_count}× {spec.compute_vcpu} vCPU / {spec.compute_memory_gb:g} GB"
@@ -236,6 +324,7 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         shape += " · multi-AZ db"
 
     return OptionOut(
+        drawn=_drawn(option, provider),
         label=option.label,
         rationale=option.rationale,
         provider=provider,
