@@ -18,7 +18,7 @@ from whichcloud.pricing import store
 #: Bumped whenever the schema changes shape. It is part of the cache key, so
 #: an old extraction made under different rules is never served as if it were
 #: made under the current ones.
-SCHEMA_VERSION = "3"   # 3: functional components
+SCHEMA_VERSION = "4"   # 4: boundaries required, named public/private
 
 #: The rolling alias, not a pinned version. A pinned one ages out: keys made
 #: today cannot call gemini-2.5-flash at all -- Google returns "no longer
@@ -26,7 +26,11 @@ SCHEMA_VERSION = "3"   # 3: functional components
 #: the chain 404s for the newest. The alias is whatever is current for each
 #: key, which is the only thing true of all of them.
 _MODEL = "gemini-flash-latest"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+#: Checked against the account's own model list rather than taken from
+#: documentation. llama-3.3-70b-versatile was gone, and a pinned name that no
+#: longer exists fails identically to a bad key -- which is how four working
+#: keys were mistaken for dead ones.
+GROQ_MODEL = "openai/gpt-oss-120b"
 OPENAI_MODEL = "gpt-4.1-mini"
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
 
@@ -45,6 +49,17 @@ Rules:
   the relationship between two they did name does not.
 - Put VPCs, subnets, regions and availability zones in `boundaries`, not in
   `services`. They contain services; they are not services.
+- Emit a boundary for EVERY network container the text mentions, and say what
+  is inside each one via `contains`. A description saying "VPCs with public and
+  private subnets across 3 regions and 2 AZs" means: one region boundary per
+  region, an az boundary per zone, a vpc boundary, and separate subnet
+  boundaries named "Public subnet" and "Private subnet". Name them exactly
+  that way -- the drawing colours a public subnet green and a private one
+  blue, which is the convention every AWS diagram uses, and it can only do
+  that if the name says which it is.
+  A boundary with an empty `contains` is not drawn, so put the services that
+  live in it there: databases and internal compute in the private subnet,
+  load balancers and NAT gateways in the public one.
 - Group services into functional `component`s, the way AWS's own reference
   architectures do: "Web UI", "Data", "Search", "Cost reporting", "Image
   deployment". Services that cooperate to do one job share a component. Aim
@@ -89,6 +104,23 @@ def _gemini(description: str, client=None, key: str | None = None) -> Architectu
     return Architecture.model_validate_json(result.text)
 
 
+#: The shape, written out rather than sent as a JSON Schema document. The
+#: generated schema for this model is several thousand tokens, and prepending
+#: it to an already long description put the request over Groq's free-tier
+#: size limit -- a 413 rather than a bad answer. This says the same thing in a
+#: fortieth of the space.
+_SHAPE = """Return JSON of exactly this shape:
+{"services":[{"name":"Amazon S3","tier":"data","component":"Data",
+"connects_to":["Amazon EKS"],"flow":"sync","purpose":"object storage"}],
+"boundaries":[{"kind":"vpc","name":"VPC","contains":["Amazon EKS"]}],
+"regions":3,"azs_per_region":2,"external":["GitHub Actions"]}
+
+tier is one of: edge, api, compute, data, async, analytics, ml, security,
+cicd, observability.
+flow is one of: sync, async, replication, control.
+kind is one of: account, region, az, vpc, subnet."""
+
+
 def _openai_compatible(
     description: str, key: str, base_url: str | None, model: str
 ) -> Architecture:
@@ -124,20 +156,26 @@ def _openai_compatible(
             messages=[{"role": "user", "content": prompt}],
         )
     except Exception as exc:
-        if "json_schema" not in str(exc):
+        # Two different refusals mean the same thing: this provider will not
+        # produce the strict form. Groq's Llama models reject `json_schema`
+        # outright; its gpt-oss models accept the request and then fail their
+        # own validation of what came back. Both are answered by asking again
+        # in the looser mode with the shape written into the prompt.
+        detail = str(exc)
+        if "json_schema" not in detail and "validate JSON" not in detail:
             raise
         result = client.chat.completions.create(
             model=model,
             temperature=0,
+            # Groq's free tier allows 8000 tokens a minute for the whole
+            # request, so an output allowance alone can exceed it: asking for
+            # 16000 was refused with a 413 before the prompt was even counted.
+            # 5000 leaves room for a long description and is more than a
+            # twenty five service architecture needs.
+            max_tokens=5000,
             response_format={"type": "json_object"},
             messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"{prompt}\n\nReturn JSON matching this schema "
-                        f"exactly:\n{json.dumps(schema)}"
-                    ),
-                }
+                {"role": "user", "content": f"{prompt}\n\n{_SHAPE}"}
             ],
         )
 
@@ -228,9 +266,23 @@ def _read_with_failover(description: str, reader: Provider | None, client=None):
         if extractor is None:
             continue
         try:
-            return extractor(description, None, candidate.key)
+            arch = extractor(description, None, candidate.key)
         except Exception as exc:
             failures.append((candidate.label, exc))
+            continue
+
+        # An architecture with no services is a failure that happens to
+        # validate. Some models answer a long description with an empty object
+        # rather than an error, and taking that at face value cached a blank
+        # diagram against a twenty six service description -- permanently,
+        # since the first answer for a key is the one kept.
+        if not arch.services:
+            failures.append(
+                (candidate.label, ValueError("returned an empty architecture"))
+            )
+            continue
+
+        return arch
 
     # Everything failed. If it was all capacity, say so plainly -- that is a
     # wait, not a bug. Otherwise surface the first real error, which is the
@@ -293,7 +345,9 @@ def extract_architecture(
 
     arch = _read_with_failover(description, reader, client)
 
-    if use_cache:
+    # Never cache nothing. The cache exists so one description always gives one
+    # architecture; storing an empty one makes that promise into a trap.
+    if use_cache and arch.services:
         try:
             store.cache_architecture(
                 key, description, reader, _MODEL, SCHEMA_VERSION,

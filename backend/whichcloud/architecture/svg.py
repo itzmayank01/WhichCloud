@@ -51,12 +51,22 @@ FLOW_STROKE: dict[Flow, tuple[str, str]] = {
     "control": ("#AAB4C0", "1 4"),
 }
 
-GROUP_STROKE: dict[str, str] = {
-    "account": "#94A3B8",
-    "region": "#60A5FA",
-    "az": "#34D399",
-    "vpc": "#FBBF24",
-    "subnet": "#CBD5E1",
+#: AWS's own conventions for the boxes a system sits inside: the VPC is green
+#: and solid, subnets are tinted and carry a padlock, regions and availability
+#: zones are dashed because they are locations rather than things you can put a
+#: boundary on. Each gets a small square badge in its own colour, which is how
+#: these are told apart at a glance in AWS's published diagrams.
+#:
+#: (stroke, fill, dashed, glyph)
+GROUP_STYLE: dict[str, tuple[str, str, bool, str]] = {
+    "account": ("#232F3E", "none", True, "account"),
+    "region": ("#147EBA", "none", True, "region"),
+    "vpc": ("#248814", "none", False, "cloud"),
+    "az": ("#147EBA", "none", True, "region"),
+    "subnet": ("#147EBA", "#F2F8FC", False, "lock"),
+    #: A public subnet is green in AWS's scheme, a private one blue. The
+    #: distinction is the point of drawing them separately at all.
+    "subnet-public": ("#248814", "#F2F9F0", False, "lock"),
 }
 
 TIER_LABEL: dict[Tier, str] = {
@@ -235,6 +245,42 @@ def _wrap(text: str, width: int, limit: int = 2) -> list[str]:
     return lines
 
 
+def _badge(x: int, y: int, colour: str, glyph: str) -> str:
+    """A boundary's small square mark, in its own colour.
+
+    AWS puts one of these at the top left of every container -- a padlock on a
+    subnet, a cloud on a VPC -- and it is most of how the kinds are told apart
+    without reading the labels.
+    """
+    marks = {
+        "cloud": (
+            f'<path d="M{x + 6} {y + 14} a4 4 0 0 1 1 -7.8 a5 5 0 0 1 9.4 1.4 '
+            f'a3.4 3.4 0 0 1 -0.6 6.4 z" fill="#ffffff"/>'
+        ),
+        "lock": (
+            f'<rect x="{x + 7}" y="{y + 10}" width="9" height="7" rx="1.4" '
+            f'fill="#ffffff"/>'
+            f'<path d="M{x + 8.6} {y + 10} v-2.2 a2.9 2.9 0 0 1 5.8 0 v2.2" '
+            f'fill="none" stroke="#ffffff" stroke-width="1.5"/>'
+        ),
+        "region": (
+            f'<circle cx="{x + 11.5}" cy="{y + 11.5}" r="5.4" fill="none" '
+            f'stroke="#ffffff" stroke-width="1.5"/>'
+            f'<path d="M{x + 6.1} {y + 11.5} h10.8 M{x + 11.5} {y + 6.1} '
+            f'a7 7 0 0 1 0 10.8 a7 7 0 0 1 0 -10.8" fill="none" '
+            f'stroke="#ffffff" stroke-width="1.2"/>'
+        ),
+        "account": (
+            f'<circle cx="{x + 11.5}" cy="{y + 9}" r="3.2" fill="#ffffff"/>'
+            f'<path d="M{x + 5.5} {y + 18} a6 6 0 0 1 12 0 z" fill="#ffffff"/>'
+        ),
+    }
+    return (
+        f'<rect x="{x}" y="{y}" width="23" height="23" rx="4" fill="{colour}"/>'
+        + marks.get(glyph, "")
+    )
+
+
 def render(layout: Layout, title: str = "Architecture") -> str:
     """The whole diagram, as one self-contained SVG document."""
     out: list[str] = [
@@ -326,17 +372,22 @@ def render(layout: Layout, title: str = "Architecture") -> str:
 
     # ── containers, outermost first so nesting lands on top ──
     for group in layout.groups:
-        stroke = GROUP_STROKE.get(group.kind, "#CBD5E1")
+        key = group.kind
+        if key == "subnet" and "public" in group.label.lower():
+            key = "subnet-public"
+        stroke, fill, dashed, glyph = GROUP_STYLE.get(key, GROUP_STYLE["subnet"])
+
+        dash = ' stroke-dasharray="6 5"' if dashed else ""
         out.append(
             f'<rect x="{group.x}" y="{group.y}" width="{group.w}" '
-            f'height="{group.h}" rx="14" fill="none" stroke="{stroke}" '
-            f'stroke-width="1.4" stroke-dasharray="6 5"/>'
+            f'height="{group.h}" rx="4" fill="{fill}" stroke="{stroke}" '
+            f'stroke-width="1.5"{dash}/>'
         )
+        out.append(_badge(group.x + 10, group.y + 9, stroke, glyph))
         out.append(
-            f'<text x="{group.x + 14}" y="{group.y + 20}" '
-            f'font-family="ui-monospace,monospace" font-size="11.5" '
-            f'letter-spacing="0.8" fill="{stroke}">'
-            f"{escape(group.kind.upper())} · {escape(group.label)}</text>"
+            f'<text x="{group.x + 40}" y="{group.y + 25}" '
+            f'font-family="system-ui,sans-serif" font-size="13" '
+            f'font-weight="600" fill="{stroke}">{escape(group.label)}</text>'
         )
 
     # ── edges, under the boxes so no line crosses a label ──
