@@ -245,38 +245,59 @@ def _wrap(text: str, width: int, limit: int = 2) -> list[str]:
     return lines
 
 
-def _badge(x: int, y: int, colour: str, glyph: str) -> str:
-    """A boundary's small square mark, in its own colour.
+BADGE = 26
 
-    AWS puts one of these at the top left of every container -- a padlock on a
-    subnet, a cloud on a VPC -- and it is most of how the kinds are told apart
-    without reading the labels.
+
+def _badge(x: int, y: int, colour: str, glyph: str) -> str:
+    """A boundary's square mark, in its own colour with a white glyph.
+
+    AWS puts one of these at the top left of every container and they are how
+    the kinds are told apart before any label is read: a padlock on a subnet,
+    a cloud holding a padlock on a VPC, and the colour saying whether a subnet
+    faces the internet.
+
+    Drawn as white shapes on the colour rather than outlines, which is what
+    survives being scaled down -- a 1px stroke at this size disappears.
     """
+    b = BADGE
     marks = {
+        # A cloud with a padlock in it: the VPC mark.
         "cloud": (
-            f'<path d="M{x + 6} {y + 14} a4 4 0 0 1 1 -7.8 a5 5 0 0 1 9.4 1.4 '
-            f'a3.4 3.4 0 0 1 -0.6 6.4 z" fill="#ffffff"/>'
-        ),
-        "lock": (
-            f'<rect x="{x + 7}" y="{y + 10}" width="9" height="7" rx="1.4" '
-            f'fill="#ffffff"/>'
-            f'<path d="M{x + 8.6} {y + 10} v-2.2 a2.9 2.9 0 0 1 5.8 0 v2.2" '
+            f'<path d="M{x + 5.4} {y + 15.6} '
+            f"a3.6 3.6 0 0 1 0.9 -7 a5 5 0 0 1 9.5 1.2 "
+            f'a3.1 3.1 0 0 1 -0.5 5.8 z" fill="#ffffff"/>'
+            f'<rect x="{x + 13.2}" y="{y + 13.4}" width="8.4" height="6.4" '
+            f'rx="1.2" fill="#ffffff"/>'
+            f'<path d="M{x + 14.8} {y + 13.4} v-1.9 a2.6 2.6 0 0 1 5.2 0 v1.9" '
             f'fill="none" stroke="#ffffff" stroke-width="1.5"/>'
+            f'<rect x="{x + 16.9}" y="{y + 15.4}" width="1.4" height="2.6" '
+            f'rx="0.7" fill="{colour}"/>'
+        ),
+        # A padlock: the subnet mark. Green when it faces the internet, blue
+        # when it does not, which is the whole reason to draw them separately.
+        "lock": (
+            f'<rect x="{x + 6.6}" y="{y + 11.6}" width="12.8" height="9.4" '
+            f'rx="1.6" fill="#ffffff"/>'
+            f'<path d="M{x + 9} {y + 11.6} v-2.8 a4 4 0 0 1 8 0 v2.8" '
+            f'fill="none" stroke="#ffffff" stroke-width="2"/>'
+            f'<rect x="{x + 12.2}" y="{y + 14.2}" width="1.6" height="4" '
+            f'rx="0.8" fill="{colour}"/>'
         ),
         "region": (
-            f'<circle cx="{x + 11.5}" cy="{y + 11.5}" r="5.4" fill="none" '
-            f'stroke="#ffffff" stroke-width="1.5"/>'
-            f'<path d="M{x + 6.1} {y + 11.5} h10.8 M{x + 11.5} {y + 6.1} '
-            f'a7 7 0 0 1 0 10.8 a7 7 0 0 1 0 -10.8" fill="none" '
-            f'stroke="#ffffff" stroke-width="1.2"/>'
+            f'<circle cx="{x + b / 2}" cy="{y + b / 2}" r="6.4" fill="none" '
+            f'stroke="#ffffff" stroke-width="1.8"/>'
+            f'<path d="M{x + 6.6} {y + b / 2} h12.8" stroke="#ffffff" '
+            f'stroke-width="1.5"/>'
+            f'<path d="M{x + b / 2} {y + 6.6} a8 8 0 0 1 0 12.8 a8 8 0 0 1 0 -12.8" '
+            f'fill="none" stroke="#ffffff" stroke-width="1.5"/>'
         ),
         "account": (
-            f'<circle cx="{x + 11.5}" cy="{y + 9}" r="3.2" fill="#ffffff"/>'
-            f'<path d="M{x + 5.5} {y + 18} a6 6 0 0 1 12 0 z" fill="#ffffff"/>'
+            f'<circle cx="{x + b / 2}" cy="{y + 10}" r="3.6" fill="#ffffff"/>'
+            f'<path d="M{x + 6} {y + 20.5} a7 7 0 0 1 14 0 z" fill="#ffffff"/>'
         ),
     }
     return (
-        f'<rect x="{x}" y="{y}" width="23" height="23" rx="4" fill="{colour}"/>'
+        f'<rect x="{x}" y="{y}" width="{b}" height="{b}" rx="3" fill="{colour}"/>'
         + marks.get(glyph, "")
     )
 
@@ -311,21 +332,22 @@ def render(layout: Layout, title: str = "Architecture") -> str:
         # it, on their navy. Previously this was the word alone in orange,
         # which is not the logo -- the arc is the half people recognise.
         bx, by = c.x + 12, c.y + 10
-        out.append(f'<rect x="{bx}" y="{by}" width="38" height="32" rx="3" fill="#232F3E"/>')
+        out.append(f'<rect x="{bx}" y="{by}" width="42" height="36" rx="7" fill="#232F3E"/>')
         out.append(
-            f'<text x="{bx + 19}" y="{by + 16}" text-anchor="middle" '
-            f'font-family="system-ui,sans-serif" font-size="13" font-weight="700" '
-            f'fill="#ffffff">aws</text>'
+            f'<text x="{bx + 21}" y="{by + 19}" text-anchor="middle" '
+            f'font-family="system-ui,sans-serif" font-size="15" font-weight="800" '
+            f'letter-spacing="-0.5" fill="#ffffff">aws</text>'
+        )
+        # The smile, which is the half of the logo people recognise.
+        out.append(
+            f'<path d="M{bx + 8} {by + 25} q 11 8 22 1" fill="none" '
+            f'stroke="#FF9900" stroke-width="2.6" stroke-linecap="round"/>'
         )
         out.append(
-            f'<path d="M{bx + 8} {by + 22} q 10 6 19 1" fill="none" '
-            f'stroke="#FF9900" stroke-width="2.1" stroke-linecap="round"/>'
+            f'<path d="M{bx + 26} {by + 23} l5 3.2 l-6 2.6 z" fill="#FF9900"/>'
         )
         out.append(
-            f'<path d="M{bx + 24} {by + 20} l4 3 l-5 2 z" fill="#FF9900"/>'
-        )
-        out.append(
-            f'<text x="{c.x + 60}" y="{c.y + 31}" '
+            f'<text x="{c.x + 66}" y="{c.y + 33}" '
             f'font-family="system-ui,sans-serif" font-size="15" font-weight="600" '
             f'fill="#232F3E">{escape(c.label)}</text>'
         )
@@ -393,7 +415,7 @@ def render(layout: Layout, title: str = "Architecture") -> str:
         )
         out.append(_badge(group.x + 10, group.y + 9, stroke, glyph))
         out.append(
-            f'<text x="{group.x + 40}" y="{group.y + 25}" '
+            f'<text x="{group.x + 44}" y="{group.y + 27}" '
             f'font-family="system-ui,sans-serif" font-size="13" '
             f'font-weight="600" fill="{stroke}">{escape(group.label)}</text>'
         )

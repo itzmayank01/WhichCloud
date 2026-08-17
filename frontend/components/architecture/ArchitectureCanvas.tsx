@@ -53,6 +53,92 @@ const TIER_GLYPH: Record<Tier, string> = {
   observability: "mdi:chart-line",
 };
 
+/* AWS's conventions for the boxes a system sits inside: a VPC is solid green,
+   subnets are tinted and carry a padlock -- green when they face the internet,
+   blue when they do not -- and regions and zones are dashed, being places
+   rather than things a boundary is drawn on. */
+function boundaryStyle(kind: string, label: string) {
+  const isPublic = /public|dmz/i.test(label);
+  switch (kind) {
+    case "vpc":
+      return { stroke: "#248814", fill: "none", dashed: false, glyph: "cloud" };
+    case "subnet":
+      return isPublic
+        ? { stroke: "#248814", fill: "#F2F9F0", dashed: false, glyph: "lock" }
+        : { stroke: "#147EBA", fill: "#F2F8FC", dashed: false, glyph: "lock" };
+    case "account":
+      return { stroke: "#232F3E", fill: "none", dashed: true, glyph: "account" };
+    default:
+      return { stroke: "#147EBA", fill: "none", dashed: true, glyph: "region" };
+  }
+}
+
+/* White shapes on the colour rather than outlines: a 1px stroke disappears at
+   this size, and these are read at a glance. */
+function BoundaryBadge({
+  x,
+  y,
+  colour,
+  glyph,
+}: {
+  x: number;
+  y: number;
+  colour: string;
+  glyph: string;
+}) {
+  return (
+    <g>
+      <rect x={x} y={y} width={26} height={26} rx={3} fill={colour} />
+      {glyph === "cloud" && (
+        <>
+          <path
+            d={`M${x + 5.4} ${y + 15.6} a3.6 3.6 0 0 1 0.9 -7 a5 5 0 0 1 9.5 1.2 a3.1 3.1 0 0 1 -0.5 5.8 z`}
+            fill="#ffffff"
+          />
+          <rect x={x + 13.2} y={y + 13.4} width={8.4} height={6.4} rx={1.2} fill="#ffffff" />
+          <path
+            d={`M${x + 14.8} ${y + 13.4} v-1.9 a2.6 2.6 0 0 1 5.2 0 v1.9`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={1.5}
+          />
+          <rect x={x + 16.9} y={y + 15.4} width={1.4} height={2.6} rx={0.7} fill={colour} />
+        </>
+      )}
+      {glyph === "lock" && (
+        <>
+          <rect x={x + 6.6} y={y + 11.6} width={12.8} height={9.4} rx={1.6} fill="#ffffff" />
+          <path
+            d={`M${x + 9} ${y + 11.6} v-2.8 a4 4 0 0 1 8 0 v2.8`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={2}
+          />
+          <rect x={x + 12.2} y={y + 14.2} width={1.6} height={4} rx={0.8} fill={colour} />
+        </>
+      )}
+      {glyph === "region" && (
+        <>
+          <circle cx={x + 13} cy={y + 13} r={6.4} fill="none" stroke="#ffffff" strokeWidth={1.8} />
+          <path d={`M${x + 6.6} ${y + 13} h12.8`} stroke="#ffffff" strokeWidth={1.5} />
+          <path
+            d={`M${x + 13} ${y + 6.6} a8 8 0 0 1 0 12.8 a8 8 0 0 1 0 -12.8`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={1.5}
+          />
+        </>
+      )}
+      {glyph === "account" && (
+        <>
+          <circle cx={x + 13} cy={y + 10} r={3.6} fill="#ffffff" />
+          <path d={`M${x + 6} ${y + 20.5} a7 7 0 0 1 14 0 z`} fill="#ffffff" />
+        </>
+      )}
+    </g>
+  );
+}
+
 function formatPoints(points: { x: number; y: number }[]): string {
   if (!points || points.length === 0) return "";
   return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
@@ -119,14 +205,6 @@ export function ArchitectureCanvas({
     });
     return { connectedEdges: edges, connectedNodes: nodes };
   }, [hoveredNode, view.edges]);
-
-  // Separate VPC boundaries and Subnets
-  const vpcGroups = useMemo(() => view.groups.filter((g) => g.kind === "vpc"), [view.groups]);
-  const subnetGroups = useMemo(() => view.groups.filter((g) => g.kind === "subnet"), [view.groups]);
-  const otherGroups = useMemo(
-    () => view.groups.filter((g) => g.kind !== "vpc" && g.kind !== "subnet"),
-    [view.groups]
-  );
 
   const totalWidth = view.canvas.width;
   const totalHeight = view.canvas.height;
@@ -349,128 +427,46 @@ export function ArchitectureCanvas({
               )}
 
               {/* 3. VPC Boundaries (Green Container with [VPC] badge) */}
-              {vpcGroups.map((vpc) => (
-                <g key={vpc.id}>
-                  {/* VPC Box */}
-                  <rect
-                    x={vpc.x}
-                    y={vpc.y}
-                    width={vpc.w}
-                    height={vpc.h}
-                    rx={10}
-                    fill="rgba(30, 142, 62, 0.03)"
-                    stroke="#1E8E3E"
-                    strokeWidth={1.8}
-                    strokeDasharray="none"
-                  />
-                  {/* VPC Green Header Badge */}
-                  <g>
+              {/* Boundaries, all drawn the same way: a square badge in the
+                  container's own colour with a white glyph, and the label
+                  beside it. AWS uses these to tell the kinds apart before any
+                  label is read -- a padlock on a subnet, a cloud holding a
+                  padlock on a VPC -- and the subnet's colour says whether it
+                  faces the internet. Three separate treatments had grown here
+                  and none of them matched the exported file. */}
+              {view.groups.map((g) => {
+                const style = boundaryStyle(g.kind, g.label);
+                return (
+                  <g key={g.id}>
                     <rect
-                      x={vpc.x + 8}
-                      y={vpc.y - 12}
-                      width={86}
-                      height={24}
+                      x={g.x}
+                      y={g.y}
+                      width={g.w}
+                      height={g.h}
                       rx={4}
-                      fill="#1E8E3E"
+                      fill={style.fill}
+                      stroke={style.stroke}
+                      strokeWidth={1.5}
+                      strokeDasharray={style.dashed ? "6 5" : undefined}
                     />
-                    {/* Cloud icon */}
-                    <path
-                      d={`M ${vpc.x + 16} ${vpc.y + 3} a 3.5 3.5 0 0 1 6.5 -1.5 a 4.5 4.5 0 0 1 8 1 a 3.5 3.5 0 0 1 -1 6.5 h -13.5 a 3 3 0 0 1 0 -6 z`}
-                      fill="#FFFFFF"
-                      transform="scale(0.7) translate(10, 0)"
+                    <BoundaryBadge
+                      x={g.x + 10}
+                      y={g.y + 9}
+                      colour={style.stroke}
+                      glyph={style.glyph}
                     />
                     <text
-                      x={vpc.x + 48}
-                      y={vpc.y + 4}
-                      textAnchor="middle"
-                      fontSize="11"
-                      fontWeight="800"
-                      fill="#FFFFFF"
-                      letterSpacing="0.06em"
+                      x={g.x + 44}
+                      y={g.y + 27}
+                      fontSize="13"
+                      fontWeight="600"
+                      fill={style.stroke}
                     >
-                      VPC
+                      {g.label}
                     </text>
-                  </g>
-                </g>
-              ))}
-
-              {/* 4. Subnet Boundaries (e.g. Private Subnet with soft blue fill & lock badge) */}
-              {subnetGroups.map((sub) => {
-                const isPrivate = sub.label.toLowerCase().includes("private") || sub.label.toLowerCase().includes("data");
-                const borderColor = isPrivate ? "#1976D2" : "#1E8E3E";
-                const bgColor = isPrivate ? "rgba(25, 118, 210, 0.05)" : "rgba(30, 142, 62, 0.04)";
-
-                return (
-                  <g key={sub.id}>
-                    <rect
-                      x={sub.x}
-                      y={sub.y}
-                      width={sub.w}
-                      height={sub.h}
-                      rx={8}
-                      fill={bgColor}
-                      stroke={borderColor}
-                      strokeWidth={1.5}
-                      strokeDasharray="6 5"
-                    />
-                    {/* Subnet Badge */}
-                    <g>
-                      <rect
-                        x={sub.x + 10}
-                        y={sub.y - 10}
-                        width={isPrivate ? 116 : 110}
-                        height={22}
-                        rx={4}
-                        fill={borderColor}
-                      />
-                      {isPrivate && (
-                        <path
-                          d={`M ${sub.x + 18} ${sub.y + 2} v -3 a 3 3 0 0 1 6 0 v 3 h 1 a 1 1 0 0 1 1 1 v 5 a 1 1 0 0 1 -1 1 h -8 a 1 1 0 0 1 -1 -1 v -5 a 1 1 0 0 1 1 -1 z M ${sub.x + 20} ${sub.y - 1} v 3 h 2 v -3 a 1 1 0 0 0 -2 0 z`}
-                          fill="#FFFFFF"
-                        />
-                      )}
-                      <text
-                        x={sub.x + (isPrivate ? 68 : 55)}
-                        y={sub.y + 5}
-                        textAnchor="middle"
-                        fontSize="10.5"
-                        fontWeight="700"
-                        fill="#FFFFFF"
-                        letterSpacing="0.04em"
-                      >
-                        {sub.label || (isPrivate ? "Private subnet" : "Public subnet")}
-                      </text>
-                    </g>
                   </g>
                 );
               })}
-
-              {/* 5. Other Boundary Groups (Regions, AZs, Accounts) */}
-              {otherGroups.map((g) => (
-                <g key={g.id}>
-                  <rect
-                    x={g.x}
-                    y={g.y}
-                    width={g.w}
-                    height={g.h}
-                    rx={8}
-                    fill="rgba(241, 245, 249, 0.4)"
-                    stroke="#94A3B8"
-                    strokeWidth={1.3}
-                    strokeDasharray="6 5"
-                  />
-                  <text
-                    x={g.x + 12}
-                    y={g.y + 16}
-                    fill="#475569"
-                    fontSize="11.5"
-                    fontWeight="700"
-                    letterSpacing="0.04em"
-                  >
-                    {g.kind.toUpperCase()} · {g.label}
-                  </text>
-                </g>
-              ))}
 
               {/* 6. Functional Component Groups (Dashed containers matching reference) */}
               {view.components.map((comp) => (
