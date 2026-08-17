@@ -157,6 +157,11 @@ class RecommendationOut(BaseModel):
     diffs: list[DiffOut]
     not_applied: list[dict]
     sizing_basis: str
+    #: What the budget was read as. Without it the interface can say "within
+    #: budget" but not against what, and cannot report what is left unspent --
+    #: which is the difference between "this fits" and "this fits with $500
+    #: to spare, here is what that would buy".
+    budget_monthly_usd: float | None = None
     assumed: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
     read_by: str | None = None
@@ -855,6 +860,11 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
             for t, why in why_not(requirement, provider)
         ],
         sizing_basis=SIZING_BASIS,
+        budget_monthly_usd=(
+            float(intake.requirement.budget_monthly_usd)
+            if intake.requirement.budget_monthly_usd
+            else None
+        ),
         assumed=list(intake.assumed),
         clarifying_question=intake.clarifying_question,
         read_by=intake.provider,

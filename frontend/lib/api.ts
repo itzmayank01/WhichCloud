@@ -133,6 +133,8 @@ export type Recommendation = {
   diffs: Diff[];
   not_applied: { id: string; name: string; reason: string }[];
   sizing_basis: string;
+  /** What the budget was read as, so the interface can say what is unspent. */
+  budget_monthly_usd: number | null;
   assumed: string[];
   clarifying_question: string | null;
   read_by: string | null;

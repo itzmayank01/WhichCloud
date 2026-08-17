@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { api, money, type Option, type Recommendation } from "@/lib/api";
+import {
+  api,
+  money,
+  type ArchitectureView,
+  type Option,
+  type Recommendation,
+} from "@/lib/api";
 import { ArchitectureCanvas } from "@/components/architecture/ArchitectureCanvas";
 
 /**
@@ -64,6 +70,10 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
 export function CostedAdvisor() {
   const [description, setDescription] = useState("");
   const [result, setResult] = useState<Recommendation | null>(null);
+  /* What they described, drawn. Kept apart from the priced tiers because it
+     answers a different question: the tiers say what a standard system of
+     this size costs, this says what the system they described looks like. */
+  const [described, setDescribed] = useState<ArchitectureView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,10 +82,30 @@ export function CostedAdvisor() {
     setBusy(true);
     setError(null);
     setResult(null);
+    setDescribed(null);
     try {
-      const answer = await api.describe({ description });
-      setResult(answer);
-      setSelected(recommend(answer.options)?.pick.label ?? answer.options[0]?.label ?? null);
+      /* Both at once. The pricer and the architecture reader answer different
+         halves of the question and neither waits on the other; asking in
+         sequence would double the wait for no gain. */
+      const [answer, drawing] = await Promise.allSettled([
+        api.describe({ description }),
+        api.architecture({ description }),
+      ]);
+
+      if (answer.status === "rejected") throw answer.reason;
+      setResult(answer.value);
+      setSelected(
+        recommend(answer.value.options)?.pick.label ??
+          answer.value.options[0]?.label ??
+          null,
+      );
+
+      /* A description naming no services draws nothing worth showing, and a
+         reader that ran out of quota should not take the prices down with
+         it -- the tiers are the answer either way. */
+      if (drawing.status === "fulfilled" && drawing.value.counts.services > 2) {
+        setDescribed(drawing.value);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read that description");
     } finally {
@@ -84,6 +114,8 @@ export function CostedAdvisor() {
   }
 
   const advice = result ? recommend(result.options) : null;
+  const budget = result?.budget_monthly_usd ?? null;
+  const unspent = advice && budget ? budget - advice.pick.monthly_usd : null;
   const shown = result?.options.find((o) => o.label === selected) ?? null;
 
   return (
@@ -144,6 +176,19 @@ export function CostedAdvisor() {
             <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">
               {advice.because}
             </p>
+            {/* Saying "within budget" without saying what is left of it hides
+                the most useful number on the page: a manager with $500
+                unspent has a decision to make, and a green tick tells them
+                nothing about it. */}
+            {unspent !== null && unspent > 1 && (
+              <p className="mt-2 text-[14.5px] leading-relaxed text-ink-2">
+                That leaves <strong>{money(unspent)}</strong> of your{" "}
+                {money(budget!)} unspent. The catalog sizes from expected
+                traffic rather than from budget, so spending it would mean
+                larger instances, more of them, or a second region — none of
+                which this describes yet.
+              </p>
+            )}
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -232,12 +277,45 @@ export function CostedAdvisor() {
                 </tbody>
               </table>
 
-              {/* The option, drawn. A table of line items is a bill; this is
-                  the system that bill pays for, with each service carrying
-                  the figure that made up the total. */}
+              {/* Two drawings, because there are two answers.
+
+                  What was described is the system in the words someone wrote,
+                  every service they named. What is priced is the standard
+                  architecture of this size, which is where the figures come
+                  from. Showing only the second makes a rich description look
+                  like it was ignored; showing only the first leaves the money
+                  unexplained. */}
+              {described && (
+                <div className="mt-7">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-[15.5px] font-semibold">
+                      The system you described
+                    </h3>
+                    <span className="font-mono text-[12.5px] text-ink-3">
+                      {described.counts.services} services ·{" "}
+                      {described.counts.priced} priced by the catalog
+                    </span>
+                  </div>
+                  <div className="mt-3 overflow-hidden rounded-xl border border-line bg-canvas p-2">
+                    <ArchitectureCanvas view={described} />
+                  </div>
+                  <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">
+                    Drawn as written. The catalog prices seven kinds of service
+                    — compute, database, cache, storage, delivery, load
+                    balancing and monitoring — so the figures below come from
+                    the standard architecture beneath, not from every box here.
+                  </p>
+                </div>
+              )}
+
               {shown.drawn && (
-                <div className="mt-6 overflow-hidden rounded-xl border border-line bg-canvas p-2">
-                  <ArchitectureCanvas view={shown.drawn} />
+                <div className="mt-7">
+                  <h3 className="text-[15.5px] font-semibold">
+                    What the {shown.label.toLowerCase()} price pays for
+                  </h3>
+                  <div className="mt-3 overflow-hidden rounded-xl border border-line bg-canvas p-2">
+                    <ArchitectureCanvas view={shown.drawn} />
+                  </div>
                 </div>
               )}
 
