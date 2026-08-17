@@ -24,10 +24,10 @@ import { iconFor } from "@/lib/serviceIcon";
    a replication path are different claims about a system, and these are read
    at a glance and often printed, where colour alone does not survive. */
 const FLOW: Record<Flow, { stroke: string; dash?: string; width: number; label: string }> = {
-  sync: { stroke: "var(--accent)", width: 1.8, label: "Request path" },
-  async: { stroke: "#8B5CF6", width: 1.8, dash: "7 5", label: "Event / queue" },
-  replication: { stroke: "#0EA5E9", width: 1.8, dash: "2 4", label: "Replication" },
-  control: { stroke: "#94A3B8", width: 1.3, dash: "1 4", label: "Control plane" },
+  sync: { stroke: "#5A6B7F", width: 1.4, label: "Request path" },
+  async: { stroke: "#8B5CF6", width: 1.4, dash: "6 4", label: "Event / queue" },
+  replication: { stroke: "#0EA5E9", width: 1.4, dash: "2 4", label: "Replication" },
+  control: { stroke: "#AAB4C0", width: 1.2, dash: "1 4", label: "Control plane" },
 };
 
 const TIER_LABEL: Record<Tier, string> = {
@@ -174,6 +174,77 @@ export function ArchitectureCanvas({
               ))}
             </defs>
 
+            {/* The provider boundary, and the people outside it. */}
+            {view.cloud && (
+              <g>
+                <rect
+                  x={view.cloud.x}
+                  y={view.cloud.y}
+                  width={view.cloud.w}
+                  height={view.cloud.h}
+                  rx={6}
+                  fill="none"
+                  stroke="#232F3E"
+                  strokeWidth={1.6}
+                />
+                <rect
+                  x={view.cloud.x + 12}
+                  y={view.cloud.y + 10}
+                  width={26}
+                  height={22}
+                  rx={4}
+                  fill="#232F3E"
+                />
+                <text
+                  x={view.cloud.x + 25}
+                  y={view.cloud.y + 25}
+                  textAnchor="middle"
+                  fontSize={10}
+                  fontWeight={700}
+                  fill="#FF9900"
+                >
+                  aws
+                </text>
+                <text
+                  x={view.cloud.x + 46}
+                  y={view.cloud.y + 26}
+                  fontSize={15}
+                  fontWeight={600}
+                  fill="#232F3E"
+                >
+                  {view.cloud.label}
+                </text>
+              </g>
+            )}
+
+            {view.actor && (
+              <g>
+                <circle
+                  cx={view.actor.x + view.actor.w / 2}
+                  cy={view.actor.y + 26}
+                  r={11}
+                  fill="none"
+                  stroke="#5A6B7F"
+                  strokeWidth={2}
+                />
+                <path
+                  d={`M${view.actor.x + view.actor.w / 2 - 20} ${view.actor.y + 62} a20 20 0 0 1 40 0`}
+                  fill="none"
+                  stroke="#5A6B7F"
+                  strokeWidth={2}
+                />
+                <text
+                  x={view.actor.x + view.actor.w / 2}
+                  y={view.actor.y + 84}
+                  textAnchor="middle"
+                  fontSize={13}
+                  fill="#3F4B5B"
+                >
+                  {view.actor.label}
+                </text>
+              </g>
+            )}
+
             {/* Functional components: the organising idea of the picture,
                 so they go down first and everything lands on top. A reader
                 looking for how search works finds one box holding all of it,
@@ -281,16 +352,48 @@ export function ArchitectureCanvas({
                 />
               );
             })}
+            {/* Step numbers, over their arrows. Blue is reserved for these:
+                they are the sequence a reader follows. */}
+            {view.edges.map((edge, i) =>
+              edge.step && edge.badge && visible.has(edge.source) && visible.has(edge.target) ? (
+                <g key={`badge-${i}`}>
+                  <rect
+                    x={edge.badge.x - 11}
+                    y={edge.badge.y - 11}
+                    width={22}
+                    height={22}
+                    rx={4}
+                    fill="#2F62E8"
+                  />
+                  <text
+                    x={edge.badge.x}
+                    y={edge.badge.y + 4}
+                    textAnchor="middle"
+                    fontSize={12}
+                    fontWeight={700}
+                    fill="#ffffff"
+                  >
+                    {edge.step}
+                  </text>
+                </g>
+              ) : null,
+            )}
           </svg>
 
-          {/* Boxes as HTML, so labels wrap and logos render as themselves. */}
+          {/* Services as HTML, so long names wrap. */}
           {view.nodes.map((node, i) => {
             const on = visible.has(node.id);
             const icon = iconFor(node.label);
             return (
+              /* No card. A white box with a border, a fill and a coloured bar
+                 puts three pieces of chrome between a reader and each service,
+                 and twenty of them read as a dashboard rather than an
+                 architecture. AWS draws a service as its mark with the name
+                 centred underneath and nothing else; the component boxes
+                 already do the grouping a card would imply. */
               <div
                 key={node.id}
-                className="absolute overflow-hidden rounded-xl border border-line-strong bg-white elev-1"
+                className="absolute flex flex-col items-center"
                 style={{
                   left: node.x,
                   top: node.y,
@@ -302,60 +405,37 @@ export function ArchitectureCanvas({
                   transitionDelay: on ? `${Math.min(i, 6) * 18}ms` : "0ms",
                 }}
               >
-                <span
-                  className="absolute inset-x-0 top-0 h-[3px]"
-                  style={{ background: TIER_COLOR[node.tier] }}
-                  aria-hidden
-                />
-                {/* Icon first and large, name beneath it. AWS's own diagrams
-                    lead with the mark because that is what a reader scans
-                    for; a 17px glyph tucked beside the text is decoration. */}
-                <div className="flex h-full items-center gap-3 px-3 pt-[3px]">
-                  {icon ? (
-                    /* AWS's own mark, shown on its own rather than in a tinted
-                       tile: the artwork already carries the service's colour,
-                       and a second background behind it fights with that. */
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={icon}
-                      alt=""
-                      width={40}
-                      height={40}
-                      className="h-10 w-10 shrink-0 object-contain"
+                {icon ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={icon}
+                    alt=""
+                    width={56}
+                    height={56}
+                    className="h-14 w-14 shrink-0 object-contain"
+                  />
+                ) : (
+                  <span
+                    className="grid h-14 w-14 shrink-0 place-items-center rounded-[9px]"
+                    style={{ background: `${TIER_COLOR[node.tier]}29` }}
+                  >
+                    <Icon
+                      icon={TIER_GLYPH[node.tier]}
+                      width={28}
+                      height={28}
+                      style={{ color: TIER_COLOR[node.tier] }}
+                      aria-hidden
                     />
-                  ) : (
-                    <span
-                      className="grid h-10 w-10 shrink-0 place-items-center rounded-lg"
-                      style={{ background: `${TIER_COLOR[node.tier]}16` }}
-                    >
-                      <Icon
-                        icon={TIER_GLYPH[node.tier]}
-                        width={24}
-                        height={24}
-                        style={{ color: TIER_COLOR[node.tier] }}
-                        aria-hidden
-                      />
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13.5px] font-semibold leading-tight text-ink">
-                      {node.label}
-                    </span>
-                    {node.purpose && (
-                      <span className="mt-0.5 line-clamp-2 block text-[11.5px] leading-snug text-ink-3">
-                        {node.purpose}
-                      </span>
-                    )}
-                    {/* Only priced services say anything about money. Writing
-                        "not priced" on every box turned the catalog's gap
-                        into the loudest repeated text on the diagram. */}
-                    {node.priced && node.monthly_usd !== null && (
-                      <span className="mt-0.5 block font-mono text-[10.5px] text-save">
-                        ${node.monthly_usd.toFixed(2)}/mo
-                      </span>
-                    )}
                   </span>
-                </div>
+                )}
+                <span className="mt-1.5 line-clamp-2 px-1 text-center text-[12.5px] font-semibold leading-[1.2] text-[#232F3E]">
+                  {node.label}
+                </span>
+                {node.priced && node.monthly_usd !== null && (
+                  <span className="mt-0.5 font-mono text-[10.5px] text-save">
+                    ${node.monthly_usd.toFixed(2)}/mo
+                  </span>
+                )}
               </div>
             );
           })}

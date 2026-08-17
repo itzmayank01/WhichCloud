@@ -565,7 +565,7 @@ def architecture_route(body: ArchitectureIn) -> dict:
     """
     from .architecture.extract import extract_architecture
     from .architecture.graph import build_graph
-    from .architecture.layout import build_layout
+    from .architecture.layout import badge_point, build_layout
     from .intake import IntakeError
 
     if not body.description.strip():
@@ -601,6 +601,25 @@ def architecture_route(body: ArchitectureIn) -> dict:
             {"name": c.name, "x": c.x, "y": c.y, "w": c.w, "h": c.h}
             for c in layout.components
         ],
+        # The provider boundary and the people outside it. Every reference
+        # architecture is framed this way, and without it a diagram is a pile
+        # of services with no edge to the system.
+        "cloud": (
+            {
+                "label": layout.cloud.label, "x": layout.cloud.x,
+                "y": layout.cloud.y, "w": layout.cloud.w, "h": layout.cloud.h,
+            }
+            if layout.cloud
+            else None
+        ),
+        "actor": (
+            {
+                "label": layout.actor.label, "x": layout.actor.x,
+                "y": layout.actor.y, "w": layout.actor.w, "h": layout.actor.h,
+            }
+            if layout.actor
+            else None
+        ),
         # Outermost first: the interface paints them in order so nesting lands
         # on top without having to sort anything itself.
         "groups": [
@@ -624,6 +643,14 @@ def architecture_route(body: ArchitectureIn) -> dict:
         "edges": [
             {
                 "source": e.source, "target": e.target, "flow": e.flow,
+                # Where on this arrow its number goes, worked out here so both
+                # renderers put it in the same place.
+                "step": e.step,
+                "badge": (
+                    dict(zip(("x", "y"), badge_point(e.points, layout.nodes)))
+                    if e.step
+                    else None
+                ),
                 "points": [{"x": x, "y": y} for x, y in e.points],
             }
             for e in layout.edges

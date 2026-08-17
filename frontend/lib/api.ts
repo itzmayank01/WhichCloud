@@ -204,8 +204,17 @@ export type ArchEdge = {
   source: string;
   target: string;
   flow: Flow;
+  /** Position in the request path; null for links that are not on it. */
+  step: number | null;
+  /** Where the step number goes — placed server-side so both renderers agree. */
+  badge: { x: number; y: number } | null;
   /** Already routed server-side, so the client draws rather than decides. */
   points: { x: number; y: number }[];
+};
+
+export type ArchFrame = {
+  label: string;
+  x: number; y: number; w: number; h: number;
 };
 
 export type ArchGroup = {
@@ -229,6 +238,8 @@ export type ArchitectureView = {
   counts: { services: number; edges: number; groups: number; priced: number };
   bands: { tier: Tier; y: number; h: number }[];
   components: ArchComponent[];
+  cloud: ArchFrame | null;
+  actor: ArchFrame | null;
   groups: ArchGroup[];
   nodes: ArchNode[];
   edges: ArchEdge[];
