@@ -14,7 +14,13 @@ from dataclasses import dataclass
 import pytest
 
 from tests.fixtures.intake_examples import EXAMPLES, example
-from whichcloud.intake import Intake, IntakeError, RequirementDraft, parse_description
+from whichcloud.intake import (
+    GEMINI_MODEL,
+    Intake,
+    IntakeError,
+    RequirementDraft,
+    parse_description,
+)
 from whichcloud.pricing.models import REGIONS
 from whichcloud.requirements import Requirement
 
@@ -321,7 +327,10 @@ def test_gemini_request_uses_structured_output():
     parse_description("a shop", provider="gemini", client=client)
 
     call = client.calls[0]
-    assert call["model"] == "gemini-2.5-flash"
+    # Against the constant, not a literal. Pinning the name here meant this
+    # broke the day the model was unpinned, which is a test of the constant
+    # rather than of the behaviour it was written for.
+    assert call["model"] == GEMINI_MODEL
     assert call["contents"] == "a shop"
     assert call["config"]["response_schema"] is RequirementDraft
     assert call["config"]["response_mime_type"] == "application/json"

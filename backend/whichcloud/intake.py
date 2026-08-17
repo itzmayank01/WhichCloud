@@ -41,7 +41,12 @@ from .requirements import Requirement
 Provider = Literal["gemini", "anthropic", "openai"]
 
 # Free tier, fast, and comfortably capable of structured extraction.
-GEMINI_MODEL = "gemini-2.5-flash"
+#: The rolling alias, not a pinned version. Keys issued today cannot call
+#: gemini-2.5-flash at all -- Google answers "no longer available to new
+#: users" -- so a version that works for the oldest key in the chain 404s for
+#: the newest. The architecture reader was fixed for this and this was missed,
+#: which left /describe broken while /architecture worked.
+GEMINI_MODEL = "gemini-flash-latest"
 
 # Extraction is a short, scoped task — the model is reading a paragraph and
 # filling a struct, not designing anything.
@@ -201,7 +206,7 @@ def _detect_provider() -> Provider:
 # ── providers ───────────────────────────────────────────────────────────
 
 
-def _extract_gemini(description: str, client=None) -> RequirementDraft:
+def _extract_gemini(description: str, client=None, key: str | None = None) -> RequirementDraft:
     """Google Gemini via structured output.
 
     Privacy note worth knowing: on the free tier Google may use prompts and
@@ -215,7 +220,7 @@ def _extract_gemini(description: str, client=None) -> RequirementDraft:
         raise IntakeError("google-genai is not installed: pip install google-genai") from exc
 
     if client is None:
-        key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        key = key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise IntakeError("GEMINI_API_KEY is not set.")
         client = genai.Client(api_key=key)
@@ -239,14 +244,18 @@ def _extract_gemini(description: str, client=None) -> RequirementDraft:
     return draft
 
 
-def _extract_anthropic(description: str, client=None) -> RequirementDraft:
+def _extract_anthropic(description: str, client=None, key: str | None = None) -> RequirementDraft:
     """Claude via structured output."""
     try:
         import anthropic
     except ImportError as exc:  # pragma: no cover - dependency is declared
         raise IntakeError("anthropic is not installed: pip install anthropic") from exc
 
-    client = client or anthropic.Anthropic()
+    # The chain hands us a specific key; without one the SDK reads the
+    # environment, which is what a single-key setup expects.
+    client = client or (
+        anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
+    )
 
     try:
         response = client.messages.parse(
@@ -271,7 +280,7 @@ def _extract_anthropic(description: str, client=None) -> RequirementDraft:
     return draft
 
 
-def _extract_openai(description: str, client=None) -> RequirementDraft:
+def _extract_openai(description: str, client=None, key: str | None = None) -> RequirementDraft:
     """GPT via structured output.
 
     Same contract as the other two: the model fills in RequirementDraft and
@@ -284,7 +293,7 @@ def _extract_openai(description: str, client=None) -> RequirementDraft:
     except ImportError as exc:  # pragma: no cover - dependency is declared
         raise IntakeError("openai is not installed: pip install openai") from exc
 
-    client = client or openai.OpenAI()
+    client = client or (openai.OpenAI(api_key=key) if key else openai.OpenAI())
 
     try:
         response = client.responses.parse(
@@ -312,6 +321,42 @@ _EXTRACTORS = {
 # ── public entry point ──────────────────────────────────────────────────
 
 
+def _draft_with_failover(description: str, provider: Provider, client=None):
+    """Try every configured key, not just the first.
+
+    This module called one provider and gave up, so a spent Gemini quota broke
+    /describe outright while /architecture -- which walks the chain -- carried
+    on through the other nine keys. The same failure, fixed in one place and
+    missed in the other.
+
+    Only the chain differs; each provider's extractor is unchanged.
+    """
+    from whichcloud.architecture.readers import candidates, is_exhausted
+
+    if client is not None:               # an injected client is the test's
+        return _EXTRACTORS[provider](description, client)
+
+    chain = [c for c in candidates(provider) if c.provider in _EXTRACTORS]
+    if not chain:
+        return _EXTRACTORS[provider](description, client)
+
+    failures: list[tuple[str, Exception]] = []
+    for candidate in chain:
+        try:
+            return _EXTRACTORS[candidate.provider](description, None, candidate.key)
+        except Exception as exc:
+            failures.append((candidate.label, exc))
+
+    if all(is_exhausted(exc) for _, exc in failures):
+        raise IntakeError(
+            "Every configured model is out of capacity right now ("
+            + ", ".join(label for label, _ in failures)
+            + "). Add another key as GEMINI_API_KEY_2 or GROQ_API_KEY."
+        )
+    label, exc = next((f for f in failures if not is_exhausted(f[1])), failures[0])
+    raise IntakeError(f"{label} could not read that: {str(exc)[:200]}") from exc
+
+
 def parse_description(
     description: str,
     provider: Provider | None = None,
@@ -336,7 +381,7 @@ def parse_description(
             f"Unknown provider {provider!r}. Choose one of: {', '.join(_EXTRACTORS)}"
         )
 
-    draft = _EXTRACTORS[provider](description, client)
+    draft = _draft_with_failover(description, provider, client)
 
     try:
         requirement = draft.to_requirement()
