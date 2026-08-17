@@ -568,3 +568,74 @@ def test_every_routed_edge_survives_rounding():
         path = rounded_path(edge.points)
         assert path.startswith("M")
         assert str(edge.points[-1][0]) in path
+
+
+def test_a_container_is_never_narrower_than_its_own_label():
+    """Sized from contents alone, an availability zone holding two nearly
+    empty subnets came out narrower than the words "Availability Zone 2", so
+    the label ran past its border into the zone drawn beside it."""
+    from whichcloud.architecture import Architecture
+    from whichcloud.architecture.graph import build_graph
+    from whichcloud.architecture.layout import LABEL_CHAR_W
+
+    arch = Architecture(
+        services=[svc("EC2", "compute")],
+        boundaries=[
+            Boundary(kind="vpc", name="VPC", contains=["Availability Zone 1"]),
+            Boundary(
+                kind="az",
+                name="Availability Zone 1",
+                contains=["Private subnet 1"],
+            ),
+            Boundary(kind="subnet", name="Private subnet 1", contains=["EC2"]),
+        ],
+    )
+    lay = build_layout(build_graph(arch))
+
+    for group in lay.groups:
+        assert group.w >= len(group.label) * LABEL_CHAR_W, (
+            f"{group.label!r} is narrower than its own name"
+        )
+
+
+def test_containers_never_overlap_their_siblings():
+    """Two zones drawn on top of each other is the failure a reader sees
+    first, and it survived every earlier test because they all checked
+    nesting rather than separation."""
+    from whichcloud.architecture.graph import build_graph
+
+    lay = build_layout(build_graph(_nested_arch()))
+
+    for kind in ("az", "subnet"):
+        boxes = [g for g in lay.groups if g.kind == kind]
+        for a, b in ((x, y) for i, x in enumerate(boxes) for y in boxes[i + 1 :]):
+            apart = (
+                a.x + a.w <= b.x
+                or b.x + b.w <= a.x
+                or a.y + a.h <= b.y
+                or b.y + b.h <= a.y
+            )
+            assert apart, f"{a.label!r} overlaps {b.label!r}"
+
+
+def test_a_container_holding_nothing_is_not_drawn():
+    """Descriptions name subnets they never put anything in. An empty box with
+    a label is a rectangle asserting structure the diagram cannot show."""
+    from whichcloud.architecture import Architecture
+    from whichcloud.architecture.graph import build_graph
+
+    arch = Architecture(
+        services=[svc("EC2", "compute")],
+        boundaries=[
+            Boundary(kind="vpc", name="VPC", contains=["AZ 1", "AZ 2"]),
+            Boundary(kind="az", name="AZ 1", contains=["Private subnet 1"]),
+            Boundary(kind="az", name="AZ 2", contains=["Private subnet 2"]),
+            Boundary(kind="subnet", name="Private subnet 1", contains=["EC2"]),
+            Boundary(kind="subnet", name="Private subnet 2", contains=[]),
+        ],
+    )
+    labels = {g.label for g in build_layout(build_graph(arch)).groups}
+
+    assert "Private subnet 1" in labels
+    assert "Private subnet 2" not in labels
+    assert "AZ 2" not in labels

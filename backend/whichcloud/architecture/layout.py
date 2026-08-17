@@ -742,6 +742,19 @@ class _Box:
     h: int = 0
 
 
+def _prune(box: _Box) -> _Box | None:
+    """Drop containers that ended up holding nothing.
+
+    A description mentions subnets it never puts anything in, and an empty box
+    with a label is not information -- it is a rectangle asserting a structure
+    the diagram cannot show.
+    """
+    box.children = [c for c in (_prune(child) for child in box.children) if c]
+    if not box.nodes and not box.children:
+        return None
+    return box
+
+
 def _tree(graph: ArchitectureGraph) -> list[_Box]:
     """The boundary hierarchy, with each one's own services attached."""
     by_id = {g.id: g for g in graph.groups}
@@ -755,7 +768,20 @@ def _tree(graph: ArchitectureGraph) -> list[_Box]:
             children=[build(by_id[c]) for c in group.child_ids if c in by_id],
         )
 
-    return [build(g) for g in graph.groups if g.id not in child_ids]
+    roots = (build(g) for g in graph.groups if g.id not in child_ids)
+    return [box for box in (_prune(root) for root in roots) if box]
+
+
+#: Roughly the width of one character of a boundary label at 13px semibold.
+#: Only used to stop a box being narrower than its own name; being a little
+#: out costs a few pixels of slack, not a broken diagram.
+LABEL_CHAR_W = 7.4
+LABEL_BADGE_W = 42
+
+
+def _label_width(box: _Box) -> int:
+    """How wide this box has to be for its own label to fit inside it."""
+    return int(len(box.group.label) * LABEL_CHAR_W) + LABEL_BADGE_W + BOX_PAD
 
 
 def _measure(box: _Box) -> None:
@@ -786,7 +812,11 @@ def _measure(box: _Box) -> None:
     inner_w = max(nodes_w, kids_w)
     inner_h = nodes_h + (BOX_GAP if nodes_h and kids_h else 0) + kids_h
 
-    box.w = inner_w + BOX_PAD * 2
+    # A box has to be at least as wide as its own name. Sized from contents
+    # alone, an availability zone holding two nearly empty subnets came out
+    # narrower than the words "Availability Zone 2", so the label ran past the
+    # border and collided with the zone drawn beside it.
+    box.w = max(inner_w + BOX_PAD * 2, _label_width(box))
     box.h = inner_h + BOX_PAD * 2 + BOX_LABEL_H
 
 
