@@ -563,14 +563,18 @@ def _shape_variants(
 
     if requirement.needs_database:
         optimized_delta["database_read_replicas"] = max(2, replicas)
-        # A cache that can hold the working set is what keeps a busy
-        # primary from being the bottleneck; the reliable tier's is sized
-        # for sessions rather than for data.
-        optimized_delta["cache_vcpu"] = 4
-        optimized_delta["cache_memory_gb"] = 8.0
+        # The cache tracks the database it fronts rather than jumping to a
+        # flat size. Pinned at 4 vCPU it cost $179/mo on a workload doing
+        # 0.09 transactions a second -- three times the database it was
+        # meant to protect, for capacity nothing would touch. Half the
+        # primary's cores, floored at the smallest useful node.
+        db_vcpu, _ = db_size_for(requirement)
+        cache_vcpu = max(2, db_vcpu // 2)
+        optimized_delta["cache_vcpu"] = cache_vcpu
+        optimized_delta["cache_memory_gb"] = float(cache_vcpu) * 2.0
         optimized_tradeoffs.append(
-            "Read replicas and a larger cache run whether or not the "
-            "reporting load that justifies them has arrived yet"
+            "Read replicas run whether or not the reporting load that "
+            "justifies them has arrived yet"
         )
 
     # Protection at the edge. Priced here even where the description named
