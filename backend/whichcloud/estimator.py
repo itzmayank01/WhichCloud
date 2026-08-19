@@ -195,6 +195,16 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("azure", "dns", "queries"): "dns:queries",
     ("aws", "kms", "key"): "kms:key",
     ("azure", "kms", "key"): "keyvault:operations",
+    ("aws", "backup", "storage"): "backup:warm-storage",
+    ("azure", "backup", "storage"): "backup:vault-lrs",
+    ("aws", "flowlogs", "ingest"): "vpc:flow-logs",
+    ("azure", "flowlogs", "ingest"): "networkwatcher:flow-logs",
+    ("aws", "threat", "compute"): "guardduty:ec2-vcpu",
+    ("aws", "threat", "database"): "guardduty:rds-vcpu",
+    ("aws", "threat", "fargate"): "guardduty:fargate-vcpu",
+    ("azure", "threat", "compute"): "defender:server-node",
+    ("aws", "posture", "checks"): "securityhub:compliance-check",
+    ("azure", "posture", "checks"): "defender:cspm-node",
 }
 
 
@@ -503,7 +513,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- backup ----
     if spec.backup_gb:
-        point = store.get_price(provider, region, "backup", "backup:warm-storage", dsn=dsn)
+        point = _by_role(provider, region, "backup", "storage", dsn)
         if point:
             result.items.append(_metered_line("Backup storage", point, spec.backup_gb))
         else:
@@ -706,12 +716,18 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     # Priced from the vCPU count actually being monitored -- the compute
     # tier's own size -- rather than a flat per-account guess.
     if spec.threat_detection:
-        ec2 = store.get_price(provider, region, "threat", "guardduty:ec2-vcpu", dsn=dsn)
-        rds = store.get_price(provider, region, "threat", "guardduty:rds-vcpu", dsn=dsn)
-        fargate = store.get_price(
-            provider, region, "threat", "guardduty:fargate-vcpu", dsn=dsn
-        )
-        if ec2:
+        ec2 = _by_role(provider, region, "threat", "compute", dsn)
+        rds = _by_role(provider, region, "threat", "database", dsn)
+        fargate = _by_role(provider, region, "threat", "fargate", dsn)
+        if ec2 and ec2.unit == "node-hour":
+            # Per-node providers charge by the machine, not by its vCPUs,
+            # so converting a vCPU count into node-hours would invent load
+            # the provider never bills for.
+            nodes = spec.compute_count + (1 if spec.database_vcpu else 0)
+            result.items.append(
+                _hourly_line("Threat detection", ec2, nodes)
+            )
+        elif ec2:
             # Whichever compute tier is actually running. A Fargate task's
             # vCPUs are monitored on their own meter -- counting them at
             # zero because no EC2 instance exists would put a $0.00 line on
@@ -749,10 +765,11 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- security posture (Security Hub) ----
     if spec.posture_monthly_checks:
-        point = store.get_price(
-            provider, region, "posture", "securityhub:compliance-check", dsn=dsn
-        )
-        if point:
+        point = _by_role(provider, region, "posture", "checks", dsn)
+        if point and point.unit == "node-hour":
+            nodes = spec.compute_count + (1 if spec.database_vcpu else 0)
+            result.items.append(_hourly_line("Security posture", point, nodes))
+        elif point:
             result.items.append(
                 _tiered_line("Security posture checks", point, spec.posture_monthly_checks)
             )
@@ -761,7 +778,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- VPC flow logs ----
     if spec.flowlog_gb:
-        point = store.get_price(provider, region, "flowlogs", "vpc:flow-logs", dsn=dsn)
+        point = _by_role(provider, region, "flowlogs", "ingest", dsn)
         if point:
             result.items.append(_tiered_line("VPC flow logs", point, spec.flowlog_gb))
         else:

@@ -48,6 +48,7 @@ _KIND_BY_PREFIX = {
     "Search storage": "search",
     "Warehouse nodes": "warehouse",
     "Threat detection": "threat",
+    "Security posture": "posture",
     "Distributed tracing": "tracing",
     "Security posture checks": "posture",
     "VPC flow logs": "flowlogs",

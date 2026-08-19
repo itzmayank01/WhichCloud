@@ -582,6 +582,119 @@ def fetch_keyvault_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+def fetch_backup_prices(region_key: str) -> list[PricePoint]:
+    """Azure Backup vault storage, locally redundant.
+
+    EXACT meter match, not a substring, and the reason is worth stating:
+    this feed publishes both "Standard LRS Data Stored" at $0.0246/GB-month
+    and a legacy "LRS Data Stored" at $260,013. A contains() test on "LRS
+    Data Stored" matches the second, and a backup line would have come out
+    roughly ten million times too high. The same pair exists for GRS, ZRS
+    and RA-GRS.
+
+    LRS is the default redundancy; GRS and ZRS are deliberate upgrades.
+    """
+    region = provider_region(region_key, "azure")
+
+    for item in _paged(
+        f"serviceName eq 'Backup' and armRegionName eq '{region}'", max_pages=8
+    ):
+        if (item.get("meterName") or "") != "Standard LRS Data Stored":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [
+            PricePoint(
+                provider="azure",
+                category="backup",
+                sku="backup:vault-lrs",
+                name="Backup vault storage (LRS)",
+                region=region,
+                unit="GB-month",
+                price_usd=price,
+            )
+        ]
+    return []
+
+
+def fetch_flowlog_prices(region_key: str) -> list[PricePoint]:
+    """VNet flow log collection -- published at zero.
+
+    A real $0, like ACM's public certificates: Azure collects flow logs at
+    no charge and bills the storage they land in separately. Traffic
+    Analytics on top of them is $2.30/GB, but that is an optional product,
+    not the cost of having flow logs on.
+    """
+    region = provider_region(region_key, "azure")
+
+    for item in _paged("serviceName eq 'Network Watcher'", max_pages=8):
+        if "US Gov" in (item.get("armRegionName") or ""):
+            continue
+        if (item.get("meterName") or "") != "Standard VNet Flow Logs Collected":
+            continue
+        price = item.get("retailPrice")
+        if price is None:
+            continue
+        return [
+            PricePoint(
+                provider="azure",
+                category="flowlogs",
+                sku="networkwatcher:flow-logs",
+                name="VNet flow log collection",
+                region=region,
+                unit="GB",
+                price_usd=Decimal(str(price)),
+                attributes={"excludes": "Traffic Analytics ($2.30/GB, optional)"},
+            )
+        ]
+    return []
+
+
+def fetch_defender_prices(region_key: str) -> list[PricePoint]:
+    """Defender for Servers P1 and Defender CSPM, per node-hour.
+
+    Two products from one service, and both are per NODE rather than per
+    vCPU as GuardDuty is -- so the estimator prices whichever unit the
+    provider actually bills rather than converting between them.
+
+    P1, not P2: P1 is the baseline server plan. Trial meters publish at
+    zero and are excluded, since a trial rate is not the ongoing price.
+    """
+    region = provider_region(region_key, "azure")
+    wanted = {
+        "Standard P1 Node": ("defender:server-node", "Defender for Servers P1", "threat"),
+        "DCSPM Node Defender Workload Unit": (
+            "defender:cspm-node", "Defender CSPM", "posture",
+        ),
+    }
+    found: dict[str, PricePoint] = {}
+
+    for item in _paged(
+        "serviceName eq 'Microsoft Defender for Cloud' and priceType eq 'Consumption'",
+        max_pages=10,
+    ):
+        if "US Gov" in (item.get("armRegionName") or ""):
+            continue
+        meter = item.get("meterName") or ""
+        if meter not in wanted or wanted[meter][0] in found:
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        sku, name, category = wanted[meter]
+        found[sku] = PricePoint(
+            provider="azure",
+            category=category,
+            sku=sku,
+            name=name,
+            region=region,
+            unit="node-hour",
+            price_usd=price,
+        )
+    return list(found.values())
+
+
 def load_all(region_key: str) -> list[PricePoint]:
     """Every category we price on Azure, for one region."""
     points: list[PricePoint] = []
@@ -596,6 +709,9 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_nat_prices,
         fetch_dns_prices,
         fetch_keyvault_prices,
+        fetch_backup_prices,
+        fetch_flowlog_prices,
+        fetch_defender_prices,
     ):
         try:
             points.extend(loader(region_key))
