@@ -205,11 +205,34 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("azure", "threat", "compute"): "defender:server-node",
     ("aws", "posture", "checks"): "securityhub:compliance-check",
     ("azure", "posture", "checks"): "defender:cspm-node",
+    ("aws", "auth", "mau"): "cognito:user-pool-mau",
+    ("azure", "auth", "mau"): "entra:external-id-mau",
+    ("aws", "audit", "trail"): "cloudtrail:management-events",
+    ("azure", "audit", "trail"): "activitylog:events",
+    ("aws", "tls", "certificate"): "acm:public-certificate",
+    ("azure", "tls", "certificate"): "appservice:managed-certificate",
+    ("aws", "tracing", "traces"): "xray:traces-recorded",
+    ("azure", "tracing", "ingest"): "appinsights:ingestion",
+    ("aws", "secrets", "secret"): "secretsmanager:secret",
+    # Azure holds secrets in Key Vault and bills the same per-operation
+    # meter as keys, so there is no separate secrets line to price.
+    ("azure", "secrets", "secret"): None,
 }
 
 
 def _sku(provider: str, category: str, role: str) -> str | None:
     return PROVIDER_SKUS.get((provider, category, role))
+
+
+def _models(provider: str, category: str) -> bool:
+    """Does this provider bill this category at all, on any role?
+
+    A category with an explicit None is one the provider folds into
+    another charge -- Azure keeps secrets in Key Vault and bills them on
+    the key-operation meter. Reporting that as a missing component would
+    mark the estimate incomplete for a cost that is already on the bill.
+    """
+    return any(k[0] == provider and k[1] == category for k in PROVIDER_SKUS)
 
 
 def _by_role(
@@ -443,9 +466,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- audit logging ----
     if spec.audit_logging:
-        point = store.get_price(
-            provider, region, "audit", "cloudtrail:management-events", dsn=dsn
-        )
+        point = _by_role(provider, region, "audit", "trail", dsn)
         if point:
             result.items.append(_metered_line("Audit logging", point, 1))
         else:
@@ -474,7 +495,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- TLS ----
     if spec.tls_certificate:
-        point = store.get_price(provider, region, "tls", "acm:public-certificate", dsn=dsn)
+        point = _by_role(provider, region, "tls", "certificate", dsn)
         if point:
             result.items.append(_metered_line("TLS certificate", point, 1))
         else:
@@ -501,7 +522,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- authentication ----
     if spec.auth_monthly_active_users:
-        point = store.get_price(provider, region, "auth", "cognito:user-pool-mau", dsn=dsn)
+        point = _by_role(provider, region, "auth", "mau", dsn)
         if point:
             result.items.append(
                 _tiered_line(
@@ -702,14 +723,12 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- secrets ----
     if spec.secret_count:
-        point = store.get_price(
-            provider, region, "secrets", "secretsmanager:secret", dsn=dsn
-        )
+        point = _by_role(provider, region, "secrets", "secret", dsn)
         if point:
             result.items.append(
                 _metered_line(f"Secrets × {spec.secret_count}", point, spec.secret_count)
             )
-        else:
+        elif not _models(provider, "secrets"):
             result.missing.append("secrets manager")
 
     # ---- threat detection (GuardDuty) ----
@@ -755,8 +774,16 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- distributed tracing (X-Ray) ----
     if spec.tracing_monthly_traces:
-        point = store.get_price(provider, region, "tracing", "xray:traces-recorded", dsn=dsn)
-        if point:
+        point = _by_role(provider, region, "tracing", "traces", dsn) or _by_role(
+            provider, region, "tracing", "ingest", dsn
+        )
+        if point and point.unit == "GB":
+            # Per-GB providers bill telemetry volume, not trace count.
+            # A trace is roughly a kilobyte of spans; converting keeps the
+            # line honest about which unit was actually charged.
+            gb = spec.tracing_monthly_traces / 1_000_000
+            result.items.append(_metered_line("Telemetry ingestion", point, gb))
+        elif point:
             result.items.append(
                 _tiered_line("Distributed tracing", point, spec.tracing_monthly_traces)
             )

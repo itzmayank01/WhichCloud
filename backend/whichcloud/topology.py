@@ -50,6 +50,7 @@ _KIND_BY_PREFIX = {
     "Threat detection": "threat",
     "Security posture": "posture",
     "Distributed tracing": "tracing",
+    "Telemetry ingestion": "tracing",
     "Security posture checks": "posture",
     "VPC flow logs": "flowlogs",
     "Fargate vCPU": "compute",

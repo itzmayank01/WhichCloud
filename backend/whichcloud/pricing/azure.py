@@ -61,6 +61,28 @@ def is_ondemand_vm_meter(item: dict) -> bool:
     return not any(term in blob for term in _EXCLUDE_VM)
 
 
+def _decimal_allow_zero(value: object) -> Decimal | None:
+    """Like `_decimal`, but a published $0 band is a real rate, not absent."""
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    return d if d >= 0 else None
+
+
+def _is_commercial(item: dict) -> bool:
+    """Reject sovereign-cloud rows: US Gov, China, Germany.
+
+    They sit alongside commercial ones and are priced differently, so an
+    unfiltered scan can hand back a rate from a cloud the customer cannot
+    buy. The naming is not consistent -- DNS publishes "US Gov Zone 1"
+    with spaces, B2C publishes "usgovtexas" without -- so this normalises
+    before matching rather than testing for one spelling.
+    """
+    region = (item.get("armRegionName") or "").lower().replace(" ", "")
+    return not any(mark in region for mark in ("usgov", "usdod", "china", "germany"))
+
+
 def _paged(query: str, max_pages: int = 25):
     """Walk the Retail Prices API's NextPageLink chain."""
     url: str | None = RETAIL_API
@@ -695,6 +717,131 @@ def fetch_defender_prices(region_key: str) -> list[PricePoint]:
     return list(found.values())
 
 
+def fetch_auth_prices(region_key: str) -> list[PricePoint]:
+    """Entra External ID (B2C) monthly active users, with its free band.
+
+    Free to 50,000 MAU and graduated above it, which is close enough to
+    Cognito's shape that the two compare directly. Sovereign-cloud rows
+    charge from the first user, so filtering them out is what keeps a
+    300-staff estimate at zero rather than $2.06.
+    """
+    region = provider_region(region_key, "azure")
+    bands: list[PriceTier] = []
+
+    for item in _paged("serviceName eq 'Azure Active Directory B2C'", max_pages=8):
+        if not _is_commercial(item):
+            continue
+        if (item.get("meterName") or "") != "Standard Monthly Active Users":
+            continue
+        price = _decimal_allow_zero(item.get("retailPrice"))
+        if price is None:
+            continue
+        begin = Decimal(str(item.get("tierMinimumUnits") or 0))
+        if any(t.begin == begin for t in bands):
+            continue
+        bands.append(PriceTier(begin=begin, end=None, price_usd=price))
+
+    if not bands:
+        return []
+
+    bands.sort(key=lambda t: t.begin)
+    closed = tuple(
+        PriceTier(
+            begin=t.begin,
+            end=bands[i + 1].begin if i + 1 < len(bands) else None,
+            price_usd=t.price_usd,
+        )
+        for i, t in enumerate(bands)
+    )
+    return [
+        PricePoint(
+            provider="azure",
+            category="auth",
+            sku="entra:external-id-mau",
+            name="Entra External ID (monthly active users)",
+            region=region,
+            unit="MAU",
+            price_usd=closed[0].price_usd,
+            tiers=closed,
+        )
+    ]
+
+
+def fetch_tracing_prices(region_key: str) -> list[PricePoint]:
+    """Application Insights data ingestion.
+
+    Billed per GB ingested where X-Ray bills per trace recorded, so the
+    two are not convertible and the estimator prices whichever unit the
+    provider publishes. Ingestion, not "Data Retention" ($0.10/GB-month):
+    retention is what you pay to keep telemetry after the free period, not
+    what you pay to collect it.
+    """
+    region = provider_region(region_key, "azure")
+
+    for item in _paged("serviceName eq 'Application Insights'", max_pages=8):
+        if not _is_commercial(item):
+            continue
+        if (item.get("meterName") or "") != "Enterprise Overage Data":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [
+            PricePoint(
+                provider="azure",
+                category="tracing",
+                sku="appinsights:ingestion",
+                name="Application Insights ingestion",
+                region=region,
+                unit="GB",
+                price_usd=price,
+            )
+        ]
+    return []
+
+
+def fetch_free_tier_prices(region_key: str) -> list[PricePoint]:
+    """Azure services that are genuinely free, recorded so they appear.
+
+    ASSERTED, NOT FETCHED -- the same exception ACM gets on AWS, and
+    flagged for the same reason. Neither has a meter in the retail feed
+    because neither is metered:
+
+      * Activity Log keeps 90 days of control-plane events at no charge.
+        Exporting them to a workspace costs; having them does not.
+      * App Service managed certificates are issued and renewed free.
+
+    Safe in a way an asserted non-zero price would not be: a wrong $0 here
+    cannot inflate anyone's bill. If Microsoft starts charging, this goes
+    silently wrong -- which is why it is flagged here and in each point's
+    attributes rather than buried.
+    """
+    region = provider_region(region_key, "azure")
+    basis = "asserted: Microsoft publishes no meter, service is free"
+    return [
+        PricePoint(
+            provider="azure",
+            category="audit",
+            sku="activitylog:events",
+            name="Activity Log (90-day retention)",
+            region=region,
+            unit="month",
+            price_usd=Decimal(0),
+            attributes={"basis": basis},
+        ),
+        PricePoint(
+            provider="azure",
+            category="tls",
+            sku="appservice:managed-certificate",
+            name="App Service managed certificate",
+            region=region,
+            unit="month",
+            price_usd=Decimal(0),
+            attributes={"basis": basis},
+        ),
+    ]
+
+
 def load_all(region_key: str) -> list[PricePoint]:
     """Every category we price on Azure, for one region."""
     points: list[PricePoint] = []
@@ -712,6 +859,9 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_backup_prices,
         fetch_flowlog_prices,
         fetch_defender_prices,
+        fetch_auth_prices,
+        fetch_tracing_prices,
+        fetch_free_tier_prices,
     ):
         try:
             points.extend(loader(region_key))
