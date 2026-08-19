@@ -15,7 +15,7 @@ from decimal import Decimal, InvalidOperation
 
 import httpx
 
-from .models import ComputeQuery, PricePoint, provider_region
+from .models import ComputeQuery, PricePoint, PriceTier, provider_region
 from .specs import azure_spec_for
 
 RETAIL_API = "https://prices.azure.com/api/retail/prices"
@@ -433,6 +433,155 @@ def fetch_monitoring_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+def fetch_nat_prices(region_key: str) -> list[PricePoint]:
+    """NAT Gateway: hourly per gateway, plus per-GB processed.
+
+    Published against armRegionName 'Global' rather than a real region, the
+    same as Standard Load Balancer -- filtering by region returns nothing,
+    which is why this looked unavailable at first.
+    """
+    region = provider_region(region_key, "azure")
+    wanted = {
+        "standard gateway": ("nat:gateway-hour", "NAT Gateway", "hour"),
+        "standard data processed": ("nat:gb-processed", "NAT Gateway data processing", "GB"),
+    }
+    found: dict[str, PricePoint] = {}
+
+    for item in _paged("serviceName eq 'NAT Gateway' and priceType eq 'Consumption'", max_pages=5):
+        # US Gov is a separate cloud at its own rates.
+        if item.get("armRegionName") not in ("Global", ""):
+            continue
+        meter = (item.get("meterName") or "").lower()
+        if meter not in wanted or wanted[meter][0] in found:
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        sku, name, unit = wanted[meter]
+        found[sku] = PricePoint(
+            provider="azure",
+            category="nat",
+            sku=sku,
+            name=name,
+            region=region,
+            unit=unit,
+            price_usd=price,
+            attributes={"priced_globally": "true"},
+        )
+    return list(found.values())
+
+
+def fetch_dns_prices(region_key: str) -> list[PricePoint]:
+    """Azure DNS public zones and queries, both graduated.
+
+    Three traps in this feed, all of them silent:
+
+    * **US Gov rows sit alongside commercial ones.** Unfiltered, the US Gov
+      query rate ($0.50/M) wins over the commercial $0.40/M -- a 25% error
+      on an Indian estimate, from a cloud the customer cannot even use.
+    * **Pricing is by geographic Zone, not by region.** There is no
+      `centralindia` row; every commercial zone publishes the same rate, so
+      excluding US Gov is what makes the choice safe rather than arbitrary.
+    * **Rates are tiered.** $0.50 per zone for the first 25 and $0.10
+      after; $0.40 per million queries then $0.20 past a billion. Taking
+      only the entry rate would overstate a large estate.
+
+    Public, not Private: private zones are a different product at a
+    coincidentally identical headline rate.
+    """
+    region = provider_region(region_key, "azure")
+    wanted = {
+        "public zone": ("dns:hosted-zone", "Azure DNS public zone", "month", 1),
+        "public queries": ("dns:queries", "Azure DNS queries", "query", 1_000_000),
+    }
+    bands: dict[str, list[PriceTier]] = {}
+
+    for item in _paged("serviceName eq 'Azure DNS' and priceType eq 'Consumption'", max_pages=8):
+        if "US Gov" in (item.get("armRegionName") or ""):
+            continue
+        meter = (item.get("meterName") or "").lower()
+        if meter not in wanted:
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        sku, _, _, per = wanted[meter]
+        # The boundary is counted in the SAME published unit as the price:
+        # tierMinimumUnits of 1000 against a "1M" unit means a billion
+        # queries, not a thousand. Scaling the price but not the boundary
+        # billed 10M queries as if 9,999,000 of them were past the discount
+        # threshold -- half the true figure.
+        begin = Decimal(str(item.get("tierMinimumUnits") or 0)) * per
+        existing = bands.setdefault(sku, [])
+        if any(t.begin == begin for t in existing):
+            continue  # same band, another zone, same rate
+        existing.append(PriceTier(begin=begin, end=None, price_usd=price / per))
+
+    points: list[PricePoint] = []
+    for meter, (sku, name, unit, _) in wanted.items():
+        tiers = sorted(bands.get(sku, []), key=lambda t: t.begin)
+        if not tiers:
+            continue
+        # A band runs until the next one starts; the last is unbounded.
+        closed = tuple(
+            PriceTier(
+                begin=t.begin,
+                end=tiers[i + 1].begin if i + 1 < len(tiers) else None,
+                price_usd=t.price_usd,
+            )
+            for i, t in enumerate(tiers)
+        )
+        points.append(
+            PricePoint(
+                provider="azure",
+                category="dns",
+                sku=sku,
+                name=name,
+                region=region,
+                unit=unit,
+                price_usd=closed[0].price_usd,
+                tiers=closed,
+            )
+        )
+    return points
+
+
+def fetch_keyvault_prices(region_key: str) -> list[PricePoint]:
+    """Key Vault operations -- Azure's analogue of KMS and Secrets Manager.
+
+    Deliberately NOT the "Standard Instance" meter. That one is $4.85 an
+    HOUR, because it prices a Managed HSM pool (~$3,500/month), not a key
+    vault. Standard Key Vault has no per-key and no per-secret monthly
+    charge at all: it bills $0.03 per 10,000 operations and nothing else.
+
+    So this is not a like-for-like row against AWS's $1/key and
+    $0.40/secret -- it is genuinely a different pricing model, and the
+    honest thing is to price the meter Azure actually charges.
+    """
+    region = provider_region(region_key, "azure")
+
+    for item in _paged("serviceName eq 'Key Vault' and priceType eq 'Consumption'", max_pages=5):
+        if (item.get("meterName") or "").lower() != "operations":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [
+            PricePoint(
+                provider="azure",
+                category="kms",
+                sku="keyvault:operations",
+                name="Key Vault operations",
+                region=region,
+                unit="operation",
+                # Published per 10,000; the engine counts single operations.
+                price_usd=price / Decimal(10_000),
+                attributes={"model": "per-operation, no per-key charge"},
+            )
+        ]
+    return []
+
+
 def load_all(region_key: str) -> list[PricePoint]:
     """Every category we price on Azure, for one region."""
     points: list[PricePoint] = []
@@ -444,6 +593,9 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_cache_prices,
         fetch_monitoring_prices,
         fetch_loadbalancer_prices,
+        fetch_nat_prices,
+        fetch_dns_prices,
+        fetch_keyvault_prices,
     ):
         try:
             points.extend(loader(region_key))

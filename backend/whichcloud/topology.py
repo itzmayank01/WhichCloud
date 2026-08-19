@@ -33,6 +33,7 @@ _KIND_BY_PREFIX = {
     "WAF": "waf",
     "Audit logging": "audit",
     "KMS keys": "kms",
+    "Key management operations": "kms",
     "NAT gateway": "nat",
     "NAT data processing": "nat",
     "TLS certificate": "tls",

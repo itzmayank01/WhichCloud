@@ -63,6 +63,10 @@ class ArchitectureSpec:
     # real $1/mo/key), not assumed free by omission.
     audit_logging: bool = False
     kms_key_count: int | None = None
+    #: Key operations per month. Providers price key management two
+    #: incompatible ways -- AWS per key held, Azure per operation performed
+    #: -- so the spec carries both and each adapter uses the one it bills.
+    kms_monthly_operations: float = 200_000.0
 
     # Private subnets need a NAT gateway per zone to reach the internet.
     # One of the largest line items people forget: two gateways is ~$82/mo
@@ -177,6 +181,33 @@ DEFAULT_SKUS: dict[tuple[str, str], str] = {
     ("aws", "network"): "egress:internet",
     ("azure", "network"): "egress:internet",
 }
+
+
+#: The SKU each provider uses for a category, by role. Without this the
+#: estimator asked every provider for AWS's own SKU names -- so Azure could
+#: publish a DNS zone price and still be reported as missing DNS, because
+#: nothing ever looked up `dns:hosted-zone`. A category absent for a
+#: provider simply has no row and is reported missing, as before.
+PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
+    ("aws", "dns", "zone"): "route53:hosted-zone",
+    ("aws", "dns", "queries"): "route53:dns-queries",
+    ("azure", "dns", "zone"): "dns:hosted-zone",
+    ("azure", "dns", "queries"): "dns:queries",
+    ("aws", "kms", "key"): "kms:key",
+    ("azure", "kms", "key"): "keyvault:operations",
+}
+
+
+def _sku(provider: str, category: str, role: str) -> str | None:
+    return PROVIDER_SKUS.get((provider, category, role))
+
+
+def _by_role(
+    provider: str, region: str, category: str, role: str, dsn: str | None
+) -> PricePoint | None:
+    """The price point this provider uses for a category's role, if any."""
+    sku = _sku(provider, category, role)
+    return store.get_price(provider, region, category, sku, dsn=dsn) if sku else None
 
 
 def _preferred(
@@ -441,8 +472,8 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- DNS ----
     if spec.dns_hosted_zones:
-        zone = store.get_price(provider, region, "dns", "route53:hosted-zone", dsn=dsn)
-        queries = store.get_price(provider, region, "dns", "route53:dns-queries", dsn=dsn)
+        zone = _by_role(provider, region, "dns", "zone", dsn)
+        queries = _by_role(provider, region, "dns", "queries", dsn)
         if zone:
             result.items.append(
                 _tiered_line(
@@ -738,8 +769,18 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- KMS ----
     if spec.kms_key_count:
-        point = store.get_price(provider, region, "kms", "kms:key", dsn=dsn)
-        if point:
+        point = _by_role(provider, region, "kms", "key", dsn)
+        if point and point.unit == "operation":
+            # Per-operation providers charge nothing for holding a key, so
+            # multiplying the key count by an operation rate produced
+            # "$0.00" -- which reads as free rather than as a different
+            # billing model.
+            result.items.append(
+                _metered_line(
+                    "Key management operations", point, spec.kms_monthly_operations
+                )
+            )
+        elif point:
             result.items.append(
                 _metered_line(
                     f"KMS keys × {spec.kms_key_count}", point, spec.kms_key_count
