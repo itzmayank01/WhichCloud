@@ -230,6 +230,13 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("azure", "nat", "data"): "nat:gb-processed",
     ("gcp", "tls", "certificate"): "certmanager:certificate",
     ("gcp", "auth", "mau"): "identityplatform:mau",
+    ("gcp", "audit", "trail"): "cloudlogging:storage",
+    ("gcp", "flowlogs", "ingest"): "cloudlogging:vended-logs",
+    ("gcp", "backup", "storage"): "backupdr:gce-vm",
+    ("gcp", "threat", "compute"): "scc:compute-core",
+    # One SCC subscription covers threat detection AND posture, so the
+    # posture line would charge the same subscription a second time.
+    ("gcp", "posture", "checks"): None,
 }
 
 
@@ -751,7 +758,14 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         ec2 = _by_role(provider, region, "threat", "compute", dsn)
         rds = _by_role(provider, region, "threat", "database", dsn)
         fargate = _by_role(provider, region, "threat", "fargate", dsn)
-        if ec2 and ec2.unit == "node-hour":
+        if ec2 and ec2.unit == "core-hour":
+            # Billed per protected core, so the quantity is vCPUs and the
+            # rate is hourly -- neither a node count nor a vCPU-month.
+            cores = spec.compute_count * spec.compute_vcpu
+            result.items.append(
+                _hourly_line("Threat detection", ec2, cores)
+            )
+        elif ec2 and ec2.unit == "node-hour":
             # Per-node providers charge by the machine, not by its vCPUs,
             # so converting a vCPU count into node-hours would invent load
             # the provider never bills for.
@@ -813,7 +827,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.items.append(
                 _tiered_line("Security posture checks", point, spec.posture_monthly_checks)
             )
-        else:
+        elif not _models(provider, "posture"):
             result.missing.append("security posture")
 
     # ---- VPC flow logs ----

@@ -739,6 +739,80 @@ def fetch_auth_prices(region_key: str) -> list[PricePoint]:
     )]
 
 
+def fetch_audit_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Logging storage -- free for the first 50 GiB a month.
+
+    Audit logs themselves are free to generate; what is billed is keeping
+    them. "Log Storage cost", not "Log Retention cost" ($0.01/GiB-month),
+    which is the charge for holding logs beyond the default window.
+    """
+    region = provider_region(region_key, "gcp")
+    sku = _one("Cloud Logging", region, ("log storage cost",), excludes=("retention",))
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="audit", sku="cloudlogging:storage",
+        name="Cloud Logging storage", region=region, unit="GB",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
+def fetch_flowlog_prices(region_key: str) -> list[PricePoint]:
+    """VPC flow logs, billed as Cloud Logging vended-log storage."""
+    region = provider_region(region_key, "gcp")
+    sku = _one("Cloud Logging", region, ("vended logs storage",))
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="flowlogs", sku="cloudlogging:vended-logs",
+        name="VPC flow logs (vended log storage)", region=region, unit="GB",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
+def fetch_backup_prices(region_key: str) -> list[PricePoint]:
+    """Backup and DR management storage for Compute Engine VMs."""
+    region = provider_region(region_key, "gcp")
+    sku = _one(
+        "Backup and DR Service", region,
+        ("management", "gce vm"),
+        excludes=("networking", "prepay", "commitment"),
+    )
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="backup", sku="backupdr:gce-vm",
+        name="Backup and DR (GCE VM)", region=region, unit="GB-month",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
+def fetch_threat_prices(region_key: str) -> list[PricePoint]:
+    """Security Command Center Premium, per protected core-hour.
+
+    SCC bills by the cores it watches, and one subscription covers both
+    threat detection and posture management -- there is no separate
+    product for each the way AWS splits GuardDuty from Security Hub. So
+    this is priced once and the posture line folds into it rather than
+    charging the same subscription twice.
+
+    Compute Engine cores, not the BigQuery/Cloud SQL/App Engine variants:
+    each of those prices SCC for a different protected service.
+    """
+    region = provider_region(region_key, "gcp")
+    sku = _one(
+        "Security Command Center", region,
+        ("organization level", "compute engine", "core running"),
+    )
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="threat", sku="scc:compute-core",
+        name="Security Command Center Premium", region=region, unit="core-hour",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
 def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every GCP category we can price.
 
@@ -765,6 +839,10 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_nat_prices,
         fetch_tls_prices,
         fetch_auth_prices,
+        fetch_audit_prices,
+        fetch_flowlog_prices,
+        fetch_backup_prices,
+        fetch_threat_prices,
     ):
         name = loader.__name__.replace("fetch_", "").replace("_prices", "")
         for attempt in range(3):
