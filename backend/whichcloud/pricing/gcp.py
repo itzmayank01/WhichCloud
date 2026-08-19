@@ -21,7 +21,7 @@ from pathlib import Path
 
 import httpx
 
-from .models import ComputeQuery, PricePoint, provider_region
+from .models import ComputeQuery, PricePoint, PriceTier, provider_region
 from .specs import gcp_arch_for
 
 INSTANCES_URL = "https://instances.vantage.sh/gcp/instances.json"
@@ -535,6 +535,143 @@ def fetch_monitoring_prices(region_key: str) -> list[PricePoint]:
     ]
 
 
+def sku_tiers(sku: dict) -> tuple[PriceTier, ...]:
+    """Every graduated band on a SKU, lowest first.
+
+    Google publishes a free allowance as a real $0 band with the paid rate
+    starting at `startUsageAmount` -- Secret Manager's first six secrets,
+    Cloud Trace's first 2.5 million spans. `sku_price` keeps only the first
+    band, which is right for a flat rate and wrong here: it would report
+    everything as free.
+    """
+    info = (sku.get("pricingInfo") or [{}])[0]
+    rates = info.get("pricingExpression", {}).get("tieredRates", []) or []
+
+    bands: list[PriceTier] = []
+    for rate in rates:
+        unit = rate.get("unitPrice", {})
+        price = Decimal(str(unit.get("units", 0))) + Decimal(
+            str(unit.get("nanos", 0))
+        ) / Decimal(1_000_000_000)
+        bands.append(
+            PriceTier(
+                begin=Decimal(str(rate.get("startUsageAmount", 0) or 0)),
+                end=None,
+                price_usd=price,
+            )
+        )
+
+    bands.sort(key=lambda t: t.begin)
+    return tuple(
+        PriceTier(
+            begin=t.begin,
+            end=bands[i + 1].begin if i + 1 < len(bands) else None,
+            price_usd=t.price_usd,
+        )
+        for i, t in enumerate(bands)
+    )
+
+
+def _one(
+    service: str,
+    region: str,
+    contains: tuple[str, ...],
+    *,
+    excludes: tuple[str, ...] = (),
+) -> dict | None:
+    """The single SKU whose description carries every phrase in `contains`.
+
+    Matching on description because these services publish one meter per
+    variant -- HSM against software keys, premium against standard tiers --
+    and picking by family alone would take whichever came first.
+    """
+    sid = find_service_id(service)
+    if not sid:
+        return None
+    for sku in fetch_skus(sid):
+        text = str(sku.get("description", "")).lower()
+        if not all(c in text for c in contains):
+            continue
+        if any(x in text for x in excludes):
+            continue
+        regions = sku.get("serviceRegions") or []
+        if region not in regions and "global" not in regions:
+            continue
+        return sku
+    return None
+
+
+def fetch_dns_prices(region_key: str) -> list[PricePoint]:
+    """Cloud DNS managed zones and queries."""
+    region = provider_region(region_key, "gcp")
+    points: list[PricePoint] = []
+
+    zone = _one("Cloud DNS", region, ("managedzone",))
+    if zone:
+        points.append(PricePoint(
+            provider="gcp", category="dns", sku="clouddns:managed-zone",
+            name="Cloud DNS managed zone", region=region, unit="month",
+            price_usd=sku_price(zone), tiers=sku_tiers(zone),
+        ))
+
+    query = _one("Cloud DNS", region, ("dns query",))
+    if query:
+        points.append(PricePoint(
+            provider="gcp", category="dns", sku="clouddns:queries",
+            name="Cloud DNS queries", region=region, unit="query",
+            price_usd=sku_price(query), tiers=sku_tiers(query),
+        ))
+    return points
+
+
+def fetch_kms_prices(region_key: str) -> list[PricePoint]:
+    """Cloud KMS software symmetric key versions.
+
+    Software symmetric, not HSM or external: HSM key versions cost up to
+    forty times more and are a deliberate compliance choice, not what a
+    workload gets by asking for encryption at rest.
+    """
+    region = provider_region(region_key, "gcp")
+    sku = _one(
+        "Cloud Key Management Service (KMS)", region,
+        ("active software symmetric key versions",),
+        excludes=("hsm", "external"),
+    )
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="kms", sku="cloudkms:key-version",
+        name="Cloud KMS key version", region=region, unit="month",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
+def fetch_secrets_prices(region_key: str) -> list[PricePoint]:
+    """Secret Manager version storage -- free for the first six."""
+    region = provider_region(region_key, "gcp")
+    sku = _one("Secret Manager", region, ("secret version replica storage",))
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="secrets", sku="secretmanager:version",
+        name="Secret Manager version", region=region, unit="month",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
+def fetch_tracing_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Trace spans ingested -- free for the first 2.5 million."""
+    region = provider_region(region_key, "gcp")
+    sku = _one("Cloud Trace", region, ("spans ingested",))
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="tracing", sku="cloudtrace:spans",
+        name="Cloud Trace spans", region=region, unit="span",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
 def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every GCP category we can price.
 
@@ -554,6 +691,10 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_cache_prices,
         fetch_loadbalancer_prices,
         fetch_monitoring_prices,
+        fetch_dns_prices,
+        fetch_kms_prices,
+        fetch_secrets_prices,
+        fetch_tracing_prices,
     ):
         name = loader.__name__.replace("fetch_", "").replace("_prices", "")
         for attempt in range(3):

@@ -217,6 +217,11 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     # Azure holds secrets in Key Vault and bills the same per-operation
     # meter as keys, so there is no separate secrets line to price.
     ("azure", "secrets", "secret"): None,
+    ("gcp", "dns", "zone"): "clouddns:managed-zone",
+    ("gcp", "dns", "queries"): "clouddns:queries",
+    ("gcp", "kms", "key"): "cloudkms:key-version",
+    ("gcp", "secrets", "secret"): "secretmanager:version",
+    ("gcp", "tracing", "traces"): "cloudtrace:spans",
 }
 
 
