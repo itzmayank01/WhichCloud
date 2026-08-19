@@ -181,7 +181,10 @@ def test_an_upgrade_is_one_change_not_a_removal_plus_an_addition():
     req = Requirement(goal="shop", workload_type="web", traffic_scale="medium")
     options = {o.label: o for o in recommend(req, "aws")}
 
-    diff = diff_options(options["Balanced"], options["Most reliable"])
+    # Cheapest -> Most reliable is where single-AZ becomes Multi-AZ; the
+    # top two tiers are both Multi-AZ, so the database is unchanged between
+    # them and would not exercise this at all.
+    diff = diff_options(options["Cheapest"], options["Most reliable"])
     database = next(c for c in diff.changes if c.label == "Database")
 
     assert database.kind == "changed"
@@ -193,7 +196,7 @@ def test_an_upgrade_is_one_change_not_a_removal_plus_an_addition():
 def test_diff_delta_equals_the_difference_in_totals():
     req = Requirement(goal="shop", workload_type="web", traffic_scale="medium")
     options = {o.label: o for o in recommend(req, "aws")}
-    a, b = options["Cheapest"], options["Balanced"]
+    a, b = options["Cheapest"], options["Most reliable"]
 
     diff = diff_options(a, b)
     assert diff.delta_monthly == pytest.approx(b.monthly - a.monthly, abs=Decimal("0.01"))
@@ -205,7 +208,7 @@ def test_unchanged_lines_are_reported_not_omitted():
     req = Requirement(goal="shop", workload_type="web", traffic_scale="medium")
     options = {o.label: o for o in recommend(req, "aws")}
 
-    diff = diff_options(options["Balanced"], options["Most reliable"])
+    diff = diff_options(options["Most reliable"], options["Most optimized"])
     assert diff.unchanged
     assert all(c.delta == 0 for c in diff.unchanged)
 

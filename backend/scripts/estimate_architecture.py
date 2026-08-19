@@ -41,7 +41,7 @@ def shapes(region: str) -> list[ArchitectureSpec]:
             load_balancer=False,
         ),
         ArchitectureSpec(
-            name="Balanced",
+            name="Most reliable",
             region=region,
             compute_count=3,
             compute_vcpu=2,

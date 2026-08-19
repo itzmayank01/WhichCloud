@@ -52,7 +52,8 @@ def test_read_replicas_only_on_the_reliability_tier():
     variants = {label: delta for label, _, delta, _ in engine._shape_variants(req)}
     assert variants["Most reliable"].get("database_read_replicas") == 2
     assert "database_read_replicas" not in variants["Cheapest"]
-    assert "database_read_replicas" not in variants["Balanced"]
+    # "Most optimized" adds replicas deliberately; only Cheapest goes without.
+    assert "database_read_replicas" not in variants["Cheapest"]
 
 
 def test_read_replicas_are_scale_gated_too():
@@ -97,8 +98,15 @@ def test_waf_is_priced_on_every_tier():
 
 @needs_db
 def test_no_waf_when_no_attack_surface_was_named():
-    options = engine.recommend(Requirement(goal="shop", workload_type="web"), "aws")
-    assert not any("WAF" in i.label for o in options for i in o.estimate.items)
+    """Except on "Most optimized", which turns protection on deliberately --
+    that tier assumes an attack surface exists rather than waiting to be
+    told about one. The cheaper tiers still only get WAF when asked."""
+    options = {o.label: o for o in engine.recommend(
+        Requirement(goal="shop", workload_type="web"), "aws"
+    )}
+    for label in ("Cheapest", "Most reliable"):
+        assert not any("WAF" in i.label for i in options[label].estimate.items)
+    assert any("WAF" in i.label for i in options["Most optimized"].estimate.items)
 
 
 @needs_db
@@ -141,7 +149,7 @@ def test_nat_gateways_follow_the_zones_the_tier_spans():
         return int(line.label.split("×")[1].strip())
 
     assert gateways(options["Cheapest"]) == 1
-    assert gateways(options["Balanced"]) == 2
+    assert gateways(options["Most optimized"]) == 2
     assert gateways(options["Most reliable"]) == 2
     for option in options.values():
         assert any(
@@ -284,7 +292,7 @@ def test_fargate_task_counts_are_derived_from_stated_volume():
 def test_fargate_is_opt_in_not_a_second_compute_tier():
     """REGRESSION-GUARD: setting Fargate while compute_count still held EC2
     instances billed both, roughly $42/mo of compute nobody asked for."""
-    spec = engine.base_spec(Requirement(goal="x", workload_type="web"), "Balanced")
+    spec = engine.base_spec(Requirement(goal="x", workload_type="web"), "Most reliable")
     assert spec.fargate_task_count == 0
     assert spec.compute_count > 0
 

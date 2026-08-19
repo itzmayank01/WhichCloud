@@ -116,7 +116,7 @@ export function MultiCloudArchitecture({
         if (cancelled) return;
         const next: Record<string, Option> = {};
         for (const [provider, options] of Object.entries(compare.clouds)) {
-          const balanced = options.find((o) => o.label === "Balanced") ?? options[0];
+          const balanced = options.find((o) => o.label === "Most reliable") ?? options[0];
           if (balanced) next[provider] = balanced;
         }
         if (Object.keys(next).length) setByProvider(next);

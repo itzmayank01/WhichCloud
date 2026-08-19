@@ -378,7 +378,7 @@ export function freshness(iso: string): string {
  */
 export function comparableTotals(
   clouds: Record<string, Option[]>,
-  label = "Balanced",
+  label = "Most reliable",
 ): { provider: string; option: Option; total: number; covered: number }[] {
   const base = (item: LineItem) => item.label.replace(/ ×.*$/, "");
 

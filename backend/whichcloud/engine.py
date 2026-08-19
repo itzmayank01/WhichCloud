@@ -224,7 +224,7 @@ class AppliedTechnique:
 class Option:
     """One recommended architecture, priced, with its reasoning."""
 
-    label: str  # "Cheapest" | "Balanced" | "Most reliable"
+    label: str  # "Cheapest" | "Most reliable" | "Most optimized"
     rationale: str
     spec: ArchitectureSpec
     estimate: Estimate
@@ -512,6 +512,43 @@ def _shape_variants(
             "reporting traffic is using them"
         )
 
+    # ── Most optimized ──
+    #
+    # The top tier turns ON every capability the catalog can price that a
+    # well-resourced team would actually run -- it does not inflate
+    # quantities to reach a number. Read replicas whatever the scale,
+    # because the reporting queries that justify them exist at any size;
+    # protection at the edge; a cache with room to hold a real working set.
+    #
+    # What it deliberately does NOT do is spend to a budget. A tier that
+    # grew until it consumed a percentage of whatever figure was typed
+    # would recommend the same architecture to a blog and to a bank, which
+    # is the opposite of optimized.
+    optimized_delta: dict = dict(reliable_delta)
+    optimized_tradeoffs = list(reliable_tradeoffs)
+
+    if requirement.needs_database:
+        optimized_delta["database_read_replicas"] = max(2, replicas)
+        # A cache that can hold the working set is what keeps a busy
+        # primary from being the bottleneck; the reliable tier's is sized
+        # for sessions rather than for data.
+        optimized_delta["cache_vcpu"] = 4
+        optimized_delta["cache_memory_gb"] = 8.0
+        optimized_tradeoffs.append(
+            "Read replicas and a larger cache run whether or not the "
+            "reporting load that justifies them has arrived yet"
+        )
+
+    # Protection at the edge. Priced here even where the description named
+    # no attack surface, because this is the tier that assumes one exists.
+    optimized_delta["waf_rule_count"] = WAF_RULE_COUNT
+    optimized_delta["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[
+        requirement.traffic_scale
+    ]
+    optimized_tradeoffs.append(
+        "A Web ACL and its rules bill whether or not anything is blocked"
+    )
+
     return [
         (
             "Cheapest",
@@ -533,20 +570,18 @@ def _shape_variants(
             ),
         ),
         (
-            "Balanced",
-            "Handles the expected peak without cold starts, and fits a normal "
-            "budget.",
-            {},
-            (
-                "Database has no standby — a zone failure means recovery, not failover",
-                "Sized for the expected peak, not an unexpected one",
-            ),
-        ),
-        (
             "Most reliable",
             reliable_rationale,
             reliable_delta,
             tuple(reliable_tradeoffs),
+        ),
+        (
+            "Most optimized",
+            "Everything this workload can actually use: reporting reads taken "
+            "off the primary, protection at the edge, and a cache large "
+            "enough to keep the database quiet under load.",
+            optimized_delta,
+            tuple(optimized_tradeoffs),
         ),
     ]
 

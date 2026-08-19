@@ -141,8 +141,8 @@ def test_recommend_returns_three_priced_options(client):
 
     assert [o["label"] for o in body["options"]] == [
         "Cheapest",
-        "Balanced",
         "Most reliable",
+        "Most optimized",
     ]
     for option in body["options"]:
         assert option["monthly_usd"] > 0

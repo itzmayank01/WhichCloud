@@ -68,7 +68,7 @@ async function build(q: (typeof QUESTIONS)[number]): Promise<Scenario | null> {
        adapter for; ranking the raw totals instead would have been worse,
        since a cloud missing eleven components looks cheapest precisely
        because it is missing them. */
-    const priced = comparableTotals(compare.clouds);
+    const priced = comparableTotals(compare.clouds, "Most reliable");
     if (priced.length < 2) return null;
 
     return {

@@ -21,7 +21,7 @@ export async function CloudArchitectures() {
       egress_gb: 500,
     });
     for (const [provider, options] of Object.entries(compare.clouds)) {
-      const balanced = options.find((o) => o.label === "Balanced") ?? options[0];
+      const balanced = options.find((o) => o.label === "Most reliable") ?? options[0];
       if (balanced) byProvider[provider] = balanced;
     }
   } catch {

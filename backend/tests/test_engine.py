@@ -239,7 +239,7 @@ def test_batch_workloads_skip_the_database():
 
 
 def test_web_workloads_get_a_database():
-    spec = engine.base_spec(Requirement(goal="x", workload_type="web"), "Balanced")
+    spec = engine.base_spec(Requirement(goal="x", workload_type="web"), "Most reliable")
     assert spec.database_vcpu is not None
 
 
@@ -250,7 +250,7 @@ def test_web_workloads_get_a_database():
 def test_engine_returns_three_priced_options():
     req = Requirement(goal="shop", workload_type="web", traffic_scale="medium")
     options = engine.recommend(req, "aws")
-    assert [o.label for o in options] == ["Cheapest", "Balanced", "Most reliable"]
+    assert [o.label for o in options] == ["Cheapest", "Most reliable", "Most optimized"]
     for option in options:
         assert option.monthly > 0
         assert option.estimate.items

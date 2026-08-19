@@ -165,7 +165,7 @@ def main() -> int:
                 (p, o)
                 for p, opts in results.items()
                 for o in opts
-                if o.label == "Balanced"
+                if o.label == "Most reliable"
             ),
             key=lambda pair: (not pair[1].estimate.is_complete, pair[1].monthly),
         )

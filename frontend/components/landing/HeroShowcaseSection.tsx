@@ -53,7 +53,7 @@ export async function HeroShowcaseSection() {
     const balanced = Object.entries(compare.clouds)
       .map(([id, options]) => ({
         id,
-        option: options.find((o) => o.label === "Balanced") ?? options[0],
+        option: options.find((o) => o.label === "Most reliable") ?? options[0],
       }))
       .filter((r) => r.option);
 
