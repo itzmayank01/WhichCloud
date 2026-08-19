@@ -42,15 +42,28 @@ def test_without_a_load_balancer_the_cdn_reaches_compute():
     assert cdn.connects_to == ["Amazon ECS"]
 
 
-def test_high_availability_is_drawn_as_two_zones():
-    """The standby database in the reliable tier *is* the second zone. Drawing
-    one would contradict the price that was quoted for it."""
+def test_high_availability_states_its_zone_count_on_one_frame():
+    """The standby database in the reliable tier *is* the second zone, and the
+    count must be visible or the drawing contradicts the price quoted for it.
+
+    One frame carries it rather than a box per zone: every zone held the same
+    service names, and a service can only be placed once, so the last zone
+    took them all and the earlier boxes rendered empty -- a three-zone
+    architecture showing a single frame confusingly numbered "3".
+    """
     ha, _ = architecture_from(nodes("compute", "database"), True)
     single, _ = architecture_from(nodes("compute", "database"), False)
 
     assert ha.azs_per_region == 2
-    assert len([b for b in ha.boundaries if b.kind == "az"]) == 2
     assert single.azs_per_region == 1
+
+    zones = [b for b in ha.boundaries if b.kind == "az"]
+    assert len(zones) == 1
+    assert "× 2" in zones[0].name
+
+    # A single zone says so plainly, with no multiplier to read.
+    solo = [b for b in single.boundaries if b.kind == "az"]
+    assert solo[0].name == "Availability Zone"
 
 
 def test_databases_are_private_and_load_balancers_public():

@@ -47,9 +47,16 @@ GAP_X = 44
 ROW_GAP = 104
 
 #: Beyond this a row is wrapped rather than allowed to run off the canvas.
-#: Services in a row wider than this force the whole diagram to scale down
-#: until nothing else can be read.
-MAX_PER_ROW = 8
+#:
+#: Eight put the whole observability and security tier -- CloudWatch,
+#: CloudTrail, ACM, Cognito, GuardDuty, X-Ray, Security Hub, Flow Logs --
+#: on one line 1,840px wide. The canvas is scaled to fit its container, so
+#: that meant rendering at roughly 59%: text too small to read, arrows too
+#: thin to follow, and long horizontal runs crossing everything above them.
+#:
+#: Five brings it to 1,252px, which fits at full size. Narrower and taller
+#: beats wider and squashed, because the fit is computed from width alone.
+MAX_PER_ROW = 5
 
 #: Space between a group's edge and the boxes inside it, per level of nesting,
 #: so a region does not sit flush against the VPC drawn inside it.

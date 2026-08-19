@@ -214,23 +214,34 @@ def architecture_from(
     if zones is None:
         zones = 2 if high_availability else 1
     zones = max(1, zones)
+
+    # ONE zone is drawn, labelled with how many there are.
+    #
+    # Drawing a box per zone put the same service names in every one, and a
+    # service can only be placed once -- so the last zone took them all and
+    # the earlier boxes rendered empty, leaving a three-zone architecture
+    # showing a single frame confusingly numbered "3".
+    #
+    # Repeating the services instead would triple every box on the canvas
+    # to say something the labels already say. It also matches how the rest
+    # of the diagram reads: the NAT node carries the cost of all three
+    # gateways, not one, and nobody expects three NAT icons.
+    suffix = f" × {zones}" if zones > 1 else ""
+    public = f"Public subnet{suffix}"
+    private = f"Private subnet{suffix}"
+    zone = f"Availability Zone{suffix}"
+
     boundaries: list[Boundary] = []
     zone_names: list[str] = []
 
-    for index in range(1, zones + 1):
-        public = f"Public subnet {index}" if zones > 1 else "Public subnet"
-        private = f"Private subnet {index}" if zones > 1 else "Private subnet"
-        zone = f"Availability Zone {index}" if zones > 1 else "Availability Zone"
-        zone_names.append(zone)
-
-        # Every zone holds the same services. That is what paying for
-        # high availability buys, and drawing one copy would show a system
-        # that cannot survive the failure the price covers.
-        boundaries.append(Boundary(kind="subnet", name=public, contains=list(placement["public"])))
-        boundaries.append(
-            Boundary(kind="subnet", name=private, contains=list(placement["private"]))
-        )
-        boundaries.append(Boundary(kind="az", name=zone, contains=[public, private]))
+    boundaries.append(
+        Boundary(kind="subnet", name=public, contains=list(placement["public"]))
+    )
+    boundaries.append(
+        Boundary(kind="subnet", name=private, contains=list(placement["private"]))
+    )
+    boundaries.append(Boundary(kind="az", name=zone, contains=[public, private]))
+    zone_names.append(zone)
 
     boundaries.insert(0, Boundary(kind="vpc", name="VPC", contains=zone_names))
 
