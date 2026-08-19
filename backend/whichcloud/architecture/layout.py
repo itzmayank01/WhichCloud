@@ -545,10 +545,47 @@ def _route(
             (target.cx, target.y + target.h),
         ]
 
-    # same row: leave from the facing sides
+    # ── same row ──
+    #
+    # Straight across when nothing is in the way. When something is, the
+    # line dips below the row and comes back up, because the naive version
+    # drew ECS -> RDS as a flat line straight through the ElastiCache box
+    # sitting between them -- three services in a row and the arrow went
+    # through the middle one as if it were not there.
+    left, right = (source, target) if target.x >= source.x else (target, source)
+    gap_start, gap_end = left.x + left.w, right.x
+    between = [
+        b
+        for b in boxes
+        if b.id not in (source.id, target.id)
+        and b.x < gap_end
+        and b.x + b.w > gap_start
+        and b.y < source.y + source.h
+        and b.y + b.h > source.y
+    ]
+
+    if not between:
+        if target.x >= source.x:
+            return [(source.x + source.w, source.cy), (target.x, target.cy)]
+        return [(source.x, source.cy), (target.x + target.w, target.cy)]
+
+    # Under the row, clearing the tallest thing in the way.
+    duck = max(b.y + b.h for b in between) + 22
     if target.x >= source.x:
-        return [(source.x + source.w, source.cy), (target.x, target.cy)]
-    return [(source.x, source.cy), (target.x + target.w, target.cy)]
+        return [
+            (source.x + source.w, source.cy),
+            (source.x + source.w + 14, source.cy),
+            (source.x + source.w + 14, duck),
+            (target.cx, duck),
+            (target.cx, target.y + target.h),
+        ]
+    return [
+        (source.x, source.cy),
+        (source.x - 14, source.cy),
+        (source.x - 14, duck),
+        (target.cx, duck),
+        (target.cx, target.y + target.h),
+    ]
 
 
 def _depth_of(group_id: str, parents: dict[str, str]) -> int:
@@ -602,11 +639,29 @@ def _connect_the_actor(layout: Layout) -> None:
     )
 
     start = (layout.actor.x + layout.actor.w, layout.actor.y + layout.actor.h // 2)
-    points = (
-        [start, (entry.x, entry.cy)]
-        if start[1] == entry.cy
-        else [start, (entry.x - 24, start[1]), (entry.x - 24, entry.cy), (entry.x, entry.cy)]
-    )
+
+    # Straight in when the entry is on the actor's own line.
+    if start[1] == entry.cy:
+        points = [start, (entry.x, entry.cy)]
+    else:
+        # Otherwise up the clear margin between the actor and the cloud, then
+        # over the top and down into the entry.
+        #
+        # The lane used to be `entry.x - 24`, which for a DNS entry near the
+        # middle of the edge row sat INSIDE the network -- the arrow left the
+        # actor, crossed the compute box, turned upward through the NAT
+        # gateway and arrived from underneath. Nothing is placed left of the
+        # cloud, so that strip is the one corridor guaranteed to be free.
+        lane = (layout.actor.x + layout.actor.w + entry.x) // 2
+        lane = min(lane, layout.actor.x + layout.actor.w + 28)
+        above = entry.y - 26
+        points = [
+            start,
+            (lane, start[1]),
+            (lane, above),
+            (entry.cx, above),
+            (entry.cx, entry.y),
+        ]
     layout.actor_edge = PlacedEdge(
         source=ACTOR_SOURCE, target=entry.id, flow="sync", points=points
     )
