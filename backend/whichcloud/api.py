@@ -383,6 +383,17 @@ class RecommendIn(BaseModel):
     arm_compatible: bool = True
     provider_preference: Literal["aws", "azure", "gcp"] | None = None
 
+    # Functional signals. Without these the form path could not express a
+    # single capability the engine gained -- streaming, analytics, search,
+    # protection -- and a stated transaction volume was dropped before it
+    # reached sizing, so ten times the load produced the same shape.
+    needs_waf: bool = False
+    needs_event_streaming: bool = False
+    needs_analytics: bool = False
+    needs_search: bool = False
+    daily_transactions: int | None = None
+    latency_target_ms: int | None = None
+
     def to_requirement(self) -> Requirement:
         return Requirement(
             goal=self.goal,
@@ -397,6 +408,12 @@ class RecommendIn(BaseModel):
             high_availability=self.high_availability,
             arm_compatible=self.arm_compatible,
             provider_preference=self.provider_preference,
+            needs_waf=self.needs_waf,
+            needs_event_streaming=self.needs_event_streaming,
+            needs_analytics=self.needs_analytics,
+            needs_search=self.needs_search,
+            daily_transactions=self.daily_transactions,
+            latency_target_ms=self.latency_target_ms,
         )
 
 

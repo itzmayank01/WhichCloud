@@ -313,3 +313,48 @@ def test_secrets_are_priced_where_there_is_a_database():
 
     batch = reliable(Requirement(goal="job", workload_type="batch"))
     assert not any(i.label.startswith("Secrets") for i in batch.estimate.items)
+
+
+# ── the API boundary ────────────────────────────────────────────────────
+
+
+def test_the_api_accepts_every_requirement_field_that_changes_the_shape():
+    """REGRESSION-GUARD: RecommendIn is a hand-written mirror of Requirement,
+    so it drifts silently. It once dropped daily_transactions and every
+    needs_* signal, which meant the form path could not ask for streaming,
+    analytics or search at all, and a stated volume never reached sizing --
+    ten times the load produced an identical architecture."""
+    from whichcloud.api import RecommendIn
+
+    accepted = set(RecommendIn.model_fields)
+    shape_changing = {
+        "workload_type", "traffic_pattern", "traffic_scale", "region",
+        "budget_monthly_usd", "storage_gb", "egress_gb", "interruptible",
+        "high_availability", "arm_compatible", "provider_preference",
+        "needs_waf", "needs_event_streaming", "needs_analytics",
+        "needs_search", "daily_transactions", "latency_target_ms",
+    }
+    assert shape_changing <= accepted, shape_changing - accepted
+
+
+def test_volume_drives_the_shape_rather_than_the_tier_alone():
+    """A hundredfold difference in load must not produce identical hardware.
+    The tier table is a floor; a stated volume is the answer."""
+    def shape(n: int):
+        req = Requirement(goal="x", traffic_scale="high", daily_transactions=n)
+        return engine.size_for(req), engine.db_size_for(req)
+
+    small = shape(500_000)
+    huge = shape(50_000_000)
+    assert huge != small
+    # More compute, and a database sized for the write rate.
+    assert huge[0][0] >= small[0][0]
+    assert huge[1][0] > small[1][0]
+
+
+def test_no_stated_volume_keeps_the_tier_floor():
+    """Absent a number the engine must not invent one -- it falls back to
+    the conventional starting point and says so."""
+    req = Requirement(goal="x", traffic_scale="medium")
+    assert engine.peak_rps_for(req) == 0.0
+    assert engine.size_for(req) == engine.BASE_SIZING["medium"]

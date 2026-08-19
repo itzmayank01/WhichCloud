@@ -42,6 +42,53 @@ BASE_SIZING: dict[str, tuple[int, int, float]] = {
 # Spiky traffic needs headroom for the peak, since scaling is not instant.
 SPIKE_INSTANCE_MULTIPLIER = 1.5
 
+# ── volume-derived sizing ───────────────────────────────────────────────
+#
+# BASE_SIZING is a floor, not the answer. Read alone it put 50 million
+# transactions a day on the same four instances as 500,000, because
+# traffic_scale has three buckets and everything above "hundreds of
+# thousands" lands in the top one. Where a description states a volume,
+# the shape is computed from it and the table only sets the minimum.
+#
+# The rates below are judgement. The arithmetic built on them is not, and
+# that is the point: doubling the stated load doubles the capacity.
+
+#: Requests one application vCPU serves per second. Conservative for a
+#: CRUD/billing workload doing real database work per request. HEURISTIC.
+RPS_PER_VCPU = 50.0
+
+#: Transactions one database vCPU sustains, counting the reads a typical
+#: request does around each write. HEURISTIC.
+TPS_PER_DB_VCPU = 25.0
+
+#: Real instance sizes, so a computed requirement snaps to something a
+#: provider actually sells rather than to "7 vCPU".
+VCPU_STEPS = (2, 4, 8, 16, 32, 48, 64, 96)
+
+#: Past this many instances, scale up rather than out: a hundred small
+#: machines cost more to run and to reason about than a dozen large ones.
+MAX_INSTANCES = 12
+
+
+def _snap_vcpu(needed: float) -> int:
+    """The smallest real instance size that covers `needed`."""
+    for step in VCPU_STEPS:
+        if step >= needed:
+            return step
+    return VCPU_STEPS[-1]
+
+
+def peak_rps_for(requirement: Requirement) -> float:
+    """Peak requests per second implied by the stated daily volume.
+
+    Zero when the description gives no number -- the caller then keeps the
+    tier's floor rather than sizing from an invented figure.
+    """
+    daily = requirement.daily_transactions or 0
+    if not daily:
+        return 0.0
+    return (daily / 86_400) * PEAK_MULTIPLIER
+
 # Databases are sized below the app tier for typical CRUD workloads.
 DB_SIZING: dict[str, tuple[int, float]] = {
     "low": (2, 4.0),
@@ -218,8 +265,26 @@ class Option:
 
 
 def size_for(requirement: Requirement) -> tuple[int, int, float]:
-    """Instance count and size for a workload. HEURISTIC."""
+    """Instance count and size for a workload.
+
+    The tier table is the floor. When the description states a transaction
+    volume the shape is computed from it, so ten times the load really does
+    get more capacity instead of the same four machines.
+    """
     count, vcpu, memory = BASE_SIZING[requirement.traffic_scale]
+
+    peak = peak_rps_for(requirement)
+    if peak:
+        total_vcpu = peak / RPS_PER_VCPU
+        # Scale out first, then up: past MAX_INSTANCES a bigger machine is
+        # cheaper to run and easier to reason about than more of them.
+        needed = max(count, math.ceil(total_vcpu / vcpu))
+        while needed > MAX_INSTANCES and vcpu < VCPU_STEPS[-1]:
+            vcpu = _snap_vcpu(vcpu + 1)
+            needed = max(2, math.ceil(total_vcpu / vcpu))
+        count = max(count, needed)
+        # Memory tracks cores at the usual ratio for an application tier.
+        memory = max(memory, float(vcpu) * 2.0)
 
     if requirement.traffic_pattern == "spiky":
         count = max(count, round(count * SPIKE_INSTANCE_MULTIPLIER))
@@ -229,6 +294,25 @@ def size_for(requirement: Requirement) -> tuple[int, int, float]:
         count = max(1, count // 2)
 
     return count, vcpu, memory
+
+
+def db_size_for(requirement: Requirement) -> tuple[int, float]:
+    """Database vCPU and memory for a workload.
+
+    Same rule as the application tier: the table sets a floor, a stated
+    volume sets the answer. A database is sized up rather than out, since
+    the primary takes every write however many replicas exist.
+    """
+    vcpu, memory = DB_SIZING[requirement.traffic_scale]
+
+    peak = peak_rps_for(requirement)
+    if peak:
+        vcpu = max(vcpu, _snap_vcpu(peak / TPS_PER_DB_VCPU))
+        # Databases want more memory per core than an app tier: the working
+        # set living in RAM is most of what makes them fast.
+        memory = max(memory, float(vcpu) * 4.0)
+
+    return vcpu, memory
 
 
 def fargate_tasks_for(requirement: Requirement) -> tuple[int, int]:
@@ -294,7 +378,7 @@ def stream_shards_for(requirement: Requirement) -> int:
 def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
     """The untuned shape for this workload, before any technique applies."""
     count, vcpu, memory = size_for(requirement)
-    db_vcpu, db_memory = DB_SIZING[requirement.traffic_scale]
+    db_vcpu, db_memory = db_size_for(requirement)
 
     return ArchitectureSpec(
         name=label,

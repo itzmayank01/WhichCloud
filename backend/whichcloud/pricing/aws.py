@@ -97,15 +97,26 @@ _GRAVITON_FAMILY = re.compile(r"^[a-z]+\d+g")
 
 
 def _arch_of(instance_type: str) -> str:
-    """x86_64 or arm64, from the family token of an instance type.
+    """x86_64 or arm64, from whichever token names the instance family.
 
-    Matching on the family rather than on a substring like ".r6g.": that
-    form works for `cache.t4g.medium`, where the family sits between dots,
-    but silently never matches `r6g.large.search`, where it leads. Every
-    ARM OpenSearch node was labelled x86_64 for exactly that reason.
+    Every service writes the family in a different position --
+    `db.r6g.large`, `cache.t4g.medium`, `r6g.large.search`, `m7g.xlarge` --
+    so this checks each dot-separated token rather than assuming one.
+
+    It replaces four hand-written substring lists that each named two
+    families and silently called everything else Intel. That hid every
+    r6g/r7g/r8g/m6g/m8g database and cache from the ARM technique, and
+    made the largest ARM database look like 64 vCPU when 192 exists.
+
+    Size words cannot collide: "48xlarge" and "2xlarge" start with a digit
+    and "large"/"search" carry none, while the pattern needs letters then
+    a digit then g.
     """
-    family = instance_type.split(".")[0]
-    return "arm64" if _GRAVITON_FAMILY.match(family) else "x86_64"
+    return (
+        "arm64"
+        if any(_GRAVITON_FAMILY.match(t) for t in instance_type.split("."))
+        else "x86_64"
+    )
 
 
 def _memory_gb(raw: str | None) -> float | None:
@@ -409,7 +420,7 @@ def load_database_prices(region_key: str) -> list[PricePoint]:
                 price_usd=price,
                 vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
                 memory_gb=_memory_gb(attrs.get("memory")),
-                arch="arm64" if ".t4g." in instance or ".m7g." in instance else "x86_64",
+                arch=_arch_of(instance),
                 attributes={"engine": "postgresql", "deployment": deployment},
             )
         )
@@ -561,7 +572,7 @@ def load_cache_prices(region_key: str) -> list[PricePoint]:
                 price_usd=price,
                 vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
                 memory_gb=_memory_gb(attrs.get("memory")),
-                arch="arm64" if ".r7g." in instance or ".t4g." in instance else "x86_64",
+                arch=_arch_of(instance),
                 attributes={"engine": engine},
             )
         )
@@ -936,7 +947,7 @@ def load_kafka_prices(region_key: str) -> list[PricePoint]:
                 price_usd=price,
                 vcpu=int(vcpu) if vcpu.isdigit() else None,
                 memory_gb=float(memory) if memory else None,
-                arch="arm64" if family.startswith("m7g.") else "x86_64",
+                arch=_arch_of(family),
             )
         )
     return points
