@@ -88,6 +88,17 @@ class Requirement:
         return self.workload_type in ("web", "api", "mixed")
 
     @property
+    def serves_requests(self) -> bool:
+        """Does anything outside call this over the network?
+
+        A nightly training job and a bulk store do not. Gating the edge on
+        this is what stops a batch pipeline being handed a CDN, a load
+        balancer, a web firewall and a public DNS zone -- which is what
+        made every architecture look the same whatever was described.
+        """
+        return self.workload_type in ("web", "api", "mixed")
+
+    @property
     def is_batch(self) -> bool:
         return self.workload_type in ("batch", "ml")
 

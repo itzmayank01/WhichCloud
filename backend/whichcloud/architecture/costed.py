@@ -106,7 +106,10 @@ class PricedNode:
 
 
 def architecture_from(
-    nodes: list[PricedNode], high_availability: bool, zones: int | None = None
+    nodes: list[PricedNode],
+    high_availability: bool,
+    zones: int | None = None,
+    serves_requests: bool = True,
 ) -> tuple[Architecture, dict[str, tuple[float, str]]]:
     """The architecture for a priced option, and what each node costs.
 
@@ -121,8 +124,22 @@ def architecture_from(
     prices: dict[str, tuple[float, str]] = {}
     placement: dict[str, list[str]] = {"public": [], "private": [], "edge": []}
 
+    # Egress is drawn as a CDN only where something is being served. A
+    # nightly batch job moves data out too, but calling that CloudFront put
+    # a content delivery network in front of a pipeline nobody calls.
+    #
+    # Passed in rather than inferred: "has a load balancer" looked like a
+    # reasonable proxy and is not, because a small web app on one instance
+    # legitimately has a CDN in front of compute with no balancer at all.
+
+    #: The name each kind ended up with, since some are renamed below and
+    #: the edges have to resolve against what was actually built.
+    named: dict[str, str] = {}
+
     for kind, node in present.items():
         name, tier, purpose, where = AWS_SERVICE[kind]
+        if kind == "network" and not serves_requests:
+            name, purpose = "AWS Data Transfer", "Data leaving the region"
         # The engine's own label carries detail the category name does not --
         # "Database (Multi-AZ)" says something the word "database" cannot.
         detail = node.label
@@ -141,13 +158,11 @@ def architecture_from(
             )
         )
         placement[where].append(name)
+        named[kind] = name
         if node.monthly_usd is not None:
             prices[name] = (node.monthly_usd, node.sku or "")
 
-    by_kind = {
-        kind: AWS_SERVICE[kind][0]
-        for kind in present
-    }
+    by_kind = dict(named)
     # Names may have gained a suffix above, so resolve against what was built.
     built = {s.name: s for s in services}
     for kind, base in list(by_kind.items()):

@@ -269,7 +269,9 @@ def _drawn(option: Option, provider: str) -> dict | None:
     # Zones come from the gateways the option is billed for -- one per zone
     # -- falling back to the Multi-AZ flag when there are none.
     zones = option.spec.nat_gateway_count or None
-    arch, prices = architecture_from(nodes, option.spec.database_multi_az, zones)
+    arch, prices = architecture_from(
+        nodes, option.spec.database_multi_az, zones, option.spec.serves_requests
+    )
     graph = build_graph(arch)
     attach_prices(
         graph,
@@ -330,7 +332,10 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         shape += " spot"
     if spec.compute_duty_cycle < 1.0:
         shape += f" @{spec.compute_duty_cycle:.0%}"
-    if spec.database_multi_az:
+    # Only when there IS a database. The flag is set by the reliability
+    # tiers regardless, so a batch job with no database was described as
+    # "multi-AZ db" while its architecture contained no database at all.
+    if spec.database_multi_az and spec.database_vcpu:
         shape += " · multi-AZ db"
 
     return OptionOut(

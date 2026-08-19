@@ -45,6 +45,10 @@ class ArchitectureSpec:
     storage_gb: float = 0.0
     egress_gb: float = 0.0
     load_balancer: bool = False
+    #: Does anything outside call this over the network? Carried so the
+    #: drawing can tell a CDN from plain data transfer without guessing
+    #: from which components happen to be present.
+    serves_requests: bool = True
 
     # A cache in front of the database, and metrics for the whole thing.
     cache_vcpu: int | None = None

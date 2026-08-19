@@ -453,13 +453,16 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         database_multi_az=False,
         storage_gb=requirement.storage_gb,
         egress_gb=requirement.egress_gb,
+        serves_requests=requirement.serves_requests,
         load_balancer=requirement.needs_database and count > 1,
         # A read-heavy app in front of a database wants a cache, and anything
         # in production is monitored. Both are heuristic, like the sizing.
         cache_vcpu=2 if requirement.needs_database else None,
         cache_memory_gb=2.0 if requirement.needs_database else None,
         monitored_metrics=30 if requirement.needs_database else 10,
-        waf_rule_count=WAF_RULE_COUNT if requirement.needs_waf else None,
+        waf_rule_count=(
+            WAF_RULE_COUNT if requirement.needs_waf and requirement.serves_requests else None
+        ),
         waf_monthly_requests=(
             WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
             if requirement.needs_waf
@@ -470,7 +473,8 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # every tier already gets monitoring.
         audit_logging=True,
         kms_key_count=1 if requirement.needs_database else None,
-        tls_certificate=True,
+        # A certificate terminates inbound TLS; a batch job has none.
+        tls_certificate=requirement.serves_requests,
         # One NAT gateway per zone the workload spans, so a zone failure
         # does not strand the other zone's outbound traffic. The per-tier
         # count is set in _shape_variants; two is the production default.
@@ -480,8 +484,13 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         nat_gb_processed=requirement.egress_gb,
         # One zone for the application. Query volume scales with traffic
         # tier; both are HEURISTIC, like the sizing above them.
-        dns_hosted_zones=1,
-        dns_monthly_queries=DNS_MONTHLY_QUERIES[requirement.traffic_scale],
+        # No inbound callers, no public name to resolve.
+        dns_hosted_zones=1 if requirement.serves_requests else 0,
+        dns_monthly_queries=(
+            DNS_MONTHLY_QUERIES[requirement.traffic_scale]
+            if requirement.serves_requests
+            else 0.0
+        ),
         # Sign-in only exists where there are users to sign in. Batch and
         # ML workloads have none, so they get no auth line at all.
         auth_monthly_active_users=(
@@ -502,7 +511,11 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
             if requirement.needs_database
             else 0.0
         ),
-        alb_lcu=max(1.0, peak_rps_for(requirement) / RPS_PER_LCU),
+        alb_lcu=(
+            max(1.0, peak_rps_for(requirement) / RPS_PER_LCU)
+            if requirement.serves_requests
+            else 0.0
+        ),
         s3_put_requests=float((requirement.daily_transactions or 0) * 30),
         s3_get_requests=float((requirement.daily_transactions or 0) * 30 * S3_GETS_PER_PUT),
         # ── data pipeline & analytics ──
@@ -550,7 +563,13 @@ def _shape_variants(
     replicas = (
         DB_READ_REPLICAS[requirement.traffic_scale] if requirement.needs_database else 0
     )
-    reliable_delta: dict = {"database_multi_az": True, "load_balancer": True}
+    # A balancer only where something is being balanced. The base shape
+    # already gates this on the workload serving requests; setting it True
+    # here regardless put an Elastic Load Balancing box in front of a
+    # nightly batch job that nothing calls.
+    reliable_delta: dict = {"database_multi_az": True}
+    if requirement.serves_requests:
+        reliable_delta["load_balancer"] = True
     reliable_rationale = (
         "Survives an availability-zone failure: extra capacity and a "
         "standby database."
@@ -603,13 +622,14 @@ def _shape_variants(
 
     # Protection at the edge. Priced here even where the description named
     # no attack surface, because this is the tier that assumes one exists.
-    optimized_delta["waf_rule_count"] = WAF_RULE_COUNT
-    optimized_delta["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[
-        requirement.traffic_scale
-    ]
-    optimized_tradeoffs.append(
-        "A Web ACL and its rules bill whether or not anything is blocked"
-    )
+    if requirement.serves_requests:
+        optimized_delta["waf_rule_count"] = WAF_RULE_COUNT
+        optimized_delta["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[
+            requirement.traffic_scale
+        ]
+        optimized_tradeoffs.append(
+            "A Web ACL and its rules bill whether or not anything is blocked"
+        )
 
     # A third availability zone. Two survives losing one; three survives
     # losing one while another is being patched, which is the difference
