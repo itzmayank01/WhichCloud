@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { PricedDiagram } from "@/components/PricedDiagram";
-import { api, money, type Option } from "@/lib/api";
+import { api, comparableTotals, money, type Option } from "@/lib/api";
 
 /**
  * The priced comparison: one workload, three clouds, a budget to check it
@@ -147,6 +147,19 @@ export function MultiCloudArchitecture({
     : null;
   /** The single complete estimate, when it is the only one we can price. */
   const soleComplete = !comparable && complete.length === 1 ? complete[0] : null;
+
+  /* Like-for-like, so the clouds can still be compared while adapters for
+     the rest are missing. Raw totals cannot be: one cloud pricing 22
+     components against another pricing 7 makes the second look cheaper
+     for a reason that has nothing to do with its rates. This sums each
+     over the services they ALL price and says how many that was. */
+  const likeForLike = comparableTotals(
+    Object.fromEntries(providers.map((p) => [p, [byProvider[p]]])),
+  );
+  const likeForLikeBy = Object.fromEntries(
+    likeForLike.map((r) => [r.provider, r]),
+  );
+  const likeForLikeBest = likeForLike[0]?.provider ?? null;
   const incomplete = providers.filter((p) => !byProvider[p].complete);
 
   // Generated from the same figures shown above, so the sentence cannot drift
@@ -377,6 +390,28 @@ export function MultiCloudArchitecture({
                   <div className="mt-3.5 font-mono text-[12.5px] font-medium text-caution">
                     partial, {o.missing.length} component
                     {o.missing.length === 1 ? "" : "s"} unpriced
+                  </div>
+                )}
+
+                {/* The only figure on a partial card that can honestly be
+                    set beside the others. */}
+                {likeForLikeBy[p] && likeForLike.length > 1 && (
+                  <div className="mt-2.5 border-t border-line pt-2.5">
+                    <div className="flex items-baseline justify-between font-mono text-[12.5px] font-medium">
+                      <span className="text-ink-3">
+                        on {likeForLikeBy[p].covered} shared services
+                      </span>
+                      <span
+                        className={
+                          p === likeForLikeBest
+                            ? "font-semibold text-save"
+                            : "text-ink-2"
+                        }
+                      >
+                        {money(likeForLikeBy[p].total, 0)}
+                        {p === likeForLikeBest ? " ·  lowest" : ""}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
