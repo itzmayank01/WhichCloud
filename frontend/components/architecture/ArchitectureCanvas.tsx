@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "@iconify/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ArchitectureView, Flow, Tier } from "@/lib/api";
 import { iconFor } from "@/lib/serviceIcon";
 
@@ -119,6 +119,12 @@ function formatPoints(points: { x: number; y: number }[]): string {
   return out.join(" ");
 }
 
+/* Module scope, not the component body: defined inside, it is a local
+   variable holding a function, so the linter cannot tell the callback is
+   an effect and assumes the ref inside it is read during render. */
+const useIsomorphic =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 export function ArchitectureCanvas({
   view,
   revealed,
@@ -142,8 +148,6 @@ export function ArchitectureCanvas({
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const lastWidth = useRef(-1);
-
-  const useIsomorphic = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
   useIsomorphic(() => {
     const el = shell.current;
@@ -303,9 +307,15 @@ export function ArchitectureCanvas({
                     viewBox="0 0 12 12"
                     refX="10"
                     refY="6"
-                    markerWidth="8"
-                    markerHeight="8"
+                    markerWidth="12"
+                    markerHeight="12"
                     orient="auto-start-reverse"
+                    /* userSpaceOnUse, not the strokeWidth default: markers
+                       otherwise scale with the line they sit on, so a
+                       2.4px replication edge grew a head half again the
+                       size of a 1.6px control edge and the arrows read as
+                       inconsistent rather than as different weights. */
+                    markerUnits="userSpaceOnUse"
                   >
                     {/* An open chevron, not a filled triangle. A solid head at
                         this scale reads as a blob on the end of a line; two
@@ -314,7 +324,7 @@ export function ArchitectureCanvas({
                       d="M3.5 2.5 L9.5 6 L3.5 9.5"
                       fill="none"
                       stroke={cfg.stroke}
-                      strokeWidth={1.9}
+                      strokeWidth={2.2}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />

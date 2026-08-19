@@ -112,7 +112,7 @@ class PricedNode:
 
 
 def architecture_from(
-    nodes: list[PricedNode], high_availability: bool
+    nodes: list[PricedNode], high_availability: bool, zones: int | None = None
 ) -> tuple[Architecture, dict[str, tuple[float, str]]]:
     """The architecture for a priced option, and what each node costs.
 
@@ -207,7 +207,13 @@ def architecture_from(
         built[by_kind["monitoring"]].connects_to.append(by_kind["compute"])
 
     # ── the network the price was worked out for ──
-    zones = 2 if high_availability else 1
+    # Drawn from what was actually PAID for, not inferred from a flag. The
+    # top tier bills three NAT gateways and ran three instances while this
+    # still drew two zones, so the picture contradicted the bill beside it
+    # -- the one thing this project treats as unforgivable.
+    if zones is None:
+        zones = 2 if high_availability else 1
+    zones = max(1, zones)
     boundaries: list[Boundary] = []
     zone_names: list[str] = []
 

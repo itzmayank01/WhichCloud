@@ -266,7 +266,10 @@ def _drawn(option: Option, provider: str) -> dict | None:
     if not nodes:
         return None
 
-    arch, prices = architecture_from(nodes, option.spec.database_multi_az)
+    # Zones come from the gateways the option is billed for -- one per zone
+    # -- falling back to the Multi-AZ flag when there are none.
+    zones = option.spec.nat_gateway_count or None
+    arch, prices = architecture_from(nodes, option.spec.database_multi_az, zones)
     graph = build_graph(arch)
     attach_prices(
         graph,
