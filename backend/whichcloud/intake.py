@@ -47,7 +47,11 @@ Provider = Literal["gemini", "groq", "anthropic", "openai"]
 #: users" -- so a version that works for the oldest key in the chain 404s for
 #: the newest. The architecture reader was fixed for this and this was missed,
 #: which left /describe broken while /architecture worked.
-GEMINI_MODEL = "gemini-flash-latest"
+#: Pro, not flash. Reading a description into 21 fields is the one step
+#: nothing downstream can repair, and flash was dropping the quieter
+#: signals -- "head office sees live numbers" is what turns analytics on.
+#: An alias rather than a pinned version, so this does not rot.
+GEMINI_MODEL = "gemini-pro-latest"
 
 # Extraction is a short, scoped task — the model is reading a paragraph and
 # filling a struct, not designing anything.
@@ -221,21 +225,50 @@ class IntakeError(RuntimeError):
 # ── provider selection ──────────────────────────────────────────────────
 
 
+#: Preference order, most accurate first. Reading a description is the one
+#: step nothing downstream can repair: the engine sizes and prices from the
+#: extracted fields, so a reader that misses "head office sees live numbers"
+#: produces a correct price for the wrong architecture.
+#:
+#: Set WHICHCLOUD_READER_ORDER to a comma-separated list to override --
+#: "gemini,groq,anthropic" restores the cheapest-first order this used to
+#: have, which matters if the Anthropic bill does.
+DEFAULT_READER_ORDER: tuple[Provider, ...] = (
+    "anthropic",  # claude-opus-5
+    "gemini",
+    "groq",
+    "openai",
+)
+
+#: What each provider needs before it can be tried.
+_CREDENTIALS: dict[Provider, tuple[str, ...]] = {
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "groq": ("GROQ_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
+    "openai": ("OPENAI_API_KEY",),
+}
+
+
 def available_providers() -> list[Provider]:
-    """Which providers have credentials present, cheapest first."""
-    found: list[Provider] = []
-    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
-        found.append("gemini")
-    # Before the billed ones: Groq's free tier is measured per minute rather
-    # than per day, so it is the one still answering when the day's Gemini
-    # quota is gone.
-    if os.getenv("GROQ_API_KEY"):
-        found.append("groq")
-    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
-        found.append("anthropic")
-    if os.getenv("OPENAI_API_KEY"):
-        found.append("openai")
-    return found
+    """Which providers have credentials present, most accurate first.
+
+    The fallback chain still runs top to bottom, so a provider that is out
+    of quota or returns malformed JSON hands off to the next one -- the
+    accuracy preference costs nothing when the preferred reader is down.
+    """
+    raw = os.getenv("WHICHCLOUD_READER_ORDER", "")
+    order: tuple[Provider, ...] = DEFAULT_READER_ORDER
+    if raw.strip():
+        wanted = [p.strip().lower() for p in raw.split(",") if p.strip()]
+        chosen = [p for p in wanted if p in _CREDENTIALS]
+        if chosen:
+            order = tuple(chosen)  # type: ignore[assignment]
+
+    return [
+        provider
+        for provider in order
+        if any(os.getenv(name) for name in _CREDENTIALS[provider])
+    ]
 
 
 def _detect_provider() -> Provider:
