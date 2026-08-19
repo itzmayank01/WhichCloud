@@ -672,6 +672,73 @@ def fetch_tracing_prices(region_key: str) -> list[PricePoint]:
     )]
 
 
+def fetch_nat_prices(region_key: str) -> list[PricePoint]:
+    """Cloud NAT gateway uptime and data processed.
+
+    Public NAT, not Private: "Private Nat Gateway Uptime" is a different
+    product at thirty times the hourly rate.
+    """
+    region = provider_region(region_key, "gcp")
+    points: list[PricePoint] = []
+
+    gw = _one("Networking", region, ("cloud nat gateway uptime",), excludes=("private",))
+    if gw:
+        points.append(PricePoint(
+            provider="gcp", category="nat", sku="cloudnat:gateway-hour",
+            name="Cloud NAT gateway", region=region, unit="hour",
+            price_usd=sku_price(gw), tiers=sku_tiers(gw),
+        ))
+
+    data = _one("Networking", region, ("cloud nat data processing",))
+    if data:
+        points.append(PricePoint(
+            provider="gcp", category="nat", sku="cloudnat:gb-processed",
+            name="Cloud NAT data processing", region=region, unit="GB",
+            price_usd=sku_price(data), tiers=sku_tiers(data),
+        ))
+    return points
+
+
+def fetch_tls_prices(region_key: str) -> list[PricePoint]:
+    """Certificate Manager -- free for the first hundred certificates.
+
+    The plain "Certificates usage" meter, not "Regional Certificates
+    usage": both are published, at the same rate, and taking whichever
+    came first would make the choice arbitrary.
+    """
+    region = provider_region(region_key, "gcp")
+    sku = _one("Certificate Manager", region, ("certificates usage",), excludes=("regional",))
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="tls", sku="certmanager:certificate",
+        name="Certificate Manager certificate", region=region, unit="month",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
+def fetch_auth_prices(region_key: str) -> list[PricePoint]:
+    """Identity Platform monthly active users -- free to 50,000.
+
+    Tier 1, and not a Tenant variant: tenants are multi-tenancy add-ons
+    that start charging at fifty users rather than fifty thousand, so
+    picking one would bill a 300-staff system that should be free.
+    """
+    region = provider_region(region_key, "gcp")
+    sku = _one(
+        "Identity Platform", region,
+        ("tier 1 monthly active users",),
+        excludes=("tenant",),
+    )
+    if not sku:
+        return []
+    return [PricePoint(
+        provider="gcp", category="auth", sku="identityplatform:mau",
+        name="Identity Platform (monthly active users)", region=region, unit="MAU",
+        price_usd=sku_price(sku), tiers=sku_tiers(sku),
+    )]
+
+
 def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every GCP category we can price.
 
@@ -695,6 +762,9 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_kms_prices,
         fetch_secrets_prices,
         fetch_tracing_prices,
+        fetch_nat_prices,
+        fetch_tls_prices,
+        fetch_auth_prices,
     ):
         name = loader.__name__.replace("fetch_", "").replace("_prices", "")
         for attempt in range(3):

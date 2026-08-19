@@ -222,6 +222,14 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("gcp", "kms", "key"): "cloudkms:key-version",
     ("gcp", "secrets", "secret"): "secretmanager:version",
     ("gcp", "tracing", "traces"): "cloudtrace:spans",
+    ("gcp", "nat", "gateway"): "cloudnat:gateway-hour",
+    ("gcp", "nat", "data"): "cloudnat:gb-processed",
+    ("aws", "nat", "gateway"): "nat:gateway-hour",
+    ("aws", "nat", "data"): "nat:gb-processed",
+    ("azure", "nat", "gateway"): "nat:gateway-hour",
+    ("azure", "nat", "data"): "nat:gb-processed",
+    ("gcp", "tls", "certificate"): "certmanager:certificate",
+    ("gcp", "auth", "mau"): "identityplatform:mau",
 }
 
 
@@ -479,8 +487,8 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- NAT gateways ----
     if spec.nat_gateway_count:
-        hourly = store.get_price(provider, region, "nat", "nat:gateway-hour", dsn=dsn)
-        per_gb = store.get_price(provider, region, "nat", "nat:gb-processed", dsn=dsn)
+        hourly = _by_role(provider, region, "nat", "gateway", dsn)
+        per_gb = _by_role(provider, region, "nat", "data", dsn)
         if hourly:
             result.items.append(
                 _hourly_line(
