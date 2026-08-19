@@ -2,6 +2,7 @@
 
 import { Icon } from "@iconify/react";
 import { ChartBars3D, ChatBubble3D, TrendDown3D } from "@/components/landing/Badges";
+import { usePrefersReducedMotion } from "@/lib/usePrefersReducedMotion";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -83,20 +84,23 @@ const money = (n: number, dp = 0) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 
 export function HeroShowcase({ data }: { data: ShowcaseData }) {
-  const [shown, setShown] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  /* With motion off the panels are shown outright rather than revealed
+     into, so this is read during render instead of written from an
+     effect -- which rendered them collapsed first and expanded a tick
+     later, the empty-boxes frame this panel cannot afford. */
+  const reduced = usePrefersReducedMotion();
+  const shown = revealed || reduced;
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setShown(true);
-      return;
-    }
+    if (reduced) return;
     /* The panels start collapsed, so whatever triggers them is load-bearing:
        a trigger that never fires leaves three empty boxes. The timer
        guarantees they arrive and the observer only makes it sooner. */
-    const fallback = window.setTimeout(() => setShown(true), 1200);
+    const fallback = window.setTimeout(() => setRevealed(true), 1200);
     let io: IntersectionObserver | undefined;
     if (typeof IntersectionObserver !== "undefined") {
       io = new IntersectionObserver(
@@ -104,7 +108,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
           if (e.some((x) => x.isIntersecting)) {
             window.clearTimeout(fallback);
             io?.disconnect();
-            setShown(true);
+            setRevealed(true);
           }
         },
         { threshold: 0.1 },
@@ -115,7 +119,7 @@ export function HeroShowcase({ data }: { data: ShowcaseData }) {
       io?.disconnect();
       window.clearTimeout(fallback);
     };
-  }, []);
+  }, [reduced]);
 
   /* Rank the services by what they cost across every cloud, then hand out
      the ramp in that order, so the darkest band is always the largest line on
@@ -568,15 +572,15 @@ function EstimateRun({
   ];
 
   /* -1 before it starts, 0..n-1 while working, n once the result is up. */
-  const [at, setAt] = useState(-1);
+  const [step, setStep] = useState(-1);
+  /* Finished immediately when motion is off, rather than set from an
+     effect for the same reason as above. */
+  const reduced = usePrefersReducedMotion();
+  const at = reduced ? steps.length : step;
   const timers = useRef<number[]>([]);
 
   useEffect(() => {
-    if (!shown) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setAt(steps.length);
-      return;
-    }
+    if (!shown || reduced) return;
 
     let cancelled = false;
     const clear = () => {
@@ -586,15 +590,15 @@ function EstimateRun({
 
     const run = () => {
       clear();
-      setAt(-1);
+      setStep(-1);
       steps.forEach((_, i) => {
         timers.current.push(
-          window.setTimeout(() => !cancelled && setAt(i), START_MS + i * STEP_MS),
+          window.setTimeout(() => !cancelled && setStep(i), START_MS + i * STEP_MS),
         );
       });
       const done = START_MS + steps.length * STEP_MS;
       timers.current.push(
-        window.setTimeout(() => !cancelled && setAt(steps.length), done),
+        window.setTimeout(() => !cancelled && setStep(steps.length), done),
       );
       timers.current.push(
         window.setTimeout(() => !cancelled && run(), done + RESULT_HOLD_MS),

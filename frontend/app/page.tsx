@@ -80,30 +80,48 @@ function TerraformVisual() {
   /* Written out a line at a time rather than dropped in whole, so the panel
      reads as a file being generated. The lines are listed here instead of
      inlined in a <pre> because each one needs to carry its own delay. */
-  const LINES = [
-    <span className="text-zinc-500"># Graviton, measured 9% cheaper here</span>,
-    <>
-      <span className="text-white">module</span>{" "}
-      <span className="text-amber-200">&quot;ecs_service&quot;</span> {"{"}
-    </>,
-    <>
-      {"  source           = "}
-      <span className="text-amber-200">&quot;terraform-aws-modules/ecs/aws&quot;</span>
-    </>,
-    <>
-      {"  cpu_architecture = "}
-      <span className="text-amber-200">&quot;ARM64&quot;</span>
-    </>,
-    <>
-      {"  desired_count    = "}
-      <span className="text-white">3</span>
-    </>,
-    <>
-      {"  min_capacity     = "}
-      <span className="text-white">1</span>{" "}
-      <span className="text-zinc-500"># scale to zero</span>
-    </>,
-    <>{"}"}</>,
+  /* Callbacks, not elements. Nothing here is a keyed list React
+     reconciles -- it is one static block revealed a line at a time -- and
+     holding bare JSX in an array made that ambiguous to read and to lint.
+     Each line is rendered inside its own keyed wrapper below. */
+  const LINES: (() => React.ReactNode)[] = [
+    () => (
+      <span className="text-zinc-500"># Graviton, measured 9% cheaper here</span>
+    ),
+    () => (
+      <>
+        <span className="text-white">module</span>{" "}
+        <span className="text-amber-200">&quot;ecs_service&quot;</span> {"{"}
+      </>
+    ),
+    () => (
+      <>
+        {"  source           = "}
+        <span className="text-amber-200">
+          &quot;terraform-aws-modules/ecs/aws&quot;
+        </span>
+      </>
+    ),
+    () => (
+      <>
+        {"  cpu_architecture = "}
+        <span className="text-amber-200">&quot;ARM64&quot;</span>
+      </>
+    ),
+    () => (
+      <>
+        {"  desired_count    = "}
+        <span className="text-white">3</span>
+      </>
+    ),
+    () => (
+      <>
+        {"  min_capacity     = "}
+        <span className="text-white">1</span>{" "}
+        <span className="text-zinc-500"># scale to zero</span>
+      </>
+    ),
+    () => <>{"}"}</>,
   ];
 
   return (
@@ -121,7 +139,7 @@ function TerraformVisual() {
             className="reveal-line"
             style={{ "--i": i } as React.CSSProperties}
           >
-            {line}
+            {line()}
             {i === LINES.length - 1 && (
               <span
                 className="reveal-caret ml-1 inline-block h-[1.05em] w-[0.55ch] translate-y-[0.18em] bg-zinc-500"

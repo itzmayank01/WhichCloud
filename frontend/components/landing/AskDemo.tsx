@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon } from "@iconify/react";
+import { usePrefersReducedMotion } from "@/lib/usePrefersReducedMotion";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -85,7 +86,12 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
   const [typed, setTyped] = useState("");
   const [stage, setStage] = useState<"idle" | "picking" | "typing" | "parsed" | "answered">("idle");
   const [reader, setReader] = useState(0);
-  const [still, setStill] = useState(false);
+  /* Derived, not stored. It only ever mirrored the media query, and the
+     finished frame it implies -- the question fully typed, the answer
+     shown -- is derived below rather than written into state from an
+     effect. That rendered the empty shell first and the finished panel a
+     tick later, which is visible on a slow device. */
+  const still = usePrefersReducedMotion();
   const timers = useRef<number[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
   const promptRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -97,14 +103,9 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
   useEffect(() => {
     if (!scenarios.length) return;
 
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      // Motion is the whole point of this panel, so with it turned off it
-      // shows its finished state rather than an empty shell.
-      setStill(true);
-      setTyped(scenarios[0].question);
-      setStage("answered");
-      return;
-    }
+    // Motion is the whole point of this panel, so with it turned off the
+    // finished state is rendered directly rather than animated into.
+    if (still) return;
 
     let cancelled = false;
     const at = (ms: number, fn: () => void) =>
@@ -112,8 +113,14 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
 
     timers.current.forEach(clearTimeout);
     timers.current = [];
-    setTyped("");
-    setStage("idle");
+
+    /* Scheduled rather than called here. Resetting synchronously in the
+       effect body renders twice on every scenario change -- once with the
+       previous answer still up -- which is the cascade React warns about. */
+    at(0, () => {
+      setTyped("");
+      setStage("idle");
+    });
 
     at(T.toPrompt, () => setStage("picking"));
     at(T.press, () => setReader((r) => (r + 1) % READERS.length));
@@ -136,7 +143,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
-  }, [index, scenarios, scenario.question]);
+  }, [index, scenarios, scenario.question, still]);
 
   /* The cursor is placed from the real geometry of whatever it is pointing
      at, measured each time the target changes. Positioning it as a
@@ -170,8 +177,13 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
 
   if (!scenarios.length) return null;
 
-  const answered = stage === "answered";
-  const parsed = stage === "parsed" || answered;
+  /* With motion off the panel shows its finished frame: the question in
+     full and the answer up. Derived here so no effect has to write it. */
+  const shownTyped = still ? scenarios[0]?.question ?? "" : typed;
+  const shownStage = still ? "answered" : stage;
+
+  const answered = shownStage === "answered";
+  const parsed = shownStage === "parsed" || answered;
 
   return (
     /* Nested frame: a soft outer panel holding the card, which is what gives
@@ -255,7 +267,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
           >
             <div className="flex items-center gap-3 rounded-[14px] bg-surface px-4 py-3">
               <span className="min-h-[1.4em] flex-1 truncate text-left font-mono text-[13.5px] text-ink">
-                {typed || <span className="text-ink-3">Ask something…</span>}
+                {shownTyped || <span className="text-ink-3">Ask something…</span>}
                 {!still && stage === "typing" && (
                   <span className="ml-0.5 inline-block h-[1.05em] w-[0.5ch] translate-y-[0.16em] animate-pulse bg-accent" />
                 )}

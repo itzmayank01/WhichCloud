@@ -1,5 +1,6 @@
 "use client";
 
+import { usePrefersReducedMotion } from "@/lib/usePrefersReducedMotion";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -66,18 +67,16 @@ const ICONS = {
 
 export function Pipeline({ stages }: { stages: Stage[] }) {
   const [active, setActive] = useState(-1);
-  const [still, setStill] = useState(false);
+  /* Derived, not stored. `still` only ever mirrored the media query, so
+     holding it as state meant rendering the moving version first and the
+     finished one immediately after -- visible as a flash on a slow
+     device, and exactly what React's set-state-in-effect rule catches. */
+  const still = usePrefersReducedMotion();
   const host = useRef<HTMLDivElement>(null);
   const timers = useRef<number[]>([]);
 
   useEffect(() => {
-    if (!stages.length) return;
-
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setStill(true);
-      setActive(stages.length - 1);
-      return;
-    }
+    if (!stages.length || still) return;
 
     let cancelled = false;
     const clear = () => {
@@ -128,7 +127,7 @@ export function Pipeline({ stages }: { stages: Stage[] }) {
       window.clearTimeout(fallback);
       clear();
     };
-  }, [stages]);
+  }, [stages, still]);
 
   return (
     <div ref={host} className="grid gap-3 md:grid-cols-5">

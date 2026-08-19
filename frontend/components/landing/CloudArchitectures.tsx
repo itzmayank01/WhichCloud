@@ -6,7 +6,7 @@ import { api, type Option } from "@/lib/api";
  * Uses the Balanced shape, which is the option most people actually ship.
  */
 export async function CloudArchitectures() {
-  let byProvider: Record<string, Option> = {};
+  const byProvider: Record<string, Option> = {};
   let regions: string[] = [];
 
   try {

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api, freshness, money, type CatalogRow, type Recommendation } from "@/lib/api";
+import { api, money, type CatalogRow, type Recommendation } from "@/lib/api";
 import { ShowcaseGrid } from "@/components/landing/ShowcaseGrid";
 import { ProviderLogoCards } from "@/components/landing/ProviderLogoCards";
 import { InlineIcon } from "@/components/landing/InlineIcon";

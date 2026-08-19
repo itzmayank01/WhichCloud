@@ -19,6 +19,13 @@ const LABEL: Record<string, string> = {
 };
 
 export async function HeroShowcaseSection() {
+  /* The try guards FETCHING, which is the part that can fail here. The
+     JSX is built after it: React renders components lazily, so a render
+     error would never have been caught by this catch anyway, and leaving
+     the element inside it implied a safety net that did not exist. A
+     render failure belongs to an error boundary, not to this. */
+  let built: ShowcaseData | null = null;
+
   try {
     const [compare, techs, health] = await Promise.all([
       api.compare(
@@ -142,8 +149,10 @@ export async function HeroShowcaseSection() {
       advisory: (richest.option.advisory ?? []).slice(0, 3).map((a) => a.name),
     };
 
-    return <HeroShowcase data={data} />;
+    built = data;
   } catch {
     return null;
   }
+
+  return <HeroShowcase data={built} />;
 }

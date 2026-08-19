@@ -15,6 +15,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  * $0.00, which is far worse than an unanimated one. A timeout puts the real
  * figure in place regardless.
  */
+/* Aliased at module scope, not inside the component. Defined in the body
+   it is just a local variable holding a function, so the linter cannot tell
+   the callback is an effect and assumes the ref inside it might be read
+   during render. Hoisting it keeps the identity stable and the intent
+   legible. useLayoutEffect on the server warns; useEffect there does not. */
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 export function CountUp({
   value,
   prefix = "",
@@ -44,9 +52,6 @@ export function CountUp({
      before the browser paints, so the animation still begins from nothing
      while the markup never carries a false number. */
   const [shown, setShown] = useState(value);
-
-  const useIsomorphicLayoutEffect =
-    typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
   useIsomorphicLayoutEffect(() => {
     const el = ref.current;
