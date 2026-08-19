@@ -50,6 +50,19 @@ class Requirement:
     high_availability: bool = False  # must survive a zone failure?
     arm_compatible: bool = True  # no x86-only dependencies?
 
+    # Functional signals that change which components belong in the
+    # architecture, not just how big they are. Each is priced for real when
+    # the catalog can (WAF); the rest are surfaced honestly as missing rather
+    # than silently dropped or invented — see engine.py and estimator.py.
+    needs_waf: bool = False  # named attacks, DDoS, or asked to be protected
+    needs_event_streaming: bool = False  # real-time processing of an event stream
+    needs_analytics: bool = False  # OLAP / dashboards over the data, not just CRUD
+    needs_search: bool = False  # full-text / faceted search over the data
+
+    #: Transactions per day, when the description states one. Drives stream
+    #: shard count, which is arithmetic rather than a tier lookup.
+    daily_transactions: int | None = None
+
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:

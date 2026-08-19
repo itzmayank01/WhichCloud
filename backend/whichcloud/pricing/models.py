@@ -16,6 +16,40 @@ HOURS_PER_MONTH = Decimal(730)
 
 
 @dataclass(frozen=True, slots=True)
+class PriceTier:
+    """One band of a graduated rate: `price_usd` applies from `begin` to `end`.
+
+    Providers publish these as beginRange/endRange on a price dimension.
+    `end` of None is the unbounded final band ("Inf" in AWS's feed).
+
+    Graduated, not cliff-edged: a workload past the boundary pays the lower
+    rate on the units below it and the higher rate only on the excess, which
+    is how AWS actually bills. Treating the top band as applying to every
+    unit is the classic way to overstate a bill several-fold.
+    """
+
+    begin: Decimal
+    end: Decimal | None
+    price_usd: Decimal
+
+    def as_dict(self) -> dict:
+        return {
+            "begin": str(self.begin),
+            "end": None if self.end is None else str(self.end),
+            "price_usd": str(self.price_usd),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> PriceTier:
+        end = data.get("end")
+        return cls(
+            begin=Decimal(str(data["begin"])),
+            end=None if end in (None, "", "Inf") else Decimal(str(end)),
+            price_usd=Decimal(str(data["price_usd"])),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class PricePoint:
     """One priced thing, in one region, from one provider."""
 
@@ -34,12 +68,41 @@ class PricePoint:
 
     attributes: dict[str, str] = field(default_factory=dict)
 
+    #: Graduated bands, when the provider publishes them. Empty means the
+    #: single flat `price_usd` applies to every unit. `price_usd` always
+    #: mirrors the first band's rate, so anything that ignores tiers still
+    #: gets the entry rate rather than nothing.
+    tiers: tuple[PriceTier, ...] = ()
+
     @property
     def monthly_usd(self) -> Decimal:
         """Cost of running this continuously for a month."""
         if self.unit == "hour":
             return self.price_usd * HOURS_PER_MONTH
         return self.price_usd
+
+    def cost_for(self, quantity: Decimal | float | int) -> Decimal:
+        """What `quantity` units actually cost, honouring graduated bands.
+
+        With no tiers this is the flat rate times the quantity. With tiers
+        each band charges only the units that fall inside it, so a free
+        allowance (a $0 first band, which is how Cognito's 50,000 MAUs and
+        SNS's first million requests are published) is genuinely free and
+        only the excess is billed.
+        """
+        amount = Decimal(str(quantity))
+        if not self.tiers:
+            return self.price_usd * amount
+
+        total = Decimal(0)
+        for tier in sorted(self.tiers, key=lambda t: t.begin):
+            if tier.end is not None and amount <= tier.begin:
+                break
+            upper = amount if tier.end is None else min(amount, tier.end)
+            billable = upper - tier.begin
+            if billable > 0:
+                total += billable * tier.price_usd
+        return total
 
     @property
     def is_arm(self) -> bool:

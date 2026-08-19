@@ -12,21 +12,50 @@ would be lying in the most convincing possible format.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from .estimator import ArchitectureSpec, Estimate, LineItem
 
 # Which line-item labels map to which node. Labels come from the estimator, so
-# this is the one place the two modules agree on vocabulary.
+# this is the one place the two modules agree on vocabulary. "Database read
+# replica" must be checked before the plain "Database" prefix it also starts
+# with, or every replica line would collapse onto the primary's node.
 _KIND_BY_PREFIX = {
     "Compute": "compute",
+    "Database read replica": "database_replica",
     "Database": "database",
     "Object storage": "storage",
     "Egress": "network",
     "Load balancer": "loadbalancer",
     "Cache": "cache",
     "Monitoring": "monitoring",
+    "WAF": "waf",
+    "Audit logging": "audit",
+    "KMS keys": "kms",
+    "NAT gateway": "nat",
+    "NAT data processing": "nat",
+    "TLS certificate": "tls",
+    "DNS hosted zone": "dns",
+    "DNS queries": "dns",
+    "Authentication": "auth",
+    "Backup storage": "backup",
+    "Event stream shards": "streaming",
+    "Event stream PUT units": "streaming",
+    "Kafka brokers": "kafka",
+    "Search nodes": "search",
+    "Search storage": "search",
+    "Warehouse nodes": "warehouse",
+    "Threat detection": "threat",
+    "Distributed tracing": "tracing",
+    "Security posture checks": "posture",
+    "VPC flow logs": "flowlogs",
+    "Fargate vCPU": "compute",
+    "Fargate memory": "compute",
+    "Database storage": "database",
+    "Load balancer LCUs": "loadbalancer",
+    "S3 write requests": "storage",
+    "S3 read requests": "storage",
 }
 
 
@@ -82,10 +111,12 @@ def _detail_for(item: LineItem, spec: ArchitectureSpec, kind: str) -> str:
         if spec.compute_duty_cycle < 1.0:
             parts.append(f"@ {spec.compute_duty_cycle:.0%}")
         return " ".join(parts)
-    if kind == "database":
+    if kind in ("database", "database_replica"):
         return item.sku
     if kind in ("storage", "network"):
         return f"{item.quantity:g} GB"
+    if kind == "waf":
+        return f"{spec.waf_rule_count} rules, {spec.waf_monthly_requests:,.0f} req/mo"
     return item.sku
 
 
@@ -116,18 +147,53 @@ _LABELS = {
     "cache": "Cache",
     "monitoring": "Monitoring",
     "database": "Database",
+    "database_replica": "Database read replica",
     "compute": "Compute",
+    "waf": "AWS WAF",
+    "audit": "Audit logging",
+    "kms": "KMS keys",
+    "nat": "NAT gateway",
+    "tls": "TLS certificate",
+    "dns": "DNS",
+    "auth": "Authentication",
+    "backup": "Backup storage",
+    "streaming": "Event stream",
+    "kafka": "Managed Kafka",
+    "search": "Search cluster",
+    "warehouse": "Data warehouse",
+    "threat": "Threat detection",
+    "tracing": "Distributed tracing",
+    "posture": "Security posture",
+    "flowlogs": "VPC flow logs",
 }
 
 _MISSING_PHRASES: tuple[tuple[str, str], ...] = (
     ("load balancer", "loadbalancer"),
     ("object storage", "storage"),
     ("monitoring", "monitoring"),
+    ("database read replica", "database_replica"),
     ("database", "database"),
     ("compute", "compute"),
     ("storage", "storage"),
     ("egress", "network"),
     ("cache", "cache"),
+    ("aws waf", "waf"),
+    ("audit logging", "audit"),
+    ("kms", "kms"),
+    ("nat gateway", "nat"),
+    ("tls certificate", "tls"),
+    ("dns hosted zone", "dns"),
+    ("authentication", "auth"),
+    ("backup storage", "backup"),
+    ("event streaming", "streaming"),
+    ("managed kafka", "kafka"),
+    ("search node", "search"),
+    ("search storage", "search"),
+    ("data warehouse", "warehouse"),
+    ("threat detection", "threat"),
+    ("distributed tracing", "tracing"),
+    ("security posture", "posture"),
+    ("vpc flow logs", "flowlogs"),
 )
 
 
@@ -160,10 +226,21 @@ def build(
             if kind:
                 touched.setdefault(kind, []).append(entry.technique.id)
 
-    # Everything that was actually priced becomes a node.
+    # Everything that was actually priced becomes a node. Most categories
+    # produce exactly one line item, but WAF prices a Web ACL, its rules and
+    # its request volume as three separate items that are still one box on
+    # the diagram -- so a kind seen again is summed onto its existing node
+    # rather than overwriting it, which would have kept only the last of the
+    # three prices and silently dropped the other two from the total.
     by_kind: dict[str, Node] = {}
     for item in estimate.items:
         kind = _kind_for(item)
+        if kind in by_kind:
+            existing = by_kind[kind]
+            by_kind[kind] = replace(
+                existing, monthly_usd=existing.monthly_usd + item.monthly_usd
+            )
+            continue
         node = Node(
             id=kind,
             label=item.label.split(" ×")[0].split(" (")[0],
@@ -194,21 +271,36 @@ def build(
     topology.nodes.append(
         Node(id="users", label="Users", kind="client", monthly_usd=Decimal(0))
     )
-    for kind in ("network", "loadbalancer", "compute", "cache", "database",
-                 "storage", "monitoring"):
+    for kind in ("waf", "network", "loadbalancer", "compute", "cache", "database",
+                 "database_replica", "storage", "monitoring", "audit", "kms",
+                 "nat", "tls", "dns", "auth", "backup",
+                 "streaming", "kafka", "search", "warehouse",
+                 "threat", "tracing", "posture", "flowlogs"):
         if kind in by_kind:
             topology.nodes.append(by_kind[kind])
 
     # ── edges: request path, then data path ──
     present = set(by_kind)
     entry = (
-        "network" if "network" in present
+        "dns" if "dns" in present
+        else "waf" if "waf" in present
+        else "network" if "network" in present
         else "loadbalancer" if "loadbalancer" in present
         else "compute" if "compute" in present
         else None
     )
     if entry:
         topology.edges.append(Edge("users", entry))
+
+    if "waf" in present:
+        nxt = (
+            "network" if "network" in present
+            else "loadbalancer" if "loadbalancer" in present
+            else "compute" if "compute" in present
+            else None
+        )
+        if nxt:
+            topology.edges.append(Edge("waf", nxt))
 
     if "network" in present:
         nxt = "loadbalancer" if "loadbalancer" in present else "compute"
@@ -226,5 +318,40 @@ def build(
         topology.edges.append(Edge("compute", "cache"))
     if "compute" in present and "database" in present:
         topology.edges.append(Edge("compute", "database"))
+    if "database" in present and "database_replica" in present:
+        topology.edges.append(Edge("database", "database_replica", "replicates"))
+    if "compute" in present and "audit" in present:
+        topology.edges.append(Edge("compute", "audit", "logs"))
+    if "database" in present and "kms" in present:
+        topology.edges.append(Edge("kms", "database", "encrypts"))
+    if "dns" in present:
+        nxt = ("waf" if "waf" in present else "network" if "network" in present
+               else "loadbalancer" if "loadbalancer" in present else None)
+        if nxt:
+            topology.edges.append(Edge("dns", nxt, "resolves"))
+    if "compute" in present and "auth" in present:
+        topology.edges.append(Edge("compute", "auth", "sign-in"))
+    if "storage" in present and "backup" in present:
+        topology.edges.append(Edge("storage", "backup", "backs up"))
+    # The async buffer sits between compute and the data stores it feeds.
+    buffer_kind = "kafka" if "kafka" in present else "streaming" if "streaming" in present else None
+    if buffer_kind and "compute" in present:
+        topology.edges.append(Edge("compute", buffer_kind, "events"))
+        if "database" in present:
+            topology.edges.append(Edge(buffer_kind, "database", "writes"))
+    for sink in ("search", "warehouse"):
+        if sink in present:
+            source = buffer_kind or ("compute" if "compute" in present else None)
+            if source:
+                topology.edges.append(Edge(source, sink, "indexes" if sink == "search" else "loads"))
+    for watcher in ("threat", "tracing", "posture", "flowlogs"):
+        if watcher in present and "compute" in present:
+            topology.edges.append(Edge(watcher, "compute", "observes"))
+    if "compute" in present and "nat" in present:
+        topology.edges.append(Edge("compute", "nat", "outbound"))
+    if "tls" in present:
+        target = "loadbalancer" if "loadbalancer" in present else "network"
+        if target in present:
+            topology.edges.append(Edge("tls", target, "certificate"))
 
     return topology

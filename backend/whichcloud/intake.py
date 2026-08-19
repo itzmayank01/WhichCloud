@@ -84,6 +84,24 @@ redundancy, or the cost of downtime.
 - arm_compatible is true unless the description names an x86-only dependency.
 - Scale: "low" is a few thousand users or an internal tool, "medium" is tens \
 of thousands, "high" is hundreds of thousands or more.
+- needs_waf is true only if the description mentions attacks, fraud on \
+incoming traffic, bots, DDoS, or explicitly asks to be protected — not for \
+ordinary auth or encryption.
+- needs_event_streaming is true only if something must react to events as \
+they happen — real-time fraud detection on a payment stream, live telemetry, \
+clickstream processing. Batch/nightly processing of the same data is false.
+- needs_analytics is true only if the description asks for dashboards, \
+reporting, or aggregation across the data (OLAP) — not for looking up a \
+single record, which is what the database is already priced for.
+- needs_search is true only if the description asks to search or filter \
+across records by content — a product catalogue search, a log search. Not \
+for fetching one record by id.
+- daily_transactions: the stated number of orders/transactions/payments per \
+day. Convert other periods (per month / 30, per year / 365). Use 0 when the \
+description gives no number — never estimate one from company size.
+- latency_target_ms: a number only if the description states or clearly \
+implies a response-time bound ("sub-second", "real-time", "under 200ms"). \
+"Sub-second" means 1000. Use 0 if nothing implies a bound.
 
 Set `clarifying_question` to the single most useful question to ask next — \
 the one whose answer would most change the recommendation. Ask about one \
@@ -118,6 +136,15 @@ class RequirementDraft(BaseModel):
     interruptible: bool = Field(description="Can the work be restarted safely?")
     high_availability: bool = Field(description="Must it survive a zone failure?")
     arm_compatible: bool = Field(description="No x86-only dependencies?")
+
+    needs_waf: bool = Field(description="Protection against attacks/DDoS/bots on incoming traffic?")
+    needs_event_streaming: bool = Field(description="Must react to events as they happen, not on a batch schedule?")
+    needs_analytics: bool = Field(description="Dashboards/reporting/aggregation over the data, not just record lookups?")
+    needs_search: bool = Field(description="Full-text or faceted search over the data?")
+    daily_transactions: int = Field(description="Transactions/orders per day if stated, else 0")
+    latency_target_ms: int = Field(
+        description="Stated or implied response-time bound in ms; 0 if none implied"
+    )
 
     provider_preference: Literal["aws", "azure", "gcp", "none"] = Field(
         description="'none' unless they named a cloud"
@@ -154,6 +181,12 @@ class RequirementDraft(BaseModel):
             interruptible=self.interruptible,
             high_availability=self.high_availability,
             arm_compatible=self.arm_compatible,
+            needs_waf=self.needs_waf,
+            needs_event_streaming=self.needs_event_streaming,
+            needs_analytics=self.needs_analytics,
+            needs_search=self.needs_search,
+            daily_transactions=self.daily_transactions or None,
+            latency_target_ms=self.latency_target_ms or None,
             provider_preference=(
                 None if self.provider_preference == "none" else self.provider_preference
             ),
@@ -332,6 +365,8 @@ _GROQ_SHAPE = """Reply with JSON in exactly this form, filled in from the text:
 "workload_type":"web","traffic_pattern":"steady","traffic_scale":"medium",
 "region":"india","budget_monthly_usd":500,"storage_gb":100,"egress_gb":50,
 "interruptible":false,"high_availability":true,"arm_compatible":true,
+"needs_waf":false,"needs_event_streaming":false,"needs_analytics":false,
+"needs_search":false,"daily_transactions":8000,"latency_target_ms":0,
 "provider_preference":"none","compliance":[],
 "assumed":["storage_gb"],"clarifying_question":"How much data do you store?"}
 
@@ -340,6 +375,12 @@ traffic_pattern: steady, spiky, unknown
 traffic_scale: low, medium, high
 provider_preference: aws, azure, gcp, none
 budget_monthly_usd: -1 when the text gives no budget.
+needs_waf: attacks/DDoS/bots/fraud on incoming traffic, not ordinary auth.
+needs_event_streaming: must react as events happen, not on a batch schedule.
+needs_analytics: dashboards/reporting/aggregation, not single-record lookups.
+needs_search: searching/filtering across records by content.
+daily_transactions: stated transactions per day; 0 if not stated.
+latency_target_ms: a stated or implied response-time bound; 0 if none.
 assumed: names of fields you had to guess. clarifying_question: "" if none."""
 
 

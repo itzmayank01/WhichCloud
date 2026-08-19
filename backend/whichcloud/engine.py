@@ -19,6 +19,7 @@ those are neither independent nor additive.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
@@ -47,6 +48,90 @@ DB_SIZING: dict[str, tuple[int, float]] = {
     "medium": (2, 8.0),
     "high": (4, 16.0),
 }
+
+# Read replicas ease read-heavy pressure -- dashboards, reporting, live
+# inventory lookups -- without adding write capacity the primary does not
+# need. Offered only on "Most reliable": a replica is a reliability/scale
+# feature, the same tier Multi-AZ already belongs to, not a default every
+# tier pays for. HEURISTIC, like the rest of this table.
+DB_READ_REPLICAS: dict[str, int] = {"low": 0, "medium": 0, "high": 2}
+
+# WAF is a security control, not a reliability tier -- a workload that named
+# an attack surface needs protecting on Cheapest as much as on Most reliable,
+# so unlike read replicas this applies to the base shape every tier inherits.
+# A starter rule set (managed groups plus a handful of custom rules) and
+# request volume scaled like everything else in this table. HEURISTIC.
+WAF_RULE_COUNT = 10
+WAF_MONTHLY_REQUESTS: dict[str, float] = {
+    "low": 1_000_000.0,
+    "medium": 10_000_000.0,
+    "high": 100_000_000.0,
+}
+
+# DNS lookups and sign-ins per traffic tier. Both feed graduated rates, so
+# these decide whether a workload sits inside a free allowance or past it --
+# which is the difference between $0 and a real line for authentication.
+# HEURISTIC, like everything else in this section.
+DNS_MONTHLY_QUERIES: dict[str, float] = {
+    "low": 1_000_000.0,
+    "medium": 10_000_000.0,
+    "high": 100_000_000.0,
+}
+AUTH_MONTHLY_ACTIVE_USERS: dict[str, float] = {
+    "low": 1_000.0,
+    "medium": 25_000.0,
+    "high": 250_000.0,
+}
+
+# ── data pipeline & analytics sizing ──
+#
+# A Kinesis shard takes 1 MB/s or 1,000 records/s inbound. Sizing from the
+# stated transaction rate is therefore arithmetic rather than a guess: the
+# shard count is ceil(peak records per second / 1000), with a floor of one
+# and headroom for the peak because retail traffic is not flat across the
+# day. What remains heuristic is the peak multiplier, not the shard maths.
+STREAM_RECORDS_PER_SHARD = 1_000
+STREAM_PEAK_MULTIPLIER = 4.0  # daily peak vs. daily mean. HEURISTIC.
+
+#: Above this daily transaction count a queue stops being optional: the
+#: database can no longer absorb write bursts directly without either
+#: dropping traffic or blocking checkout. Below it, a stream is complexity
+#: nobody needs. HEURISTIC.
+STREAMING_MIN_DAILY_TRANSACTIONS = 10_000
+
+#: Managed Kafka is preferred over Kinesis only at genuinely large volumes,
+#: where its throughput and replay guarantees earn a three-broker minimum.
+#: Below this, Kinesis costs a fraction of the same capability. HEURISTIC.
+KAFKA_MIN_DAILY_TRANSACTIONS = 1_000_000
+KAFKA_MIN_BROKERS = 3
+
+#: Search and warehouse node counts per traffic tier. Two nodes minimum for
+#: anything production, because a single search node is a single point of
+#: failure holding the index. HEURISTIC.
+SEARCH_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 3}
+WAREHOUSE_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 4}
+
+# ── threat detection & observability volumes ──
+#
+# These are production hygiene, on by default like audit logging, not a
+# budget-triggered upgrade: a system nobody is watching for intrusions is
+# not production-ready however much or little was budgeted. The volumes
+# below are HEURISTIC; the rates they multiply are fetched.
+TRACING_MONTHLY_TRACES: dict[str, float] = {
+    "low": 100_000.0,      # inside X-Ray's free allowance
+    "medium": 2_000_000.0,
+    "high": 20_000_000.0,
+}
+#: Security Hub evaluates each enabled control against each resource,
+#: continuously. Scales with estate size rather than with traffic.
+POSTURE_MONTHLY_CHECKS: dict[str, float] = {
+    "low": 50_000.0,
+    "medium": 150_000.0,
+    "high": 500_000.0,
+}
+#: Flow log volume tracks the traffic crossing the VPC, so it is derived
+#: from egress rather than from a tier lookup.
+FLOWLOG_GB_PER_EGRESS_GB = 0.10
 
 SIZING_BASIS = (
     "Sizing is heuristic: conventional starting points per traffic tier, not "
@@ -131,6 +216,40 @@ def size_for(requirement: Requirement) -> tuple[int, int, float]:
     return count, vcpu, memory
 
 
+def _wants_kafka(requirement: Requirement) -> bool:
+    """Kafka, or Kinesis? Volume decides, and only above a real threshold.
+
+    MSK's smallest sensible production cluster is three brokers -- roughly
+    $107/mo at kafka.t3.small -- against a single Kinesis shard at about
+    $13. That premium buys replay, ordering and ecosystem compatibility
+    that only start to matter at volume, so below the threshold Kinesis is
+    the honest default rather than the cheap one.
+    """
+    return (
+        requirement.needs_event_streaming
+        and (requirement.daily_transactions or 0) >= KAFKA_MIN_DAILY_TRANSACTIONS
+    )
+
+
+def stream_shards_for(requirement: Requirement) -> int:
+    """Shards needed for the stated transaction rate, or 0 if not streaming.
+
+    Derived, not guessed: a shard ingests 1,000 records/second, so the count
+    follows from the transaction volume the description actually gave. A
+    workload that never asked for streaming gets none regardless of size --
+    volume decides how big the stream is, the requirement decides whether
+    there is one at all.
+    """
+    if not requirement.needs_event_streaming:
+        return 0
+    daily = requirement.daily_transactions or 0
+    if daily < STREAMING_MIN_DAILY_TRANSACTIONS:
+        return 1  # asked for, but small: the minimum viable stream
+    mean_per_second = daily / 86_400
+    peak = mean_per_second * STREAM_PEAK_MULTIPLIER
+    return max(1, math.ceil(peak / STREAM_RECORDS_PER_SHARD))
+
+
 def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
     """The untuned shape for this workload, before any technique applies."""
     count, vcpu, memory = size_for(requirement)
@@ -153,6 +272,72 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         cache_vcpu=2 if requirement.needs_database else None,
         cache_memory_gb=2.0 if requirement.needs_database else None,
         monitored_metrics=30 if requirement.needs_database else 10,
+        waf_rule_count=WAF_RULE_COUNT if requirement.needs_waf else None,
+        waf_monthly_requests=(
+            WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
+            if requirement.needs_waf
+            else 0.0
+        ),
+        # Standard hygiene for anything running in production, not a
+        # reliability or scale feature -- every tier gets it, the same way
+        # every tier already gets monitoring.
+        audit_logging=True,
+        kms_key_count=1 if requirement.needs_database else None,
+        tls_certificate=True,
+        # One NAT gateway per zone the workload spans, so a zone failure
+        # does not strand the other zone's outbound traffic. The per-tier
+        # count is set in _shape_variants; two is the production default.
+        # Data volume is approximated by egress -- HEURISTIC, and the one
+        # part of this line that is an estimate rather than a rate.
+        nat_gateway_count=2,
+        nat_gb_processed=requirement.egress_gb,
+        # One zone for the application. Query volume scales with traffic
+        # tier; both are HEURISTIC, like the sizing above them.
+        dns_hosted_zones=1,
+        dns_monthly_queries=DNS_MONTHLY_QUERIES[requirement.traffic_scale],
+        # Sign-in only exists where there are users to sign in. Batch and
+        # ML workloads have none, so they get no auth line at all.
+        auth_monthly_active_users=(
+            AUTH_MONTHLY_ACTIVE_USERS[requirement.traffic_scale]
+            if requirement.needs_database
+            else 0.0
+        ),
+        # Backing up the object store. RDS automated backups are free
+        # within retention and are deliberately not double-counted here --
+        # see load_backup_prices.
+        backup_gb=requirement.storage_gb,
+        # ── data pipeline & analytics ──
+        # Kafka only where volume genuinely justifies it; Kinesis otherwise.
+        # Both are gated on the requirement first, so no CRUD app acquires a
+        # streaming tier it never asked for.
+        stream_shards=(0 if _wants_kafka(requirement) else stream_shards_for(requirement)),
+        stream_put_units=(
+            (requirement.daily_transactions or 0) * 30
+            if requirement.needs_event_streaming and not _wants_kafka(requirement)
+            else 0.0
+        ),
+        kafka_broker_count=KAFKA_MIN_BROKERS if _wants_kafka(requirement) else 0,
+        kafka_broker_vcpu=2 if _wants_kafka(requirement) else None,
+        kafka_broker_memory_gb=8.0 if _wants_kafka(requirement) else None,
+        search_node_count=(
+            SEARCH_NODES[requirement.traffic_scale] if requirement.needs_search else 0
+        ),
+        search_node_vcpu=2 if requirement.needs_search else None,
+        search_node_memory_gb=8.0 if requirement.needs_search else None,
+        search_storage_gb=requirement.storage_gb if requirement.needs_search else 0.0,
+        warehouse_node_count=(
+            WAREHOUSE_NODES[requirement.traffic_scale] if requirement.needs_analytics else 0
+        ),
+        warehouse_node_vcpu=2 if requirement.needs_analytics else None,
+        warehouse_node_memory_gb=16.0 if requirement.needs_analytics else None,
+        # ── threat detection & observability ──
+        # On for every tier. GuardDuty prices from the compute and database
+        # vCPUs actually present, so this scales with the architecture
+        # rather than being a flat add-on.
+        threat_detection=True,
+        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
+        flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
     )
 
 
@@ -173,16 +358,47 @@ def _shape_variants(
     Three, never one: a single "best" is always wrong for someone, and the
     first time it is wrong the user stops trusting the tool.
     """
+    replicas = (
+        DB_READ_REPLICAS[requirement.traffic_scale] if requirement.needs_database else 0
+    )
+    reliable_delta: dict = {"database_multi_az": True, "load_balancer": True}
+    reliable_rationale = (
+        "Survives an availability-zone failure: extra capacity and a "
+        "standby database."
+    )
+    reliable_tradeoffs = [
+        "The standby database roughly doubles the largest line on the bill",
+        "Still one region — a regional outage is not covered",
+    ]
+    if replicas:
+        reliable_delta["database_read_replicas"] = replicas
+        reliable_rationale += (
+            f" Adds {replicas} read replicas so dashboards and reporting "
+            "queries stop competing with checkout writes on the primary."
+        )
+        reliable_tradeoffs.append(
+            f"{replicas} read replicas run around the clock whether or not "
+            "reporting traffic is using them"
+        )
+
     return [
         (
             "Cheapest",
             "Smallest footprint that still runs the workload. Accepts a single "
             "instance and no standby database.",
-            {"compute_count": 1, "database_multi_az": False, "load_balancer": False},
+            {
+                "compute_count": 1,
+                "database_multi_az": False,
+                "load_balancer": False,
+                # One zone, so one gateway -- paying for a second in a zone
+                # nothing runs in would be waste, not resilience.
+                "nat_gateway_count": 1,
+            },
             (
                 "Single instance — a restart or crash is downtime",
                 "No load balancer, so no room to scale out under load",
                 "Single-zone database — a zone failure takes you offline",
+                "One NAT gateway — losing its zone cuts outbound traffic",
             ),
         ),
         (
@@ -197,13 +413,9 @@ def _shape_variants(
         ),
         (
             "Most reliable",
-            "Survives an availability-zone failure: extra capacity and a "
-            "standby database.",
-            {"database_multi_az": True, "load_balancer": True},
-            (
-                "The standby database roughly doubles the largest line on the bill",
-                "Still one region — a regional outage is not covered",
-            ),
+            reliable_rationale,
+            reliable_delta,
+            tuple(reliable_tradeoffs),
         ),
     ]
 
@@ -286,6 +498,12 @@ def recommend(
             )
 
         final = estimate(current, provider, dsn=dsn) if applied else baseline
+
+        # Named needs with no adapter yet. Never invented, never silently
+        # dropped either -- reported the same way an unpriceable compute
+        # shape is: as a real gap in `missing`, which is what makes the
+        # estimate `incomplete` and keeps it from winning a comparison it
+        # cannot actually deliver on. See estimator.py's own rule.
 
         options.append(
             Option(

@@ -15,7 +15,7 @@ from decimal import Decimal
 import psycopg
 from psycopg.rows import dict_row
 
-from .models import ComputeQuery, PricePoint
+from .models import ComputeQuery, PricePoint, PriceTier
 
 DSN = os.getenv(
     "WHICHCLOUD_DSN",
@@ -69,7 +69,15 @@ def upsert_prices(points: list[PricePoint], dsn: str | None = None) -> int:
             "vcpu": p.vcpu,
             "memory_gb": p.memory_gb,
             "arch": p.arch,
-            "attributes": json.dumps(p.attributes),
+            # Tiers ride inside the existing jsonb column under a reserved
+            # key rather than needing a schema migration. Reserved because
+            # `_to_point` strips it back out -- an adapter that put a plain
+            # attribute called "tiers" here would find it silently eaten.
+            "attributes": json.dumps(
+                {**p.attributes, "__tiers__": [t.as_dict() for t in p.tiers]}
+                if p.tiers
+                else p.attributes
+            ),
         }
         for p in points
     ]
@@ -83,7 +91,11 @@ def upsert_prices(points: list[PricePoint], dsn: str | None = None) -> int:
 
 def _to_point(row: dict) -> PricePoint:
     attrs = row["attributes"]
+    if not isinstance(attrs, dict):
+        attrs = json.loads(attrs or "{}")
+    tiers = tuple(PriceTier.from_dict(t) for t in attrs.pop("__tiers__", ()))
     return PricePoint(
+        tiers=tiers,
         provider=row["provider"],
         category=row["category"],
         sku=row["sku"],
@@ -94,7 +106,7 @@ def _to_point(row: dict) -> PricePoint:
         vcpu=row["vcpu"],
         memory_gb=row["memory_gb"],
         arch=row["arch"],
-        attributes=attrs if isinstance(attrs, dict) else json.loads(attrs or "{}"),
+        attributes=attrs,
     )
 
 

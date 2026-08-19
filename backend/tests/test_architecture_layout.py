@@ -35,17 +35,35 @@ def test_the_same_graph_lays_out_identically_every_time():
     assert (a.width, a.height) == (b.width, b.height)
 
 
-def test_components_are_ordered_by_how_early_their_work_happens():
-    """Edge-facing groups first, support last -- the reading order of an AWS
-    reference diagram."""
+def test_the_first_component_is_where_traffic_arrives():
+    """Ordering used to be by tier alone, which put the API component at the
+    top and the data store it queries four rows down, so its arrows crossed
+    everything between. Components are ordered by what they talk to now, but
+    the sequence still starts where a request enters."""
     lay = layout_of(
         svc("CloudWatch", "observability", component="Observability"),
         svc("Aurora", "data", component="Data"),
-        svc("Route 53", "edge", component="Edge"),
+        svc("Route 53", "edge", connects=["Aurora"], component="Edge"),
+    )
+
+    assert [c.name for c in lay.components][0] == "Edge"
+
+
+def test_connected_components_are_placed_next_to_each_other():
+    """In a hand-drawn architecture almost every line is short, and that is
+    not a drawing convention -- it is what happens when whoever drew it put
+    related things together."""
+    lay = layout_of(
+        svc("Route 53", "edge", connects=["Aurora"], component="Edge"),
+        svc("Aurora", "data", component="Data"),
+        svc("CloudWatch", "observability", component="Observability"),
+        svc("CodeBuild", "cicd", component="Delivery"),
     )
     order = [c.name for c in lay.components]
 
-    assert order == ["Edge", "Data", "Observability"]
+    # Data is what Edge talks to, so it follows immediately; the two that
+    # connect to nothing come after.
+    assert order[:2] == ["Edge", "Data"]
 
 
 def test_tier_still_orders_services_inside_a_component():

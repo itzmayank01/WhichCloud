@@ -37,6 +37,10 @@ class ArchitectureSpec:
     database_memory_gb: float | None = None
     database_multi_az: bool = False
     database_arch: str | None = None  # "arm64" to force ARM database instances
+    # Read replicas of the primary, for read-heavy load at scale. Not a
+    # separate meter on any provider -- a replica is billed as one more
+    # instance of the primary's class, which is exactly how it is priced.
+    database_read_replicas: int = 0
 
     storage_gb: float = 0.0
     egress_gb: float = 0.0
@@ -46,6 +50,72 @@ class ArchitectureSpec:
     cache_vcpu: int | None = None
     cache_memory_gb: float | None = None
     monitored_metrics: int = 0
+
+    # WAF: None means "not requested" -- a workload that never asked for
+    # protection gets no line, same as every other optional component here.
+    # Set to a rule count (0 is valid: a Web ACL with only AWS managed rule
+    # groups) to price it.
+    waf_rule_count: int | None = None
+    waf_monthly_requests: float = 0.0
+
+    # Standard production hygiene: audit logging and an encryption key.
+    # Priced for real (CloudTrail's one free trail is a genuine $0, KMS a
+    # real $1/mo/key), not assumed free by omission.
+    audit_logging: bool = False
+    kms_key_count: int | None = None
+
+    # Private subnets need a NAT gateway per zone to reach the internet.
+    # One of the largest line items people forget: two gateways is ~$82/mo
+    # before a single byte is processed.
+    nat_gateway_count: int = 0
+    nat_gb_processed: float = 0.0
+    tls_certificate: bool = False
+
+    # DNS, sign-in and backup. Each is graduated, so the quantity matters
+    # rather than just the presence of the component -- 300 staff sit
+    # inside Cognito's free allowance, 300,000 users do not.
+    dns_hosted_zones: int = 0
+    dns_monthly_queries: float = 0.0
+    auth_monthly_active_users: float = 0.0
+    backup_gb: float = 0.0
+
+    # ── data pipeline & analytics ──
+    # Each is None/0 unless the workload actually asked for it: a CRUD app
+    # with no streaming requirement must not acquire a Kafka cluster.
+    stream_shards: int = 0
+    stream_put_units: float = 0.0
+    kafka_broker_count: int = 0
+    kafka_broker_vcpu: int | None = None
+    kafka_broker_memory_gb: float | None = None
+    search_node_count: int = 0
+    search_node_vcpu: int | None = None
+    search_node_memory_gb: float | None = None
+    search_storage_gb: float = 0.0
+    warehouse_node_count: int = 0
+    warehouse_node_vcpu: int | None = None
+    warehouse_node_memory_gb: float | None = None
+
+    # ── threat detection & observability ──
+    # Production hygiene, like audit logging: a system nobody is watching
+    # for intrusions is not production-ready, whatever the budget.
+    threat_detection: bool = False
+    tracing_monthly_traces: float = 0.0
+    posture_monthly_checks: float = 0.0
+    flowlog_gb: float = 0.0
+
+    # ── metered detail the hourly rates alone leave out ──
+    # Fargate replaces the EC2 compute line when set: a task buys vCPU and
+    # memory separately, so it cannot be looked up as an instance type.
+    fargate_task_count: int = 0
+    fargate_task_vcpu: float = 0.0
+    fargate_task_memory_gb: float = 0.0
+    fargate_arm: bool = True
+    #: Provisioned database storage, billed apart from the instance hour.
+    db_storage_gb: float = 0.0
+    #: ALB capacity units -- the usage half of a balancer's bill.
+    alb_lcu: float = 0.0
+    s3_put_requests: float = 0.0
+    s3_get_requests: float = 0.0
 
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
@@ -138,6 +208,27 @@ def _metered_line(label: str, point: PricePoint, amount: float) -> LineItem:
     )
 
 
+def _tiered_line(label: str, point: PricePoint, amount: float) -> LineItem:
+    """A metered line whose rate is graduated rather than flat.
+
+    `unit_price` shows the rate actually paid on average rather than the
+    entry band's rate, so the line's own arithmetic still reconciles:
+    quantity x unit_price equals the total charged. Showing the first
+    band's rate next to a tier-aware total would look like a mistake.
+    """
+    quantity = Decimal(str(amount))
+    total = point.cost_for(quantity)
+    effective = (total / quantity) if quantity else Decimal(0)
+    return LineItem(
+        label=label,
+        sku=point.sku,
+        unit=point.unit,
+        unit_price=effective,
+        quantity=quantity,
+        monthly_usd=total,
+    )
+
+
 def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> Estimate:
     """Price one architecture on one provider."""
     region = provider_region(spec.region, provider)
@@ -193,6 +284,37 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 + (" multi-az" if spec.database_multi_az else "")
             )
 
+        # ---- read replicas ----
+        # Reuses the primary's price point when it is already the right one
+        # (single-AZ) rather than a second catalog round trip. A replica is
+        # never assumed to inherit a standby it does not have, so when the
+        # primary is Multi-AZ this looks up the plain single-AZ point instead
+        # of pricing the replica as if it were also Multi-AZ.
+        if spec.database_read_replicas > 0:
+            replica_point = (
+                point
+                if point and not spec.database_multi_az
+                else store.cheapest_database(
+                    provider=provider,
+                    region=region,
+                    min_vcpu=spec.database_vcpu,
+                    min_memory_gb=spec.database_memory_gb or 0.0,
+                    multi_az=False,
+                    arch=spec.database_arch,
+                    dsn=dsn,
+                )
+            )
+            if replica_point:
+                label = f"Database read replica × {spec.database_read_replicas}"
+                result.items.append(
+                    _hourly_line(label, replica_point, spec.database_read_replicas)
+                )
+            else:
+                result.missing.append(
+                    f"database read replica {spec.database_vcpu}vCPU/"
+                    f"{(spec.database_memory_gb or 0):g}GB"
+                )
+
     # ---- storage ----
     if spec.storage_gb > 0:
         point = _preferred(provider, region, "storage", dsn)
@@ -243,6 +365,348 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.items.append(_hourly_line("Load balancer", point, 1))
         else:
             result.missing.append("load balancer")
+
+    # ---- WAF ----
+    # Three real SKUs, not a bundled guess: a Web ACL is a flat fee, rules
+    # are a flat fee each, and inspected requests are metered. All three
+    # or none -- a Web ACL priced without its rules would understate what
+    # protection actually costs.
+    if spec.waf_rule_count is not None:
+        webacl = store.get_price(provider, region, "waf", "waf:webacl", dsn=dsn)
+        rule = store.get_price(provider, region, "waf", "waf:rule", dsn=dsn)
+        request = store.get_price(provider, region, "waf", "waf:request", dsn=dsn)
+        if webacl and rule and request:
+            result.items.append(_metered_line("WAF Web ACL", webacl, 1))
+            if spec.waf_rule_count:
+                result.items.append(
+                    _metered_line(
+                        f"WAF rules × {spec.waf_rule_count}", rule, spec.waf_rule_count
+                    )
+                )
+            if spec.waf_monthly_requests:
+                result.items.append(
+                    _metered_line(
+                        "WAF request inspection", request, spec.waf_monthly_requests
+                    )
+                )
+        else:
+            result.missing.append("AWS WAF")
+
+    # ---- audit logging ----
+    if spec.audit_logging:
+        point = store.get_price(
+            provider, region, "audit", "cloudtrail:management-events", dsn=dsn
+        )
+        if point:
+            result.items.append(_metered_line("Audit logging", point, 1))
+        else:
+            result.missing.append("audit logging")
+
+    # ---- NAT gateways ----
+    if spec.nat_gateway_count:
+        hourly = store.get_price(provider, region, "nat", "nat:gateway-hour", dsn=dsn)
+        per_gb = store.get_price(provider, region, "nat", "nat:gb-processed", dsn=dsn)
+        if hourly:
+            result.items.append(
+                _hourly_line(
+                    f"NAT gateway × {spec.nat_gateway_count}",
+                    hourly,
+                    spec.nat_gateway_count,
+                )
+            )
+            if per_gb and spec.nat_gb_processed:
+                result.items.append(
+                    _metered_line(
+                        "NAT data processing", per_gb, spec.nat_gb_processed
+                    )
+                )
+        else:
+            result.missing.append("NAT gateway")
+
+    # ---- TLS ----
+    if spec.tls_certificate:
+        point = store.get_price(provider, region, "tls", "acm:public-certificate", dsn=dsn)
+        if point:
+            result.items.append(_metered_line("TLS certificate", point, 1))
+        else:
+            result.missing.append("TLS certificate")
+
+    # ---- DNS ----
+    if spec.dns_hosted_zones:
+        zone = store.get_price(provider, region, "dns", "route53:hosted-zone", dsn=dsn)
+        queries = store.get_price(provider, region, "dns", "route53:dns-queries", dsn=dsn)
+        if zone:
+            result.items.append(
+                _tiered_line(
+                    f"DNS hosted zone × {spec.dns_hosted_zones}",
+                    zone,
+                    spec.dns_hosted_zones,
+                )
+            )
+            if queries and spec.dns_monthly_queries:
+                result.items.append(
+                    _tiered_line("DNS queries", queries, spec.dns_monthly_queries)
+                )
+        else:
+            result.missing.append("DNS hosted zone")
+
+    # ---- authentication ----
+    if spec.auth_monthly_active_users:
+        point = store.get_price(provider, region, "auth", "cognito:user-pool-mau", dsn=dsn)
+        if point:
+            result.items.append(
+                _tiered_line(
+                    "Authentication (MAU)", point, spec.auth_monthly_active_users
+                )
+            )
+        else:
+            result.missing.append("authentication")
+
+    # ---- backup ----
+    if spec.backup_gb:
+        point = store.get_price(provider, region, "backup", "backup:warm-storage", dsn=dsn)
+        if point:
+            result.items.append(_metered_line("Backup storage", point, spec.backup_gb))
+        else:
+            result.missing.append("backup storage")
+
+    # ---- event streaming (Kinesis) ----
+    if spec.stream_shards:
+        shard = store.get_price(provider, region, "streaming", "kinesis:shard-hour", dsn=dsn)
+        puts = store.get_price(
+            provider, region, "streaming", "kinesis:put-payload-units", dsn=dsn
+        )
+        if shard:
+            result.items.append(
+                _hourly_line(f"Event stream shards \u00d7 {spec.stream_shards}", shard, spec.stream_shards)
+            )
+            if puts and spec.stream_put_units:
+                result.items.append(
+                    _metered_line("Event stream PUT units", puts, spec.stream_put_units)
+                )
+        else:
+            result.missing.append("event streaming")
+
+    # ---- managed Kafka (MSK) ----
+    if spec.kafka_broker_count:
+        point = store.cheapest_compute_like(
+            provider=provider,
+            region=region,
+            category="kafka",
+            min_vcpu=spec.kafka_broker_vcpu or 2,
+            min_memory_gb=spec.kafka_broker_memory_gb or 0.0,
+            dsn=dsn,
+        )
+        if point:
+            result.items.append(
+                _hourly_line(
+                    f"Kafka brokers \u00d7 {spec.kafka_broker_count}", point, spec.kafka_broker_count
+                )
+            )
+        else:
+            result.missing.append("managed Kafka broker")
+
+    # ---- search / analytics (OpenSearch) ----
+    if spec.search_node_count:
+        point = store.cheapest_compute_like(
+            provider=provider,
+            region=region,
+            category="search",
+            min_vcpu=spec.search_node_vcpu or 2,
+            min_memory_gb=spec.search_node_memory_gb or 0.0,
+            dsn=dsn,
+        )
+        if point:
+            result.items.append(
+                _hourly_line(
+                    f"Search nodes \u00d7 {spec.search_node_count}", point, spec.search_node_count
+                )
+            )
+        else:
+            result.missing.append("search node")
+
+        if spec.search_storage_gb:
+            volume = store.get_price(
+                provider, region, "search_storage", "opensearch:gp3-storage", dsn=dsn
+            )
+            if volume:
+                result.items.append(
+                    _metered_line("Search storage", volume, spec.search_storage_gb)
+                )
+            else:
+                result.missing.append("search storage")
+
+    # ---- data warehouse (Redshift) ----
+    if spec.warehouse_node_count:
+        point = store.cheapest_compute_like(
+            provider=provider,
+            region=region,
+            category="warehouse",
+            min_vcpu=spec.warehouse_node_vcpu or 2,
+            min_memory_gb=spec.warehouse_node_memory_gb or 0.0,
+            dsn=dsn,
+        )
+        if point:
+            result.items.append(
+                _hourly_line(
+                    f"Warehouse nodes \u00d7 {spec.warehouse_node_count}",
+                    point,
+                    spec.warehouse_node_count,
+                )
+            )
+        else:
+            result.missing.append("data warehouse node")
+
+    # ---- Fargate ----
+    # Priced instead of EC2, not alongside it: a task is the compute tier.
+    if spec.fargate_task_count:
+        prefix = "fargate:arm-" if spec.fargate_arm else "fargate:"
+        vcpu_point = store.get_price(
+            provider, region, "fargate", f"{prefix}vcpu-hour", dsn=dsn
+        )
+        gb_point = store.get_price(provider, region, "fargate", f"{prefix}gb-hour", dsn=dsn)
+        if vcpu_point and gb_point:
+            hours = HOURS_PER_MONTH * Decimal(spec.fargate_task_count)
+            vcpu_qty = hours * Decimal(str(spec.fargate_task_vcpu))
+            gb_qty = hours * Decimal(str(spec.fargate_task_memory_gb))
+            label = f"Fargate vCPU × {spec.fargate_task_count} tasks"
+            result.items.append(
+                LineItem(
+                    label=label,
+                    sku=vcpu_point.sku,
+                    unit="vCPU-hour",
+                    unit_price=vcpu_point.price_usd,
+                    quantity=vcpu_qty,
+                    monthly_usd=vcpu_point.price_usd * vcpu_qty,
+                )
+            )
+            result.items.append(
+                LineItem(
+                    label=f"Fargate memory × {spec.fargate_task_count} tasks",
+                    sku=gb_point.sku,
+                    unit="GB-hour",
+                    unit_price=gb_point.price_usd,
+                    quantity=gb_qty,
+                    monthly_usd=gb_point.price_usd * gb_qty,
+                )
+            )
+        else:
+            result.missing.append("Fargate capacity")
+
+    # ---- database storage ----
+    if spec.db_storage_gb and spec.database_vcpu:
+        sku = (
+            "rds:gp3-storage-multi-az" if spec.database_multi_az else "rds:gp3-storage"
+        )
+        point = store.get_price(provider, region, "db_storage", sku, dsn=dsn)
+        if point:
+            result.items.append(
+                _metered_line("Database storage", point, spec.db_storage_gb)
+            )
+        else:
+            result.missing.append("database storage")
+
+    # ---- ALB capacity units ----
+    if spec.alb_lcu and spec.load_balancer:
+        point = store.get_price(provider, region, "lcu", "alb:lcu-hour", dsn=dsn)
+        if point:
+            result.items.append(
+                LineItem(
+                    label="Load balancer LCUs",
+                    sku=point.sku,
+                    unit="LCU-hour",
+                    unit_price=point.price_usd,
+                    quantity=HOURS_PER_MONTH * Decimal(str(spec.alb_lcu)),
+                    monthly_usd=point.price_usd * HOURS_PER_MONTH * Decimal(str(spec.alb_lcu)),
+                )
+            )
+        else:
+            result.missing.append("load balancer LCUs")
+
+    # ---- S3 requests ----
+    if spec.s3_put_requests or spec.s3_get_requests:
+        put = store.get_price(provider, region, "s3_requests", "s3:put-requests", dsn=dsn)
+        get = store.get_price(provider, region, "s3_requests", "s3:get-requests", dsn=dsn)
+        if put and spec.s3_put_requests:
+            result.items.append(_metered_line("S3 write requests", put, spec.s3_put_requests))
+        if get and spec.s3_get_requests:
+            result.items.append(_metered_line("S3 read requests", get, spec.s3_get_requests))
+        if not put or not get:
+            result.missing.append("S3 requests")
+
+    # ---- threat detection (GuardDuty) ----
+    # Priced from the vCPU count actually being monitored -- the compute
+    # tier's own size -- rather than a flat per-account guess.
+    if spec.threat_detection:
+        ec2 = store.get_price(provider, region, "threat", "guardduty:ec2-vcpu", dsn=dsn)
+        rds = store.get_price(provider, region, "threat", "guardduty:rds-vcpu", dsn=dsn)
+        fargate = store.get_price(
+            provider, region, "threat", "guardduty:fargate-vcpu", dsn=dsn
+        )
+        if ec2:
+            # Whichever compute tier is actually running. A Fargate task's
+            # vCPUs are monitored on their own meter -- counting them at
+            # zero because no EC2 instance exists would put a $0.00 line on
+            # the bill, which asserts "free" rather than "not applicable".
+            ec2_vcpus = spec.compute_count * spec.compute_vcpu
+            fargate_vcpus = spec.fargate_task_count * spec.fargate_task_vcpu
+            if ec2_vcpus:
+                result.items.append(
+                    _tiered_line("Threat detection: compute", ec2, ec2_vcpus)
+                )
+            if fargate_vcpus and fargate:
+                result.items.append(
+                    _tiered_line("Threat detection: compute", fargate, fargate_vcpus)
+                )
+            if rds and spec.database_vcpu:
+                db_vcpus = spec.database_vcpu * (1 + spec.database_read_replicas)
+                result.items.append(
+                    _tiered_line("Threat detection: database", rds, db_vcpus)
+                )
+        else:
+            result.missing.append("threat detection")
+
+    # ---- distributed tracing (X-Ray) ----
+    if spec.tracing_monthly_traces:
+        point = store.get_price(provider, region, "tracing", "xray:traces-recorded", dsn=dsn)
+        if point:
+            result.items.append(
+                _tiered_line("Distributed tracing", point, spec.tracing_monthly_traces)
+            )
+        else:
+            result.missing.append("distributed tracing")
+
+    # ---- security posture (Security Hub) ----
+    if spec.posture_monthly_checks:
+        point = store.get_price(
+            provider, region, "posture", "securityhub:compliance-check", dsn=dsn
+        )
+        if point:
+            result.items.append(
+                _tiered_line("Security posture checks", point, spec.posture_monthly_checks)
+            )
+        else:
+            result.missing.append("security posture")
+
+    # ---- VPC flow logs ----
+    if spec.flowlog_gb:
+        point = store.get_price(provider, region, "flowlogs", "vpc:flow-logs", dsn=dsn)
+        if point:
+            result.items.append(_tiered_line("VPC flow logs", point, spec.flowlog_gb))
+        else:
+            result.missing.append("VPC flow logs")
+
+    # ---- KMS ----
+    if spec.kms_key_count:
+        point = store.get_price(provider, region, "kms", "kms:key", dsn=dsn)
+        if point:
+            result.items.append(
+                _metered_line(
+                    f"KMS keys × {spec.kms_key_count}", point, spec.kms_key_count
+                )
+            )
+        else:
+            result.missing.append("KMS")
 
     return result
 

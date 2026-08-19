@@ -29,25 +29,75 @@ from whichcloud.architecture.schema import Architecture, Boundary, Service
 #:
 #: (service name, tier, what it does, where it sits)
 AWS_SERVICE: dict[str, tuple[str, str, str, str]] = {
+    "waf": ("AWS WAF", "edge", "Filters malicious requests before they reach the app", "edge"),
     "network": ("Amazon CloudFront", "edge", "Content delivery", "edge"),
     "loadbalancer": ("Elastic Load Balancing", "api", "Traffic distribution", "public"),
     "compute": ("Amazon ECS", "compute", "Application containers", "private"),
     "cache": ("Amazon ElastiCache", "data", "In-memory cache", "private"),
     "database": ("Amazon RDS", "data", "Relational database", "private"),
+    # A distinct name, not another "Amazon RDS" -- two services would collide
+    # on the same key in the `built` name->Service map below and one would
+    # silently vanish from the diagram while still being paid for.
+    "database_replica": (
+        "Amazon RDS Read Replica", "data", "Read replica for reporting and reads", "private",
+    ),
     "storage": ("Amazon S3", "data", "Object storage", "edge"),
     "monitoring": ("Amazon CloudWatch", "observability", "Metrics and logs", "edge"),
+    "audit": ("AWS CloudTrail", "observability", "Records who did what, for audit and compliance", "edge"),
+    "kms": ("AWS KMS", "security", "Encrypts data at rest", "private"),
+    "nat": ("NAT Gateway", "api", "Outbound internet for private subnets", "public"),
+    "dns": ("Amazon Route 53", "edge", "DNS resolution and health checks", "edge"),
+    "auth": ("Amazon Cognito", "security", "Staff sign-in, MFA and tokens", "edge"),
+    "backup": ("AWS Backup", "data", "Scheduled backups and retention", "private"),
+    "streaming": ("Amazon Kinesis Data Streams", "async", "Buffers transactions for real-time processing", "private"),
+    "kafka": ("Amazon MSK", "async", "Managed Kafka for high-volume event streaming", "private"),
+    "search": ("Amazon OpenSearch", "analytics", "Full-text search and live dashboards", "private"),
+    "warehouse": ("Amazon Redshift", "analytics", "Data warehouse for sales analytics", "private"),
+    "threat": ("Amazon GuardDuty", "security", "Continuous threat detection across compute and data", "edge"),
+    "tracing": ("AWS X-Ray", "observability", "Distributed tracing across the request path", "edge"),
+    "posture": ("AWS Security Hub", "security", "Continuous compliance and posture checks", "edge"),
+    "flowlogs": ("VPC Flow Logs", "observability", "Records network traffic crossing the VPC", "edge"),
+    "tls": ("AWS Certificate Manager", "security", "TLS certificates for the load balancer and CDN", "edge"),
 }
 
 #: The request path, in order. Only pairs where both ends exist are drawn, so
 #: a tier without a load balancer connects the CDN straight to compute rather
 #: than to a box that is not there.
 FLOW_ORDER: tuple[tuple[str, str], ...] = (
+    ("waf", "network"),
+    ("waf", "loadbalancer"),
+    ("waf", "compute"),
     ("network", "loadbalancer"),
     ("network", "compute"),
     ("loadbalancer", "compute"),
     ("compute", "cache"),
     ("compute", "database"),
     ("compute", "storage"),
+    ("database", "database_replica"),
+    ("compute", "audit"),
+    ("kms", "database"),
+    # Outbound, not inbound: private compute reaches the internet through
+    # the gateway, which is the opposite direction to every edge above.
+    ("compute", "nat"),
+    ("tls", "loadbalancer"),
+    ("dns", "waf"),
+    ("dns", "network"),
+    ("dns", "loadbalancer"),
+    ("compute", "auth"),
+    ("storage", "backup"),
+    ("threat", "compute"),
+    ("tracing", "compute"),
+    ("posture", "compute"),
+    ("flowlogs", "compute"),
+    # The async buffer: compute publishes events, the stores consume them.
+    ("compute", "streaming"),
+    ("compute", "kafka"),
+    ("streaming", "database"),
+    ("kafka", "database"),
+    ("streaming", "search"),
+    ("streaming", "warehouse"),
+    ("kafka", "search"),
+    ("kafka", "warehouse"),
 )
 
 
@@ -120,6 +170,35 @@ def architecture_from(
                 source_kind == "network"
                 and target_kind == "compute"
                 and "loadbalancer" in by_kind
+            ):
+                continue
+            # WAF sits in front of whichever single box the request actually
+            # meets first -- the CDN if there is one, else the load balancer,
+            # else compute directly -- not all three at once.
+            if source_kind == "waf" and target_kind == "loadbalancer" and "network" in by_kind:
+                continue
+            if source_kind == "waf" and target_kind == "compute" and (
+                "network" in by_kind or "loadbalancer" in by_kind
+            ):
+                continue
+            # Same rule for DNS, which resolves to one entry point: the WAF
+            # if traffic is filtered, else the CDN, else the load balancer.
+            if source_kind == "dns" and target_kind == "network" and "waf" in by_kind:
+                continue
+            if source_kind == "dns" and target_kind == "loadbalancer" and (
+                "waf" in by_kind or "network" in by_kind
+            ):
+                continue
+            # One async buffer, not two: where MSK is present it is the
+            # stream, and Kinesis is not also drawn feeding the same sinks.
+            if source_kind == "streaming" and "kafka" in by_kind:
+                continue
+            # Compute writes to the database THROUGH the buffer when there
+            # is one, so the direct edge would contradict the topology.
+            if (
+                source_kind == "compute"
+                and target_kind == "database"
+                and ("kafka" in by_kind or "streaming" in by_kind)
             ):
                 continue
             built[by_kind[source_kind]].connects_to.append(by_kind[target_kind])
