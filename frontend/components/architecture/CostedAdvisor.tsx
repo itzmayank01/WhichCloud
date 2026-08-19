@@ -38,10 +38,32 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
   if (options.length === 0) return null;
 
   /* An incomplete estimate is missing a component, so its total is not a
-     smaller number for the same thing -- it is the wrong number. Those can
-     never be recommended, however cheap they look. */
-  const usable = options.filter((o) => o.complete);
+     smaller number for the same thing -- it is the wrong number. Those are
+     never RANKED against complete ones, however cheap they look.
+
+     But returning null here rendered the entire answer as nothing: no
+     options, no bill, no error, just the form again. Any region the
+     catalog has not been ingested for makes every option incomplete, so a
+     description mentioning anywhere but India produced a blank page that
+     looked exactly like a broken button. Showing the options with their
+     gaps stated is worse than a complete answer and far better than
+     silence. */
+  const complete = options.filter((o) => o.complete);
+  const usable = complete.length ? complete : options;
   if (usable.length === 0) return null;
+
+  if (!complete.length) {
+    const cheapest = usable.reduce((a, b) =>
+      a.monthly_usd <= b.monthly_usd ? a : b,
+    );
+    return {
+      pick: cheapest,
+      because:
+        "Every option here is missing components the catalog cannot price " +
+        "in this region, so these totals are floors rather than answers. " +
+        "The shape is right; the figure will be higher.",
+    };
+  }
 
   const affordable = usable.filter((o) => o.within_budget !== false);
   if (affordable.length === 0) {
