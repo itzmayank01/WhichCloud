@@ -119,6 +119,19 @@ def _arch_of(instance_type: str) -> str:
     )
 
 
+def _usage_is(usage: str, key: str) -> bool:
+    """Does this usage type name `key`, with or without a region prefix?
+
+    Most regions prefix the meter -- "APS3-LCUUsage", "EUW1-NatGateway-Hours".
+    us-east-1 is AWS's default and omits it entirely: the same meter is just
+    "LCUUsage". Matching on the hyphenated suffix alone therefore found every
+    region except that one, which is why NAT gateways, load balancer capacity
+    units, S3 requests, database storage and Kinesis all came back missing in
+    us-east-1 while working everywhere else.
+    """
+    return usage == key or usage.endswith("-" + key)
+
+
 def _memory_gb(raw: str | None) -> float | None:
     """'4 GiB' -> 4.0"""
     if not raw:
@@ -642,7 +655,7 @@ def load_waf_prices(region_key: str) -> list[PricePoint]:
         usage = product.get("attributes", {}).get("usagetype", "")
         if any(tag in usage for tag in excluded):
             continue
-        suffix = next((k for k in wanted if usage.endswith(f"-{k}")), None)
+        suffix = next((k for k in wanted if _usage_is(usage, k)), None)
         if not suffix or wanted[suffix] in found:
             continue
 
@@ -697,7 +710,7 @@ def load_nat_prices(region_key: str) -> list[PricePoint]:
         # Regional gateways are a different product; match the zonal ones
         # exactly rather than by substring, which "Regional..." also passes.
         key = next(
-            (k for k in wanted if usage.endswith(f"-{k}") and "Regional" not in usage),
+            (k for k in wanted if _usage_is(usage, k) and "Regional" not in usage),
             None,
         )
         if not key or wanted[key] in found:
@@ -766,7 +779,7 @@ def load_cloudtrail_prices(region_key: str) -> list[PricePoint]:
 
     for sku, product in doc.get("products", {}).items():
         usage = product.get("attributes", {}).get("usagetype", "")
-        if usage != "FreeEventsRecorded" and not usage.endswith("-FreeEventsRecorded"):
+        if not _usage_is(usage, "FreeEventsRecorded"):
             continue
         # Not _cheapest_dimension: it treats a zero price as "not a real
         # rate" and skips it, which is right for a promotional free-tier
@@ -805,7 +818,7 @@ def load_kms_prices(region_key: str) -> list[PricePoint]:
 
     for sku, product in doc.get("products", {}).items():
         usage = product.get("attributes", {}).get("usagetype", "")
-        if not usage.endswith("-KMS-Keys"):
+        if not _usage_is(usage, "KMS-Keys"):
             continue
         found = _cheapest_dimension(doc, sku)
         if not found:
@@ -884,7 +897,7 @@ def load_streaming_prices(region_key: str) -> list[PricePoint]:
 
     for sku, product in doc.get("products", {}).items():
         usage = product.get("attributes", {}).get("usagetype", "")
-        key = next((k for k in wanted if usage.endswith(f"-{k}")), None)
+        key = next((k for k in wanted if _usage_is(usage, k)), None)
         if not key or wanted[key][0] in found:
             continue
         dim = _cheapest_dimension(doc, sku)
@@ -1125,7 +1138,7 @@ def load_threat_prices(region_key: str) -> list[PricePoint]:
 
     for sku, product in doc.get("products", {}).items():
         usage = product.get("attributes", {}).get("usagetype", "")
-        key = next((k for k in wanted if usage.endswith(f"-{k}")), None)
+        key = next((k for k in wanted if _usage_is(usage, k)), None)
         if not key or wanted[key][0] in found:
             continue
         tiers, unit = _tiers_for(doc, sku)
@@ -1279,7 +1292,7 @@ def load_fargate_prices(region_key: str) -> list[PricePoint]:
         usage = product.get("attributes", {}).get("usagetype", "")
         # Exact tail match: "Fargate-Windows-vCPU-Hours:perCPU" and the
         # ephemeral-storage meter would both pass a substring test.
-        key = next((k for k in wanted if usage.endswith(f"-{k}")), None)
+        key = next((k for k in wanted if _usage_is(usage, k)), None)
         if not key or wanted[key][0] in found:
             continue
         dim = _cheapest_dimension(doc, sku)
@@ -1321,7 +1334,7 @@ def load_db_storage_prices(region_key: str) -> list[PricePoint]:
         if product.get("productFamily") != "Database Storage":
             continue
         usage = product.get("attributes", {}).get("usagetype", "")
-        key = next((k for k in wanted if usage.endswith(f"-{k}")), None)
+        key = next((k for k in wanted if _usage_is(usage, k)), None)
         if not key or wanted[key][0] in found:
             continue
         dim = _cheapest_dimension(doc, sku)
@@ -1355,7 +1368,10 @@ def load_lcu_prices(region_key: str) -> list[PricePoint]:
 
     for sku, product in doc.get("products", {}).items():
         attrs = product.get("attributes", {})
-        if not attrs.get("usagetype", "").endswith("-LCUUsage"):
+        usage = attrs.get("usagetype", "")
+        # Outposts publishes its own LCU meter at a different rate, and
+        # "Reserved" is prepaid capacity rather than the on-demand rate.
+        if not _usage_is(usage, "LCUUsage") or "Outposts" in usage:
             continue
         if attrs.get("operation") != "LoadBalancing:Application":
             continue
@@ -1397,7 +1413,7 @@ def load_s3_request_prices(region_key: str) -> list[PricePoint]:
         if product.get("productFamily") != "API Request":
             continue
         usage = product.get("attributes", {}).get("usagetype", "")
-        key = next((k for k in wanted if usage.endswith(f"-{k}")), None)
+        key = next((k for k in wanted if _usage_is(usage, k)), None)
         if not key or wanted[key][0] in found:
             continue
         dim = _cheapest_dimension(doc, sku)
@@ -1431,7 +1447,7 @@ def load_secrets_prices(region_key: str) -> list[PricePoint]:
 
     for sku, product in doc.get("products", {}).items():
         usage = product.get("attributes", {}).get("usagetype", "")
-        if not usage.endswith("-AWSSecretsManager-Secrets"):
+        if not _usage_is(usage, "AWSSecretsManager-Secrets"):
             continue
         found = _cheapest_dimension(doc, sku)
         if not found:
@@ -1579,9 +1595,7 @@ def load_backup_prices(region_key: str) -> list[PricePoint]:
         usage = product.get("attributes", {}).get("usagetype", "")
         # Exact: cross-region copies carry a source prefix, and every
         # air-gapped variant carries the -LAGV suffix.
-        if usage != "APS3-WarmStorage-ByteHrs-S3" and not usage.endswith(
-            "-WarmStorage-ByteHrs-S3"
-        ):
+        if not _usage_is(usage, "WarmStorage-ByteHrs-S3"):
             continue
         found = _cheapest_dimension(doc, sku)
         if not found:
