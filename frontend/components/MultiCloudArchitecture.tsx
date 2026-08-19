@@ -148,14 +148,24 @@ export function MultiCloudArchitecture({
   /** The single complete estimate, when it is the only one we can price. */
   const soleComplete = !comparable && complete.length === 1 ? complete[0] : null;
 
-  /* Like-for-like, so the clouds can still be compared while adapters for
-     the rest are missing. Raw totals cannot be: one cloud pricing 22
-     components against another pricing 7 makes the second look cheaper
-     for a reason that has nothing to do with its rates. This sums each
-     over the services they ALL price and says how many that was. */
-  const likeForLike = comparableTotals(
-    Object.fromEntries(providers.map((p) => [p, [byProvider[p]]])),
-  );
+  /* Like-for-like, but ONLY while some cloud is still incomplete.
+     
+     It exists because raw totals cannot be compared when one cloud prices
+     twenty-two components and another prices seven -- the second looks
+     cheaper for a reason that has nothing to do with its rates.
+
+     Once every cloud prices every capability the raw totals ARE the
+     comparison, and this becomes actively wrong: it intersects on label
+     text, and clouds legitimately name the same capability differently
+     (AWS splits threat detection into compute and database lines, GCP
+     bills one). Left on, it silently dropped six capabilities that all
+     three do price and under-reported every cloud. */
+  const allComplete = complete.length === providers.length;
+  const likeForLike = allComplete
+    ? []
+    : comparableTotals(
+        Object.fromEntries(providers.map((p) => [p, [byProvider[p]]])),
+      );
   const likeForLikeBy = Object.fromEntries(
     likeForLike.map((r) => [r.provider, r]),
   );
