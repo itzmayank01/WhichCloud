@@ -21,7 +21,8 @@ const LABEL: Record<string, string> = {
 export async function HeroShowcaseSection() {
   try {
     const [compare, techs, health] = await Promise.all([
-      api.compare({
+      api.compare(
+        {
         /* Deliberately not the workload the comparison section further down
            prices. Both were showing the same online shop, so the same three
            totals appeared twice on one page and the second set looked like a
@@ -33,7 +34,11 @@ export async function HeroShowcaseSection() {
         traffic_scale: "high",
         storage_gb: 2000,
         egress_gb: 5000,
-      }),
+        },
+        /* Cached: the landing page asks this same fixed question on every
+           visit, so one engine run per five minutes serves everyone. */
+        300,
+      ),
       api.techniques().catch(() => ({ count: 0, techniques: [] })),
       api.health().catch(() => ({ prices: 0, providers: [] as string[] })),
     ]);
@@ -43,11 +48,27 @@ export async function HeroShowcaseSection() {
         id,
         option: options.find((o) => o.label === "Balanced") ?? options[0],
       }))
-      .filter((r) => r.option?.complete);
+      .filter((r) => r.option);
 
+    /* Two gates, because the panels make two different claims.
+     *
+     * The chart compares clouds on the services they ALL price (see
+     * `shared` below), so a cloud missing an auxiliary component we only
+     * have an AWS adapter for still belongs on it -- excluding it would
+     * hide a real comparison rather than protect anyone. This section used
+     * to require every cloud to be complete, and the moment AWS gained
+     * eleven components the others cannot price, only one cloud qualified
+     * and the whole showcase silently rendered nothing.
+     *
+     * The itemised panel is a bill, so it still comes from a complete
+     * estimate only: a total missing its database is not a cheaper answer,
+     * it is the wrong one. */
     if (balanced.length < 2) return null;
 
-    const cheapest = balanced.reduce((a, b) =>
+    const whole = balanced.filter((r) => r.option.complete);
+    if (whole.length === 0) return null;
+
+    const cheapest = whole.reduce((a, b) =>
       a.option.monthly_usd <= b.option.monthly_usd ? a : b,
     );
     const win = cheapest.option;
@@ -57,7 +78,7 @@ export async function HeroShowcaseSection() {
        cheapest cloud happens to apply one and another applies three, and a
        panel headed "ways to pay less" showing a single row undersells work
        that genuinely happened. */
-    const richest = balanced.reduce((a, b) =>
+    const richest = whole.reduce((a, b) =>
       (b.option.applied?.length ?? 0) > (a.option.applied?.length ?? 0) ? b : a,
     );
 

@@ -108,6 +108,21 @@ KAFKA_MIN_BROKERS = 3
 #: Search and warehouse node counts per traffic tier. Two nodes minimum for
 #: anything production, because a single search node is a single point of
 #: failure holding the index. HEURISTIC.
+#: Requests a single Fargate task serves per second before it needs help.
+#: Conservative for a CRUD/billing workload on 1 vCPU. HEURISTIC -- the
+#: task count derived from it is arithmetic, this number is judgement.
+FARGATE_RPS_PER_TASK = 25.0
+#: Two minimum, always: one task is a single point of failure, and a
+#: service that must survive a zone failure cannot run in one zone.
+FARGATE_MIN_TASKS = 2
+#: How much of the day sits at peak, and how much busier the peak is than
+#: the daily mean. Retail concentrates sharply into evening trading.
+PEAK_HOURS_PER_DAY = 4.0
+PEAK_MULTIPLIER = 4.0
+#: One secret for the database credential; more when there is a stream or
+#: warehouse holding its own connection details.
+BASE_SECRET_COUNT = 1
+
 SEARCH_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 3}
 WAREHOUSE_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 4}
 
@@ -214,6 +229,32 @@ def size_for(requirement: Requirement) -> tuple[int, int, float]:
         count = max(1, count // 2)
 
     return count, vcpu, memory
+
+
+def fargate_tasks_for(requirement: Requirement) -> tuple[int, int]:
+    """Base and peak task counts for the stated transaction volume.
+
+    Arithmetic where the description gives a number: a stated daily
+    transaction count becomes a mean rate, a peak multiple of that rate,
+    and the task count needed to serve it. Two is the floor regardless,
+    because one task cannot survive losing its zone -- which is a
+    requirement the description states, not a budget the engine is
+    spending.
+
+    Returns (base, peak). They are equal when nothing implies a peak.
+    """
+    daily = requirement.daily_transactions or 0
+    if not daily:
+        base = max(FARGATE_MIN_TASKS, BASE_SIZING[requirement.traffic_scale][0])
+        return base, base
+
+    mean_rps = daily / 86_400
+    peak_rps = mean_rps * PEAK_MULTIPLIER
+    needed = math.ceil(peak_rps / FARGATE_RPS_PER_TASK)
+
+    base = max(FARGATE_MIN_TASKS, math.ceil(mean_rps / FARGATE_RPS_PER_TASK))
+    peak = max(base, needed)
+    return base, peak
 
 
 def _wants_kafka(requirement: Requirement) -> bool:
@@ -334,6 +375,12 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # On for every tier. GuardDuty prices from the compute and database
         # vCPUs actually present, so this scales with the architecture
         # rather than being a flat add-on.
+        # Fargate is opt-in, not the default compute tier. Setting it here
+        # while `compute_count` still holds EC2 instances billed BOTH --
+        # about $42/mo of compute nobody asked for -- so a caller choosing
+        # Fargate must zero compute_count. `fargate_tasks_for` derives the
+        # base and peak counts; see scripts/ for the selecting call.
+        secret_count=BASE_SECRET_COUNT if requirement.needs_database else 0,
         threat_detection=True,
         tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
         posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
@@ -440,6 +487,49 @@ def _what_changed(with_it: Estimate, without_it: Estimate) -> str:
     return without_it.items[0].sku if without_it.items else ""
 
 
+def _apply_techniques(
+    spec: ArchitectureSpec,
+    matched: list[Match],
+    provider: str,
+    dsn: str | None,
+) -> tuple[ArchitectureSpec, list[AppliedTechnique]]:
+    """Fold every priceable technique in, measuring what each one saved.
+
+    Applied one at a time and priced against that technique's own
+    counterfactual, so a later technique measures on top of the earlier
+    ones and the savings add without double-counting. A technique that
+    cannot be priced on both sides, or that turns out to cost more, is
+    dropped rather than claimed.
+    """
+    current = spec
+    applied: list[AppliedTechnique] = []
+
+    for match in (m for m in matched if m.technique.is_priceable):
+        with_it = replace(current, **match.technique.effect)
+        without_it = replace(current, **match.technique.counterfactual)
+
+        priced_with = estimate(with_it, provider, dsn=dsn)
+        priced_without = estimate(without_it, provider, dsn=dsn)
+
+        if not priced_with.items or not priced_without.items:
+            continue  # cannot measure it, so do not claim it
+
+        saved = priced_without.total_monthly - priced_with.total_monthly
+        if saved <= 0:
+            continue  # an "optimization" that costs more is not one
+
+        current = with_it
+        applied.append(
+            AppliedTechnique(
+                match=match,
+                saved=saved,
+                counterfactual_sku=_what_changed(priced_with, priced_without),
+            )
+        )
+
+    return current, applied
+
+
 def recommend(
     requirement: Requirement,
     provider: str = "aws",
@@ -467,35 +557,7 @@ def recommend(
         )
         advisory = [m for m in matched if not m.technique.is_priceable]
 
-        # Apply each priceable technique one at a time, pricing the result
-        # against that technique's counterfactual. Sequential application means
-        # a later technique measures on top of the earlier ones, so savings add
-        # up without double-counting.
-        current = spec
-        applied: list[AppliedTechnique] = []
-
-        for match in (m for m in matched if m.technique.is_priceable):
-            with_it = replace(current, **match.technique.effect)
-            without_it = replace(current, **match.technique.counterfactual)
-
-            priced_with = estimate(with_it, provider, dsn=dsn)
-            priced_without = estimate(without_it, provider, dsn=dsn)
-
-            if not priced_with.items or not priced_without.items:
-                continue  # cannot measure it, so do not claim it
-
-            saved = priced_without.total_monthly - priced_with.total_monthly
-            if saved <= 0:
-                continue  # an "optimization" that costs more is not one
-
-            current = with_it
-            applied.append(
-                AppliedTechnique(
-                    match=match,
-                    saved=saved,
-                    counterfactual_sku=_what_changed(priced_with, priced_without),
-                )
-            )
+        current, applied = _apply_techniques(spec, matched, provider, dsn)
 
         final = estimate(current, provider, dsn=dsn) if applied else baseline
 

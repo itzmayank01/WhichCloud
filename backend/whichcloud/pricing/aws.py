@@ -50,9 +50,15 @@ BULK_SERVICES = {
     "tracing": "AWSXRay",
     "posture": "AWSSecurityHub",
     "fargate": "AmazonECS",
+    "secrets": "AWSSecretsManager",
 }
 
 CACHE_DIR = Path(os.getenv("WHICHCLOUD_CACHE", Path.home() / ".cache" / "whichcloud"))
+
+#: Suffix for a download still in flight. Every fetch writes here and only
+#: renames on success, so an interrupted download can never be mistaken for
+#: a complete catalog on the next run.
+PARTIAL_SUFFIX = ".part"
 
 _MEM_RE = re.compile(r"([\d.]+)")
 
@@ -84,6 +90,24 @@ def _decimal_allow_zero(value: object) -> Decimal | None:
     return d if d >= 0 else None
 
 
+#: A Graviton family is named <letters><digit>g, optionally with a suffix:
+#: r6g, r7gd, c8g, m7g, i8ge. Families ending in another letter -- m7i, c7i,
+#: r7i, i4i -- are Intel or AMD.
+_GRAVITON_FAMILY = re.compile(r"^[a-z]+\d+g")
+
+
+def _arch_of(instance_type: str) -> str:
+    """x86_64 or arm64, from the family token of an instance type.
+
+    Matching on the family rather than on a substring like ".r6g.": that
+    form works for `cache.t4g.medium`, where the family sits between dots,
+    but silently never matches `r6g.large.search`, where it leads. Every
+    ARM OpenSearch node was labelled x86_64 for exactly that reason.
+    """
+    family = instance_type.split(".")[0]
+    return "arm64" if _GRAVITON_FAMILY.match(family) else "x86_64"
+
+
 def _memory_gb(raw: str | None) -> float | None:
     """'4 GiB' -> 4.0"""
     if not raw:
@@ -105,7 +129,7 @@ def download_instances(force: bool = False) -> Path:
     if dest.exists() and not force:
         return dest
 
-    tmp = dest.with_suffix(".part")
+    tmp = dest.with_suffix(PARTIAL_SUFFIX)
     with httpx.stream("GET", INSTANCES_URL, timeout=600.0, follow_redirects=True) as r:
         r.raise_for_status()
         with tmp.open("wb") as fh:
@@ -272,7 +296,7 @@ def download_bulk(service: str, region_key: str, force: bool = False) -> Path:
         raise ValueError(f"{service} is not published for {region}")
 
     url = BULK_BASE + regions[region]["currentVersionUrl"]
-    tmp = dest.with_suffix(".part")
+    tmp = dest.with_suffix(PARTIAL_SUFFIX)
     with httpx.stream("GET", url, timeout=900.0, follow_redirects=True) as r:
         r.raise_for_status()
         with gzip.open(tmp, "wb") as fh:
@@ -810,7 +834,7 @@ def _download_global(service: str, force: bool = False) -> Path:
         raise ValueError(f"{service} publishes no global (aws-other) feed")
 
     url = BULK_BASE + regions["aws-other"]["currentVersionUrl"]
-    tmp = dest.with_suffix(".part")
+    tmp = dest.with_suffix(PARTIAL_SUFFIX)
     with httpx.stream("GET", url, timeout=900.0, follow_redirects=True) as r:
         r.raise_for_status()
         with gzip.open(tmp, "wb") as fh:
@@ -918,6 +942,52 @@ def load_kafka_prices(region_key: str) -> list[PricePoint]:
     return points
 
 
+def _search_node_point(doc: dict, sku: str, attrs: dict, region: str) -> PricePoint | None:
+    """One OpenSearch data node, or None if it is not a priced node type."""
+    instance = attrs.get("instanceType", "")
+    if not instance or not instance.endswith(".search"):
+        return None
+    dim = _cheapest_dimension(doc, sku)
+    if not dim:
+        return None
+    price, unit = dim
+    vcpu = attrs.get("vcpu", "")
+    return PricePoint(
+        provider="aws",
+        category="search",
+        sku=instance,
+        name=f"OpenSearch {instance}",
+        region=region,
+        unit=_UNITS.get(unit, unit),
+        price_usd=price,
+        vcpu=int(vcpu) if vcpu.isdigit() else None,
+        # memoryGib, not memory: this feed names it differently from EC2's,
+        # and reading the wrong key returns None, which silently excludes
+        # every node from size queries.
+        memory_gb=_memory_gb(attrs.get("memoryGib")),
+        arch=_arch_of(instance),
+    )
+
+
+def _search_volume_point(doc: dict, sku: str, attrs: dict, region: str) -> PricePoint | None:
+    """The GP3 volume OpenSearch stores its indexes on, or None."""
+    if attrs.get("storageMedia") != "GP3":
+        return None
+    dim = _cheapest_dimension(doc, sku)
+    if not dim:
+        return None
+    price, unit = dim
+    return PricePoint(
+        provider="aws",
+        category="search_storage",
+        sku="opensearch:gp3-storage",
+        name="OpenSearch GP3 storage",
+        region=region,
+        unit=_UNITS.get(unit, unit),
+        price_usd=price,
+    )
+
+
 def load_search_prices(region_key: str) -> list[PricePoint]:
     """OpenSearch data nodes, plus the EBS volume they store indexes on.
 
@@ -929,60 +999,26 @@ def load_search_prices(region_key: str) -> list[PricePoint]:
     GP3 is taken as the volume default because it is the current
     general-purpose type; GP2, magnetic and provisioned-IOPS are all still
     published and would each be a different, non-default choice.
+
+    The two families are read by their own helpers rather than by branching
+    inside one loop -- they share nothing but the file they come from.
     """
     region = provider_region(region_key, "aws")
     doc = _load_bulk(BULK_SERVICES["search"], region_key)
 
+    readers = {
+        "Amazon OpenSearch Service Instance": _search_node_point,
+        "Amazon OpenSearch Service Volume": _search_volume_point,
+    }
+
     points: list[PricePoint] = []
     for sku, product in doc.get("products", {}).items():
-        attrs = product.get("attributes", {})
-        family = product.get("productFamily", "")
-
-        if family == "Amazon OpenSearch Service Instance":
-            instance = attrs.get("instanceType", "")
-            if not instance or not instance.endswith(".search"):
-                continue
-            dim = _cheapest_dimension(doc, sku)
-            if not dim:
-                continue
-            price, unit = dim
-            vcpu = attrs.get("vcpu", "")
-            points.append(
-                PricePoint(
-                    provider="aws",
-                    category="search",
-                    sku=instance,
-                    name=f"OpenSearch {instance}",
-                    region=region,
-                    unit=_UNITS.get(unit, unit),
-                    price_usd=price,
-                    vcpu=int(vcpu) if vcpu.isdigit() else None,
-                    # memoryGib, not memory: this feed names it differently
-                    # from EC2's, and reading the wrong key returns None,
-                    # which silently excludes every node from size queries.
-                    memory_gb=_memory_gb(attrs.get("memoryGib")),
-                    arch="arm64" if ".r6g." in instance or ".m6g." in instance else "x86_64",
-                )
-            )
-
-        elif family == "Amazon OpenSearch Service Volume":
-            if attrs.get("storageMedia") != "GP3":
-                continue
-            dim = _cheapest_dimension(doc, sku)
-            if not dim:
-                continue
-            price, unit = dim
-            points.append(
-                PricePoint(
-                    provider="aws",
-                    category="search_storage",
-                    sku="opensearch:gp3-storage",
-                    name="OpenSearch GP3 storage",
-                    region=region,
-                    unit=_UNITS.get(unit, unit),
-                    price_usd=price,
-                )
-            )
+        reader = readers.get(product.get("productFamily", ""))
+        if not reader:
+            continue
+        point = reader(doc, sku, product.get("attributes", {}), region)
+        if point:
+            points.append(point)
     return points
 
 
@@ -1371,6 +1407,40 @@ def load_s3_request_prices(region_key: str) -> list[PricePoint]:
     return list(found.values())
 
 
+def load_secrets_prices(region_key: str) -> list[PricePoint]:
+    """Secrets Manager, per stored secret per month.
+
+    API request charges are excluded: at $0.05 per 10,000 calls an
+    application fetching its credentials on startup and on rotation costs
+    fractions of a cent, and modelling it would need a call-rate guess to
+    produce a number smaller than the rounding on every other line.
+    """
+    region = provider_region(region_key, "aws")
+    doc = _load_bulk(BULK_SERVICES["secrets"], region_key)
+
+    for sku, product in doc.get("products", {}).items():
+        usage = product.get("attributes", {}).get("usagetype", "")
+        if not usage.endswith("-AWSSecretsManager-Secrets"):
+            continue
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+        return [
+            PricePoint(
+                provider="aws",
+                category="secrets",
+                sku="secretsmanager:secret",
+                name="Secrets Manager stored secret",
+                region=region,
+                unit=_UNITS.get(unit, unit),
+                price_usd=price,
+                attributes={"excludes": "API requests ($0.05 per 10k)"},
+            )
+        ]
+    return []
+
+
 def load_dns_prices(region_key: str) -> list[PricePoint]:
     """Route 53 hosted zones and DNS queries, both graduated.
 
@@ -1552,6 +1622,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_db_storage_prices,
         load_lcu_prices,
         load_s3_request_prices,
+        load_secrets_prices,
     ):
         try:
             points.extend(loader(region_key))

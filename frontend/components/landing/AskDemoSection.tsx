@@ -1,5 +1,5 @@
 import { AskDemo, type Scenario } from "@/components/landing/AskDemo";
-import { api, money } from "@/lib/api";
+import { api, comparableTotals, money } from "@/lib/api";
 
 /**
  * Builds the demo's scenarios out of the live catalog.
@@ -58,31 +58,28 @@ const QUESTIONS = [
 
 async function build(q: (typeof QUESTIONS)[number]): Promise<Scenario | null> {
   try {
-    const compare = await api.compare(q.body);
-    const priced = Object.entries(compare.clouds)
-      .map(([provider, options]) => ({
-        provider,
-        option: options.find((o) => o.label === "Balanced") ?? options[0],
-      }))
-      .filter((r) => r.option?.complete);
+    /* Cached: the landing page asks these same fixed questions on every
+       visit, so one engine run per five minutes serves everyone. */
+    const compare = await api.compare(q.body, 300);
 
+    /* Compared on the services every cloud prices, not on raw totals.
+       Requiring every cloud to be complete used to hide this section
+       entirely the moment AWS gained components the others have no
+       adapter for; ranking the raw totals instead would have been worse,
+       since a cloud missing eleven components looks cheapest precisely
+       because it is missing them. */
+    const priced = comparableTotals(compare.clouds);
     if (priced.length < 2) return null;
-
-    const cheapest = priced.reduce((a, b) =>
-      a.option.monthly_usd <= b.option.monthly_usd ? a : b,
-    );
 
     return {
       question: q.question,
       chips: q.chips,
-      rows: priced
-        .sort((a, b) => a.option.monthly_usd - b.option.monthly_usd)
-        .map((r) => ({
-          provider: r.provider,
-          label: LABELS[r.provider] ?? r.provider,
-          monthly: `${money(r.option.monthly_usd, 0)}/mo`,
-          cheapest: r.provider === cheapest.provider,
-        })),
+      rows: priced.map((r, i) => ({
+        provider: r.provider,
+        label: LABELS[r.provider] ?? r.provider,
+        monthly: `${money(r.total, 0)}/mo`,
+        cheapest: i === 0,
+      })),
     };
   } catch {
     return null;

@@ -116,7 +116,8 @@ def test_audit_logging_is_present_and_genuinely_free():
 def test_kms_key_only_where_there_is_a_database_to_encrypt():
     with_db = reliable(Requirement(goal="shop", workload_type="web"))
     kms = [i for i in with_db.estimate.items if "KMS" in i.label]
-    assert len(kms) == 1 and kms[0].monthly_usd > 0
+    assert len(kms) == 1
+    assert kms[0].monthly_usd > 0
 
     without_db = reliable(Requirement(goal="job", workload_type="batch"))
     assert not any("KMS" in i.label for i in without_db.estimate.items)
@@ -259,3 +260,56 @@ def test_the_diagram_total_equals_the_bill_total():
     )
     graph = topo.build(option.spec, option.estimate, option.applied)
     assert graph.total_monthly == option.estimate.total_monthly
+
+
+# ── compute sizing & arch detection ─────────────────────────────────────
+
+
+def test_fargate_task_counts_are_derived_from_stated_volume():
+    """Arithmetic where the description gives a number, with a floor of two
+    because one task cannot survive losing its zone."""
+    quiet = Requirement(goal="x", daily_transactions=8_000)
+    assert engine.fargate_tasks_for(quiet) == (2, 2)
+
+    # 1.5M/day is ~17 rps mean, x4 peak = ~69 rps -> 3 tasks at peak.
+    busy = Requirement(goal="x", daily_transactions=1_500_000)
+    base, peak = engine.fargate_tasks_for(busy)
+    assert base == 2
+    assert peak == 3
+
+    # No stated volume still gets the availability floor, never one task.
+    assert engine.fargate_tasks_for(Requirement(goal="x"))[0] >= 2
+
+
+def test_fargate_is_opt_in_not_a_second_compute_tier():
+    """REGRESSION-GUARD: setting Fargate while compute_count still held EC2
+    instances billed both, roughly $42/mo of compute nobody asked for."""
+    spec = engine.base_spec(Requirement(goal="x", workload_type="web"), "Balanced")
+    assert spec.fargate_task_count == 0
+    assert spec.compute_count > 0
+
+
+def test_graviton_families_are_detected_by_family_not_substring():
+    """REGRESSION-GUARD: the old check looked for '.r6g.', which never
+    matches 'r6g.large.search' because the family leads rather than sits
+    between dots -- so every ARM OpenSearch node was labelled x86_64."""
+    from whichcloud.pricing.aws import _arch_of
+
+    for arm in ("r6g.large.search", "m7g.xlarge.search", "c8g.large.search",
+                "r7gd.large.search", "i8ge.large.search"):
+        assert _arch_of(arm) == "arm64", arm
+    # Intel/AMD families end in a letter that is not 'g'.
+    for x86 in ("m7i.large.search", "c7i.large.search", "i4i.large.search",
+                "t3.small.search", "m5.large.search"):
+        assert _arch_of(x86) == "x86_64", x86
+
+
+@needs_db
+def test_secrets_are_priced_where_there_is_a_database():
+    option = reliable(Requirement(goal="shop", workload_type="web"))
+    secrets = [i for i in option.estimate.items if i.label.startswith("Secrets")]
+    assert len(secrets) == 1
+    assert secrets[0].monthly_usd > 0
+
+    batch = reliable(Requirement(goal="job", workload_type="batch"))
+    assert not any(i.label.startswith("Secrets") for i in batch.estimate.items)

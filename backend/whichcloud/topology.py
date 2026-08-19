@@ -197,6 +197,18 @@ _MISSING_PHRASES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _first_present(present: set[str], *candidates: str) -> str | None:
+    """The first of `candidates` that exists in the diagram, or None.
+
+    The request path is a chain of optional hops: traffic meets DNS, then a
+    WAF, then a CDN, then a load balancer, then compute -- but any of them
+    may be absent, and each hop connects to the next one that IS there.
+    Written inline that was a chain of ternaries per hop, repeated four
+    times, which is exactly as hard to read as it sounds.
+    """
+    return next((kind for kind in candidates if kind in present), None)
+
+
 def _kind_for_missing(missing: str) -> str | None:
     text = missing.lower()
     for phrase, kind in _MISSING_PHRASES:
@@ -281,24 +293,14 @@ def build(
 
     # ── edges: request path, then data path ──
     present = set(by_kind)
-    entry = (
-        "dns" if "dns" in present
-        else "waf" if "waf" in present
-        else "network" if "network" in present
-        else "loadbalancer" if "loadbalancer" in present
-        else "compute" if "compute" in present
-        else None
+    entry = _first_present(
+        present, "dns", "waf", "network", "loadbalancer", "compute"
     )
     if entry:
         topology.edges.append(Edge("users", entry))
 
     if "waf" in present:
-        nxt = (
-            "network" if "network" in present
-            else "loadbalancer" if "loadbalancer" in present
-            else "compute" if "compute" in present
-            else None
-        )
+        nxt = _first_present(present, "network", "loadbalancer", "compute")
         if nxt:
             topology.edges.append(Edge("waf", nxt))
 
@@ -325,8 +327,7 @@ def build(
     if "database" in present and "kms" in present:
         topology.edges.append(Edge("kms", "database", "encrypts"))
     if "dns" in present:
-        nxt = ("waf" if "waf" in present else "network" if "network" in present
-               else "loadbalancer" if "loadbalancer" in present else None)
+        nxt = _first_present(present, "waf", "network", "loadbalancer")
         if nxt:
             topology.edges.append(Edge("dns", nxt, "resolves"))
     if "compute" in present and "auth" in present:
@@ -334,7 +335,7 @@ def build(
     if "storage" in present and "backup" in present:
         topology.edges.append(Edge("storage", "backup", "backs up"))
     # The async buffer sits between compute and the data stores it feeds.
-    buffer_kind = "kafka" if "kafka" in present else "streaming" if "streaming" in present else None
+    buffer_kind = _first_present(present, "kafka", "streaming")
     if buffer_kind and "compute" in present:
         topology.edges.append(Edge("compute", buffer_kind, "events"))
         if "database" in present:

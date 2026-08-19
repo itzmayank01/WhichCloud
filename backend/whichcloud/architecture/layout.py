@@ -22,6 +22,7 @@ iterates a set.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
 
 from whichcloud.architecture.graph import TIER_ORDER, ArchitectureGraph, GraphNode
 from whichcloud.architecture.schema import BoundaryKind, Flow, Tier
@@ -1038,8 +1039,24 @@ def _order_by_connection(
             links[a][b] += 1
             links[b][a] += 1
 
-    remaining = {name: members for name, members in components}
+    remaining = dict(components)
     order: list[str] = []
+
+    def score(name: str, placed: set[str], last: str) -> tuple[int, int, str]:
+        """How well `name` follows what is already placed.
+
+        Takes the placed set explicitly rather than closing over it. Defined
+        inside the loop it would capture the name late, so a call deferred
+        past the next iteration would silently score against a different
+        set than the caller meant -- the ordering would still look
+        plausible, which is the kind of wrong that never gets noticed.
+        """
+        joined = sum(links.get(name, {}).get(other, 0) for other in placed)
+        # Same boundary as the last one placed beats a stronger link
+        # elsewhere: a boundary split across the order cannot be drawn as
+        # one box afterwards.
+        same_boundary = network.get(name, "") == network.get(last, "")
+        return (int(same_boundary), joined, name)
 
     # Start where traffic arrives: the component holding the earliest tier.
     first = min(
@@ -1050,17 +1067,9 @@ def _order_by_connection(
     del remaining[first]
 
     while remaining:
-        placed = set(order)
-
-        def score(name: str) -> tuple[int, int, str]:
-            joined = sum(links.get(name, {}).get(other, 0) for other in placed)
-            # Same boundary as the last one placed beats a stronger link
-            # elsewhere: a boundary split across the order cannot be drawn as
-            # one box afterwards.
-            same_boundary = network.get(name, "") == network.get(order[-1], "")
-            return (int(same_boundary), joined, name)
-
-        best = max(remaining, key=score)
+        # partial binds this iteration's values eagerly, so the key function
+        # cannot read a later iteration's state.
+        best = max(remaining, key=partial(score, placed=set(order), last=order[-1]))
         order.append(best)
         del remaining[best]
 

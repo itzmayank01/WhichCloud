@@ -522,6 +522,17 @@ export function ArchitectureCanvas({
 
                 const eRevealIdx = edgeRevealIndex[i];
                 const edgeIsRevealed = eRevealIdx < shown;
+
+                /* Sync edges draw themselves in by animating a dash the
+                   length of the whole path; every other flow keeps its own
+                   dash pattern. Named rather than nested inline, where the
+                   two conditions read as one unreadable expression. */
+                const dashArray =
+                  edge.flow !== "sync"
+                    ? flowCfg.dash
+                    : isAnimating && edgeIsRevealed
+                      ? `${pathLen}`
+                      : "none";
                 const edgeAnimDelay = isAnimating ? `${eRevealIdx * buildDelay + buildDelay * 0.5}ms` : "0ms";
 
                 return (
@@ -550,7 +561,7 @@ export function ArchitectureCanvas({
                       fill="none"
                       stroke={strokeColor}
                       strokeWidth={strokeWidth}
-                      strokeDasharray={edge.flow === "sync" ? (isAnimating && edgeIsRevealed ? `${pathLen}` : "none") : flowCfg.dash}
+                      strokeDasharray={dashArray}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       markerEnd={`url(#aws-arrow-${edge.flow})`}
@@ -638,6 +649,16 @@ export function ArchitectureCanvas({
               const isTierFiltered =
                 selectedTier && selectedTier !== "all" && node.tier !== selectedTier;
 
+              /* Hidden nodes are transparent; visible ones dim only when
+                 something else is hovered or a tier filter excludes them.
+                 `undefined` leaves opacity to the stylesheet rather than
+                 pinning it to 1. */
+              const nodeOpacity = !isVisible
+                ? 0
+                : isDimmed || isTierFiltered
+                  ? 0.25
+                  : undefined;
+
               const iconSrc = iconFor(node.label);
               const revealIdx = nodeRevealIndex.get(node.id) ?? 0;
               const nodeAnimDelay = isAnimating ? `${revealIdx * buildDelay}ms` : "0ms";
@@ -669,7 +690,7 @@ export function ArchitectureCanvas({
                     top: node.y,
                     width: node.w,
                     height: node.h,
-                    opacity: isVisible ? (isDimmed || isTierFiltered ? 0.25 : undefined) : 0,
+                    opacity: nodeOpacity,
                     transform: isHovered ? "translateY(-4px) scale(1.05)" : undefined,
                     transition: "transform 200ms ease, filter 200ms ease",
                     ...(isAnimating && isVisible ? {

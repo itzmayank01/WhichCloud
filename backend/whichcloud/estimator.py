@@ -110,6 +110,14 @@ class ArchitectureSpec:
     fargate_task_vcpu: float = 0.0
     fargate_task_memory_gb: float = 0.0
     fargate_arm: bool = True
+    #: Peak task count. Billing follows actual running time, so a service
+    #: that scales to `fargate_peak_tasks` for part of the day costs the
+    #: base count plus the extra tasks for the hours they actually run --
+    #: not the peak around the clock.
+    fargate_peak_tasks: int = 0
+    fargate_peak_hours_per_day: float = 0.0
+    #: Secrets held in Secrets Manager, billed per secret per month.
+    secret_count: int = 0
     #: Provisioned database storage, billed apart from the instance hour.
     db_storage_gb: float = 0.0
     #: ALB capacity units -- the usage half of a balancer's bill.
@@ -569,7 +577,24 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             hours = HOURS_PER_MONTH * Decimal(spec.fargate_task_count)
             vcpu_qty = hours * Decimal(str(spec.fargate_task_vcpu))
             gb_qty = hours * Decimal(str(spec.fargate_task_memory_gb))
-            label = f"Fargate vCPU × {spec.fargate_task_count} tasks"
+            # Extra tasks only bill for the hours they run. Pricing the
+            # peak around the clock would overstate an autoscaled service
+            # by the whole difference between base and peak.
+            extra = max(0, spec.fargate_peak_tasks - spec.fargate_task_count)
+            if extra and spec.fargate_peak_hours_per_day:
+                burst = (
+                    Decimal(extra)
+                    * Decimal(str(spec.fargate_peak_hours_per_day))
+                    * Decimal("30.4")
+                )
+                vcpu_qty += burst * Decimal(str(spec.fargate_task_vcpu))
+                gb_qty += burst * Decimal(str(spec.fargate_task_memory_gb))
+                label = (
+                    f"Fargate vCPU × {spec.fargate_task_count}"
+                    f"–{spec.fargate_peak_tasks} tasks"
+                )
+            else:
+                label = f"Fargate vCPU × {spec.fargate_task_count} tasks"
             result.items.append(
                 LineItem(
                     label=label,
@@ -582,7 +607,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
             result.items.append(
                 LineItem(
-                    label=f"Fargate memory × {spec.fargate_task_count} tasks",
+                    label=label.replace("Fargate vCPU", "Fargate memory"),
                     sku=gb_point.sku,
                     unit="GB-hour",
                     unit_price=gb_point.price_usd,
@@ -634,6 +659,18 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         if not put or not get:
             result.missing.append("S3 requests")
 
+    # ---- secrets ----
+    if spec.secret_count:
+        point = store.get_price(
+            provider, region, "secrets", "secretsmanager:secret", dsn=dsn
+        )
+        if point:
+            result.items.append(
+                _metered_line(f"Secrets × {spec.secret_count}", point, spec.secret_count)
+            )
+        else:
+            result.missing.append("secrets manager")
+
     # ---- threat detection (GuardDuty) ----
     # Priced from the vCPU count actually being monitored -- the compute
     # tier's own size -- rather than a flat per-account guess.
@@ -655,8 +692,11 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     _tiered_line("Threat detection: compute", ec2, ec2_vcpus)
                 )
             if fargate_vcpus and fargate:
+                # A distinct label: two lines reading "Threat detection:
+                # compute" collapse to one key when options are diffed, and
+                # one silently overwrites the other.
                 result.items.append(
-                    _tiered_line("Threat detection: compute", fargate, fargate_vcpus)
+                    _tiered_line("Threat detection: Fargate", fargate, fargate_vcpus)
                 )
             if rds and spec.database_vcpu:
                 db_vcpus = spec.database_vcpu * (1 + spec.database_read_replicas)

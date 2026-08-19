@@ -172,19 +172,32 @@ async function del<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  /* no-store, not revalidate. These POSTs run the engine against the live
-     price catalog, so a cached response keeps showing an architecture the
-     catalog no longer produces -- resubmitting the same description
-     replayed a five-minute-old answer and looked like the engine had
-     stopped responding to changes. Determinism where it IS wanted lives
-     in the backend's own architecture_cache, keyed on the description and
-     schema version, rather than in a blanket framework cache. */
+/**
+ * `revalidate` is opt-in, and the default is deliberately not to cache.
+ *
+ * These POSTs run the engine against the live price catalog, so a cached
+ * response keeps showing an architecture the catalog no longer produces --
+ * resubmitting the same description replayed a five-minute-old answer and
+ * looked like the engine had stopped responding to changes. Anything a
+ * person just typed must be fresh.
+ *
+ * The landing page is the exception that earns the parameter: its demo
+ * cards ask the same fixed question on every visit, so caching them is
+ * both correct and the difference between one engine run per five minutes
+ * and one per page view.
+ */
+async function post<T>(
+  path: string,
+  body: Record<string, unknown>,
+  revalidate?: number,
+): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    cache: "no-store",
+    ...(revalidate === undefined
+      ? { cache: "no-store" as const }
+      : { next: { revalidate } }),
   });
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
@@ -290,11 +303,12 @@ export const api = {
      four, which looks like the control is broken rather than stale. */
   regions: () => get<Record<string, Record<string, string>>>("/regions", 60),
 
-  recommend: (body: Record<string, unknown>) =>
-    post<Recommendation>("/recommend", body),
+  recommend: (body: Record<string, unknown>, revalidate?: number) =>
+    post<Recommendation>("/recommend", body, revalidate),
 
   /** The same requirement priced on every cloud. */
-  compare: (body: Record<string, unknown>) => post<Comparison>("/compare", body),
+  compare: (body: Record<string, unknown>, revalidate?: number) =>
+    post<Comparison>("/compare", body, revalidate),
 
   /** Plain English straight through to three priced options. */
   describe: (body: Record<string, unknown>) =>
@@ -345,4 +359,52 @@ export function freshness(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/**
+ * Per-cloud totals over only the services every cloud prices.
+ *
+ * A cross-cloud comparison is only meaningful when both sides cover the
+ * same ground. AWS prices twenty-one components; Azure and GCP have
+ * adapters for seven, so their raw totals are lower for a reason that has
+ * nothing to do with being cheaper. Ranking those raw figures put "$336"
+ * above "$649" and called it the winner, which is the opposite of true.
+ *
+ * This sums each cloud over the intersection of the line items they all
+ * price, so the numbers answer one question: for the same set of services,
+ * who charges less. `covered` says how many that was, so the interface can
+ * state what the comparison actually covered rather than implying it is
+ * the whole bill.
+ */
+export function comparableTotals(
+  clouds: Record<string, Option[]>,
+  label = "Balanced",
+): { provider: string; option: Option; total: number; covered: number }[] {
+  const base = (item: LineItem) => item.label.replace(/ ×.*$/, "");
+
+  const picked = Object.entries(clouds)
+    .map(([provider, options]) => ({
+      provider,
+      option: options.find((o) => o.label === label) ?? options[0],
+    }))
+    .filter((r) => r.option && r.option.items.length > 0);
+
+  if (picked.length < 2) return [];
+
+  const shared = picked
+    .map((r) => new Set(r.option.items.map(base)))
+    .reduce((a, b) => new Set([...a].filter((x) => b.has(x))));
+
+  if (shared.size === 0) return [];
+
+  return picked
+    .map((r) => ({
+      provider: r.provider,
+      option: r.option,
+      total: r.option.items
+        .filter((i) => shared.has(base(i)))
+        .reduce((sum, i) => sum + i.monthly_usd, 0),
+      covered: shared.size,
+    }))
+    .sort((a, b) => a.total - b.total);
 }

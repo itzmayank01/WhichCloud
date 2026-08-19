@@ -131,11 +131,22 @@ export function MultiCloudArchitecture({
 
   const providers = Object.keys(byProvider).filter((p) => byProvider[p]);
   const complete = providers.filter((p) => byProvider[p].complete);
-  const cheapest = complete.length
+
+  /* "Cheapest" is a comparative claim and needs something to compare
+     against. With one complete estimate and the rest partial there is no
+     comparison to win -- and badging the one full architecture "cheapest"
+     beside a greyed "≥$336" invites exactly the wrong conclusion, because
+     the partial figure is a floor that may well end up higher. The insight
+     sentence below already required two; the badge did not, which is how a
+     21-service AWS total came to be labelled cheaper than a 7-service one. */
+  const comparable = complete.length > 1;
+  const cheapest = comparable
     ? complete.reduce((a, b) =>
         byProvider[a].monthly_usd <= byProvider[b].monthly_usd ? a : b,
       )
     : null;
+  /** The single complete estimate, when it is the only one we can price. */
+  const soleComplete = !comparable && complete.length === 1 ? complete[0] : null;
   const incomplete = providers.filter((p) => !byProvider[p].complete);
 
   // Generated from the same figures shown above, so the sentence cannot drift
@@ -158,7 +169,7 @@ export function MultiCloudArchitecture({
   }
 
   // The cheapest complete option opens first; a partial total never leads.
-  const [active, setActive] = useState(cheapest ?? providers[0]);
+  const [active, setActive] = useState(cheapest ?? soleComplete ?? providers[0]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -297,6 +308,11 @@ export function MultiCloudArchitecture({
                       Cheapest
                     </span>
                   )}
+                  {p === soleComplete && (
+                    <span className="ml-auto shrink-0 rounded-full bg-accent-wash px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-accent">
+                      Fully priced
+                    </span>
+                  )}
                 </div>
 
                 {/* A partial total is a floor, not a price. Showing it as a
@@ -349,7 +365,11 @@ export function MultiCloudArchitecture({
                           wins ? "font-semibold text-save" : "text-ink-3"
                         }
                       >
-                        {wins ? "cheapest" : `+${money(delta, 0)}`}
+                        {wins
+                          ? "cheapest"
+                          : p === soleComplete
+                            ? "only complete estimate"
+                            : `+${money(delta, 0)}`}
                       </span>
                     </div>
                   </>
