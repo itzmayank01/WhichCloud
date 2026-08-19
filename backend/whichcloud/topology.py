@@ -325,8 +325,6 @@ def build(
         topology.edges.append(Edge("compute", "database"))
     if "database" in present and "database_replica" in present:
         topology.edges.append(Edge("database", "database_replica", "replicates"))
-    if "compute" in present and "audit" in present:
-        topology.edges.append(Edge("compute", "audit", "logs"))
     if "database" in present and "kms" in present:
         topology.edges.append(Edge("kms", "database", "encrypts"))
     if "dns" in present:
@@ -348,14 +346,15 @@ def build(
             source = buffer_kind or ("compute" if "compute" in present else None)
             if source:
                 topology.edges.append(Edge(source, sink, "indexes" if sink == "search" else "loads"))
-    for watcher in ("threat", "tracing", "posture", "flowlogs"):
-        if watcher in present and "compute" in present:
-            topology.edges.append(Edge(watcher, "compute", "observes"))
+    # Governance services get NO arrow, deliberately.
+    #
+    # Threat detection, tracing, posture and flow logs sit below the network
+    # and watch everything in it, so an arrow to compute is both arbitrary
+    # -- they watch the database too -- and enormous: these were the five
+    # longest edges on the canvas, up to 606px each, crossing every row
+    # between. AWS's own reference diagrams draw Shield and GuardDuty
+    # standing alone for the same reason. Their band says what they do.
     if "compute" in present and "nat" in present:
         topology.edges.append(Edge("compute", "nat", "outbound"))
-    if "tls" in present:
-        target = "loadbalancer" if "loadbalancer" in present else "network"
-        if target in present:
-            topology.edges.append(Edge("tls", target, "certificate"))
 
     return topology

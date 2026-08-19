@@ -74,21 +74,15 @@ FLOW_ORDER: tuple[tuple[str, str], ...] = (
     ("compute", "database"),
     ("compute", "storage"),
     ("database", "database_replica"),
-    ("compute", "audit"),
     ("kms", "database"),
     # Outbound, not inbound: private compute reaches the internet through
     # the gateway, which is the opposite direction to every edge above.
     ("compute", "nat"),
-    ("tls", "loadbalancer"),
     ("dns", "waf"),
     ("dns", "network"),
     ("dns", "loadbalancer"),
     ("compute", "auth"),
     ("storage", "backup"),
-    ("threat", "compute"),
-    ("tracing", "compute"),
-    ("posture", "compute"),
-    ("flowlogs", "compute"),
     # The async buffer: compute publishes events, the stores consume them.
     ("compute", "streaming"),
     ("compute", "kafka"),
@@ -203,8 +197,9 @@ def architecture_from(
                 continue
             built[by_kind[source_kind]].connects_to.append(by_kind[target_kind])
 
-    if "monitoring" in by_kind and "compute" in by_kind:
-        built[by_kind["monitoring"]].connects_to.append(by_kind["compute"])
+    # CloudWatch gets no arrow either, for the reason above: it collects from
+    # every service in the picture, so a line to compute alone is a claim
+    # about where metrics come from that is not true.
 
     # ── the network the price was worked out for ──
     # Drawn from what was actually PAID for, not inferred from a flag. The
