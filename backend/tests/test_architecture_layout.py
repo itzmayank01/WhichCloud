@@ -830,3 +830,49 @@ def test_a_boundary_is_drawn_once():
     ids = [g.id for g in lay.groups]
 
     assert len(ids) == len(set(ids))
+
+
+def test_arrows_sharing_a_row_are_fanned_into_separate_channels():
+    """REGRESSION-GUARD: every elbow puts its horizontal run halfway between
+    the rows it joins, so edges leaving one row for another all landed on a
+    single Y -- eight of them on one line in a full architecture. Drawn, that
+    is one thick arrow with several heads and no reader can tell which
+    service it left."""
+    from collections import Counter
+
+    from whichcloud.architecture.costed import PricedNode, architecture_from
+    from whichcloud.architecture.graph import build_graph
+
+    kinds = (
+        "network", "loadbalancer", "compute", "database", "database_replica",
+        "cache", "nat", "storage", "monitoring", "audit", "tls", "dns",
+        "auth", "backup", "threat", "tracing", "posture", "flowlogs",
+        "kms", "secrets", "warehouse",
+    )
+    nodes = [PricedNode(kind=k, label=k, monthly_usd=1.0, sku="x") for k in kinds]
+    layout = build_layout(build_graph(architecture_from(nodes, True, zones=3)[0]))
+
+    channels: Counter[int] = Counter()
+    for edge in layout.edges:
+        for (x1, y1), (x2, y2) in zip(edge.points, edge.points[1:]):
+            if y1 == y2 and x1 != x2:
+                channels[y1] += 1
+
+    # A couple of arrows may still share a line; eight never should.
+    assert max(channels.values()) <= 3
+
+
+def test_fanning_does_not_move_where_an_arrow_meets_its_boxes():
+    """Only the interior run may move. If a stub shifts, the arrow stops
+    touching the service it belongs to."""
+    from whichcloud.architecture.layout import PlacedEdge, separate_channels
+
+    a = PlacedEdge(source="a", target="b", flow="sync",
+                   points=[(10, 0), (10, 50), (200, 50), (200, 100)])
+    b = PlacedEdge(source="c", target="d", flow="sync",
+                   points=[(60, 0), (60, 50), (300, 50), (300, 100)])
+    separate_channels([a, b])
+
+    assert a.points[0] == (10, 0) and a.points[-1] == (200, 100)
+    assert b.points[0] == (60, 0) and b.points[-1] == (300, 100)
+    assert a.points[1][1] != b.points[1][1]

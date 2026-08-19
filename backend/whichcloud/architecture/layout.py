@@ -410,6 +410,52 @@ def _free_lane(
     return best
 
 
+#: Vertical separation between two arrows sharing a horizontal channel.
+#: Wide enough to read as two lines at full size, tight enough that a
+#: fanned bundle still reads as one group heading the same way.
+CHANNEL_GAP = 11
+
+
+def separate_channels(edges: list[PlacedEdge]) -> None:
+    """Fan apart arrows that would be drawn on top of each other.
+
+    Every elbow puts its horizontal run halfway between the two rows it
+    joins, so edges leaving the same row for the same row all landed on
+    one Y -- eight of them on a single line in a full architecture. Drawn,
+    that is one thick arrow with several heads, and no reader can tell
+    which service it came from.
+
+    Each edge in a colliding group is moved to its own channel, spread
+    around the original line so the bundle stays centred where it was.
+    Only the interior horizontal run moves; the stubs that meet the boxes
+    stay put, so every arrow still leaves and arrives where it did.
+    """
+    interior: dict[int, list[tuple[PlacedEdge, int]]] = {}
+    for edge in edges:
+        # The first and last segments anchor to a box; anything between is
+        # free to move.
+        for i in range(1, len(edge.points) - 2):
+            (x1, y1), (x2, y2) = edge.points[i], edge.points[i + 1]
+            if y1 == y2 and x1 != x2:
+                interior.setdefault(y1, []).append((edge, i))
+
+    for y, members in interior.items():
+        if len(members) < 2:
+            continue
+        # Order by where the arrow starts, so neighbouring sources get
+        # neighbouring channels and the bundle does not cross itself.
+        members.sort(key=lambda m: m[0].points[0][0])
+        offset = -(len(members) - 1) / 2
+        for step, (edge, i) in enumerate(members):
+            shift = int(round((offset + step) * CHANNEL_GAP))
+            if not shift:
+                continue
+            x1, _ = edge.points[i]
+            x2, _ = edge.points[i + 1]
+            edge.points[i] = (x1, y + shift)
+            edge.points[i + 1] = (x2, y + shift)
+
+
 def _route(
     source: PlacedNode,
     target: PlacedNode,
@@ -829,6 +875,7 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
     _number_the_path(graph, layout)
     _connect_the_actor(layout)
 
+    separate_channels(layout.edges)
     return _fit(layout)
 
 
@@ -1243,6 +1290,7 @@ def _nested_layout(graph: ArchitectureGraph) -> Layout:
         w=ACTOR_W, h=ACTOR_H,
     )
     _connect_the_actor(layout)
+    separate_channels(layout.edges)
     return _fit(layout)
 
 
