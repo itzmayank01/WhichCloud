@@ -170,6 +170,28 @@ PEAK_MULTIPLIER = 4.0
 #: warehouse holding its own connection details.
 BASE_SECRET_COUNT = 1
 
+# ── metered costs that are never optional ───────────────────────────────
+#
+# Adapters existed for these and nothing set a quantity, so every estimate
+# omitted them. They are not extras: an RDS instance always has provisioned
+# storage, an ALB always bills capacity units on top of its hour, and a
+# bucket always serves requests. Leaving them at zero understated every
+# bill this engine has produced.
+
+#: Provisioned database storage. A transactional store holds far more than
+#: the object storage a description usually quotes, so this has its own
+#: floor and grows with the transaction rate. HEURISTIC.
+DB_STORAGE_FLOOR_GB = 100.0
+DB_STORAGE_GB_PER_DAILY_TXN = 0.002
+
+#: One ALB capacity unit covers roughly 25 new connections per second.
+#: HEURISTIC in the ratio, arithmetic in what is built on it.
+RPS_PER_LCU = 25.0
+
+#: Writes track transactions; reads run well ahead of them, because a page
+#: view fetches many more assets than a checkout writes rows. HEURISTIC.
+S3_GETS_PER_PUT = 10.0
+
 SEARCH_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 3}
 WAREHOUSE_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 4}
 
@@ -431,6 +453,18 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # within retention and are deliberately not double-counted here --
         # see load_backup_prices.
         backup_gb=requirement.storage_gb,
+        # Always-on metered costs, sized from the workload.
+        db_storage_gb=(
+            max(
+                DB_STORAGE_FLOOR_GB,
+                (requirement.daily_transactions or 0) * DB_STORAGE_GB_PER_DAILY_TXN,
+            )
+            if requirement.needs_database
+            else 0.0
+        ),
+        alb_lcu=max(1.0, peak_rps_for(requirement) / RPS_PER_LCU),
+        s3_put_requests=float((requirement.daily_transactions or 0) * 30),
+        s3_get_requests=float((requirement.daily_transactions or 0) * 30 * S3_GETS_PER_PUT),
         # ── data pipeline & analytics ──
         # Kafka only where volume genuinely justifies it; Kinesis otherwise.
         # Both are gated on the requirement first, so no CRUD app acquires a
@@ -547,6 +581,14 @@ def _shape_variants(
     ]
     optimized_tradeoffs.append(
         "A Web ACL and its rules bill whether or not anything is blocked"
+    )
+
+    # A third availability zone. Two survives losing one; three survives
+    # losing one while another is being patched, which is the difference
+    # between surviving a failure and surviving a failure on a bad day.
+    optimized_delta["nat_gateway_count"] = 3
+    optimized_tradeoffs.append(
+        "A third zone means a third NAT gateway running continuously"
     )
 
     return [

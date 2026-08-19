@@ -149,7 +149,10 @@ def test_nat_gateways_follow_the_zones_the_tier_spans():
         return int(line.label.split("×")[1].strip())
 
     assert gateways(options["Cheapest"]) == 1
-    assert gateways(options["Most optimized"]) == 2
+    assert gateways(options["Most reliable"]) == 2
+    # Three zones on the top tier: two survives losing one, three survives
+    # losing one while another is being patched.
+    assert gateways(options["Most optimized"]) == 3
     assert gateways(options["Most reliable"]) == 2
     for option in options.values():
         assert any(
