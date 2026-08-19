@@ -38,6 +38,10 @@ def reliable(req: Requirement):
     return {o.label: o for o in engine.recommend(req, "aws")}["Most reliable"]
 
 
+def optimized(req: Requirement):
+    return {o.label: o for o in engine.recommend(req, "aws")}["Most optimized"]
+
+
 def labels(option) -> list[str]:
     return [i.label for i in option.estimate.items]
 
@@ -214,8 +218,13 @@ def test_kafka_only_above_its_volume_threshold():
 @needs_db
 def test_pipeline_prices_for_real_without_losing_the_baseline():
     """The whole risk of this layer: that adding it quietly drops a
-    component the ten-layer production baseline already guaranteed."""
-    option = reliable(
+    component the ten-layer production baseline already guaranteed.
+
+    Checked on "Most optimized", because the pipeline is that tier's
+    architectural choice -- the cheaper tiers answer the same requirement
+    from the database they already have.
+    """
+    option = optimized(
         Requirement(
             goal="retail",
             workload_type="web",

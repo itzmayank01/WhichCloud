@@ -90,9 +90,13 @@ ordinary auth or encryption.
 - needs_event_streaming is true only if something must react to events as \
 they happen — real-time fraud detection on a payment stream, live telemetry, \
 clickstream processing. Batch/nightly processing of the same data is false.
-- needs_analytics is true only if the description asks for dashboards, \
-reporting, or aggregation across the data (OLAP) — not for looking up a \
-single record, which is what the database is already priced for.
+- needs_analytics is true if the description asks for dashboards, \
+reporting, or aggregation across the data (OLAP) — and also when it asks \
+for a central view over many locations or units, however plainly it is \
+put. "Head office can see live numbers", "see sales across all branches" \
+and "one dashboard for every site" are all aggregation across the estate \
+and count. It is false for looking up a single record, which the database \
+already serves.
 - needs_search is true only if the description asks to search or filter \
 across records by content — a product catalogue search, a log search. Not \
 for fetching one record by id.

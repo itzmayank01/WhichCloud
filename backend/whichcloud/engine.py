@@ -363,6 +363,46 @@ def fargate_tasks_for(requirement: Requirement) -> tuple[int, int]:
     return base, peak
 
 
+def _pipeline_delta(requirement: Requirement) -> dict:
+    """The dedicated event and analytics tier, for the top option only.
+
+    The cheaper tiers answer the same requirement with the database they
+    already have: reporting queries hit the primary on Cheapest and a read
+    replica on Most reliable. That works, and for a workload doing a
+    handful of transactions a second it is the right answer.
+
+    This is the third way of serving it -- events onto a stream, a store
+    built for aggregation behind it -- which decouples reporting from the
+    transactional path entirely and keeps working when neither the query
+    volume nor the row count would fit on a replica. It is a different
+    architecture, not a bigger one, which is the distinction the tiers are
+    supposed to draw.
+    """
+    delta: dict = {}
+
+    if requirement.needs_event_streaming:
+        if _wants_kafka(requirement):
+            delta["kafka_broker_count"] = KAFKA_MIN_BROKERS
+            delta["kafka_broker_vcpu"] = 2
+            delta["kafka_broker_memory_gb"] = 8.0
+        else:
+            delta["stream_shards"] = stream_shards_for(requirement)
+            delta["stream_put_units"] = float((requirement.daily_transactions or 0) * 30)
+
+    if requirement.needs_search:
+        delta["search_node_count"] = SEARCH_NODES[requirement.traffic_scale]
+        delta["search_node_vcpu"] = 2
+        delta["search_node_memory_gb"] = 8.0
+        delta["search_storage_gb"] = requirement.storage_gb
+
+    if requirement.needs_analytics:
+        delta["warehouse_node_count"] = WAREHOUSE_NODES[requirement.traffic_scale]
+        delta["warehouse_node_vcpu"] = 2
+        delta["warehouse_node_memory_gb"] = 16.0
+
+    return delta
+
+
 def _wants_kafka(requirement: Requirement) -> bool:
     """Kafka, or Kinesis? Volume decides, and only above a real threshold.
 
@@ -469,26 +509,10 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # Kafka only where volume genuinely justifies it; Kinesis otherwise.
         # Both are gated on the requirement first, so no CRUD app acquires a
         # streaming tier it never asked for.
-        stream_shards=(0 if _wants_kafka(requirement) else stream_shards_for(requirement)),
-        stream_put_units=(
-            (requirement.daily_transactions or 0) * 30
-            if requirement.needs_event_streaming and not _wants_kafka(requirement)
-            else 0.0
-        ),
-        kafka_broker_count=KAFKA_MIN_BROKERS if _wants_kafka(requirement) else 0,
-        kafka_broker_vcpu=2 if _wants_kafka(requirement) else None,
-        kafka_broker_memory_gb=8.0 if _wants_kafka(requirement) else None,
-        search_node_count=(
-            SEARCH_NODES[requirement.traffic_scale] if requirement.needs_search else 0
-        ),
-        search_node_vcpu=2 if requirement.needs_search else None,
-        search_node_memory_gb=8.0 if requirement.needs_search else None,
-        search_storage_gb=requirement.storage_gb if requirement.needs_search else 0.0,
-        warehouse_node_count=(
-            WAREHOUSE_NODES[requirement.traffic_scale] if requirement.needs_analytics else 0
-        ),
-        warehouse_node_vcpu=2 if requirement.needs_analytics else None,
-        warehouse_node_memory_gb=16.0 if requirement.needs_analytics else None,
+        # The event and analytics pipeline is NOT in the base shape. A
+        # requirement like "head office sees live numbers" can be served
+        # three different ways, and which one you pick is the architectural
+        # decision the tiers exist to express -- see _pipeline_delta.
         # ── threat detection & observability ──
         # On for every tier. GuardDuty prices from the compute and database
         # vCPUs actually present, so this scales with the architecture
@@ -594,6 +618,17 @@ def _shape_variants(
     optimized_tradeoffs.append(
         "A third zone means a third NAT gateway running continuously"
     )
+
+    # The dedicated pipeline, where the description asked for one. This is
+    # what makes the top tier a different architecture rather than the same
+    # one with bigger machines.
+    pipeline = _pipeline_delta(requirement)
+    if pipeline:
+        optimized_delta.update(pipeline)
+        optimized_tradeoffs.append(
+            "Reporting runs on its own stream and store rather than on the "
+            "database, which is more moving parts to operate"
+        )
 
     return [
         (
@@ -709,8 +744,15 @@ def recommend(
         spec = base_spec(requirement, label)
         if delta:
             spec = replace(spec, **delta)
+        # A tier cannot be less available than the one below it. This floor
+        # was applied to "Most reliable" alone, so on a small workload the
+        # top tier came out with ONE instance where the middle tier had two
+        # -- spanning three availability zones with nothing in two of them.
         if label == "Most reliable":
             spec = replace(spec, compute_count=max(2, spec.compute_count))
+        elif label == "Most optimized":
+            # One per zone, since this tier pays for three of them.
+            spec = replace(spec, compute_count=max(3, spec.compute_count))
 
         baseline = estimate(spec, provider, dsn=dsn)
 
