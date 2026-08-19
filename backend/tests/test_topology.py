@@ -65,6 +65,40 @@ def test_every_node_carries_its_own_cost():
     assert graph.node("database").monthly_usd == Decimal("121.91")
 
 
+def test_read_replica_gets_its_own_node_not_the_primarys():
+    """REGRESSION-GUARD: 'Database read replica' starts with 'Database', the
+    same prefix the primary matches. Checked in the wrong order the replica's
+    price would overwrite the primary's node instead of getting its own."""
+    est = Estimate("aws", "ap-south-1", spec(), [
+        item("Database", "db.t4g.large", "121.91"),
+        item("Database read replica × 2", "db.t4g.large", "60.96"),
+    ])
+    graph = topo.build(spec(), est)
+
+    assert graph.node("database").monthly_usd == Decimal("121.91")
+    replica = graph.node("database_replica")
+    assert replica is not None
+    assert replica.monthly_usd == Decimal("60.96")
+    assert replica.label == "Database read replica"
+
+
+def test_waf_line_items_merge_into_one_node():
+    """REGRESSION-GUARD: WAF prices three line items (Web ACL, rules,
+    requests) that are still one box. Overwriting by kind instead of summing
+    would keep only the last price and silently drop the other two from the
+    node's total while they stayed in the actual bill."""
+    est = Estimate("aws", "ap-south-1", spec(), [
+        item("WAF Web ACL", "waf:webacl", "5.00"),
+        item("WAF rules × 10", "waf:rule", "10.00"),
+        item("WAF request inspection", "waf:request", "6.00"),
+    ])
+    graph = topo.build(spec(), est)
+
+    waf = graph.node("waf")
+    assert waf is not None
+    assert waf.monthly_usd == Decimal("21.00")
+
+
 def test_share_drives_visual_weight():
     """The expensive node should look expensive, so share must be real."""
     est = Estimate("aws", "ap-south-1", spec(), [

@@ -20,6 +20,7 @@ from whichcloud.pricing.models import (
     REGIONS,
     ComputeQuery,
     PricePoint,
+    PriceTier,
     provider_region,
 )
 
@@ -240,3 +241,60 @@ def test_estimate_totals_its_line_items():
 def test_estimate_with_no_items_is_zero_not_an_error():
     est = Estimate("aws", "ap-south-1", ArchitectureSpec(name="t", region="india"))
     assert est.total_monthly == Decimal(0)
+
+
+# ── tiered pricing ──────────────────────────────────────────────────────
+
+
+def tiered(*bands) -> PricePoint:
+    return PricePoint(
+        provider="aws",
+        category="auth",
+        sku="x",
+        name="x",
+        region="ap-south-1",
+        unit="MAU",
+        price_usd=Decimal(str(bands[0][2])),
+        tiers=tuple(
+            PriceTier(
+                begin=Decimal(str(b)),
+                end=None if e is None else Decimal(str(e)),
+                price_usd=Decimal(str(p)),
+            )
+            for b, e, p in bands
+        ),
+    )
+
+
+def test_a_free_allowance_is_genuinely_free():
+    """Cognito's first 50,000 MAUs are a published $0 band. Billing them
+    would charge for what the provider gives away."""
+    point = tiered((0, 50_000, "0"), (50_000, None, "0.0046"))
+    assert point.cost_for(300) == Decimal(0)
+    assert point.cost_for(50_000) == Decimal(0)
+
+
+def test_tiers_are_graduated_not_cliff_edged():
+    """REGRESSION-GUARD: past a boundary only the EXCESS pays the higher
+    rate. Applying one band's rate to every unit is the classic way to
+    overstate a bill several-fold."""
+    point = tiered((0, 50_000, "0"), (50_000, None, "0.0046"))
+    # 10,000 units past the free band, not 60,000 units at the paid rate.
+    assert point.cost_for(60_000) == Decimal("46.000")
+    assert point.cost_for(60_000) != Decimal("0.0046") * 60_000
+
+
+def test_descending_bands_charge_each_band_its_own_rate():
+    """Route 53: $0.50 for the first 25 zones, $0.10 for the rest."""
+    point = tiered((0, 25, "0.50"), (25, None, "0.10"))
+    assert point.cost_for(25) == Decimal("12.50")
+    assert point.cost_for(30) == Decimal("13.00")
+
+
+def test_a_point_without_tiers_stays_flat():
+    """Everything already in the catalog is untiered and must not change."""
+    flat = PricePoint(
+        provider="aws", category="kms", sku="k", name="k",
+        region="ap-south-1", unit="month", price_usd=Decimal("1.00"),
+    )
+    assert flat.cost_for(3) == Decimal("3.00")

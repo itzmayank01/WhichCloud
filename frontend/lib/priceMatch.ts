@@ -1,20 +1,49 @@
-import type { ArchitectureView, LineItem } from "@/lib/api";
+import type { ArchitectureView, ArchNode } from "@/lib/api";
 
 /**
- * Putting the catalog's prices onto the services somebody actually named.
+ * Refining the priced diagram's generic labels with what was actually named.
  *
- * The engine prices seven categories, because that is what a price catalog can
- * be indexed by. A description names services: Aurora, Fargate, ElastiCache.
- * Neither is wrong and they do not line up on their own -- so a diagram of
- * what was described carried no figures, and a diagram carrying figures was a
- * fixed seven-box arrangement that ignored the description.
+ * The backend's own topology (`option.drawn`) is the ground truth: every box
+ * on it is one of the line items in the bill, because it was built from the
+ * same priced architecture. It just uses the catalog's generic name for the
+ * category -- "Amazon RDS", "Amazon ECS" -- because that is all a price
+ * catalog knows. A description often names something more specific for the
+ * same box: "Aurora PostgreSQL Global Database" is still an RDS-family
+ * instance-hour, just a more exact name for it.
  *
- * This joins them by what a service *is*. Aurora is a database, so it carries
- * the database price. Fargate is compute. A service the catalog has no
- * category for stays unpriced, which is the honest result rather than a
- * missing one -- and where several named services share a category, the price
- * lands on one of them rather than being counted twice.
+ * This only relabels. It never adds a box, and it never lets a named service
+ * pull a price onto itself -- both of those are how a $121.91 RDS number
+ * used to end up sitting under "DynamoDB", a service billed per-request that
+ * was never actually priced. Grounding in the backend's boxes and only
+ * borrowing better words for them removes that failure mode by construction:
+ * there is nothing left to attach a price to except a box the backend
+ * already priced.
  */
+
+/**
+ * Serverless and request-billed services the catalog has no meter for.
+ *
+ * The catalog only ever prices EC2 instance-hours, RDS instance-hours, S3,
+ * ALB, ElastiCache node-hours, CloudWatch and egress -- see
+ * backend/whichcloud/pricing/aws.py. A box labelled "Amazon RDS" is always an
+ * RDS-family name, never a DynamoDB or Aurora Serverless one, so those never
+ * enter as a relabelling candidate even though "Aurora" would otherwise
+ * match below. Checked first, so it wins regardless of match length.
+ */
+const UNPRICEABLE = [
+  "serverless",
+  "dynamodb",
+  "fargate",
+  "lambda",
+  "app runner",
+  "keyspaces",
+  "timestream",
+  "api gateway",
+  "step functions",
+  "sqs",
+  "sns",
+  "eventbridge",
+];
 
 /** keyword → the catalog category it belongs to. Longest match wins. */
 const CATEGORY: Record<string, string> = {
@@ -28,15 +57,9 @@ const CATEGORY: Record<string, string> = {
   "cloudwatch": "monitoring",
   "opensearch": "database",
   "documentdb": "database",
-  "dynamodb": "database",
   "aurora": "database",
   "neptune": "database",
-  "timestream": "database",
-  "keyspaces": "database",
-  "fargate": "compute",
-  "lambda": "compute",
   "beanstalk": "compute",
-  "app runner": "compute",
   "redis": "cache",
   "rds": "database",
   "eks": "compute",
@@ -54,69 +77,39 @@ const KEYS = Object.keys(CATEGORY).sort((a, b) => b.length - a.length);
 /** Which catalog category this service belongs to, if any. */
 export function categoryOf(label: string): string | null {
   const name = label.toLowerCase();
+  if (UNPRICEABLE.some((key) => name.includes(key))) return null;
   for (const key of KEYS) {
     if (name.includes(key)) return CATEGORY[key];
   }
   return null;
 }
 
-/** The catalog category a priced line item covers. */
-function categoryOfItem(item: LineItem): string | null {
-  const label = item.label.toLowerCase();
-  if (label.startsWith("compute")) return "compute";
-  if (label.startsWith("database")) return "database";
-  if (label.startsWith("object storage")) return "storage";
-  if (label.startsWith("cache")) return "cache";
-  if (label.startsWith("monitoring")) return "monitoring";
-  if (label.startsWith("load balancer")) return "loadbalancer";
-  if (label.startsWith("egress")) return "network";
-  return null;
-}
-
 /**
- * A copy of the drawing with catalog prices attached where they belong.
+ * The priced view with generic labels swapped for a more specific name from
+ * the description, everywhere the two are the same catalog category.
  *
- * Returns the view and how many services were priced, so the interface can
- * say "9 of 26 priced" rather than implying the total covers everything.
+ * `described` is optional: when the architecture reader hit its quota or
+ * found nothing worth drawing, the priced view is returned exactly as the
+ * backend built it -- generic AWS category names, still fully accurate.
  */
-export function withPrices(
+export function withLabels(
   view: ArchitectureView,
-  items: LineItem[],
-): { view: ArchitectureView; priced: number; total: number } {
-  const byCategory = new Map<string, LineItem>();
-  for (const item of items) {
-    const category = categoryOfItem(item);
-    if (category && !byCategory.has(category)) byCategory.set(category, item);
-  }
+  described: ArchitectureView | null,
+): ArchitectureView {
+  if (!described) return view;
 
-  /* One price per category, on the first service that claims it. Two
-     databases in a description do not cost twice what the catalog quoted for
-     one -- the quote was for the tier, not per box. */
-  const spent = new Set<string>();
-  let priced = 0;
-  let total = 0;
+  const byCategory = new Map<string, ArchNode>();
+  for (const node of described.nodes) {
+    const category = categoryOf(node.label);
+    if (category && !byCategory.has(category)) byCategory.set(category, node);
+  }
 
   const nodes = view.nodes.map((node) => {
     const category = categoryOf(node.label);
-    if (!category || spent.has(category)) return node;
-
-    const item = byCategory.get(category);
-    if (!item) return node;
-
-    spent.add(category);
-    priced += 1;
-    total += item.monthly_usd;
-    return {
-      ...node,
-      priced: true,
-      monthly_usd: item.monthly_usd,
-      sku: item.sku,
-    };
+    const match = category ? byCategory.get(category) : undefined;
+    if (!match || match.label === node.label) return node;
+    return { ...node, label: match.label, purpose: match.purpose || node.purpose };
   });
 
-  return {
-    view: { ...view, nodes, counts: { ...view.counts, priced } },
-    priced,
-    total,
-  };
+  return { ...view, nodes };
 }

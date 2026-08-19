@@ -173,11 +173,18 @@ async function del<T>(path: string): Promise<T> {
 }
 
 async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  /* no-store, not revalidate. These POSTs run the engine against the live
+     price catalog, so a cached response keeps showing an architecture the
+     catalog no longer produces -- resubmitting the same description
+     replayed a five-minute-old answer and looked like the engine had
+     stopped responding to changes. Determinism where it IS wanted lives
+     in the backend's own architecture_cache, keyed on the description and
+     schema version, rather than in a blanket framework cache. */
   const response = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    next: { revalidate: 300 },
+    cache: "no-store",
   });
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));

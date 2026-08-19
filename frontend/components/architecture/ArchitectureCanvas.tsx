@@ -126,6 +126,7 @@ export function ArchitectureCanvas({
   selectedTier,
   onSelectNode,
   isPlaying,
+  buildDelay = 180,
 }: {
   view: ArchitectureView;
   revealed?: number;
@@ -133,6 +134,8 @@ export function ArchitectureCanvas({
   selectedTier?: Tier | "all";
   onSelectNode?: (nodeId: string | null) => void;
   isPlaying?: boolean;
+  /** Milliseconds between each node entrance. 0 disables animation. */
+  buildDelay?: number;
 }) {
   const shell = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -165,6 +168,25 @@ export function ArchitectureCanvas({
     () => new Set(view.nodes.slice(0, shown).map((n) => n.id)),
     [view.nodes, shown]
   );
+
+  // Map each node id to its reveal index (for staggered animation delay)
+  const nodeRevealIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    view.nodes.forEach((n, i) => map.set(n.id, i));
+    return map;
+  }, [view.nodes]);
+
+  // Map each edge to the reveal index of its target node so edges
+  // animate in after the target node appears
+  const edgeRevealIndex = useMemo(() => {
+    return view.edges.map((e) => {
+      const srcIdx = nodeRevealIndex.get(e.source) ?? 0;
+      const tgtIdx = nodeRevealIndex.get(e.target) ?? 0;
+      return Math.max(srcIdx, tgtIdx);
+    });
+  }, [view.edges, nodeRevealIndex]);
+
+  const isAnimating = buildDelay > 0;
 
   // Determine connected edges and nodes for hover highlight
   const { connectedEdges, connectedNodes } = useMemo(() => {
@@ -243,6 +265,28 @@ export function ArchitectureCanvas({
             }}
           >
             {/* SVG Background Layer: Boundaries, Containers, Arrows, and Step Badges */}
+            {/* Keyframe animations for the build flow */}
+            <style>{`
+              @keyframes archFadeSlideUp {
+                0% { opacity: 0; transform: translateY(12px); }
+                100% { opacity: 1; transform: translateY(0); }
+              }
+              @keyframes archDrawLine {
+                0% { stroke-dashoffset: var(--line-len); opacity: 0.4; }
+                15% { opacity: 1; }
+                100% { stroke-dashoffset: 0; opacity: 1; }
+              }
+              @keyframes archPopIn {
+                0% { transform: scale(0); opacity: 0; }
+                60% { transform: scale(1.15); opacity: 1; }
+                100% { transform: scale(1); opacity: 1; }
+              }
+              @keyframes archGlowPulse {
+                0%, 100% { filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.3)); }
+                50% { filter: drop-shadow(0 0 10px rgba(37, 99, 235, 0.6)); }
+              }
+            `}</style>
+
             <svg
               width={totalWidth}
               height={totalHeight}
@@ -469,8 +513,24 @@ export function ArchitectureCanvas({
                 const strokeWidth = isStepActive || isHoverConnected ? 2.4 : flowCfg.width;
                 const d = formatPoints(edge.points);
 
+                // Calculate approximate path length for draw animation
+                const pathLen = edge.points.reduce((sum, p, idx) => {
+                  if (idx === 0) return 0;
+                  const prev = edge.points[idx - 1];
+                  return sum + Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y);
+                }, 0);
+
+                const eRevealIdx = edgeRevealIndex[i];
+                const edgeIsRevealed = eRevealIdx < shown;
+                const edgeAnimDelay = isAnimating ? `${eRevealIdx * buildDelay + buildDelay * 0.5}ms` : "0ms";
+
                 return (
-                  <g key={`${edge.source}-${edge.target}-${i}`}>
+                  <g
+                    key={`${edge.source}-${edge.target}-${i}`}
+                    style={{
+                      opacity: edgeIsRevealed ? undefined : 0,
+                    }}
+                  >
                     {/* Shadow / Aura for active path */}
                     {(isStepActive || isHoverConnected) && (
                       <path
@@ -484,22 +544,28 @@ export function ArchitectureCanvas({
                       />
                     )}
 
-                    {/* Main Flow Arrow */}
+                    {/* Main Flow Arrow — animated draw when building */}
                     <path
                       d={d}
                       fill="none"
                       stroke={strokeColor}
                       strokeWidth={strokeWidth}
-                      strokeDasharray={edge.flow === "sync" ? "none" : flowCfg.dash}
+                      strokeDasharray={edge.flow === "sync" ? (isAnimating && edgeIsRevealed ? `${pathLen}` : "none") : flowCfg.dash}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       markerEnd={`url(#aws-arrow-${edge.flow})`}
                       opacity={isDimmed ? 0.25 : 0.9}
                       className="transition-all duration-200"
+                      style={isAnimating && edgeIsRevealed ? {
+                        // @ts-expect-error CSS custom property
+                        '--line-len': `${pathLen}`,
+                        strokeDashoffset: 0,
+                        animation: `archDrawLine 600ms ease-out ${edgeAnimDelay} both`,
+                      } : undefined}
                     />
 
                     {/* Live Request Flow Pulse Animation */}
-                    {(isPlaying || isStepActive) && !isDimmed && (
+                    {(isPlaying || isStepActive) && !isDimmed && edgeIsRevealed && (
                       <circle r={3.5} fill={flowCfg.particleColor} className="filter drop-shadow">
                         <animateMotion
                           path={d}
@@ -518,12 +584,23 @@ export function ArchitectureCanvas({
                 const isStepActive = activeStep !== null && edge.step === activeStep;
                 const isHoverConnected = hoveredNode !== null && connectedEdges.has(i);
 
+                const eRevealIdx = edgeRevealIndex[i];
+                const badgeIsRevealed = eRevealIdx < shown;
+                const badgeAnimDelay = isAnimating ? `${eRevealIdx * buildDelay + buildDelay * 0.8}ms` : "0ms";
+
                 return (
                   <g
                     key={`step-badge-${i}`}
                     transform={`translate(${edge.badge.x}, ${edge.badge.y})`}
                     className="cursor-pointer transition-transform hover:scale-110"
                     filter={isStepActive ? "url(#badge-glow)" : undefined}
+                    style={{
+                      opacity: badgeIsRevealed ? undefined : 0,
+                      transformOrigin: `${edge.badge.x}px ${edge.badge.y}px`,
+                      ...(isAnimating && badgeIsRevealed ? {
+                        animation: `archPopIn 400ms cubic-bezier(0.34, 1.56, 0.64, 1) ${badgeAnimDelay} both`,
+                      } : {}),
+                    }}
                   >
                     <rect
                       x={-11}
@@ -562,6 +639,8 @@ export function ArchitectureCanvas({
                 selectedTier && selectedTier !== "all" && node.tier !== selectedTier;
 
               const iconSrc = iconFor(node.label);
+              const revealIdx = nodeRevealIndex.get(node.id) ?? 0;
+              const nodeAnimDelay = isAnimating ? `${revealIdx * buildDelay}ms` : "0ms";
 
               // Parse title and subtitle for clean 2-line display
               const parts = node.label.split("(");
@@ -582,20 +661,20 @@ export function ArchitectureCanvas({
                     setHoveredNode(null);
                     onSelectNode?.(null);
                   }}
-                  className={`group absolute flex cursor-pointer flex-col items-center transition-all duration-200 ${
-                    isDimmed || isTierFiltered ? "opacity-25 filter grayscale" : "opacity-100"
-                  } ${isHovered ? "z-30 scale-105" : "z-10"}`}
+                  className={`group absolute flex cursor-pointer flex-col items-center ${
+                    isDimmed || isTierFiltered ? "opacity-25 filter grayscale" : ""
+                  } ${isHovered ? "z-30" : "z-10"}`}
                   style={{
                     left: node.x,
                     top: node.y,
                     width: node.w,
                     height: node.h,
-                    opacity: isVisible ? (isDimmed || isTierFiltered ? 0.25 : 1) : 0,
-                    transform: isVisible
-                      ? isHovered
-                        ? "translateY(-4px) scale(1.05)"
-                        : "translateY(0)"
-                      : "translateY(8px)",
+                    opacity: isVisible ? (isDimmed || isTierFiltered ? 0.25 : undefined) : 0,
+                    transform: isHovered ? "translateY(-4px) scale(1.05)" : undefined,
+                    transition: "transform 200ms ease, filter 200ms ease",
+                    ...(isAnimating && isVisible ? {
+                      animation: `archFadeSlideUp 450ms ease-out ${nodeAnimDelay} both`,
+                    } : {}),
                   }}
                 >
                   {/* Service Icon Container */}

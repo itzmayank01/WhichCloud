@@ -9,7 +9,7 @@ import {
   type Recommendation,
 } from "@/lib/api";
 import { ArchitectureCanvas } from "@/components/architecture/ArchitectureCanvas";
-import { withPrices } from "@/lib/priceMatch";
+import { withLabels } from "@/lib/priceMatch";
 
 /**
  * The advisor: a description of a business problem in, three costed options
@@ -71,9 +71,11 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
 export function CostedAdvisor() {
   const [description, setDescription] = useState("");
   const [result, setResult] = useState<Recommendation | null>(null);
-  /* What they described, drawn. Kept apart from the priced tiers because it
-     answers a different question: the tiers say what a standard system of
-     this size costs, this says what the system they described looks like. */
+  /* What they described, drawn -- used only to lend a more specific name to
+     a box the priced diagram already drew (e.g. "Aurora PostgreSQL" instead
+     of "Amazon RDS"). The priced diagram itself always comes from the
+     backend's own topology, never from this, so a name mentioned here can
+     never pull a price onto itself. See lib/priceMatch.ts. */
   const [described, setDescribed] = useState<ArchitectureView | null>(null);
   /* How much of the diagram is on screen. It builds rather than appearing so
      a reader can follow the request from the user inward, which is the order
@@ -106,9 +108,10 @@ export function CostedAdvisor() {
           null,
       );
 
-      /* A description naming no services draws nothing worth showing, and a
-         reader that ran out of quota should not take the prices down with
-         it -- the tiers are the answer either way. */
+      /* A description naming no services has nothing to lend a label from,
+         and a reader that ran out of quota should not take the diagram down
+         with it -- the priced diagram comes from the backend either way,
+         just with the catalog's generic category names instead. */
       if (drawing.status === "fulfilled" && drawing.value.counts.services > 2) {
         setDescribed(drawing.value);
       }
@@ -121,19 +124,24 @@ export function CostedAdvisor() {
 
   /* One full pass in about eight seconds however many services there are.
      Longer and it stops being a build and becomes a wait; the floor keeps a
-     forty node diagram from flickering past. */
+     forty node diagram from flickering past.
+
+     Keyed on the selected option, not on `described` -- the diagram is
+     always the backend's priced topology now, so it exists (and needs its
+     reveal reset) whether or not the label-refining call ever lands. */
   useEffect(() => {
-    if (!described) return;
+    const drawn = result?.options.find((o) => o.label === selected)?.drawn;
+    if (!drawn) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setRevealed(described.nodes.length);
+      setRevealed(drawn.nodes.length);
       return;
     }
 
     setRevealed(0);
-    const step = Math.max(120, Math.min(420, 8000 / Math.max(1, described.nodes.length)));
+    const step = Math.max(120, Math.min(420, 8000 / Math.max(1, drawn.nodes.length)));
     const tick = () =>
       setRevealed((n) => {
-        if (n >= described.nodes.length) return n;
+        if (n >= drawn.nodes.length) return n;
         timer.current = window.setTimeout(tick, step);
         return n + 1;
       });
@@ -142,25 +150,22 @@ export function CostedAdvisor() {
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
     };
-  }, [described]);
+  }, [result, selected]);
 
   const advice = result ? recommend(result.options) : null;
   const budget = result?.budget_monthly_usd ?? null;
   const unspent = advice && budget ? budget - advice.pick.monthly_usd : null;
   const shown = result?.options.find((o) => o.label === selected) ?? null;
-  /* The described system with the selected tier's figures on it. Recomputed
-     when the tier changes, so switching to Most reliable moves the database
-     price up on the box it belongs to. */
-  /* The described system where there is one, and the standard architecture
-     the prices came from where there is not. A reader who gets no diagram
-     because the architecture reader hit its quota is worse off than one who
-     gets the plainer of the two: the prices are answered either way. */
-  const priced = shown
-    ? described
-      ? withPrices(described, shown.items)
-      : shown.drawn
-        ? { view: shown.drawn, priced: shown.drawn.counts.priced, total: 0 }
-        : null
+  /* The backend's own priced topology for the selected tier, labels
+     refined with whatever more specific name the description offered for
+     the same box. Grounded in `shown.drawn` rather than in what was
+     described, so a service the description merely mentioned can shift a
+     label but never a price -- see lib/priceMatch.ts. */
+  const priced = shown?.drawn
+    ? {
+        view: withLabels(shown.drawn, described),
+        priced: shown.drawn.counts.priced,
+      }
     : null;
 
   return (
@@ -322,19 +327,11 @@ export function CostedAdvisor() {
                 </tbody>
               </table>
 
-              {/* Two drawings, because there are two answers.
-
-                  What was described is the system in the words someone wrote,
-                  every service they named. What is priced is the standard
-                  architecture of this size, which is where the figures come
-                  from. Showing only the second makes a rich description look
-                  like it was ignored; showing only the first leaves the money
-                  unexplained. */}
-              {/* One diagram: the system as described, carrying the
-                  catalog's figures on the services they belong to. Two
-                  drawings -- what you asked for, and a standard arrangement
-                  the money referred to -- asked the reader to hold both and
-                  work out the relationship themselves. */}
+              {/* One diagram, grounded in what was actually priced. Every box
+                  is a line item in the table above; a name from the
+                  description only ever replaces a box's label with a more
+                  specific one in the same category ("Aurora PostgreSQL" for
+                  the RDS box), never adds a box or moves a price. */}
               {priced && (
                 <div className="mt-7">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -344,7 +341,7 @@ export function CostedAdvisor() {
                     <span className="font-mono text-[12.5px] text-ink-3">
                       {priced.view.counts.services} services · {priced.priced}{" "}
                       priced from the catalog
-                      {!described && " · standard arrangement"}
+                      {!described && " · generic AWS names"}
                     </span>
                   </div>
                   <div className="mt-3 overflow-hidden rounded-xl border border-line bg-canvas p-2">
@@ -366,8 +363,8 @@ export function CostedAdvisor() {
                         : "Show all at once"}
                     </button>
                     <span className="text-[13px] leading-relaxed text-ink-3">
-                      Services the catalog does not price carry no figure —
-                      they are drawn because you named them, not costed.
+                      Every box here is a line item in the bill above — labels
+                      are refined from what you named, never invented from it.
                     </span>
                   </div>
                 </div>

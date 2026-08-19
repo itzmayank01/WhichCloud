@@ -88,5 +88,16 @@ def test_the_mapping_covers_every_category_the_catalog_prices():
     """A category with no row here is silently dropped from the drawing."""
     assert set(AWS_SERVICE) == {
         "network", "loadbalancer", "compute", "cache",
-        "database", "storage", "monitoring",
+        "database", "database_replica", "storage", "monitoring", "waf",
+        "audit", "kms", "nat", "tls", "dns", "auth", "backup",
+        "streaming", "kafka", "search", "warehouse",
+        "threat", "tracing", "posture", "flowlogs",
     }
+
+
+def test_a_replica_gets_its_own_name_not_the_primarys():
+    """Two services sharing a name collide in the name->Service map used to
+    resolve edges, and one silently disappears from the drawing while the
+    bill still charges for it."""
+    name, _, _, _ = AWS_SERVICE["database_replica"]
+    assert name != AWS_SERVICE["database"][0]

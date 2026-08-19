@@ -46,14 +46,17 @@ GAP_X = 44
 ROW_GAP = 104
 
 #: Beyond this a row is wrapped rather than allowed to run off the canvas.
-#: Eight security services in one row would otherwise force the whole diagram
-#: to scale down until nothing else could be read.
-MAX_PER_ROW = 6
+#: Services in a row wider than this force the whole diagram to scale down
+#: until nothing else can be read.
+MAX_PER_ROW = 8
 
 #: Space between a group's edge and the boxes inside it, per level of nesting,
 #: so a region does not sit flush against the VPC drawn inside it.
 GROUP_PAD = 22
 CANVAS_PAD = 56
+BOX_PAD = 18
+BOX_LABEL_H = 30
+BOX_GAP = 22
 
 #: Room above each row of boxes for the tier's label.
 BAND_LABEL_H = 22
@@ -73,6 +76,16 @@ COMPONENT_PAD = 20
 COMPONENT_LABEL_H = 30
 COMPONENT_GAP = 44
 ROW_GAP_INNER = 30
+
+#: A component narrower than this looks like an accident. Two services side by
+#: side is a reasonable minimum and keeps a row of mixed-size components from
+#: having one thin sliver beside three wide boxes.
+MIN_COMPONENT_W = 2 * NODE_W + GAP_X + COMPONENT_PAD * 2
+
+#: An availability zone drawn as a column should never be narrower than two
+#: nodes. A single-service AZ produces a tall thin strip that looks wrong
+#: next to a populated one and wastes vertical space.
+MIN_AZ_W = 2 * NODE_W + GAP_X + BOX_PAD * 2
 
 #: The source id on the arrow from the actor. It is not a node -- there is no
 #: box for the people -- so anything walking edges has to know to skip it.
@@ -501,7 +514,7 @@ def _component_size(count: int) -> tuple[int, int, int, int]:
     inner_w = cols * NODE_W + (cols - 1) * GAP_X
     inner_h = rows * NODE_H + (rows - 1) * ROW_GAP_INNER
     return (
-        inner_w + COMPONENT_PAD * 2,
+        max(inner_w + COMPONENT_PAD * 2, MIN_COMPONENT_W),
         inner_h + COMPONENT_PAD * 2 + COMPONENT_LABEL_H,
         cols,
         rows,
@@ -637,12 +650,8 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
     if not components:
         return _fit(Layout(width=CANVAS_PAD * 2, height=CANVAS_PAD * 2))
 
-    # Components sharing a network boundary are placed next to each other, so
-    # the box drawn round them afterwards is one rectangle rather than one
-    # that reaches across the page to collect a stray. Order within a boundary
-    # is untouched, so the request still reads in sequence.
     network = _network_of(graph)
-    components.sort(key=lambda entry: (network.get(entry[0], ""),))
+    components = _order_by_connection(components, graph, network)
 
     placed: list[PlacedNode] = []
     boxes: list[PlacedComponent] = []
@@ -834,10 +843,6 @@ def build_layout(graph: ArchitectureGraph) -> Layout:
 #: Zones go side by side; every other container stacks its children.
 SIDE_BY_SIDE: set[str] = {"az", "region"}
 
-BOX_PAD = 18
-BOX_LABEL_H = 30
-BOX_GAP = 22
-
 
 @dataclass
 class _Box:
@@ -942,7 +947,14 @@ def _measure(box: _Box) -> None:
     # alone, an availability zone holding two nearly empty subnets came out
     # narrower than the words "Availability Zone 2", so the label ran past the
     # border and collided with the zone drawn beside it.
-    box.w = max(inner_w + BOX_PAD * 2, _label_width(box))
+    #
+    # AZs and subnets also enforce a minimum width so they spread
+    # horizontally like AWS reference architectures instead of stacking into
+    # tall thin columns.
+    min_w = _label_width(box)
+    if box.group.kind in ("az", "subnet"):
+        min_w = max(min_w, MIN_AZ_W)
+    box.w = max(inner_w + BOX_PAD * 2, min_w)
     box.h = inner_h + BOX_PAD * 2 + BOX_LABEL_H
 
 
@@ -989,6 +1001,71 @@ def _place(
             cursor_x += child.w + BOX_GAP
         else:
             cursor_y += child.h + BOX_GAP
+
+
+def _order_by_connection(
+    components: list[tuple[str, list[GraphNode]]],
+    graph: ArchitectureGraph,
+    network: dict[str, str],
+) -> list[tuple[str, list[GraphNode]]]:
+    """Place components that talk to each other next to each other.
+
+    Ordering by tier alone put the API component at the top and the data store
+    it queries four rows down, so its arrows crossed everything between them.
+    In a hand-drawn architecture almost every line is short, and that is not a
+    drawing convention -- it is what happens when whoever drew it put related
+    things together.
+
+    Greedy rather than optimal: start at the component the request enters, then
+    repeatedly take whichever unplaced component has the most links to what is
+    already down. Ordering a dozen components perfectly is a travelling
+    salesman; this gets most of the shortening for none of the cost.
+
+    Components sharing a network boundary still finish adjacent, because the
+    box drawn round them afterwards has to be one rectangle rather than a
+    shape reaching across the page to collect a stray.
+    """
+    if len(components) < 3:
+        return components
+
+    of_node = {n.id: (n.component or "Other") for n in graph.nodes}
+    links: dict[str, dict[str, int]] = {}
+    for edge in graph.edges:
+        a, b = of_node.get(edge.source), of_node.get(edge.target)
+        if a and b and a != b:
+            links.setdefault(a, {}).setdefault(b, 0)
+            links.setdefault(b, {}).setdefault(a, 0)
+            links[a][b] += 1
+            links[b][a] += 1
+
+    remaining = {name: members for name, members in components}
+    order: list[str] = []
+
+    # Start where traffic arrives: the component holding the earliest tier.
+    first = min(
+        remaining,
+        key=lambda name: min(TIER_ORDER.index(n.tier) for n in remaining[name]),
+    )
+    order.append(first)
+    del remaining[first]
+
+    while remaining:
+        placed = set(order)
+
+        def score(name: str) -> tuple[int, int, str]:
+            joined = sum(links.get(name, {}).get(other, 0) for other in placed)
+            # Same boundary as the last one placed beats a stronger link
+            # elsewhere: a boundary split across the order cannot be drawn as
+            # one box afterwards.
+            same_boundary = network.get(name, "") == network.get(order[-1], "")
+            return (int(same_boundary), joined, name)
+
+        best = max(remaining, key=score)
+        order.append(best)
+        del remaining[best]
+
+    by_name = dict(components)
+    return [(name, by_name[name]) for name in order]
 
 
 def _has_components(graph: ArchitectureGraph) -> bool:
@@ -1081,7 +1158,11 @@ def _nested_layout(graph: ArchitectureGraph) -> Layout:
         """Lay a row of loose services out, returning the height used."""
         if not items:
             return 0
-        cols = min(COMPONENT_COLS * 2, len(items))
+        # Prefer a single wide row so edge services (CloudFront, Route 53,
+        # WAF, Shield) sit side by side across the top, matching how AWS
+        # reference architectures draw them. Only wrap when there are too
+        # many to fit.
+        cols = min(MAX_PER_ROW, len(items))
         for index, node in enumerate(items):
             col, row = index % cols, index // cols
             nodes.append(
