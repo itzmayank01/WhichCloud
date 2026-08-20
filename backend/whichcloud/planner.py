@@ -52,7 +52,12 @@ RPS_PER_VCPU = 40.0
 #: Regions available per country, from the catalog. A region_lock is only
 #: satisfiable within this set.
 IN_COUNTRY: dict[str, tuple[str, ...]] = {
-    "india": ("ap-south-1",),
+    # Mumbai and Hyderabad. Both, because a data-residency requirement and
+    # a cross-region copy are only in conflict if the country has one
+    # region -- and India does not. An earlier version of this map listed
+    # only Mumbai and reported the two requirements as unsatisfiable, which
+    # was a statement about our catalog coverage dressed up as geography.
+    "india": ("ap-south-1", "ap-south-2"),
     "singapore": ("ap-southeast-1",),
     "ireland": ("eu-west-1",),
     "united states": ("us-east-1",),
@@ -188,8 +193,17 @@ def _baseline(rates: Rates, instances: int, *, high_availability: bool) -> list[
     and because they are cheap enough that omitting them saves little and
     costs the ability to answer "what happened".
     """
+    # Spot capacity is DISQUALIFIED by availability=high, not merely
+    # discouraged. Cheapest-first pricing picks t4g.nano:spot for a
+    # workload like this -- $1.61/month against $16.35 on-demand -- and
+    # spot is reclaimed on two minutes' notice. For a system whose
+    # downtime during clinic hours is unacceptable, the cheaper number is
+    # the wrong answer, not a trade-off worth surfacing.
+    purchase = "on-demand" if high_availability else "any"
+
     components = [
-        _c("compute", instances, note=f"sized for {rates.peak_rps:.2f} req/sec peak"),
+        _c("compute", instances,
+           note=f"sized for {rates.peak_rps:.2f} req/sec peak; {purchase}"),
         _c("database", 1),
         _c("db_storage", 1),
         _c("storage", 1),
@@ -341,14 +355,29 @@ def build_plan(
         rto=recommended.rto,
         rpo=recommended.rpo,
     )
-    headroom.justifications = {
-        "compute": (
-            f"{headroom_instances} instances carry 3x the stated traffic "
-            f"({headroom_rates.peak_rps:.2f} req/sec peak) without re-architecting"
-        )
-    }
-    headroom.gives_up = list(recommended.gives_up)
-
+    if headroom_instances == instances:
+        # Honest rather than padded. At a low enough rate, three times the
+        # traffic still fits the availability floor, so this tier is the
+        # recommended one and buying more would be buying nothing.
+        headroom.justifications = {
+            "compute": (
+                f"unchanged at {instances} instances: 3x the stated traffic is "
+                f"{headroom_rates.peak_rps:.2f} req/sec peak, which the two "
+                "instances required by availability=high already carry. There "
+                "is no capacity to add that the traffic would use."
+            )
+        }
+        headroom.gives_up = list(recommended.gives_up) + [
+            "Nothing beyond the recommended tier — at this rate a headroom "
+            "tier is the same design, and paying more would not change it."
+        ]
+    else:
+        headroom.justifications = {
+            "compute": (
+                f"{headroom_instances} instances carry 3x the stated traffic "
+                f"({headroom_rates.peak_rps:.2f} req/sec peak) without re-architecting"
+            )
+        }
     plan.tiers = [cheapest, recommended, headroom]
     plan.compliance_notes = _compliance(sector, region_lock)
 

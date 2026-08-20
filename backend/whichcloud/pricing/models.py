@@ -166,6 +166,12 @@ class ComputeQuery:
 # decision worth recording and the others are not.
 REGIONS: dict[str, dict[str, str]] = {
     "india": {"aws": "ap-south-1", "azure": "centralindia", "gcp": "asia-south1"},
+    # Hyderabad. Carried as its own key so a data-residency requirement can
+    # be satisfied WITHOUT leaving India: a cross-region copy needs a second
+    # region in the same country, and with only Mumbai ingested the honest
+    # answer was that no such copy existed. AWS has published ap-south-2
+    # since 2022; the gap was ours, not the country's.
+    "india-south": {"aws": "ap-south-2", "azure": "centralindia", "gcp": "asia-south2"},
     "us-east": {"aws": "us-east-1", "azure": "eastus", "gcp": "us-east1"},
     "eu-west": {"aws": "eu-west-1", "azure": "westeurope", "gcp": "europe-west1"},
     "singapore": {"aws": "ap-southeast-1", "azure": "southeastasia", "gcp": "asia-southeast1"},

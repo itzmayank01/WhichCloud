@@ -159,22 +159,37 @@ def test_a_region_lock_is_enforced_by_a_policy_not_by_intention():
 
 # ── the conflict this planner exists to surface ──
 
-def test_single_region_country_plus_high_durability_is_reported_unsatisfiable():
-    """India has one AWS region, so a cross-region copy leaves the country.
+def test_india_gets_a_compliant_in_country_copy_rather_than_a_conflict():
+    """India has two AWS regions, so residency and durability both hold.
 
-    The planner must say so rather than silently shipping regulated data
-    offshore to satisfy a checkbox.
+    This asserted the opposite until ap-south-2 was ingested. The planner
+    was reporting the two requirements as irreconcilable and omitting the
+    backup copy -- a defensible response to a real conflict, but there was
+    no real conflict, only a region we had not fetched. A missing region
+    silently narrows what the planner believes is possible, which is the
+    most expensive kind of gap: it produces confident, wrong advice.
     """
-    assert in_country_regions("India") == ("ap-south-1",)
+    assert len(in_country_regions("India")) >= 2
 
     plan = _plan(region_lock="India", durability="high")
-    assert plan.unsatisfiable
-    assert any("cannot both be satisfied" in u for u in plan.unsatisfiable)
+    assert not plan.unsatisfiable, plan.unsatisfiable
 
     for tier in plan.tiers:
         emitted = {c["category"] for c in tier.components}
-        assert "backup_copy" not in emitted, "data was sent offshore silently"
+        assert "backup_copy" in emitted, (
+            f"{tier.name} keeps every copy in one region despite "
+            "durability=high and a second Indian region being available"
+        )
 
+
+def test_a_country_with_genuinely_one_region_still_reports_the_conflict():
+    """The unsatisfiable path is still reachable, and still correct -- it
+    was the India data that was wrong, not the logic."""
+    plan = _plan(region_lock="Singapore", durability="high")
+    assert plan.unsatisfiable
+    assert any("cannot both be satisfied" in u for u in plan.unsatisfiable)
+    for tier in plan.tiers:
+        assert "backup_copy" not in {c["category"] for c in tier.components}
 
 def test_rbi_localisation_is_named_only_for_indian_fintech():
     named = _plan(sector="fintech", region_lock="India").compliance_notes
@@ -219,3 +234,26 @@ def test_instances_never_fall_below_the_availability_floor():
     assert instances_for(0.5, high_availability=False) == 1
     # And sizing may exceed the floor, never undercut it.
     assert instances_for(400.0, high_availability=True) == 10
+
+
+def test_spot_capacity_is_disqualified_when_downtime_is_unacceptable():
+    """Cheapest-first pricing picks t4g.nano:spot for a low-rate workload --
+    $1.61/month against $16.35 on-demand. Spot is reclaimed on two minutes'
+    notice, so for a hospital system whose downtime during clinic hours is
+    unacceptable the cheaper number is the wrong answer, not a trade-off.
+    """
+    plan = _plan(availability="high")
+    for tier in plan.tiers:
+        compute = next(c for c in tier.components if c["category"] == "compute")
+        assert "on-demand" in compute["note"]
+        assert "spot" not in compute["note"].replace("on-demand", "")
+
+
+def test_headroom_says_so_when_three_times_the_traffic_changes_nothing():
+    """At 0.69 req/sec, tripling traffic still fits inside the two instances
+    availability=high already requires. Selling a third tier there would be
+    selling the same design twice."""
+    plan = _plan()  # 8,000/day morning = 0.93 req/sec peak
+    headroom = plan.tiers[2]
+    assert "unchanged" in headroom.justifications["compute"]
+    assert any("would not change it" in g for g in headroom.gives_up)

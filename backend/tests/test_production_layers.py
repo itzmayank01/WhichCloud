@@ -403,16 +403,19 @@ def test_cross_region_backup_is_priced_leaving_this_region_not_entering_it():
     assert point.price_usd > 0
 
 
-def test_a_region_locked_country_with_one_region_has_no_in_country_copy():
-    """India has exactly one AWS region in the catalog, so a durability
-    requirement that demands a cross-region copy cannot be satisfied without
-    leaving the country.
+def test_india_can_satisfy_residency_and_durability_together():
+    """Both requirements hold at once, because India has two AWS regions.
 
-    This is not a catalog gap to be filled later -- it is a real conflict
-    between two requirements, and the planner has to be able to see it
-    rather than quietly copying data offshore.
+    This test previously asserted the opposite. That was wrong, and wrong
+    in the most misleading way available: it read a gap in our own catalog
+    -- only Mumbai had been ingested -- as a fact about the country, and
+    told a hospital its residency and durability requirements could not
+    both be met. AWS has published ap-south-2 since 2022.
+
+    The lesson is kept in the assertion below: coverage is a property of
+    the catalog and must never be reported as a property of the world.
     """
-    from whichcloud.pricing import aws
+    from whichcloud.planner import in_country_regions
     from whichcloud.pricing.store import connect
 
     with connect() as conn, conn.cursor() as cur:
@@ -420,12 +423,10 @@ def test_a_region_locked_country_with_one_region_has_no_in_country_copy():
             "select count(distinct region) n from price_points"
             " where provider = 'aws' and region like 'ap-south-%'"
         )
-        in_country = cur.fetchone()["n"]
+        ingested = cur.fetchone()["n"]
 
-    assert in_country == 1, "if India gains a second region, revisit this"
-
-    points = aws.load_backup_copy_prices("india")
-    if points:
-        # Whatever the cheapest destination is, it is not another Indian
-        # region, because there isn't one.
-        assert not points[0].attributes["cheapest_destination"].startswith("APS3")
+    assert ingested >= 2, (
+        "ap-south-2 is missing from the catalog; without it a residency-locked "
+        "Indian workload cannot be given a compliant cross-region copy"
+    )
+    assert len(in_country_regions("India")) >= 2
