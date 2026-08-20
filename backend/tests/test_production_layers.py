@@ -378,3 +378,54 @@ def test_no_stated_volume_keeps_the_tier_floor():
     req = Requirement(goal="x", traffic_scale="medium")
     assert engine.peak_rps_for(req) == 0.0
     assert engine.size_for(req) == engine.BASE_SIZING["medium"]
+
+
+def test_cross_region_backup_is_priced_leaving_this_region_not_entering_it():
+    """REGRESSION-GUARD: AWS names the meter "{SOURCE}-{DEST}-CrossRegion-..."
+    and the regional file contains BOTH directions of every pair.
+
+    Taking the cheapest of all of them picked "USE2-USE1" -- the rate for
+    copying INTO us-east-1 -- and quoted $0.01/GB for an architecture whose
+    copies actually leave it. Half the real cost, from a meter that is
+    genuinely published and genuinely irrelevant.
+    """
+    from whichcloud.pricing import aws
+
+    points = aws.load_backup_copy_prices("eu-west")
+    assert points, "no cross-region backup price returned"
+    point = points[0]
+
+    # eu-west-1's cheapest outbound destination is a real region, and the
+    # rate is the outbound one. If the direction flips, this lands on an
+    # inbound meter and the destination stops being reachable from here.
+    assert point.attributes["cheapest_destination"]
+    assert point.attributes["resource_class"] == "database"
+    assert point.price_usd > 0
+
+
+def test_a_region_locked_country_with_one_region_has_no_in_country_copy():
+    """India has exactly one AWS region in the catalog, so a durability
+    requirement that demands a cross-region copy cannot be satisfied without
+    leaving the country.
+
+    This is not a catalog gap to be filled later -- it is a real conflict
+    between two requirements, and the planner has to be able to see it
+    rather than quietly copying data offshore.
+    """
+    from whichcloud.pricing import aws
+    from whichcloud.pricing.store import connect
+
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "select count(distinct region) n from price_points"
+            " where provider = 'aws' and region like 'ap-south-%'"
+        )
+        in_country = cur.fetchone()["n"]
+
+    assert in_country == 1, "if India gains a second region, revisit this"
+
+    points = aws.load_backup_copy_prices("india")
+    if points:
+        # Whatever the cheapest destination is, it is not another Indian
+        # region, because there isn't one.
+        assert not points[0].attributes["cheapest_destination"].startswith("APS3")

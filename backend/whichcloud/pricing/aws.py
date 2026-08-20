@@ -14,6 +14,7 @@ Neither needs an AWS account. Verified 2026-08.
 from __future__ import annotations
 
 import gzip
+from collections import Counter
 import json
 import os
 import re
@@ -51,6 +52,7 @@ BULK_SERVICES = {
     "posture": "AWSSecurityHub",
     "fargate": "AmazonECS",
     "secrets": "AWSSecretsManager",
+    "endpoint": "AmazonVPC",
 }
 
 CACHE_DIR = Path(os.getenv("WHICHCLOUD_CACHE", Path.home() / ".cache" / "whichcloud"))
@@ -1616,10 +1618,275 @@ def load_backup_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+def _bulk_region_prefix(doc: dict) -> str:
+    """This region's usage-type prefix, read from the file rather than mapped.
+
+    AWS abbreviates every region in its meter names -- USE1, APS3, EUW1 --
+    by a scheme with enough exceptions that a hand-written table goes stale.
+    The regional price file only contains one region, so the prefix can be
+    recovered from the meters themselves: the most common leading token
+    across usage types IS this region.
+
+    Returns "" for us-east-1-style files where meters carry no prefix at
+    all, which callers treat as "match everything".
+    """
+    counts: Counter[str] = Counter()
+    for product in doc.get("products", {}).values():
+        usage = product.get("attributes", {}).get("usagetype", "") or ""
+        head, sep, _rest = usage.partition("-")
+        # A prefix is short and upper-case: "USE1", "APS3". Anything longer
+        # is a meter name that happens to contain a hyphen.
+        if sep and head.isupper() and 3 <= len(head) <= 5 and any(c.isdigit() for c in head):
+            counts[head] += 1
+    return counts.most_common(1)[0][0] if counts else ""
+
+
+def load_endpoint_prices(region_key: str, path: Path | None = None) -> list[PricePoint]:
+    """Interface VPC endpoints: hourly per endpoint-AZ, plus data processed.
+
+    These exist to keep private-subnet traffic to AWS services off the NAT
+    gateway, where the same bytes are charged at four times the rate. An
+    architecture that adds endpoints and still routes S3 through NAT pays
+    twice, so the estimator needs both meters to show the trade honestly.
+
+    The S3 and DynamoDB GATEWAY endpoints are deliberately absent: AWS does
+    not bill for them at all, so there is no meter to ingest and none is
+    invented here. They are emitted separately as a zero-cost component.
+    """
+    doc = _load_bulk(BULK_SERVICES["endpoint"], region_key)
+    region = provider_region(region_key, "aws")
+    wanted = {
+        "VpcEndpoint-Hours": ("vpce:interface-hour", "VPC interface endpoint", "hour"),
+        "VpcEndpoint-Bytes": ("vpce:gb-processed", "VPC endpoint data processing", "GB"),
+    }
+    found: dict[str, PricePoint] = {}
+
+    for sku, product in doc.get("products", {}).items():
+        attrs = product.get("attributes", {})
+        usage = attrs.get("usagetype", "") or ""
+        # Gateway Load Balancer endpoints (GWLBE) and the ODB variants are
+        # different products that merely share the prefix.
+        if "GWLBE" in usage or "ODB" in usage:
+            continue
+        key = next((k for k in wanted if _usage_is(usage, k)), None)
+        if key is None or wanted[key][0] in found:
+            continue
+        dim = _cheapest_dimension(doc, sku)
+        if not dim:
+            continue
+        price, unit = dim
+        sku_id, name, unit_name = wanted[key]
+        found[sku_id] = PricePoint(
+            provider="aws",
+            category="endpoint",
+            sku=sku_id,
+            name=name,
+            region=region,
+            unit=unit_name,
+            price_usd=price,
+            attributes={"endpoint_type": "interface"},
+        )
+        if len(found) == len(wanted):
+            break
+
+    # The gateway endpoint, at the rate AWS actually charges for it.
+    found["vpce:gateway"] = PricePoint(
+        provider="aws",
+        category="endpoint",
+        sku="vpce:gateway",
+        name="VPC gateway endpoint (S3, DynamoDB)",
+        region=region,
+        unit="month",
+        price_usd=Decimal("0"),
+        attributes={"endpoint_type": "gateway", "billed": "false"},
+    )
+    return list(found.values())
+
+
+def load_lifecycle_storage_prices(
+    region_key: str, path: Path | None = None
+) -> list[PricePoint]:
+    """The colder S3 storage classes a lifecycle policy transitions into.
+
+    Standard is already priced as object storage. These are the tiers that
+    make "keep it for seven years" affordable: write-once data -- scans,
+    reports, audit logs -- costs a fraction of Standard once it stops being
+    read. Without them the only priceable answer to a retention requirement
+    is Standard forever, which overstates the cost of compliance by roughly
+    six times.
+    """
+    doc = _load_bulk(BULK_SERVICES["storage"], region_key)
+    region = provider_region(region_key, "aws")
+    wanted = {
+        "TimedStorage-SIA-ByteHrs": ("s3:standard-ia", "S3 Standard-IA", "infrequent"),
+        "TimedStorage-GIR-ByteHrs": (
+            "s3:glacier-instant", "S3 Glacier Instant Retrieval", "archive-instant",
+        ),
+        "TimedStorage-INT-DAA-ByteHrs": (
+            "s3:deep-archive", "S3 Intelligent-Tiering Deep Archive", "archive-deep",
+        ),
+    }
+    found: dict[str, PricePoint] = {}
+
+    for sku, product in doc.get("products", {}).items():
+        usage = product.get("attributes", {}).get("usagetype", "") or ""
+        # "SmObjects" and the Tables/Files variants are separate meters that
+        # would otherwise match on suffix.
+        if "SmObjects" in usage or "Tables-" in usage or "Files-" in usage:
+            continue
+        key = next((k for k in wanted if _usage_is(usage, k)), None)
+        if key is None or wanted[key][0] in found:
+            continue
+        dim = _cheapest_dimension(doc, sku)
+        if not dim:
+            continue
+        price, _unit = dim
+        sku_id, name, tier = wanted[key]
+        found[sku_id] = PricePoint(
+            provider="aws",
+            category="storage_lifecycle",
+            sku=sku_id,
+            name=name,
+            region=region,
+            unit="GB-month",
+            price_usd=price,
+            attributes={"tier": tier},
+        )
+    return list(found.values())
+
+
+def load_backup_copy_prices(
+    region_key: str, path: Path | None = None
+) -> list[PricePoint]:
+    """Cross-region backup copy, per GB stored at the destination.
+
+    A backup that lives only beside the thing it protects does not survive
+    losing the region. AWS bills the copy as destination storage, and the
+    rate depends on the pair of regions, so the cheapest destination rate
+    for this source is taken as the representative figure.
+    """
+    doc = _load_bulk(BULK_SERVICES["backup"], region_key)
+    region = provider_region(region_key, "aws")
+
+    # DIRECTION MATTERS, and it is easy to get backwards.
+    #
+    # The meter is named "{SOURCE}-{DEST}-CrossRegion-WarmBytes-{SERVICE}",
+    # so both directions of every pair appear in this file. Taking the
+    # cheapest of all of them picked "USE2-USE1" -- the rate for copying
+    # INTO us-east-1 from us-east-2 -- and quoted $0.01/GB for an
+    # architecture whose copies actually leave us-east-1 at $0.02.
+    #
+    # Only meters whose SOURCE is this region are eligible. Among those the
+    # cheapest destination is taken, and named, so the figure belongs to a
+    # real pair rather than an average of pairs nobody chose.
+    # The source code is counted from the cross-region meters themselves,
+    # not from the file at large. us-east-1's ordinary meters carry no
+    # prefix, so a whole-file scan returns "" and every pair matches --
+    # including the inbound ones, which is how $0.01 was quoted. In a PAIR
+    # meter both regions are always named explicitly, and this file's own
+    # region is the one that appears in the source position most often.
+    pairs = [
+        (product.get("attributes", {}).get("usagetype", "") or "", sku)
+        for sku, product in doc.get("products", {}).items()
+        if "CrossRegion-WarmBytes"
+        in (product.get("attributes", {}).get("usagetype", "") or "")
+    ]
+    sources: Counter[str] = Counter(u.split("-")[0] for u, _ in pairs if "-" in u)
+    source = sources.most_common(1)[0][0] if sources else ""
+
+    # The rate depends on the RESOURCE TYPE as well as the region pair --
+    # a Virtual Machine copy from us-east-1 to us-east-2 is $0.04/GB while
+    # an Aurora copy on the same route is $0.01. The durability filter this
+    # feeds protects the database, so the database-class rate is the one
+    # taken; picking the global cheapest would land on whichever service
+    # happened to be least expensive and quote it for a database.
+    database_class = ("Aurora", "RDS", "EBS", "DocumentDB", "Neptune")
+
+    cheapest: Decimal | None = None
+    destination = ""
+
+    for usage, sku in pairs:
+        if source and not usage.startswith(f"{source}-"):
+            continue
+        if not any(usage.endswith(f"-{r}") for r in database_class):
+            continue
+        dim = _cheapest_dimension(doc, sku)
+        if not dim:
+            continue
+        price, _unit = dim
+        if cheapest is None or price < cheapest:
+            cheapest = price
+            parts = usage.split("-")
+            destination = parts[1] if len(parts) > 1 else ""
+
+    if cheapest is None:
+        return []
+    return [
+        PricePoint(
+            provider="aws",
+            category="backup_copy",
+            sku="backup:cross-region-warm",
+            name="Cross-region backup copy",
+            region=region,
+            unit="GB-month",
+            price_usd=cheapest,
+            attributes={
+                "storage_class": "warm",
+                "resource_class": "database",
+                "cheapest_destination": destination,
+            },
+        )
+    ]
+
+
+def load_governance_prices(
+    region_key: str, path: Path | None = None
+) -> list[PricePoint]:
+    """Controls AWS provides at no charge, priced at zero rather than omitted.
+
+    S3 Object Lock and Organizations service control policies both cost
+    nothing, and both are load-bearing: object lock is what makes a backup
+    tamper-proof, and an SCP is what actually denies a region rather than
+    merely intending to. Leaving them out of the catalog meant an
+    architecture could not name them, so a durability or residency
+    requirement had no component to point at.
+
+    Zero is what AWS charges, so zero is what is recorded -- this is a
+    looked-up figure like any other, not an estimate.
+    """
+    region = provider_region(region_key, "aws")
+    return [
+        PricePoint(
+            provider="aws",
+            category="governance",
+            sku="s3:object-lock",
+            name="S3 Object Lock (WORM retention)",
+            region=region,
+            unit="month",
+            price_usd=Decimal("0"),
+            attributes={"billed": "false", "protects": "tamper-and-delete"},
+        ),
+        PricePoint(
+            provider="aws",
+            category="governance",
+            sku="organizations:scp",
+            name="Service control policy (region deny)",
+            region=region,
+            unit="month",
+            price_usd=Decimal("0"),
+            attributes={"billed": "false", "protects": "region-residency"},
+        ),
+    ]
+
+
 def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every category we price on AWS, for one region."""
     points = load_compute_prices(region_key, path)
     for loader in (
+        load_endpoint_prices,
+        load_lifecycle_storage_prices,
+        load_backup_copy_prices,
+        load_governance_prices,
         load_spot_prices,
         load_database_prices,
         load_storage_prices,
