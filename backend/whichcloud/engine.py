@@ -457,8 +457,16 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         load_balancer=requirement.needs_database and count > 1,
         # A read-heavy app in front of a database wants a cache, and anything
         # in production is monitored. Both are heuristic, like the sizing.
-        cache_vcpu=2 if requirement.needs_database else None,
-        cache_memory_gb=2.0 if requirement.needs_database else None,
+        # A cache only where there is enough traffic for one to pay for
+        # itself. Low traffic against a small database gets nothing: the
+        # smallest node was billing $37.96/mo to memoise queries a site
+        # serving 200 visitors a day does not repeat often enough to matter.
+        cache_vcpu=(
+            2 if requirement.needs_database and requirement.traffic_scale != "low" else None
+        ),
+        cache_memory_gb=(
+            2.0 if requirement.needs_database and requirement.traffic_scale != "low" else None
+        ),
         monitored_metrics=30 if requirement.needs_database else 10,
         waf_rule_count=(
             WAF_RULE_COUNT if requirement.needs_waf and requirement.serves_requests else None
@@ -538,7 +546,17 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         secret_count=BASE_SECRET_COUNT if requirement.needs_database else 0,
         threat_detection=True,
         tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
-        posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
+        # Security Hub is a compliance product, and it was being billed on
+        # every architecture regardless. On a bakery's marketing site with
+        # no compliance requirement it was $50/mo -- the largest line after
+        # the database, for a control nobody asked for and no auditor will
+        # ever read. It now needs a stated regime, or enough traffic that
+        # continuous posture checking is a real operational need.
+        posture_monthly_checks=(
+            POSTURE_MONTHLY_CHECKS[requirement.traffic_scale]
+            if requirement.compliance or requirement.traffic_scale in ("high", "very_high")
+            else 0.0
+        ),
         flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
     )
 
@@ -612,7 +630,12 @@ def _shape_variants(
         # meant to protect, for capacity nothing would touch. Half the
         # primary's cores, floored at the smallest useful node.
         db_vcpu, _ = db_size_for(requirement)
+        # Half the database, but never larger than the traffic warrants --
+        # a cache sized purely off the database put a cache.m5.large in
+        # front of a site with no load to cache.
         cache_vcpu = max(2, db_vcpu // 2)
+        if requirement.traffic_scale in ("low", "medium"):
+            cache_vcpu = 2
         optimized_delta["cache_vcpu"] = cache_vcpu
         optimized_delta["cache_memory_gb"] = float(cache_vcpu) * 2.0
         optimized_tradeoffs.append(

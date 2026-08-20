@@ -47,11 +47,15 @@ Provider = Literal["gemini", "groq", "anthropic", "openai"]
 #: users" -- so a version that works for the oldest key in the chain 404s for
 #: the newest. The architecture reader was fixed for this and this was missed,
 #: which left /describe broken while /architecture worked.
-#: Pro, not flash. Reading a description into 21 fields is the one step
-#: nothing downstream can repair, and flash was dropping the quieter
-#: signals -- "head office sees live numbers" is what turns analytics on.
-#: An alias rather than a pinned version, so this does not rot.
-GEMINI_MODEL = "gemini-pro-latest"
+#: Flash, not pro -- measured, not assumed.
+#:
+#: Pro reads a description better, and it was tried. On the free tier its
+#: quota is a fraction of flash's and it returned 429 RESOURCE_EXHAUSTED on
+#: the second call of a three-case test, while flash kept answering. A
+#: better reader that is out of quota reads nothing at all.
+#:
+#: Set WHICHCLOUD_GEMINI_MODEL=gemini-pro-latest on a paid Google account.
+GEMINI_MODEL = os.getenv("WHICHCLOUD_GEMINI_MODEL", "gemini-flash-latest")
 
 # Extraction is a short, scoped task — the model is reading a paragraph and
 # filling a struct, not designing anything.
@@ -233,10 +237,21 @@ class IntakeError(RuntimeError):
 #: Set WHICHCLOUD_READER_ORDER to a comma-separated list to override --
 #: "gemini,groq,anthropic" restores the cheapest-first order this used to
 #: have, which matters if the Anthropic bill does.
+#: Order matters less than reaching a reader that answers. Claude Opus is
+#: the most accurate of these and is NOT first, for one measured reason:
+#: the configured Anthropic keys return "Your credit balance is too low to
+#: access the Anthropic API" on every call. A first-choice reader that
+#: always 400s costs a round-trip per request and reads nothing.
+#:
+#: Add API credit, then put it first with one line and nothing else:
+#:     WHICHCLOUD_READER_ORDER=anthropic,gemini,groq
+#:
+#: (An Anthropic *subscription* does not grant API credit -- they are
+#: separate products, which is the trap this comment exists to record.)
 DEFAULT_READER_ORDER: tuple[Provider, ...] = (
-    "anthropic",  # claude-opus-5
     "gemini",
     "groq",
+    "anthropic",  # claude-opus-5 -- preferred once it has credit
     "openai",
 )
 

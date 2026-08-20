@@ -37,16 +37,16 @@ class TestAvailability:
         with patch.dict(os.environ, {"OPENAI_API_KEY": "x"}, clear=True):
             assert available_providers() == ["openai"]
 
-    def test_the_most_accurate_reader_leads_when_several_are_set(self):
-        # Accuracy before cost: the engine prices whatever the reader
-        # extracted, so a missed requirement is priced correctly and built
-        # wrong. WHICHCLOUD_READER_ORDER puts cost back in front.
+    def test_a_reader_that_answers_leads_when_several_are_set(self):
+        # Claude Opus reads best but its keys have no credit balance, so
+        # it sits behind the readers that actually answer.
+        # WHICHCLOUD_READER_ORDER promotes it once the account is funded.
         with patch.dict(
             os.environ,
             {"GEMINI_API_KEY": "x", "ANTHROPIC_API_KEY": "y", "OPENAI_API_KEY": "z"},
             clear=True,
         ):
-            assert available_providers()[0] == "anthropic"
+            assert available_providers()[0] == "gemini"
 
     def test_every_configured_provider_is_reported(self):
         with patch.dict(

@@ -260,31 +260,29 @@ def test_example_lookup_by_id():
 # ── provider selection ──────────────────────────────────────────────────
 
 
-def test_the_most_accurate_reader_is_preferred(monkeypatch):
-    """Reading a description is the one step nothing downstream repairs.
-
-    This used to prefer the free tier to avoid spending the user's money,
-    and the tradeoff is real -- but the engine sizes and prices from the
-    extracted fields, so a reader that misses "head office sees live
-    numbers" produces a correct price for the wrong architecture. Cost is
-    still one env var away; see the override test below.
+def test_a_reader_that_answers_is_preferred_to_a_better_one_that_cannot(monkeypatch):
+    """Claude Opus reads these descriptions best and is deliberately not
+    first: the configured Anthropic keys have no credit balance, so every
+    call 400s. A first-choice reader that always fails costs a round-trip
+    per request and extracts nothing. The order is one env var away once
+    the account is funded -- see the override test below.
     """
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
     monkeypatch.delenv("WHICHCLOUD_READER_ORDER", raising=False)
     from whichcloud.intake import available_providers
 
-    assert available_providers()[0] == "anthropic"
+    assert available_providers()[0] == "gemini"
 
 
-def test_the_order_can_be_put_back_to_cheapest_first(monkeypatch):
-    """Whoever pays the bill decides. The free tiers are still there."""
+def test_the_order_can_be_changed_without_touching_the_code(monkeypatch):
+    """Whoever pays the bill decides which reader leads."""
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
-    monkeypatch.setenv("WHICHCLOUD_READER_ORDER", "gemini,anthropic")
+    monkeypatch.setenv("WHICHCLOUD_READER_ORDER", "anthropic,gemini")
     from whichcloud.intake import available_providers
 
-    assert available_providers() == ["gemini", "anthropic"]
+    assert available_providers() == ["anthropic", "gemini"]
 
 
 def test_a_nonsense_order_falls_back_rather_than_reading_nothing(monkeypatch):
