@@ -486,7 +486,10 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     )
                 )
         else:
-            result.missing.append("AWS WAF")
+            # The category, not the AWS product name. This list is shown to
+            # the reader beside an Azure or GCP total, where "AWS WAF" reads
+            # as though the estimate is missing a competitor's service.
+            result.missing.append("web application firewall")
 
     # ---- audit logging ----
     if spec.audit_logging:
