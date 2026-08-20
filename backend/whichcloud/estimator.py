@@ -193,6 +193,26 @@ DEFAULT_SKUS: dict[tuple[str, str], str] = {
 #: nothing ever looked up `dns:hosted-zone`. A category absent for a
 #: provider simply has no row and is reported missing, as before.
 PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
+    # Four categories that used to hardcode the AWS SKU name for every
+    # provider, so an Azure estimate asked Azure for "alb:lcu-hour" and
+    # reported the component missing however well the catalog covered it.
+    ("aws", "waf", "acl"): "waf:webacl",
+    ("aws", "waf", "rule"): "waf:rule",
+    ("aws", "waf", "request"): "waf:request",
+    ("azure", "waf", "acl"): "appgw-waf-v2:gateway-hour",
+    ("aws", "lcu", "hour"): "alb:lcu-hour",
+    ("azure", "lcu", "hour"): "appgw:capacity-unit-hour",
+    ("aws", "db_storage", "gp3"): "rds:gp3-storage",
+    ("aws", "db_storage", "gp3-multi-az"): "rds:gp3-storage-multi-az",
+    ("azure", "db_storage", "gp3"): "postgres-flex:storage",
+    # Azure bills storage the same either way; the standby's copy is part
+    # of the Flexible Server high-availability charge, not a second rate.
+    ("azure", "db_storage", "gp3-multi-az"): "postgres-flex:storage",
+    ("aws", "s3_requests", "put"): "s3:put-requests",
+    ("aws", "s3_requests", "get"): "s3:get-requests",
+    ("azure", "s3_requests", "put"): "blob:put-requests",
+    ("azure", "s3_requests", "get"): "blob:get-requests",
+
     ("aws", "dns", "zone"): "route53:hosted-zone",
     ("aws", "dns", "queries"): "route53:dns-queries",
     ("azure", "dns", "zone"): "dns:hosted-zone",
@@ -468,10 +488,18 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     # or none -- a Web ACL priced without its rules would understate what
     # protection actually costs.
     if spec.waf_rule_count is not None:
-        webacl = store.get_price(provider, region, "waf", "waf:webacl", dsn=dsn)
-        rule = store.get_price(provider, region, "waf", "waf:rule", dsn=dsn)
-        request = store.get_price(provider, region, "waf", "waf:request", dsn=dsn)
-        if webacl and rule and request:
+        webacl = _by_role(provider, region, "waf", "acl", dsn)
+        rule = _by_role(provider, region, "waf", "rule", dsn)
+        request = _by_role(provider, region, "waf", "request", dsn)
+
+        # Azure does not sell a firewall this way. Application Gateway WAF
+        # v2 is one hourly charge for the gateway, with throughput billed
+        # as capacity units under the load balancer -- there is no per-rule
+        # or per-request meter to find. Demanding all three marked a fully
+        # priced Azure firewall as missing, which is the opposite of true.
+        if webacl and not rule and not request:
+            result.items.append(_hourly_line("Web application firewall", webacl, 1))
+        elif webacl and rule and request:
             result.items.append(_metered_line("WAF Web ACL", webacl, 1))
             if spec.waf_rule_count:
                 result.items.append(
@@ -709,10 +737,8 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- database storage ----
     if spec.db_storage_gb and spec.database_vcpu:
-        sku = (
-            "rds:gp3-storage-multi-az" if spec.database_multi_az else "rds:gp3-storage"
-        )
-        point = store.get_price(provider, region, "db_storage", sku, dsn=dsn)
+        role = "gp3-multi-az" if spec.database_multi_az else "gp3"
+        point = _by_role(provider, region, "db_storage", role, dsn)
         if point:
             result.items.append(
                 _metered_line("Database storage", point, spec.db_storage_gb)
@@ -722,7 +748,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- ALB capacity units ----
     if spec.alb_lcu and spec.load_balancer:
-        point = store.get_price(provider, region, "lcu", "alb:lcu-hour", dsn=dsn)
+        point = _by_role(provider, region, "lcu", "hour", dsn)
         if point:
             result.items.append(
                 LineItem(
@@ -739,8 +765,8 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- S3 requests ----
     if spec.s3_put_requests or spec.s3_get_requests:
-        put = store.get_price(provider, region, "s3_requests", "s3:put-requests", dsn=dsn)
-        get = store.get_price(provider, region, "s3_requests", "s3:get-requests", dsn=dsn)
+        put = _by_role(provider, region, "s3_requests", "put", dsn)
+        get = _by_role(provider, region, "s3_requests", "get", dsn)
         if put and spec.s3_put_requests:
             result.items.append(_metered_line("S3 write requests", put, spec.s3_put_requests))
         if get and spec.s3_get_requests:

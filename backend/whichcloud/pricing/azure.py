@@ -842,6 +842,184 @@ def fetch_free_tier_prices(region_key: str) -> list[PricePoint]:
     ]
 
 
+def fetch_waf_prices(region_key: str) -> list[PricePoint]:
+    """Application Gateway WAF v2: the gateway itself, hourly.
+
+    Azure sells the firewall as a tier of Application Gateway rather than a
+    separate product, which is why searching for a "Web Application
+    Firewall" service returns nothing -- the meter lives under
+    `Application Gateway`, product `Application Gateway WAF v2`.
+    """
+    region = provider_region(region_key, "azure")
+    for item in _paged(
+        "serviceName eq 'Application Gateway' and priceType eq 'Consumption'",
+        max_pages=5,
+    ):
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        if item.get("productName") != "Application Gateway WAF v2":
+            continue
+        if item.get("meterName") != "Standard Fixed Cost":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [
+            PricePoint(
+                provider="azure",
+                category="waf",
+                sku="appgw-waf-v2:gateway-hour",
+                name="Application Gateway WAF v2",
+                region=region,
+                unit="hour",
+                price_usd=price,
+                attributes={"tier": "WAF_v2"},
+            )
+        ]
+    return []
+
+
+def fetch_lcu_prices(region_key: str) -> list[PricePoint]:
+    """Application Gateway capacity units -- Azure's equivalent of an LCU.
+
+    One unit covers a bundle of throughput, connections and compute, the
+    same shape as an AWS load balancer capacity unit, so the estimator can
+    size both from one number.
+    """
+    region = provider_region(region_key, "azure")
+    for item in _paged(
+        "serviceName eq 'Application Gateway' and priceType eq 'Consumption'",
+        max_pages=5,
+    ):
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        if item.get("productName") != "Application Gateway WAF v2":
+            continue
+        if item.get("meterName") != "Standard Capacity Units":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [
+            PricePoint(
+                provider="azure",
+                category="lcu",
+                sku="appgw:capacity-unit-hour",
+                name="Application Gateway capacity units",
+                region=region,
+                unit="hour",
+                price_usd=price,
+                attributes={"tier": "WAF_v2"},
+            )
+        ]
+    return []
+
+
+def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
+    """Storage attached to the managed database, per GB-month.
+
+    Billed separately from the database instance on every provider, and
+    large enough on a real workload that omitting it understates the bill.
+    """
+    region = provider_region(region_key, "azure")
+    for item in _paged(
+        "serviceName eq 'Azure Database for PostgreSQL' and priceType eq 'Consumption'",
+        max_pages=6,
+    ):
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        # The Flexible Server product, not HorizonDB -- a different engine
+        # at more than twice the rate.
+        product = item.get("productName") or ""
+        if "Flexible" not in product:
+            continue
+        if item.get("meterName") != "Storage Data Stored":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [
+            PricePoint(
+                provider="azure",
+                category="db_storage",
+                sku="postgres-flex:storage",
+                name="Database storage",
+                region=region,
+                unit="GB-month",
+                price_usd=price,
+                attributes={"engine": "postgres-flexible"},
+            )
+        ]
+    return []
+
+
+def fetch_blob_request_prices(region_key: str) -> list[PricePoint]:
+    """Blob read and write operations, Azure's answer to S3 requests.
+
+    Hot tier, locally redundant: the tier and redundancy an application's
+    own object storage actually runs on. Cool and archive are cheaper to
+    store and dearer to touch, and the geo-redundant variants cost
+    multiples of the local one.
+
+    Each meter is fetched with its own server-side filter rather than by
+    scanning the Storage service. That service publishes tens of thousands
+    of meters -- blobs, files, queues, tables, disks, every tier crossed
+    with every redundancy -- and the read meter sits far enough down the
+    listing that a paged scan gave up before reaching it, returning the
+    write price alone and calling the pair complete.
+    """
+    region = provider_region(region_key, "azure")
+
+    # The asymmetry is Azure's, not a typo: the write meter carries the
+    # redundancy in its name and the read meter does not.
+    wanted = (
+        ("Hot LRS Write Operations", "blob:put-requests", "Blob write requests"),
+        ("Hot Read Operations", "blob:get-requests", "Blob read requests"),
+    )
+
+    points: list[PricePoint] = []
+    for meter, sku, name in wanted:
+        for item in _paged(
+            f"serviceName eq 'Storage' and meterName eq '{meter}'"
+            " and priceType eq 'Consumption'",
+            max_pages=4,
+        ):
+            if item.get("armRegionName") not in (region, "Global", ""):
+                continue
+            if item.get("productName") != "General Block Blob v2":
+                continue
+            price = _decimal(item.get("retailPrice"))
+            if price is None:
+                continue
+            # Normalised to per-request, because that is what the
+            # estimator multiplies by and what AWS already stores.
+            # Azure publishes per 10,000 operations, and billing the raw
+            # meter rate against a request count overstated object storage
+            # by four orders of magnitude -- $12,000 a month of blob writes
+            # on a workload whose real figure is $1.20.
+            #
+            # The two providers agree once the units match: Azure's
+            # $0.05/10K and AWS's $0.000005/request are both $5 per million.
+            points.append(
+                PricePoint(
+                    provider="azure",
+                    category="s3_requests",
+                    sku=sku,
+                    name=name,
+                    region=region,
+                    unit="request",
+                    price_usd=price / Decimal("10000"),
+                    attributes={
+                        "tier": "hot",
+                        "redundancy": "LRS",
+                        "published_per": "10K operations",
+                    },
+                )
+            )
+            break
+    return points
+
+
 def load_all(region_key: str) -> list[PricePoint]:
     """Every category we price on Azure, for one region."""
     points: list[PricePoint] = []
@@ -862,6 +1040,10 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_auth_prices,
         fetch_tracing_prices,
         fetch_free_tier_prices,
+        fetch_waf_prices,
+        fetch_lcu_prices,
+        fetch_db_storage_prices,
+        fetch_blob_request_prices,
     ):
         try:
             points.extend(loader(region_key))
