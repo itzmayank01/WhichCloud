@@ -53,6 +53,17 @@ BULK_SERVICES = {
     "fargate": "AmazonECS",
     "secrets": "AWSSecretsManager",
     "endpoint": "AmazonVPC",
+    "cdn": "AmazonCloudFront",
+}
+
+#: CloudFront bills by the VIEWER's edge location group, not the origin
+#: region -- there is no "ap-south-1 CloudFront rate" the way there is an
+#: ap-south-1 EC2 rate. This maps our neutral origin region to the edge
+#: group whose viewers that origin is built to serve, which is the honest
+#: approximation for an architecture whose users are mostly in-country.
+_CLOUDFRONT_EDGE_GROUP: dict[str, str] = {
+    "india": "IN", "india-south": "IN",
+    "us-east": "US", "eu-west": "EU", "singapore": "AP",
 }
 
 CACHE_DIR = Path(os.getenv("WHICHCLOUD_CACHE", Path.home() / ".cache" / "whichcloud"))
@@ -1518,6 +1529,60 @@ def load_dns_prices(region_key: str) -> list[PricePoint]:
     return list(found.values())
 
 
+def load_cdn_prices(region_key: str) -> list[PricePoint]:
+    """CloudFront: data transfer out to the edge, and HTTPS requests.
+
+    Published under the global (aws-other) feed, split by the edge
+    location group a request is served from -- IN, US, EU, AP and so on --
+    rather than by origin region, because that is genuinely how AWS bills
+    it. See _CLOUDFRONT_EDGE_GROUP for the origin-to-edge-group mapping;
+    a region this catalog has no mapping for returns no CDN price, same as
+    any other uningested gap, rather than a guessed one.
+    """
+    group = _CLOUDFRONT_EDGE_GROUP.get(region_key)
+    if not group:
+        return []
+
+    region = provider_region(region_key, "aws")
+    with gzip.open(_download_global(BULK_SERVICES["cdn"]), "rt") as fh:
+        doc = json.load(fh)
+
+    wanted = {
+        f"{group}-DataTransfer-Out-Bytes": (
+            "cloudfront:data-transfer-out", "CloudFront data transfer out", "GB",
+        ),
+        f"{group}-Requests-Tier2-HTTPS": (
+            "cloudfront:requests-https", "CloudFront HTTPS requests", "Requests",
+        ),
+    }
+    found: dict[str, PricePoint] = {}
+
+    for sku, product in doc.get("products", {}).items():
+        usage = product.get("attributes", {}).get("usagetype", "")
+        if usage not in wanted:
+            continue
+        point_sku, name, unit = wanted[usage]
+        if point_sku in found:
+            continue
+
+        tiers, _ = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        found[point_sku] = PricePoint(
+            provider="aws",
+            category="cdn",
+            sku=point_sku,
+            name=name,
+            region=region,
+            unit=unit,
+            price_usd=tiers[0].price_usd,
+            tiers=tiers,
+            attributes={"scope": "global", "edge_group": group},
+        )
+
+    return list(found.values())
+
+
 def load_cognito_prices(region_key: str) -> list[PricePoint]:
     """Cognito user pools, priced per monthly active user with a free band.
 
@@ -1915,6 +1980,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_lcu_prices,
         load_s3_request_prices,
         load_secrets_prices,
+        load_cdn_prices,
     ):
         try:
             points.extend(loader(region_key))

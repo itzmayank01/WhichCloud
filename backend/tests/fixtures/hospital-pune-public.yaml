@@ -1,0 +1,75 @@
+# Fixture 2 -- the sharpest test in the suite. Identical to Fixture 1 with
+# one sentence appended. If this produces the same output as Fixture 1,
+# the gate is hardcoded. If it also adds a cache or replicas, the gate is
+# coupling unrelated decisions to public_facing instead of to load.
+id: hospital-pune-public
+prompt: >
+  I manage IT for a 3-hospital group in Pune. We want to move patient
+  appointments, records and lab reports online so doctors and front desk
+  can access them from all three sites. About 450 staff use it, roughly
+  6,000 record lookups a day, with peaks in the morning. Patient data must
+  stay inside India and cannot be lost. Downtime during OPD hours is
+  unacceptable. Budget is about $900 a month. Patients also book their own
+  appointments online through our website.
+
+expect:
+  extraction:
+    country: {value: IN, source: stated}
+    sector: {value: healthcare, source: stated}
+    availability: {value: high, source: stated}
+    durability: {value: high, source: stated}
+    public_facing: {value: true, source: stated}   # <- the only field that changes
+    peak_shape: {value: morning, source: stated}
+
+  sizing:
+    avg_rps: 0.07
+    peak_rps: 0.7
+    load_tier: trivial
+
+  # NOTE: the task spec that generated this fixture also expected CDN in
+  # tier_2/tier_3 here. The CDN gate (specified in an earlier task, and
+  # unchanged since) is "public_facing AND (large static assets OR users
+  # outside the home country)" -- this prompt adds public_facing but adds
+  # neither of the other two signals, so CDN correctly stays out; only
+  # WAF flips, since WAF's gate is public_facing alone. Encoded as the
+  # established rule actually behaves, flagged rather than silently
+  # widened; see the harness's own report for this discrepancy.
+  must_include:
+    - component: waf
+      tiers: [tier_1, tier_2, tier_3]
+    - component: cross_region_backup_copy
+      tiers: [tier_1, tier_2, tier_3]
+    - component: object_lock
+      tiers: [tier_1, tier_2, tier_3]
+    - component: multi_az_database
+      tiers: [tier_1, tier_2, tier_3]
+    - component: load_balancer
+      tiers: [tier_1, tier_2, tier_3]
+
+  must_exclude:
+    - read_replica   # load is still trivial
+    - cache          # load is still trivial
+    - cdn            # public_facing alone is not enough -- see the note above
+
+  compliance:
+    - "Digital Personal Data Protection Act 2023"
+    - "IT Act s43A"
+    - "ABDM"
+
+  forbidden:
+    - HIPAA
+    - GDPR
+
+  budget:
+    tier_1: true
+    tier_2: true
+    tier_3: true
+
+  invariants: [all]
+
+  # Cross-check against fixture 1: everything except public_facing and
+  # waf must be identical between the two fixtures. The runner diffs the
+  # two plans directly for this rather than re-declaring every shared
+  # field here.
+  diff_against: hospital-pune
+  diff_only_changes: [public_facing, waf]

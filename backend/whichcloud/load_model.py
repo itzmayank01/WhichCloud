@@ -45,7 +45,8 @@ _ASYNC_HINTS = (
 )
 _READ_HEAVY_HINTS = (
     "lookup", "search", "browse", "report", "dashboard", "read-heavy",
-    "mostly read", "catalogue", "catalog", "view",
+    "mostly read", "catalogue", "catalog", "view", "marketplace",
+    "storefront", "product listing", "product page",
 )
 _STATIC_ASSET_HINTS = (
     "video", "image", "photo", "media", "download", "static asset",

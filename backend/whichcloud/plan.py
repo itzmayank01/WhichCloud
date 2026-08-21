@@ -169,6 +169,21 @@ def _requires_x86(description: str) -> bool:
     return any(hint in text for hint in _X86_REQUIRED)
 
 
+def _database_size_for(load_tier: str) -> tuple[int, float]:
+    """vCPU and memory for the database, from the load band -- the same
+    "size from the rate, not a default" rule already applied to compute.
+
+    Only trivial gets its own size. Everything at small and above keeps
+    the (2, 8.0) sizing every other verified number in this codebase was
+    measured against, so this closes the trivial-tier over-provisioning
+    (an internal tool with 200 views a day does not need db.t4g.large)
+    without touching sizing that already has other tests pinned to it.
+    """
+    if load_tier == "trivial":
+        return 2, 1.0  # smallest managed instance the catalog carries
+    return 2, 8.0
+
+
 def _replica_count(load: Load, database_vcpu: int) -> int:
     """0, 1, or 2 -- never guessed past what the rate demonstrably needs.
 
@@ -273,11 +288,14 @@ def _spec_for(
     egress = constraints.egress_gb or DEFAULT_EGRESS_GB
     vcpu = _vcpu_for(load.peak_rps)
 
+    db_vcpu, db_memory_gb = _database_size_for(load.tier)
+
     # Performance capacity (rung 4) is never Tier 1's to buy, however the
     # load gate reads -- Tier 1's cheapness comes from omitting optional
     # things, and a cache or a replica is optional by Part 2's own ranking.
-    replicas = _replica_count(load, database_vcpu=2) if managed else 0
+    replicas = _replica_count(load, database_vcpu=db_vcpu) if managed else 0
     cache_wanted = managed and "cache" in load.included
+    cdn_wanted = managed and "network" in load.included
 
     fargate_vcpu, fargate_memory = _fargate_sizing(vcpu, instances)
 
@@ -298,8 +316,8 @@ def _spec_for(
         fargate_task_memory_gb=fargate_memory if managed else 0.0,
         fargate_arm=not requires_x86,
         arch=None if requires_x86 else "arm64",
-        database_vcpu=2,
-        database_memory_gb=8.0,
+        database_vcpu=db_vcpu,
+        database_memory_gb=db_memory_gb,
         # Required by availability=high; not a tier upsell -- present on
         # every tier that has stated it needs to survive a zone failure.
         database_multi_az=high_availability,
@@ -309,12 +327,18 @@ def _spec_for(
         egress_gb=egress,
         load_balancer=high_availability,
         serves_requests=True,
+        # rung 4 -- same gate as cache: gated on the load model AND on
+        # tier_level >= 2, so a public workload's Tier 1 still omits it.
+        cdn_gb=egress if cdn_wanted else 0.0,
+        cdn_monthly_requests=(
+            float(constraints.requests_per_day) * 30.0 if cdn_wanted else 0.0
+        ),
         # rung 4 -- gated on the derived rate AND on tier_level >= 2.
         cache_vcpu=2 if cache_wanted else None,
-        # Capped at the database's own memory (8 GB, fixed above): a cache
-        # larger than what the database could itself buffer buys nothing
-        # more, whatever the instance family's default size would suggest.
-        cache_memory_gb=4.0 if cache_wanted else None,
+        # Capped at the database's own memory: a cache larger than what
+        # the database could itself buffer buys nothing more, whatever
+        # the instance family's default size would suggest.
+        cache_memory_gb=min(4.0, db_memory_gb) if cache_wanted else None,
         monitored_metrics=30,
         # WAF is exposure-driven, not a capacity upsell -- present on every
         # tier once the workload is public-facing, including Tier 1.

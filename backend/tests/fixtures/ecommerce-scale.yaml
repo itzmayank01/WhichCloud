@@ -1,0 +1,39 @@
+# Fixture 3 -- proves the gates can say YES. The previous task's fix
+# stopped Tier 1 from buying a cache/replica it never needed; the failure
+# mode this fixture catches is the opposite one, where that same
+# tightening also stops Tier 2/3 from buying what a genuinely large
+# workload actually needs.
+id: ecommerce-scale
+prompt: >
+  A consumer marketplace, customers across India, Singapore and UAE, about
+  2 million requests a day with evening peaks, product images and video,
+  checkout must not go down, budget around $4,000 a month.
+
+expect:
+  sizing:
+    avg_rps: 23
+    peak_rps: 230
+    load_tier: medium
+
+  must_include:
+    - component: cdn
+      tiers: [tier_2, tier_3]
+    - component: waf
+      tiers: [tier_1, tier_2, tier_3]
+    - component: cache
+      tiers: [tier_2, tier_3]
+    - component: read_replica
+      tiers: [tier_2, tier_3]
+    - component: autoscaling_compute
+      tiers: [tier_2, tier_3]
+    - component: multi_az_database
+      tiers: [tier_1, tier_2, tier_3]
+
+  must_exclude: []
+
+  budget:
+    tier_1: true
+    tier_2: true
+    tier_3: true
+
+  invariants: [all]

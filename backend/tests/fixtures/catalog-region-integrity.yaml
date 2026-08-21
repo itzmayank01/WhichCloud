@@ -1,0 +1,37 @@
+# Fixture 7 -- not a prompt. A direct assertion against the price catalog
+# itself: every number the UI shows traces back to these rows, so this is
+# the fastest test to write and the highest blast radius if it fails.
+id: catalog-region-integrity
+type: catalog
+assertions:
+  - id: compute-rate-differs-by-region
+    check: rate_differs_by_region
+    provider: aws
+    category: compute
+    sku: t4g.medium
+    region_a: ap-south-1
+    region_b: us-east-1
+
+  - id: database-rate-differs-by-region
+    check: rate_differs_by_region
+    provider: aws
+    category: database
+    sku: db.t4g.large
+    region_a: ap-south-1
+    region_b: us-east-1
+
+  - id: no-catalog-entry-has-a-null-region
+    check: every_entry_has_explicit_region
+    provider: aws
+
+  - id: multi-az-database-costs-more-than-single-az
+    check: multi_az_greater_than_single_az
+    provider: aws
+    region: ap-south-1
+    single_az_sku: db.t4g.large
+    multi_az_sku: db.t4g.large:multi-az
+
+  - id: guardduty-and-securityhub-scale-with-resource-count
+    check: security_cost_scales_with_resources
+    small_instances: 2
+    large_instances: 6

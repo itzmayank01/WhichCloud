@@ -1,0 +1,22 @@
+# Fixture 6 -- proves the engine refuses to silently degrade a design to
+# hit a number. Tier 1's own floor is well above the stated budget; the
+# correct behaviour is to say so, not to quietly drop Multi-AZ or the
+# cross-region copy to bring the number down.
+id: budget-floor-conflict
+prompt: >
+  patient records system for a clinic in Jaipur. Cannot lose data, cannot
+  have downtime. Budget is $80 a month.
+
+expect:
+  budget:
+    tier_1: false
+
+  over_budget_note_contains: "Your requirements set a floor above your budget."
+
+  must_include:
+    - component: multi_az_database
+      tiers: [tier_1]
+    - component: cross_region_backup_copy
+      tiers: [tier_1]
+
+  invariants: [all]

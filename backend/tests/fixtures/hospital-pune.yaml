@@ -1,0 +1,64 @@
+# Fixture 1 -- the anchor case. Every other fixture is a variation on
+# this one, checking that a single changed fact changes only what it
+# should.
+id: hospital-pune
+prompt: >
+  I manage IT for a 3-hospital group in Pune. We want to move patient
+  appointments, records and lab reports online so doctors and front desk
+  can access them from all three sites. About 450 staff use it, roughly
+  6,000 record lookups a day, with peaks in the morning. Patient data must
+  stay inside India and cannot be lost. Downtime during OPD hours is
+  unacceptable. Budget is about $900 a month.
+
+expect:
+  extraction:
+    country: {value: IN, source: stated}
+    sector: {value: healthcare, source: stated}
+    availability: {value: high, source: stated}
+    durability: {value: high, source: stated}
+    # NOTE: the task spec that generated this fixture said "assumed" here.
+    # Actual (and, we think, correct) behaviour is "stated": the prompt
+    # names who uses the system ("doctors and front desk"), which is the
+    # signal Constraints.extract() uses to conclude not-public-facing --
+    # see test_the_public_are_not_confused_with_the_subject_of_the_data in
+    # test_acceptance_pune.py. Encoded as observed, flagged rather than
+    # silently changed; see the harness's own report for this discrepancy.
+    public_facing: {value: false, source: stated}
+    peak_shape: {value: morning, source: stated}
+
+  sizing:
+    avg_rps: 0.07
+    peak_rps: 0.7
+    load_tier: trivial
+
+  must_include:
+    - component: cross_region_backup_copy
+      tiers: [tier_1, tier_2, tier_3]
+    - component: object_lock
+      tiers: [tier_1, tier_2, tier_3]
+    - component: multi_az_database
+      tiers: [tier_1, tier_2, tier_3]
+    - component: load_balancer
+      tiers: [tier_1, tier_2, tier_3]
+
+  must_exclude:
+    - read_replica
+    - cache
+    - cdn
+    - waf
+
+  compliance:
+    - "Digital Personal Data Protection Act 2023"
+    - "IT Act s43A"
+    - "ABDM"
+
+  forbidden:
+    - HIPAA
+    - GDPR
+
+  budget:
+    tier_1: true
+    tier_2: true
+    tier_3: true
+
+  invariants: [all]

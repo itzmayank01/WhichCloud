@@ -45,6 +45,13 @@ class ArchitectureSpec:
     storage_gb: float = 0.0
     egress_gb: float = 0.0
     load_balancer: bool = False
+    #: CloudFront in front of the origin. None means "not requested" --
+    #: priced on top of egress rather than netted against it, since this
+    #: catalog does not model the free origin-to-edge transfer that would
+    #: offset part of the direct egress line; the total this produces is
+    #: therefore a conservative (slightly high) one, not an invented one.
+    cdn_gb: float = 0.0
+    cdn_monthly_requests: float = 0.0
     #: Does anything outside call this over the network? Carried so the
     #: drawing can tell a CDN from plain data transfer without guessing
     #: from which components happen to be present.
@@ -243,6 +250,8 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "endpoint", "interface-hour"): "vpce:interface-hour",
     ("aws", "endpoint", "gb-processed"): "vpce:gb-processed",
     ("aws", "endpoint", "gateway"): "vpce:gateway",
+    ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
+    ("aws", "cdn", "requests"): "cloudfront:requests-https",
     ("aws", "governance", "object-lock"): "s3:object-lock",
     ("aws", "governance", "region-deny"): "organizations:scp",
 
@@ -514,6 +523,19 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.items.append(_hourly_line("Load balancer", point, 1))
         else:
             result.missing.append("load balancer")
+
+    # ---- CDN (CloudFront) ----
+    if spec.cdn_gb:
+        transfer = _by_role(provider, region, "cdn", "data-transfer", dsn)
+        requests = _by_role(provider, region, "cdn", "requests", dsn)
+        if transfer:
+            result.items.append(_metered_line("CDN data transfer", transfer, spec.cdn_gb))
+            if requests and spec.cdn_monthly_requests:
+                result.items.append(
+                    _metered_line("CDN requests", requests, spec.cdn_monthly_requests)
+                )
+        else:
+            result.missing.append("CDN")
 
     # ---- cross-region backup copy ----
     if spec.backup_copy_gb:

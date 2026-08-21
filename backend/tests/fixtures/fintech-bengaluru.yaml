@@ -1,0 +1,32 @@
+# Fixture 5 -- proves compliance is a (country, sector) table lookup, not
+# a hardcoded India-healthcare block. Same country as Fixture 1, different
+# sector, and the regulation set changes accordingly.
+id: fintech-bengaluru
+prompt: >
+  lending platform in Bengaluru, 80,000 loan applications a month, KYC
+  documents and repayment records, RBI audits us, data must remain in
+  India, budget $3,000 a month.
+
+expect:
+  extraction:
+    country: {value: IN, source: stated}
+    sector: {value: fintech, source: stated}
+    durability: {value: high, source: stated}
+
+  compliance:
+    - "RBI Storage of Payment System Data directive"
+    - "Digital Personal Data Protection Act 2023"
+
+  forbidden:
+    - HIPAA
+    - ABDM
+
+  must_include:
+    - component: cross_region_backup_copy
+      tiers: [tier_1, tier_2, tier_3]
+    - component: object_lock
+      tiers: [tier_1, tier_2, tier_3]
+    - component: extended_retention_audit
+      tiers: [tier_1, tier_2, tier_3]
+
+  invariants: [all]

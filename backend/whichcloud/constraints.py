@@ -60,6 +60,17 @@ _AVAILABILITY_HIGH = (
     "can't go down", "must not go down", "no downtime", "24x7", "24/7",
     "always available", "critical", "business hours", "opd hours",
     "working hours", "trading hours", "must stay up", "high availability",
+    "cannot have downtime", "can't have downtime", "must not have downtime",
+)
+
+#: An explicit LOW-availability statement is just as much "stated" as a
+#: high one -- "if it's down for an hour nobody minds" answers the same
+#: question business hours does, and defaulting it to "assumed" would
+#: claim the text never addressed availability when it plainly did.
+_AVAILABILITY_LOW = (
+    "nobody minds", "no one minds", "if it is down", "if it goes down",
+    "downtime is fine", "downtime is acceptable", "not critical",
+    "can be down", "best effort", "not mission critical", "low priority",
 )
 
 _DURABILITY_HIGH = (
@@ -67,6 +78,12 @@ _DURABILITY_HIGH = (
     "irreplaceable", "regulated", "patient record", "patient data",
     "medical record", "health record", "financial record", "lab report",
     "audit trail", "cannot lose", "no data loss",
+    # Fintech record-keeping: KYC and repayment history are retained under
+    # regulatory mandate whether or not the prompt uses the word
+    # "regulated" -- "kyc" alone is specific enough to carry no false-
+    # positive risk, unlike a bare word such as "records".
+    "kyc", "repayment record", "loan record", "regulatory audit",
+    "audited by", "audits us",
 )
 
 _RESIDENCY = ("must stay inside", "must stay in", "must remain in",
@@ -98,6 +115,12 @@ _PLACES: dict[str, str] = {
     "pune": "IN", "mumbai": "IN", "bengaluru": "IN", "bangalore": "IN",
     "delhi": "IN", "hyderabad": "IN", "chennai": "IN", "kolkata": "IN",
     "gurgaon": "IN", "noida": "IN", "ahmedabad": "IN", "india": "IN",
+    "jaipur": "IN", "lucknow": "IN", "surat": "IN", "kochi": "IN",
+    "cochin": "IN", "chandigarh": "IN", "indore": "IN", "nagpur": "IN",
+    "bhopal": "IN", "coimbatore": "IN", "visakhapatnam": "IN",
+    "patna": "IN", "vadodara": "IN", "thiruvananthapuram": "IN",
+    "mysuru": "IN", "mysore": "IN", "amritsar": "IN", "guwahati": "IN",
+    "bhubaneswar": "IN", "varanasi": "IN",
     "london": "GB", "manchester": "GB", "united kingdom": "GB", "uk": "GB",
     "dublin": "IE", "ireland": "IE",
     "singapore": "SG",
@@ -118,7 +141,10 @@ _PEAK_SHAPES: tuple[tuple[PeakShape, tuple[str, ...]], ...] = (
 )
 
 _PUBLIC = ("customer", "public", "consumer", "shopper", "visitor", "patient portal",
-           "members of the public", "anyone can", "sign up online")
+           "members of the public", "anyone can", "sign up online",
+           "book their own", "book online", "book appointments online",
+           "access their own", "manage their own", "log in themselves",
+           "create an account", "register online", "self-service")
 _STAFF_ONLY = ("staff", "employee", "internal", "front desk", "back office",
                "our team", "doctors and", "only staff")
 
@@ -179,23 +205,39 @@ def _find(text: str, phrases: tuple[str, ...]) -> str:
     return ""
 
 
+#: Scale words, longest/most-specific first so "million" is not cut short
+#: by "m" matching first in the alternation.
+_SCALE: tuple[tuple[str, int], ...] = (
+    ("million", 1_000_000), ("m", 1_000_000), ("k", 1_000),
+)
+
+
 def _number_near(text: str, units: tuple[str, ...]) -> tuple[int | None, str]:
     """A figure written next to one of these units, with what matched.
 
-    Handles "about 450 staff", "roughly 6,000 record lookups a day" and
-    "6k lookups" -- the forms people actually write.
+    Handles "about 450 staff", "roughly 6,000 record lookups a day",
+    "6k lookups" and "2 million requests a day" -- the forms people
+    actually write. A bare "2" for "2 million requests" undercounts a
+    marketplace's real traffic by six orders of magnitude, which is
+    exactly the kind of error this exists to not make.
     """
+    scale_group = "|".join(re.escape(word) + r"\b" for word, _ in _SCALE)
     for unit in units:
         # A leading DIGIT is required. "[\d,]+" alone matches a bare comma,
         # which survives the comma-stripping below as an empty string and
         # takes float() down with it.
-        pattern = rf"(\d[\d,]*(?:\.\d+)?)\s*(k\b)?[^.\n]{{0,24}}?{re.escape(unit)}"
+        pattern = (
+            rf"(\d[\d,]*(?:\.\d+)?)\s*({scale_group})?"
+            rf"[^.\n]{{0,24}}?{re.escape(unit)}"
+        )
         match = re.search(pattern, text)
         if match:
             raw = match.group(1).replace(",", "")
             if not raw:
                 continue
-            value = float(raw) * (1000 if match.group(2) else 1)
+            scale_word = (match.group(2) or "").lower()
+            multiplier = next((m for w, m in _SCALE if w == scale_word), 1)
+            value = float(raw) * multiplier
             return int(value), match.group(0).strip()
     return None, ""
 
@@ -237,6 +279,13 @@ def extract(description: str) -> Constraints:
         c.availability = "high"
         c.stated.add("availability")
         c.evidence["availability"] = f"{hit!r}"
+    else:
+        low_hit = _find(text, _AVAILABILITY_LOW)
+        if low_hit:
+            # Value stays "low" (the default) -- only its source changes,
+            # from unaddressed to explicitly answered.
+            c.stated.add("availability")
+            c.evidence["availability"] = f"{low_hit!r}"
 
     # ── durability ──
     hit = _find(text, _DURABILITY_HIGH)
@@ -246,7 +295,9 @@ def extract(description: str) -> Constraints:
         c.evidence["durability"] = f"{hit!r}"
 
     # ── volumes ──
-    users, ev = _number_near(text, ("staff", "users", "people", "employees", "doctors"))
+    users, ev = _number_near(
+        text, ("staff", "users", "people", "employees", "doctors", "person")
+    )
     if users:
         c.users = users
         c.stated.add("users")
@@ -254,7 +305,8 @@ def extract(description: str) -> Constraints:
 
     reqs, ev = _number_near(
         text, ("lookups", "requests", "transactions", "orders", "appointments",
-               "records a day", "queries", "visits", "hits", "bookings")
+               "records a day", "queries", "visits", "hits", "bookings",
+               "page views", "views a day")
     )
     if reqs:
         c.requests_per_day = reqs
@@ -289,12 +341,16 @@ def extract(description: str) -> Constraints:
     public_hit = _find(text, _PUBLIC)
     staff_hit = _find(text, _STAFF_ONLY)
     if public_hit or staff_hit:
-        # Staff-only wins a tie: "doctors and front desk" names who uses it,
-        # while "patient" may only describe whose data it holds. Treating
-        # the subject of the data as its audience is what puts a CDN and a
-        # WAF in front of an internal system.
-        c.public_facing = bool(public_hit) and not staff_hit
+        # A concrete public-action phrase wins over a staff mention, not
+        # the reverse: "doctors and front desk... patients also book their
+        # own appointments online" describes a system BOTH groups use, and
+        # the public half is what makes it public-facing. Staff-only is
+        # only the answer when nothing describes the public doing
+        # anything themselves -- "patient records" alone names whose data
+        # it holds, not who is issuing the request, which is why bare
+        # "patient" was deliberately left out of _PUBLIC.
+        c.public_facing = bool(public_hit)
         c.stated.add("public_facing")
-        c.evidence["public_facing"] = f"{staff_hit or public_hit!r}"
+        c.evidence["public_facing"] = f"{public_hit or staff_hit!r}"
 
     return c

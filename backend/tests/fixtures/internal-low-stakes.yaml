@@ -1,0 +1,34 @@
+# Fixture 4 -- proves rung 1 is conditional, not unconditional. The
+# previous task made Multi-AZ and cross-region mandatory under
+# availability=high and durability=high; this proves those stay OFF when
+# the workload never asked for them.
+id: internal-low-stakes
+prompt: >
+  small internal tool for our 12-person ops team to track equipment. About
+  200 page views a day. If it is down for an hour nobody minds. We want to
+  spend as little as possible, maybe $60 a month.
+
+expect:
+  extraction:
+    availability: {value: low, source: stated}
+    durability: {value: normal, source: assumed}
+    # NOTE: the task spec said "assumed" here too (same pattern as
+    # Fixture 1). "internal tool" and "our ... ops team" are textual
+    # evidence for not-public-facing, so this is "stated" under the same
+    # rule that made Fixture 1's public_facing stated. See that fixture's
+    # note and the harness's own report for this discrepancy.
+    public_facing: {value: false, source: stated}
+
+  must_exclude:
+    - multi_az_database
+    - cross_region_backup_copy
+    - load_balancer
+    - waf
+    - cdn
+    - cache
+    - read_replica
+
+  budget:
+    tier_1: true
+
+  invariants: [all]
