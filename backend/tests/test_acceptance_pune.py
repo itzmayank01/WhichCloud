@@ -201,3 +201,66 @@ def test_baseline_security_scales_with_the_footprint_it_protects():
             f"{sku} bills per {unit!r}, which does not scale with the "
             "resources it protects"
         )
+
+
+# ── the whole contract, end to end ──
+
+@pytest.fixture(scope="module")
+def plan():
+    from whichcloud.plan import build
+
+    return build(PUNE)
+
+
+def test_the_plan_prices_three_compliant_tiers(plan):
+    assert len(plan.tiers) == 3
+    for tier in plan.tiers:
+        assert tier.estimate.is_complete, tier.estimate.missing
+        assert tier.monthly_total > 0
+        assert tier.rto and tier.rpo
+
+
+def test_no_priced_tier_is_generated_non_compliant(plan):
+    """build() raises rather than emitting a tier that fails the filter, so
+    reaching this point at all is the assertion. These confirm the shape."""
+    for tier in plan.tiers:
+        assert tier.spec.compute_count >= 2
+        assert tier.spec.database_multi_az
+        assert tier.spec.load_balancer
+        assert tier.spec.backup_copy_gb > 0
+        assert tier.spec.object_lock
+        assert tier.spec.region_deny_guardrail
+
+
+def test_the_failing_design_is_shown_apart_and_never_priced(plan):
+    """It can be looked at. It cannot be one of the three numbers, because a
+    cheap figure beside two dearer ones wins arguments on price alone."""
+    panel = plan.below_requirements
+    assert panel is not None
+    assert panel["violations"]
+    assert "not one of the three options" in panel["note"]
+    assert "monthly_total" not in panel
+
+
+def test_unspent_budget_is_reported_as_correct(plan):
+    assert plan.unspent_budget is not None
+    assert plan.unspent_budget["amount_usd"] > 0
+    assert "correct result, not an error" in plan.unspent_budget["note"]
+
+
+def test_vpc_endpoints_are_always_present(plan):
+    for tier in plan.tiers:
+        assert tier.spec.vpc_endpoints >= 2
+    labels = " ".join(i.label for i in plan.tiers[0].estimate.items)
+    assert "VPC endpoint" in labels
+
+
+def test_arm_instances_are_preferred(plan):
+    for tier in plan.tiers:
+        assert tier.spec.database_arch == "arm64"
+
+
+def test_the_cross_region_copy_is_billed_and_stays_in_india(plan):
+    labels = {i.label: i for i in plan.tiers[0].estimate.items}
+    assert "Cross-region backup copy" in labels
+    assert labels["Cross-region backup copy"].monthly_usd > 0

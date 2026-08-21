@@ -858,6 +858,69 @@ def delete_architecture_route(architecture_id: str, owner: str = Query(...)) -> 
     return {"deleted": removed}
 
 
+@app.post("/plan")
+def plan_endpoint(body: DescribeIn) -> dict:
+    """The reasoning-layer contract: a description in, three compliant tiers out.
+
+    Separate from /describe rather than replacing it. /describe still
+    answers "what would this cost", which is a fair question and the one
+    the price index is built around. This answers "what should I build,
+    given what I told you" -- and it refuses to price anything that fails
+    a stated requirement, which is a different promise.
+    """
+    from whichcloud import plan as planning
+
+    try:
+        result = planning.build(body.description)
+    except AssertionError as exc:  # a tier was generated non-compliant
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    constraints = result.constraints
+    return {
+        "sizing_basis": result.load.sizing_basis(),
+        "excluded_with_reason": result.load.excluded_with_reason,
+        "tiers": [
+            {
+                "name": tier.name,
+                "label": tier.label,
+                "monthly_total": round(tier.monthly_total, 2),
+                "within_budget": tier.within_budget(constraints.budget_monthly_usd),
+                "rto": tier.rto,
+                "rpo": tier.rpo,
+                "region_rto": tier.region_rto,
+                "region_rpo": tier.region_rpo,
+                "gives_up": tier.gives_up,
+                "justifications": tier.justifications,
+                "components": [
+                    {
+                        "label": item.label,
+                        "sku": item.sku,
+                        "unit": item.unit,
+                        "monthly_usd": float(item.monthly_usd),
+                    }
+                    for item in tier.estimate.items
+                ],
+                "complete": tier.estimate.is_complete,
+                "missing": tier.estimate.missing,
+            }
+            for tier in result.tiers
+        ],
+        # The default view is the recommended tier, not the cheapest --
+        # showing the cheapest first makes price the frame for every
+        # comparison that follows.
+        "default_tier": "tier_2",
+        "below_requirements_panel": result.below_requirements,
+        "compliance_notes": result.compliance,
+        "assumed_fields": constraints.assumed_fields(),
+        "stated_fields": {
+            name: constraints.evidence.get(name, "")
+            for name in sorted(constraints.stated)
+        },
+        "unspent_budget": result.unspent_budget,
+        "over_budget_note": result.over_budget_note,
+    }
+
+
 @app.post("/describe", response_model=RecommendationOut)
 def describe_route(body: DescribeIn) -> RecommendationOut:
     """Plain English straight through to three priced architectures.

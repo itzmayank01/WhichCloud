@@ -87,6 +87,22 @@ class ArchitectureSpec:
     auth_monthly_active_users: float = 0.0
     backup_gb: float = 0.0
 
+    # ── the components a stated requirement makes mandatory ──
+    #: GB copied to a second region. Zero means every copy sits beside the
+    #: thing it protects, which does not survive losing the region.
+    backup_copy_gb: float = 0.0
+    #: Write-once retention on the primary document store, and a policy
+    #: denying regions outside the lock. Both are billed at nothing and
+    #: both are load-bearing, so they are carried as components rather
+    #: than assumed -- an architecture cannot point at what it never named.
+    object_lock: bool = False
+    region_deny_guardrail: bool = False
+    #: Interface endpoints, one per service kept off the NAT gateway.
+    vpc_endpoints: int = 0
+    vpc_endpoint_gb: float = 0.0
+    #: GB of write-once data aged into a colder class.
+    lifecycle_gb: float = 0.0
+
     # ── data pipeline & analytics ──
     # Each is None/0 unless the workload actually asked for it: a CRUD app
     # with no streaming requirement must not acquire a Kafka cluster.
@@ -212,6 +228,14 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "s3_requests", "get"): "s3:get-requests",
     ("azure", "s3_requests", "put"): "blob:put-requests",
     ("azure", "s3_requests", "get"): "blob:get-requests",
+
+    ("aws", "backup_copy", "warm"): "backup:cross-region-warm",
+    ("aws", "storage_lifecycle", "archive-instant"): "s3:glacier-instant",
+    ("aws", "storage_lifecycle", "infrequent"): "s3:standard-ia",
+    ("aws", "endpoint", "interface-hour"): "vpce:interface-hour",
+    ("aws", "endpoint", "gb-processed"): "vpce:gb-processed",
+    ("aws", "governance", "object-lock"): "s3:object-lock",
+    ("aws", "governance", "region-deny"): "organizations:scp",
 
     ("aws", "dns", "zone"): "route53:hosted-zone",
     ("aws", "dns", "queries"): "route53:dns-queries",
@@ -481,6 +505,63 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.items.append(_hourly_line("Load balancer", point, 1))
         else:
             result.missing.append("load balancer")
+
+    # ---- cross-region backup copy ----
+    if spec.backup_copy_gb:
+        point = _by_role(provider, region, "backup_copy", "warm", dsn)
+        if point:
+            result.items.append(
+                _metered_line("Cross-region backup copy", point, spec.backup_copy_gb)
+            )
+        else:
+            result.missing.append("cross-region backup copy")
+
+    # ---- lifecycle-tiered retention ----
+    if spec.lifecycle_gb:
+        point = _by_role(provider, region, "storage_lifecycle", "archive-instant", dsn)
+        if point:
+            result.items.append(
+                _metered_line("Archived retention", point, spec.lifecycle_gb)
+            )
+        else:
+            result.missing.append("lifecycle storage")
+
+    # ---- VPC endpoints ----
+    # Both meters or neither: an endpoint billed by the hour with its data
+    # processing missing understates exactly the charge it exists to avoid.
+    if spec.vpc_endpoints:
+        hourly = _by_role(provider, region, "endpoint", "interface-hour", dsn)
+        processed = _by_role(provider, region, "endpoint", "gb-processed", dsn)
+        if hourly and processed:
+            result.items.append(
+                _hourly_line(
+                    f"VPC endpoints x {spec.vpc_endpoints}", hourly, spec.vpc_endpoints
+                )
+            )
+            if spec.vpc_endpoint_gb:
+                result.items.append(
+                    _metered_line(
+                        "VPC endpoint data processing", processed, spec.vpc_endpoint_gb
+                    )
+                )
+        else:
+            result.missing.append("VPC endpoints")
+
+    # ---- governance controls AWS does not charge for ----
+    # Priced at zero because that is the published rate, not because the
+    # figure is unknown. They appear as lines so the architecture can point
+    # at the control that satisfies a residency or immutability obligation.
+    for enabled, role, label in (
+        (spec.object_lock, "object-lock", "Object Lock (WORM retention)"),
+        (spec.region_deny_guardrail, "region-deny", "Region-deny guardrail"),
+    ):
+        if not enabled:
+            continue
+        point = _by_role(provider, region, "governance", role, dsn)
+        if point:
+            result.items.append(_metered_line(label, point, 1))
+        else:
+            result.missing.append(label.lower())
 
     # ---- WAF ----
     # Three real SKUs, not a bundled guess: a Web ACL is a flat fee, rules
