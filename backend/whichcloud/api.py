@@ -923,6 +923,11 @@ def plan_endpoint(body: DescribeIn) -> dict:
         },
         "unspent_budget": result.unspent_budget,
         "over_budget_note": result.over_budget_note,
+        "network_topology": result.network_topology,
+        "network_topology_reason": result.network_topology_reason,
+        "archetype": result.archetype,
+        "archetype_note": result.archetype_note,
+        "extraction_confidence": result.extraction_confidence,
     }
 
 

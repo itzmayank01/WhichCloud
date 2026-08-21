@@ -180,18 +180,33 @@ class Constraints:
     def source(self, name: str) -> Source:
         return "stated" if name in self.stated else "assumed"
 
+    def confidence(self, name: str) -> str:
+        """"high" when matched from explicit text, "low" when it fell
+        through to a default. The same distinction as source(), named for
+        what a reader of the output actually wants to know: not where the
+        value came from, but how much to trust it."""
+        return "high" if name in self.stated else "low"
+
+    def confidence_map(self) -> dict[str, str]:
+        """Every required field's confidence, not just the low ones --
+        so "what did extraction trust" is answerable without inferring it
+        from what assumed_fields() left out."""
+        return {name: self.confidence(name) for name in REQUIRED}
+
     @property
     def assumed(self) -> list[str]:
         """REQUIRED minus stated. Computed here, never maintained by hand."""
         return [f for f in REQUIRED if f not in self.stated]
 
     def assumed_fields(self) -> list[dict]:
-        """Step 7's contract: field, what was assumed, what to ask."""
+        """Step 7's contract: field, what was assumed, what to ask -- every
+        entry here is, by construction, confidence "low"."""
         return [
             {
                 "field": name,
                 "assumption": getattr(self, name),
                 "question": QUESTIONS.get(name, f"What is {name}?"),
+                "confidence": "low",
             }
             for name in self.assumed
         ]

@@ -41,7 +41,10 @@ def objectives(
 #: (country, sector) -> obligations. Table lookup only. A pair absent from
 #: this table yields no regulation names, which is the correct output when
 #: nothing is known -- not an invitation to guess one.
-RULES: dict[tuple[str, str], tuple[dict[str, str], ...]] = {
+#: `requires_network_isolation`, where present, forces network_topology's
+#: decision to private_standard regardless of how small the workload is --
+#: see whichcloud.network_topology.
+RULES: dict[tuple[str, str], tuple[dict[str, str | bool], ...]] = {
     ("IN", "healthcare"): (
         {
             "regulation": "Digital Personal Data Protection Act 2023",
@@ -50,6 +53,7 @@ RULES: dict[tuple[str, str], tuple[dict[str, str], ...]] = {
                           "processing must be auditable.",
             "control": "Encryption at rest (KMS), TLS 1.2+ in transit (ACM), "
                        "access and API audit retention (CloudTrail, flow logs).",
+            "requires_network_isolation": True,
         },
         {
             "regulation": "IT Act s43A / SPDI Rules 2011",
@@ -57,6 +61,7 @@ RULES: dict[tuple[str, str], tuple[dict[str, str], ...]] = {
                           "personal data, demonstrable on request.",
             "control": "Documented encryption, least-privilege access, and "
                        "retained audit records.",
+            "requires_network_isolation": True,
         },
         {
             "regulation": "ABDM Health Data Management Policy",
@@ -64,6 +69,7 @@ RULES: dict[tuple[str, str], tuple[dict[str, str], ...]] = {
                           "auditable trail of who accessed what.",
             "control": "Immutable audit storage (S3 Object Lock) and "
                        "per-access logging.",
+            "requires_network_isolation": True,
         },
         {
             "regulation": "EHR Standards 2016",
@@ -71,6 +77,7 @@ RULES: dict[tuple[str, str], tuple[dict[str, str], ...]] = {
                           "retrievable for their statutory life.",
             "control": "Lifecycle-tiered retention with a cross-region copy "
                        "held inside India.",
+            "requires_network_isolation": True,
         },
     ),
     ("IN", "fintech"): (
@@ -79,12 +86,14 @@ RULES: dict[tuple[str, str], tuple[dict[str, str], ...]] = {
             "obligation": "Payment system data must be stored only in India.",
             "control": "Region pinning enforced by a service control policy "
                        "denying every region outside India.",
+            "requires_network_isolation": True,
         },
         {
             "regulation": "Digital Personal Data Protection Act 2023",
             "obligation": "Personal data is protected and its processing "
                           "auditable.",
             "control": "Encryption at rest (KMS) and retained audit records.",
+            "requires_network_isolation": True,
         },
     ),
     ("US", "healthcare"): (
@@ -94,12 +103,13 @@ RULES: dict[tuple[str, str], tuple[dict[str, str], ...]] = {
                           "health information.",
             "control": "Encryption at rest and in transit, audit controls, "
                        "and access records retained.",
+            "requires_network_isolation": True,
         },
     ),
 }
 
 #: Applies to any sector in these countries.
-_ANY_SECTOR: dict[str, tuple[dict[str, str], ...]] = {
+_ANY_SECTOR: dict[str, tuple[dict[str, str | bool], ...]] = {
     "DE": (
         {
             "regulation": "GDPR",
@@ -115,7 +125,7 @@ for _eu in ("FR", "IE", "NL", "ES", "IT"):
     _ANY_SECTOR[_eu] = _ANY_SECTOR["DE"]
 
 
-def compliance_notes(country: str, sector: str) -> list[dict[str, str]]:
+def compliance_notes(country: str, sector: str) -> list[dict[str, str | bool]]:
     """Obligations for this pair, or an empty list. Never a guess."""
     notes = list(RULES.get((country, sector), ()))
     notes.extend(_ANY_SECTOR.get(country, ()))

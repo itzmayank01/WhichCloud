@@ -1,0 +1,7 @@
+{
+  "hospital-pune": {"tier_1": 307.10, "tier_2": 373.83, "tier_3": 517.95},
+  "hospital-pune-public": {"tier_1": 315.10, "tier_2": 381.83, "tier_3": 525.95},
+  "ecommerce-scale": {"tier_1": 1170.41, "tier_2": 1673.02, "tier_3": 3330.20},
+  "fintech-bengaluru": {"tier_1": 217.09, "tier_2": 254.11, "tier_3": 398.23},
+  "budget-floor-conflict": {"tier_1": 307.10, "tier_2": 373.83, "tier_3": 517.95}
+}

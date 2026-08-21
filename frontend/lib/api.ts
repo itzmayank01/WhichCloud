@@ -350,6 +350,11 @@ export type Plan = {
   stated_fields: Record<string, string>;
   unspent_budget: { amount_usd: number; note: string } | null;
   over_budget_note: string;
+  network_topology: string;
+  network_topology_reason: string;
+  archetype: string;
+  archetype_note: string;
+  extraction_confidence: Record<string, string>;
 };
 
 export const api = {

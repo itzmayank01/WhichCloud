@@ -86,6 +86,30 @@ export function PlanView({ plan }: { plan: Plan }) {
         </p>
       </section>
 
+      {/* ── the network shape, and why ── */}
+      {plan.network_topology_reason && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            Network shape: {plan.network_topology}
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+            {plan.network_topology_reason}
+          </p>
+        </section>
+      )}
+
+      {/* ── whether this description matched a known service shape ── */}
+      {plan.archetype_note && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            Workload shape: {plan.archetype}
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+            {plan.archetype_note}
+          </p>
+        </section>
+      )}
+
       {/* ── the three compliant options ── */}
       <section className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-neutral-900">

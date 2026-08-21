@@ -19,6 +19,8 @@ expect:
     # note and the harness's own report for this discrepancy.
     public_facing: {value: false, source: stated}
 
+  network_topology: public_simple
+
   must_exclude:
     - multi_az_database
     - cross_region_backup_copy
@@ -27,7 +29,18 @@ expect:
     - cdn
     - cache
     - read_replica
+    - nat_gateway
+    - vpc_flow_logs
 
+  # NOTE (see the harness report / task summary for detail): after the
+  # network-topology fix, Tier 1 is $65.61 -- NAT gateway and flow logs
+  # are gone (was $145.59), but it still does not clear $60. The
+  # remaining cost is DEFAULT_STORAGE_GB (500) and DEFAULT_EGRESS_GB
+  # (100), assumed defaults untouched by this task because Pune also
+  # relies on them -- fixing them here would move Pune's totals too,
+  # which the golden-totals check exists specifically to catch. Encoded
+  # as the correct target, left failing honestly rather than adjusted to
+  # pass.
   budget:
     tier_1: true
 

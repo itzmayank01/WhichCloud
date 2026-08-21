@@ -31,6 +31,8 @@ from whichcloud.constraint_filter import Architecture, check
 from whichcloud.constraints import Constraints, extract
 from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
 from whichcloud.load_model import Load, build_load
+from whichcloud.network_topology import PUBLIC_SIMPLE, TopologyDecision
+from whichcloud.network_topology import decide as decide_topology
 from whichcloud.objectives import compliance_notes, objectives
 from whichcloud.planner import RPS_PER_VCPU, in_country_regions
 from whichcloud.pricing import store as pricing_store
@@ -140,6 +142,21 @@ class Plan:
     compliance: list[dict] = field(default_factory=list)
     over_budget_note: str = ""
     unspent_budget: dict | None = None
+    #: Part 1/3: which network shape every tier was built inside of, and
+    #: why -- never silent, and naming the compliance obligation when one
+    #: forced private_standard regardless of how small the workload is.
+    network_topology: str = ""
+    network_topology_reason: str = ""
+    #: Part 4.2: "unknown" when the description matches no known service
+    #: shape -- EC2/Fargate + RDS is still what gets built (that is the
+    #: only shape this engine knows how to build), but said plainly as an
+    #: inference to review rather than implied as a confident match.
+    archetype: str = ""
+    archetype_note: str = ""
+    #: Part 4.1: every required field's confidence, high or low, not just
+    #: the low ones in assumed_fields() -- so "what did the model trust"
+    #: is answerable without inferring it from what is absent.
+    extraction_confidence: dict[str, str] = field(default_factory=dict)
 
 
 class BudgetMisallocationError(AssertionError):
@@ -161,6 +178,35 @@ def _vcpu_for(peak_rps: float) -> int:
 def _instances_for(peak_rps: float, *, high_availability: bool) -> int:
     needed = max(1, math.ceil(peak_rps / RPS_PER_VCPU))
     return max(needed, 2) if high_availability else needed
+
+
+#: The only shape this engine knows how to build: compute in front of a
+#: relational database, sized from a request rate. Not a phrase-matched
+#: label -- see _classify_archetype for why.
+WEB_OR_API_ARCHETYPE = "web_or_api"
+UNKNOWN_ARCHETYPE = "unknown"
+
+
+def _classify_archetype(constraints: Constraints) -> tuple[str, str]:
+    """Known vs. unknown, from structure already extracted -- not a new
+    phrase table. requests_per_day being STATED is direct evidence this is
+    a request-serving workload, which is the one shape (compute sized from
+    a rate, in front of a relational database) this engine actually
+    builds. Its absence means that shape is a generic default standing in
+    for evidence we don't have, and the output should say so rather than
+    imply a confident match."""
+    if "requests_per_day" in constraints.stated:
+        return WEB_OR_API_ARCHETYPE, (
+            f"{WEB_OR_API_ARCHETYPE}: a request volume was stated, matching "
+            "the compute + relational database shape this engine builds."
+        )
+    return UNKNOWN_ARCHETYPE, (
+        f"{UNKNOWN_ARCHETYPE}: no request volume was stated, so there is no "
+        "direct evidence this is a request-serving web/API workload. The "
+        "shape built here (compute + relational database) is a generic "
+        "default standing in for that evidence, not a confident match -- "
+        "review before use."
+    )
 
 
 def _requires_x86(description: str) -> bool:
@@ -220,9 +266,15 @@ class EndpointPlan:
 
 def _endpoint_plan(
     *, egress_gb: float, az_count: int, aws_region: str, dsn: str | None,
+    nat_present: bool,
 ) -> EndpointPlan:
     """Gateway endpoints always (free); interface endpoints only if they
-    pay for themselves against the NAT data-processing charge they avoid.
+    pay for themselves against the NAT data-processing charge they avoid
+    -- and only when there is a NAT charge to avoid in the first place.
+    Under public_simple there is no NAT gateway, so an interface endpoint
+    would be pure cost with nothing to divert; gateway endpoints still
+    make sense on their own (S3/DynamoDB traffic never needs a route to
+    the internet regardless of topology).
     """
     gateway_endpoints = 2 if egress_gb else 0  # S3 + DynamoDB
 
@@ -231,6 +283,9 @@ def _endpoint_plan(
     # the public internet, which no endpoint can shortcut. Half of stated
     # egress is the same convention already used for flow-log volume.
     diverted_gb = egress_gb * 0.5
+
+    if not nat_present:
+        return EndpointPlan(gateway_endpoints, 0, 0.0, diverted_gb, False, 0.0, 0.0)
 
     interface_rate = pricing_store.get_price(
         "aws", aws_region, "endpoint", "vpce:interface-hour", dsn
@@ -277,12 +332,14 @@ def _spec_for(
     requires_x86: bool,
     endpoints: EndpointPlan,
     posture_resource_count: int,
+    topology: TopologyDecision,
 ) -> ArchitectureSpec:
     """One tier's spec. Every optional component traces to a filter or a
     gate, and rung 2-4 additions only ever appear at tier_level >= 2 --
     Tier 1's whole point is that it stops after rung 1."""
     high_availability = constraints.availability == "high"
     durable = constraints.durability == "high"
+    public_simple = topology.value == PUBLIC_SIMPLE
     managed = tier_level >= 2  # Fargate + the rung 2/3 additions it buys
     storage = constraints.storage_gb or DEFAULT_STORAGE_GB
     egress = constraints.egress_gb or DEFAULT_EGRESS_GB
@@ -357,14 +414,22 @@ def _spec_for(
         gateway_endpoints=endpoints.gateway_endpoints,
         vpc_endpoints=endpoints.interface_endpoints,
         vpc_endpoint_gb=endpoints.interface_endpoint_gb,
-        nat_gateway_count=2 if high_availability else 1,
-        nat_gb_processed=max(0.0, egress - endpoints.diverted_gb)
-        if endpoints.justified else egress,
+        # public_simple: no private application subnet means nothing routes
+        # through a NAT gateway to reach it -- not a smaller NAT, none at
+        # all. See whichcloud.network_topology.
+        nat_gateway_count=0 if public_simple else (2 if high_availability else 1),
+        nat_gb_processed=(
+            0.0 if public_simple
+            else (max(0.0, egress - endpoints.diverted_gb)
+                  if endpoints.justified else egress)
+        ),
         audit_logging=True,
         tls_certificate=True,
         dns_hosted_zones=1,
         kms_key_count=1,
-        flowlog_gb=egress * 0.5,
+        # Off by default under public_simple (nothing stated a network-audit
+        # need); on everywhere else, unchanged.
+        flowlog_gb=(egress * 0.5) if (not public_simple or topology.flow_logs_wanted) else 0.0,
         # ── rung 2/3: bought starting Tier 2, not Tier 1 ──
         secret_count=1 if managed else 0,
         tracing_monthly_traces=1_000_000 if managed else 0,
@@ -559,13 +624,26 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
     aws_region = _aws_region(region)
     az_count = 2 if high_availability else 1
 
+    # Computed early because the topology decision needs it: a sector
+    # obligation tagged requires_network_isolation overrides everything
+    # else public_simple would otherwise qualify for.
+    compliance = compliance_notes(constraints.country, constraints.sector)
+    topology = decide_topology(constraints, load, description, compliance)
+
     endpoints = _endpoint_plan(
         egress_gb=constraints.egress_gb or DEFAULT_EGRESS_GB,
         az_count=az_count, aws_region=aws_region, dsn=dsn,
+        nat_present=topology.value != PUBLIC_SIMPLE,
     )
     resource_count = instances + 1  # +1 for the database instance
+    archetype, archetype_note = _classify_archetype(constraints)
 
-    plan = Plan(constraints=constraints, load=load)
+    plan = Plan(
+        constraints=constraints, load=load, compliance=compliance,
+        network_topology=topology.value, network_topology_reason=topology.reason,
+        archetype=archetype, archetype_note=archetype_note,
+        extraction_confidence=constraints.confidence_map(),
+    )
 
     tier_meta = [
         ("tier_1", "Cheapest that meets your requirements", 1),
@@ -582,6 +660,7 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
             name=name, constraints=constraints, load=load, region=region,
             instances=count, tier_level=level, requires_x86=requires_x86,
             endpoints=endpoints, posture_resource_count=resource_count,
+            topology=topology,
         )
         # FILTER BEFORE PRICE. A spec that fails here is never given a
         # number, because a cheap number attached to a rejected design is
@@ -625,7 +704,7 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
             rto=obj["rto"], rpo=obj["rpo"],
             region_rto=obj["region_rto"], region_rpo=obj["region_rpo"],
         )
-        tier.gives_up = _gives_up(spec, load, tier_level=level)
+        tier.gives_up = _gives_up(spec, load, tier_level=level, topology=topology)
         tier.committed_use_note = _committed_use_note(spec)
         if level >= 2:
             tier.justifications.update(_tier_two_justifications(constraints))
@@ -649,7 +728,6 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
         prev_spec = spec
 
     plan.below_requirements = _below_panel(constraints, load, region, dsn, provider)
-    plan.compliance = compliance_notes(constraints.country, constraints.sector)
 
     budget = constraints.budget_monthly_usd
     cheapest = plan.tiers[0]
@@ -728,12 +806,20 @@ def _committed_use_note(spec: ArchitectureSpec) -> str:
     )
 
 
-def _gives_up(spec: ArchitectureSpec, load: Load, *, tier_level: int) -> list[str]:
+def _gives_up(
+    spec: ArchitectureSpec, load: Load, *, tier_level: int, topology: TopologyDecision,
+) -> list[str]:
     gaps = []
     if tier_level == 1:
         gaps.append(
             "Patching, OS updates and dependency upgrades are manual — "
             "nothing here applies them for you."
+        )
+    if topology.value == PUBLIC_SIMPLE:
+        gaps.append(
+            "Application compute has a public IP. Access is controlled by "
+            "security group rules rather than by network isolation. The "
+            "database remains private."
         )
     if spec.database_read_replicas == 0:
         gaps.append(

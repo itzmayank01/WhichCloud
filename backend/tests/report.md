@@ -1,16 +1,16 @@
 # WhichCloud regression harness report
 
-Run at 2026-08-21 10:31:02 UTC
+Run at 2026-08-21 10:55:24 UTC
 
 | fixture | passed | failed | status |
 |---|---|---|---|
-| budget-floor-conflict | 99 | 0 | OK |
+| budget-floor-conflict | 103 | 0 | OK |
 | catalog-region-integrity | 5 | 0 | OK |
-| ecommerce-scale | 104 | 0 | OK |
-| fintech-bengaluru | 108 | 0 | OK |
-| hospital-pune-public | 139 | 0 | OK |
-| hospital-pune | 132 | 0 | OK |
-| internal-low-stakes | 97 | 1 | FAIL |
+| ecommerce-scale | 108 | 0 | OK |
+| fintech-bengaluru | 112 | 0 | OK |
+| hospital-pune-public | 143 | 0 | OK |
+| hospital-pune | 136 | 0 | OK |
+| internal-low-stakes | 96 | 1 | FAIL |
 
 ## budget-floor-conflict
 
@@ -117,6 +117,10 @@ Tier totals: tier_1=$307.10, tier_2=$373.83, tier_3=$517.95
 | INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
+| INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
+| golden_totals:tier_1 | pass | $307.10 | $307.10 |  |
+| golden_totals:tier_2 | pass | $373.83 | $373.83 |  |
+| golden_totals:tier_3 | pass | $517.95 | $517.95 |  |
 
 ## catalog-region-integrity
 
@@ -238,6 +242,10 @@ Tier totals: tier_1=$1,170.41, tier_2=$1,673.02, tier_3=$3,330.20
 | INV-9:tier_3:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
 | INV-10 | pass | (none) | (none) |  |
+| INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=normal, isolation_required=False) |  |
+| golden_totals:tier_1 | pass | $1170.41 | $1170.41 |  |
+| golden_totals:tier_2 | pass | $1673.02 | $1673.02 |  |
+| golden_totals:tier_3 | pass | $3330.20 | $3330.20 |  |
 
 ## fintech-bengaluru
 
@@ -353,6 +361,10 @@ Tier totals: tier_1=$217.09, tier_2=$254.11, tier_3=$398.23
 | INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | Digital Personal Data Protection Act 2023; RBI Storage of Payment System Data directive | Digital Personal Data Protection Act 2023; RBI Storage of Payment System Data directive |  |
+| INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=low, durability=high, isolation_required=True) |  |
+| golden_totals:tier_1 | pass | $217.09 | $217.09 |  |
+| golden_totals:tier_2 | pass | $254.11 | $254.11 |  |
+| golden_totals:tier_3 | pass | $398.23 | $398.23 |  |
 
 ## hospital-pune-public
 
@@ -497,8 +509,12 @@ Tier totals: tier_1=$315.10, tier_2=$381.83, tier_3=$525.95
 | INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
+| INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
 | diff_against:hospital-pune:sizing_unchanged | pass | sizing identical to hospital-pune | identical |  |
 | diff_against:hospital-pune:compliance_unchanged | pass | compliance identical to hospital-pune | identical |  |
+| golden_totals:tier_1 | pass | $315.10 | $315.10 |  |
+| golden_totals:tier_2 | pass | $381.83 | $381.83 |  |
+| golden_totals:tier_3 | pass | $525.95 | $525.95 |  |
 
 ## hospital-pune
 
@@ -638,10 +654,14 @@ Tier totals: tier_1=$307.10, tier_2=$373.83, tier_3=$517.95
 | INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
+| INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
+| golden_totals:tier_1 | pass | $307.10 | $307.10 |  |
+| golden_totals:tier_2 | pass | $373.83 | $373.83 |  |
+| golden_totals:tier_3 | pass | $517.95 | $517.95 |  |
 
 ## internal-low-stakes
 
-Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
+Tier totals: tier_1=$65.61, tier_2=$102.63, tier_3=$102.63
 
 | assertion | result | expected | actual | reason |
 |---|---|---|---|---|
@@ -666,13 +686,20 @@ Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
 | must_exclude:read_replica:tier_1 | pass | read_replica absent | absent | Read replica: not added, 0.00 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |
 | must_exclude:read_replica:tier_2 | pass | read_replica absent | absent | Read replica: not added, 0.00 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |
 | must_exclude:read_replica:tier_3 | pass | read_replica absent | absent | Read replica: not added, 0.00 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |
-| budget:tier_1 | **FAIL** | True | False | $145.59 vs $60.00 budget |
+| must_exclude:nat_gateway:tier_1 | pass | nat_gateway absent | absent | public_simple: no stated availability or durability requirement and 0.00 peak req/sec, so private application subnets and their NAT gateway are not bought. |
+| must_exclude:nat_gateway:tier_2 | pass | nat_gateway absent | absent | public_simple: no stated availability or durability requirement and 0.00 peak req/sec, so private application subnets and their NAT gateway are not bought. |
+| must_exclude:nat_gateway:tier_3 | pass | nat_gateway absent | absent | public_simple: no stated availability or durability requirement and 0.00 peak req/sec, so private application subnets and their NAT gateway are not bought. |
+| must_exclude:vpc_flow_logs:tier_1 | pass | vpc_flow_logs absent | absent | public_simple: no stated availability or durability requirement and 0.00 peak req/sec, so private application subnets and their NAT gateway are not bought. |
+| must_exclude:vpc_flow_logs:tier_2 | pass | vpc_flow_logs absent | absent | public_simple: no stated availability or durability requirement and 0.00 peak req/sec, so private application subnets and their NAT gateway are not bought. |
+| must_exclude:vpc_flow_logs:tier_3 | pass | vpc_flow_logs absent | absent | public_simple: no stated availability or durability requirement and 0.00 peak req/sec, so private application subnets and their NAT gateway are not bought. |
+| budget:tier_1 | **FAIL** | True | False | $65.61 vs $60.00 budget |
+| network_topology | pass | public_simple | public_simple | public_simple: no stated availability or durability requirement and 0.00 peak req/sec, so private application subnets and their NAT gateway are not bought. |
 | INV-1:tier_1 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_2 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_3 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
-| INV-2:tier_1 | pass | <= 1 NAT gateways | 1 |  |
-| INV-2:tier_2 | pass | <= 1 NAT gateways | 1 |  |
-| INV-2:tier_3 | pass | <= 1 NAT gateways | 1 |  |
+| INV-2:tier_1 | pass | <= 1 NAT gateways | 0 |  |
+| INV-2:tier_2 | pass | <= 1 NAT gateways | 0 |  |
+| INV-2:tier_3 | pass | <= 1 NAT gateways | 0 |  |
 | INV-3:tier_1 | pass | passes constraint_filter.check() | valid |  |
 | INV-3:tier_2 | pass | passes constraint_filter.check() | valid |  |
 | INV-3:tier_3 | pass | passes constraint_filter.check() | valid |  |
@@ -686,9 +713,9 @@ Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
 | INV-7:tier_1 | pass | non-null rto and rpo | rto='30-120 min' rpo='= backup interval' |  |
 | INV-7:tier_2 | pass | non-null rto and rpo | rto='30-120 min' rpo='= backup interval' |  |
 | INV-7:tier_3 | pass | non-null rto and rpo | rto='30-120 min' rpo='= backup interval' |  |
-| INV-8:tier_1 | pass | sum of line items == 145.59 | 145.59 |  |
-| INV-8:tier_2 | pass | sum of line items == 182.61 | 182.61 |  |
-| INV-8:tier_3 | pass | sum of line items == 182.61 | 182.61 |  |
+| INV-8:tier_1 | pass | sum of line items == 65.61 | 65.61 |  |
+| INV-8:tier_2 | pass | sum of line items == 102.63 | 102.63 |  |
+| INV-8:tier_3 | pass | sum of line items == 102.63 | 102.63 |  |
 | INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 1 |
 | INV-9:tier_1:db.t4g.micro | pass | sku exists in region ap-south-1 | found | Database |
 | INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -696,11 +723,8 @@ Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
 | INV-9:tier_1:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
 | INV-9:tier_1:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
 | INV-9:tier_1:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
-| INV-9:tier_1:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
-| INV-9:tier_1:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
 | INV-9:tier_1:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
 | INV-9:tier_1:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
-| INV-9:tier_1:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_1:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
 | INV-9:tier_2:db.t4g.micro | pass | sku exists in region ap-south-1 | found | Database |
 | INV-9:tier_2:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -708,8 +732,6 @@ Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
 | INV-9:tier_2:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
 | INV-9:tier_2:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
 | INV-9:tier_2:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
-| INV-9:tier_2:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
-| INV-9:tier_2:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
 | INV-9:tier_2:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
 | INV-9:tier_2:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
 | INV-9:tier_2:cognito:user-pool-mau | pass | sku exists in region ap-south-1 | found | Authentication (MAU) |
@@ -720,7 +742,6 @@ Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
 | INV-9:tier_2:guardduty:rds-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: database |
 | INV-9:tier_2:xray:traces-recorded | pass | sku exists in region ap-south-1 | found | Distributed tracing |
 | INV-9:tier_2:securityhub:compliance-check | pass | sku exists in region ap-south-1 | found | Security posture checks |
-| INV-9:tier_2:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_2:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
 | INV-9:tier_3:db.t4g.micro | pass | sku exists in region ap-south-1 | found | Database |
 | INV-9:tier_3:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -728,8 +749,6 @@ Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
 | INV-9:tier_3:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
 | INV-9:tier_3:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
 | INV-9:tier_3:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
-| INV-9:tier_3:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
-| INV-9:tier_3:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
 | INV-9:tier_3:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
 | INV-9:tier_3:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
 | INV-9:tier_3:cognito:user-pool-mau | pass | sku exists in region ap-south-1 | found | Authentication (MAU) |
@@ -740,6 +759,6 @@ Tier totals: tier_1=$145.59, tier_2=$182.61, tier_3=$182.61
 | INV-9:tier_3:guardduty:rds-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: database |
 | INV-9:tier_3:xray:traces-recorded | pass | sku exists in region ap-south-1 | found | Distributed tracing |
 | INV-9:tier_3:securityhub:compliance-check | pass | sku exists in region ap-south-1 | found | Security posture checks |
-| INV-9:tier_3:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
 | INV-10 | pass | (none) | (none) |  |
+| INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=public_simple (availability=low, durability=normal, isolation_required=False) |  |

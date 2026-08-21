@@ -39,6 +39,7 @@ from whichcloud.pricing.models import provider_region  # noqa: E402
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 REPORT_PATH = Path(__file__).parent / "report.md"
 HISTORY_PATH = Path(__file__).parent / "harness_history.jsonl"
+GOLDEN_PATH = Path(__file__).parent / "golden_totals.json"
 
 
 # ─────────────────────────── assertion plumbing ───────────────────────────
@@ -95,6 +96,8 @@ COMPONENT_CHECKS = {
     # responded to load rather than staying at the HA minimum.
     "autoscaling_compute": lambda t: (t.spec.compute_count or t.spec.fargate_task_count) > 2,
     "extended_retention_audit": lambda t: t.spec.audit_logging and t.spec.lifecycle_gb > 0,
+    "nat_gateway": lambda t: t.spec.nat_gateway_count > 0,
+    "vpc_flow_logs": lambda t: t.spec.flowlog_gb > 0,
 }
 
 #: When a must_exclude component is correctly absent, the reason usually
@@ -106,8 +109,15 @@ _EXCLUSION_MARKER = {
     "waf": "AWS WAF",
 }
 
+#: nat_gateway/vpc_flow_logs are a topology decision, not a load gate --
+#: their absence is explained by Plan.network_topology_reason, not by
+#: anything in load.excluded_with_reason.
+_TOPOLOGY_DRIVEN = {"nat_gateway", "vpc_flow_logs"}
+
 
 def _excluded_reason(plan: Plan, component: str) -> str:
+    if component in _TOPOLOGY_DRIVEN:
+        return plan.network_topology_reason or "(no topology reason recorded)"
     marker = _EXCLUSION_MARKER.get(component)
     if marker:
         for line in plan.load.excluded_with_reason:
@@ -248,6 +258,18 @@ def _check_budget(fx: dict, built: Plan) -> list[Result]:
             expected=f"contains {note_substr!r}", actual=built.over_budget_note,
         ))
     return results
+
+
+def _check_network_topology(fx: dict, built: Plan) -> list[Result]:
+    expected = fx.get("expect", {}).get("network_topology")
+    if not expected:
+        return []
+    ok = built.network_topology == expected
+    return [Result(
+        fx["id"], "network_topology", passed=ok,
+        expected=expected, actual=built.network_topology,
+        reason=built.network_topology_reason,
+    )]
 
 
 # ──────────────────────────── global invariants ────────────────────────────
@@ -427,6 +449,28 @@ def inv_10_compliance_matches_table(fx_id: str, built: Plan) -> list[Result]:
     )]
 
 
+def inv_11_topology_forced_private_when_it_must_be(fx_id: str, built: Plan) -> list[Result]:
+    """public_simple is a topology only a genuinely low-stakes workload may
+    have. Any of these three signals -- stated availability=high, stated
+    durability=high, or a compliance obligation tagged
+    requires_network_isolation -- must force private_standard regardless
+    of what the topology decision otherwise computed."""
+    c = built.constraints
+    isolation_required = any(
+        n.get("requires_network_isolation") for n in built.compliance
+    )
+    must_be_private = c.availability == "high" or c.durability == "high" or isolation_required
+    ok = (not must_be_private) or built.network_topology == "private_standard"
+    return [Result(
+        fx_id, "INV-11", passed=ok,
+        expected="private_standard whenever availability=high, durability=high, "
+                 "or a compliance obligation requires network isolation",
+        actual=f"topology={built.network_topology} "
+               f"(availability={c.availability}, durability={c.durability}, "
+               f"isolation_required={isolation_required})",
+    )]
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -437,6 +481,7 @@ INVARIANTS = {
     "INV-8": inv_8_total_matches_line_items,
     "INV-9": inv_9_items_resolve_to_catalog_region,
     "INV-10": inv_10_compliance_matches_table,
+    "INV-11": inv_11_topology_forced_private_when_it_must_be,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.
@@ -583,6 +628,7 @@ def run_prompt_fixture(fx: dict, cache: dict[str, Plan | Exception]) -> FixtureR
     run.results.extend(_check_must_exclude(fx, built))
     run.results.extend(_check_compliance(fx, built))
     run.results.extend(_check_budget(fx, built))
+    run.results.extend(_check_network_topology(fx, built))
     run.results.extend(run_invariants(fx, built, fx["prompt"]))
 
     other_id = expect.get("diff_against")
@@ -683,6 +729,60 @@ def append_history(runs: list[FixtureRun], path: Path) -> None:
             }) + "\n")
 
 
+# ────────────────────────────── golden totals ──────────────────────────────
+# The no-regression guard. Unlike a fixture's own must_include/must_exclude
+# checks, this asks a narrower and stricter question: not "is this design
+# still compliant" but "did the price move at all" -- the signal that a
+# change meant for one class of workload (network_topology, in this task)
+# leaked into a workload it was never meant to touch. Hardcoded cents were
+# right for that one change; a runner that can only hardcode is wrong
+# permanently, which is what this file replaces them with.
+
+
+def load_golden(path: Path) -> dict[str, dict[str, float]]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def check_golden_totals(
+    plan_cache: dict[str, Plan | Exception], golden: dict[str, dict[str, float]],
+) -> dict[str, list[Result]]:
+    """Results keyed by fixture id, so main() can fold them into that
+    fixture's own FixtureRun rather than inventing a pseudo-fixture."""
+    by_fixture: dict[str, list[Result]] = {}
+    for fx_id, expected_totals in golden.items():
+        built = plan_cache.get(fx_id)
+        results = []
+        if not isinstance(built, Plan):
+            results.append(Result(
+                fx_id, "golden_totals", passed=False,
+                expected="fixture built successfully",
+                actual="not found or errored -- cannot check golden totals",
+            ))
+        else:
+            actual_totals = {t.name: round(t.monthly_total, 2) for t in built.tiers}
+            for tier_name, expected in expected_totals.items():
+                actual = actual_totals.get(tier_name)
+                ok = actual is not None and abs(actual - expected) < 0.005
+                results.append(Result(
+                    fx_id, f"golden_totals:{tier_name}", passed=ok,
+                    expected=f"${expected:.2f}",
+                    actual=f"${actual:.2f}" if actual is not None else "tier not found",
+                ))
+        by_fixture[fx_id] = results
+    return by_fixture
+
+
+def write_golden(plan_cache: dict[str, Plan | Exception], fixture_ids: list[str], path: Path) -> None:
+    golden = {}
+    for fx_id in fixture_ids:
+        built = plan_cache.get(fx_id)
+        if isinstance(built, Plan):
+            golden[fx_id] = {t.name: round(t.monthly_total, 2) for t in built.tiers}
+    path.write_text(json.dumps(golden, indent=2) + "\n")
+
+
 # ────────────────────────────────── main ───────────────────────────────────
 
 
@@ -695,6 +795,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--fixture", help="run only this fixture id")
     ap.add_argument("--no-report", action="store_true", help="skip report.md/history")
+    ap.add_argument(
+        "--approve-golden", action="store_true",
+        help="write current totals to golden_totals.json instead of checking "
+             "against it -- use only when a total's move is intended",
+    )
     args = ap.parse_args()
 
     all_fixtures = load_fixtures()
@@ -707,6 +812,12 @@ def main() -> int:
     # regardless of --fixture filtering or alphabetical file order.
     plan_cache = build_prompt_fixtures(all_fixtures)
 
+    if args.approve_golden:
+        fixture_ids = sorted(load_golden(GOLDEN_PATH))
+        write_golden(plan_cache, fixture_ids, GOLDEN_PATH)
+        print(f"Wrote current totals for {len(fixture_ids)} fixture(s) to {GOLDEN_PATH}")
+        return 0
+
     to_run = [f for f in all_fixtures if not args.fixture or f["id"] == args.fixture]
     runs: list[FixtureRun] = []
     for fx in to_run:
@@ -715,7 +826,20 @@ def main() -> int:
         else:
             runs.append(run_prompt_fixture(fx, plan_cache))
 
+    golden = load_golden(GOLDEN_PATH)
+    golden_results = check_golden_totals(plan_cache, golden)
+    totals_drifted = False
+    for run in runs:
+        for res in golden_results.get(run.fixture_id, []):
+            run.results.append(res)
+            if not res.passed:
+                totals_drifted = True
+
     print_table(runs)
+    if totals_drifted:
+        print(
+            "\ntotals changed — review and run --approve-golden if intended"
+        )
 
     total_failed = sum(len(r.failed) for r in runs) + sum(1 for r in runs if r.error)
     if total_failed:
