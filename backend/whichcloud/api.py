@@ -943,6 +943,15 @@ def plan_endpoint(body: DescribeIn) -> dict:
         "provisional": result.provisional,
         "provisional_reasons": result.provisional_reasons,
         "extraction_confidence": result.extraction_confidence,
+        # How the Constraints were read. `degraded` means the phrase-table
+        # fallback answered because no model was reachable -- it reads far
+        # fewer phrasings, so a plan built on it must say so.
+        "extraction_reader": result.extraction_reader,
+        "extraction_model": result.extraction_model,
+        "extraction_cached": result.extraction_cached,
+        "degraded": result.degraded,
+        "degraded_reason": result.degraded_reason,
+        "extraction_spans": result.extraction_spans,
     }
 
 

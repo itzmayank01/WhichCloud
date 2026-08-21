@@ -1,22 +1,16 @@
 # WhichCloud regression harness report
 
-Run at 2026-08-21 18:51:42 UTC
+Run at 2026-08-21 19:52:57 UTC
 
 | fixture | passed | failed | status |
 |---|---|---|---|
 | budget-floor-conflict | 107 | 0 | OK |
 | catalog-region-integrity | 5 | 0 | OK |
 | ecommerce-scale | 115 | 0 | OK |
-| fintech-bengaluru | 116 | 0 | OK |
+| fintech-bengaluru | 121 | 0 | OK |
 | hospital-pune-public | 147 | 0 | OK |
 | hospital-pune | 140 | 0 | OK |
-| internal-low-stakes | 107 | 0 | OK |
-| probe:batch-etl | 4 | 0 | OK |
-| probe:event-webhook | 4 | 0 | OK |
-| probe:ml-inference | 4 | 0 | OK |
-| probe:realtime-chat | 4 | 0 | OK |
-| probe:static-site | 4 | 0 | OK |
-| probe:vm-migration | 4 | 0 | OK |
+| internal-low-stakes | 110 | 0 | OK |
 
 ## budget-floor-conflict
 
@@ -266,7 +260,7 @@ Tier totals: tier_1=$1,272.95, tier_2=$1,791.91, tier_3=$3,449.10
 
 ## fintech-bengaluru
 
-Tier totals: tier_1=$92.27, tier_2=$129.29, tier_3=$273.40
+Tier totals: tier_1=$100.27, tier_2=$137.29, tier_3=$281.40
 
 | assertion | result | expected | actual | reason |
 |---|---|---|---|---|
@@ -292,19 +286,18 @@ Tier totals: tier_1=$92.27, tier_2=$129.29, tier_3=$273.40
 | INV-3:tier_1 | pass | passes constraint_filter.check() | valid |  |
 | INV-3:tier_2 | pass | passes constraint_filter.check() | valid |  |
 | INV-3:tier_3 | pass | passes constraint_filter.check() | valid |  |
-| INV-5:CloudFront (CDN): not added, 0 | pass | non-empty reason string | CloudFront (CDN): not added, 0.00 peak req/sec and staff-only access, no large static assets and no users outside the home country described |  |
-| INV-5:AWS WAF: not added, staff-only | pass | non-empty reason string | AWS WAF: not added, staff-only access — reachable only from known networks, so security groups plus an IP allowlist are the control that fits; a firewall in front of an internal system filters traffic that never arrives |  |
-| INV-5:ElastiCache: not added, 0.00 p | pass | non-empty reason string | ElastiCache: not added, 0.00 peak req/sec does not repeat reads often enough to pay for itself |  |
-| INV-5:Read replica: not added, 0.00  | pass | non-empty reason string | Read replica: not added, 0.00 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |  |
+| INV-5:CloudFront (CDN): not added, 0 | pass | non-empty reason string | CloudFront (CDN): not added, 0.06 peak req/sec and no large static assets and no users outside the home country described |  |
+| INV-5:ElastiCache: not added, 0.06 p | pass | non-empty reason string | ElastiCache: not added, 0.06 peak req/sec does not repeat reads often enough to pay for itself |  |
+| INV-5:Read replica: not added, 0.06  | pass | non-empty reason string | Read replica: not added, 0.06 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |  |
 | INV-5:Message queue: not added, noth | pass | non-empty reason string | Message queue: not added, nothing in the description is asynchronous, batched or long-running |  |
 | INV-6:tier_2 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=4 no_further=False |  |
 | INV-6:tier_3 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=1 no_further=False |  |
 | INV-7:tier_1 | pass | non-null rto and rpo | rto='30-120 min' rpo='= backup interval' |  |
 | INV-7:tier_2 | pass | non-null rto and rpo | rto='30-120 min' rpo='= backup interval' |  |
 | INV-7:tier_3 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
-| INV-8:tier_1 | pass | sum of line items == 92.27 | 92.27 |  |
-| INV-8:tier_2 | pass | sum of line items == 129.29 | 129.29 |  |
-| INV-8:tier_3 | pass | sum of line items == 273.4 | 273.4 |  |
+| INV-8:tier_1 | pass | sum of line items == 100.27 | 100.27 |  |
+| INV-8:tier_2 | pass | sum of line items == 137.29 | 137.29 |  |
+| INV-8:tier_3 | pass | sum of line items == 281.4 | 281.4 |  |
 | INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 1 |
 | INV-9:tier_1:db.t4g.micro | pass | sku exists in region ap-south-1 | found | Database |
 | INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -315,6 +308,8 @@ Tier totals: tier_1=$92.27, tier_2=$129.29, tier_3=$273.40
 | INV-9:tier_1:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
 | INV-9:tier_1:s3:object-lock | pass | sku exists in region ap-south-1 | found | Object Lock (WORM retention) |
 | INV-9:tier_1:organizations:scp | pass | sku exists in region ap-south-1 | found | Region-deny guardrail |
+| INV-9:tier_1:waf:webacl | pass | sku exists in region ap-south-1 | found | WAF Web ACL |
+| INV-9:tier_1:waf:rule | pass | sku exists in region ap-south-1 | found | WAF rules × 3 |
 | INV-9:tier_1:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
 | INV-9:tier_1:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
 | INV-9:tier_1:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
@@ -332,6 +327,8 @@ Tier totals: tier_1=$92.27, tier_2=$129.29, tier_3=$273.40
 | INV-9:tier_2:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
 | INV-9:tier_2:s3:object-lock | pass | sku exists in region ap-south-1 | found | Object Lock (WORM retention) |
 | INV-9:tier_2:organizations:scp | pass | sku exists in region ap-south-1 | found | Region-deny guardrail |
+| INV-9:tier_2:waf:webacl | pass | sku exists in region ap-south-1 | found | WAF Web ACL |
+| INV-9:tier_2:waf:rule | pass | sku exists in region ap-south-1 | found | WAF rules × 3 |
 | INV-9:tier_2:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
 | INV-9:tier_2:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
 | INV-9:tier_2:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
@@ -356,6 +353,8 @@ Tier totals: tier_1=$92.27, tier_2=$129.29, tier_3=$273.40
 | INV-9:tier_3:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
 | INV-9:tier_3:s3:object-lock | pass | sku exists in region ap-south-1 | found | Object Lock (WORM retention) |
 | INV-9:tier_3:organizations:scp | pass | sku exists in region ap-south-1 | found | Region-deny guardrail |
+| INV-9:tier_3:waf:webacl | pass | sku exists in region ap-south-1 | found | WAF Web ACL |
+| INV-9:tier_3:waf:rule | pass | sku exists in region ap-south-1 | found | WAF rules × 3 |
 | INV-9:tier_3:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
 | INV-9:tier_3:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
 | INV-9:tier_3:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
@@ -383,13 +382,13 @@ Tier totals: tier_1=$92.27, tier_2=$129.29, tier_3=$273.40
 | INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=25 durability=high (stated) |  |
 | INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=25 durability=high (stated) |  |
 | INV-13:tier_3 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=25 durability=high (stated) |  |
-| golden_totals:tier_1 | pass | $92.27 | $92.27 |  |
-| golden_totals:tier_2 | pass | $129.29 | $129.29 |  |
-| golden_totals:tier_3 | pass | $273.40 | $273.40 |  |
+| golden_totals:tier_1 | pass | $100.27 | $100.27 |  |
+| golden_totals:tier_2 | pass | $137.29 | $137.29 |  |
+| golden_totals:tier_3 | pass | $281.40 | $281.40 |  |
 
 ## hospital-pune-public
 
-Tier totals: tier_1=$250.59, tier_2=$317.32, tier_3=$461.44
+Tier totals: tier_1=$515.19, tier_2=$581.92, tier_3=$726.04
 
 | assertion | result | expected | actual | reason |
 |---|---|---|---|---|
@@ -422,9 +421,9 @@ Tier totals: tier_1=$250.59, tier_2=$317.32, tier_3=$461.44
 | compliance:ABDM | pass | cites ABDM | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
 | forbidden:HIPAA | pass | never cites HIPAA | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
 | forbidden:GDPR | pass | never cites GDPR | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
-| budget:tier_1 | pass | True | True | $250.59 vs $900.00 budget |
-| budget:tier_2 | pass | True | True | $317.32 vs $900.00 budget |
-| budget:tier_3 | pass | True | True | $461.44 vs $900.00 budget |
+| budget:tier_1 | pass | True | True | $515.19 vs $900.00 budget |
+| budget:tier_2 | pass | True | True | $581.92 vs $900.00 budget |
+| budget:tier_3 | pass | True | True | $726.04 vs $900.00 budget |
 | INV-1:tier_1 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_2 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_3 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
@@ -443,9 +442,9 @@ Tier totals: tier_1=$250.59, tier_2=$317.32, tier_3=$461.44
 | INV-7:tier_1 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_2 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_3 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
-| INV-8:tier_1 | pass | sum of line items == 250.59 | 250.59 |  |
-| INV-8:tier_2 | pass | sum of line items == 317.32 | 317.32 |  |
-| INV-8:tier_3 | pass | sum of line items == 461.44 | 461.44 |  |
+| INV-8:tier_1 | pass | sum of line items == 515.19 | 515.19 |  |
+| INV-8:tier_2 | pass | sum of line items == 581.92 | 581.92 |  |
+| INV-8:tier_3 | pass | sum of line items == 726.04 | 726.04 |  |
 | INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 2 |
 | INV-9:tier_1:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
 | INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -532,18 +531,18 @@ Tier totals: tier_1=$250.59, tier_2=$317.32, tier_3=$461.44
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
 | INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=priced priced=True tiers=3 |  |
-| INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
-| INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
-| INV-13:tier_3 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
+| INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=1825 durability=high (stated) |  |
+| INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=1825 durability=high (stated) |  |
+| INV-13:tier_3 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=1825 durability=high (stated) |  |
 | diff_against:hospital-pune:sizing_unchanged | pass | sizing identical to hospital-pune | identical |  |
 | diff_against:hospital-pune:compliance_unchanged | pass | compliance identical to hospital-pune | identical |  |
-| golden_totals:tier_1 | pass | $250.59 | $250.59 |  |
-| golden_totals:tier_2 | pass | $317.32 | $317.32 |  |
-| golden_totals:tier_3 | pass | $461.44 | $461.44 |  |
+| golden_totals:tier_1 | pass | $515.19 | $515.19 |  |
+| golden_totals:tier_2 | pass | $581.92 | $581.92 |  |
+| golden_totals:tier_3 | pass | $726.04 | $726.04 |  |
 
 ## hospital-pune
 
-Tier totals: tier_1=$242.59, tier_2=$309.32, tier_3=$453.44
+Tier totals: tier_1=$507.19, tier_2=$573.92, tier_3=$718.04
 
 | assertion | result | expected | actual | reason |
 |---|---|---|---|---|
@@ -576,9 +575,9 @@ Tier totals: tier_1=$242.59, tier_2=$309.32, tier_3=$453.44
 | compliance:ABDM | pass | cites ABDM | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
 | forbidden:HIPAA | pass | never cites HIPAA | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
 | forbidden:GDPR | pass | never cites GDPR | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
-| budget:tier_1 | pass | True | True | $242.59 vs $900.00 budget |
-| budget:tier_2 | pass | True | True | $309.32 vs $900.00 budget |
-| budget:tier_3 | pass | True | True | $453.44 vs $900.00 budget |
+| budget:tier_1 | pass | True | True | $507.19 vs $900.00 budget |
+| budget:tier_2 | pass | True | True | $573.92 vs $900.00 budget |
+| budget:tier_3 | pass | True | True | $718.04 vs $900.00 budget |
 | INV-1:tier_1 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_2 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_3 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
@@ -598,9 +597,9 @@ Tier totals: tier_1=$242.59, tier_2=$309.32, tier_3=$453.44
 | INV-7:tier_1 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_2 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_3 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
-| INV-8:tier_1 | pass | sum of line items == 242.59 | 242.59 |  |
-| INV-8:tier_2 | pass | sum of line items == 309.32 | 309.32 |  |
-| INV-8:tier_3 | pass | sum of line items == 453.44 | 453.44 |  |
+| INV-8:tier_1 | pass | sum of line items == 507.19 | 507.19 |  |
+| INV-8:tier_2 | pass | sum of line items == 573.92 | 573.92 |  |
+| INV-8:tier_3 | pass | sum of line items == 718.04 | 718.04 |  |
 | INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 2 |
 | INV-9:tier_1:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
 | INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -681,12 +680,12 @@ Tier totals: tier_1=$242.59, tier_2=$309.32, tier_3=$453.44
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
 | INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=priced priced=True tiers=3 |  |
-| INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
-| INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
-| INV-13:tier_3 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
-| golden_totals:tier_1 | pass | $242.59 | $242.59 |  |
-| golden_totals:tier_2 | pass | $309.32 | $309.32 |  |
-| golden_totals:tier_3 | pass | $453.44 | $453.44 |  |
+| INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=1825 durability=high (stated) |  |
+| INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=1825 durability=high (stated) |  |
+| INV-13:tier_3 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=1825 durability=high (stated) |  |
+| golden_totals:tier_1 | pass | $507.19 | $507.19 |  |
+| golden_totals:tier_2 | pass | $573.92 | $573.92 |  |
+| golden_totals:tier_3 | pass | $718.04 | $718.04 |  |
 
 ## internal-low-stakes
 
@@ -801,57 +800,6 @@ Tier totals: tier_1=$45.89, tier_2=$82.91, tier_3=$82.91
 | INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=31 durability=normal (assumed) |  |
 | INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=31 durability=normal (assumed) |  |
 | INV-13:tier_3 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=31 durability=normal (assumed) |  |
-
-## probe:batch-etl
-
-| assertion | result | expected | actual | reason |
-|---|---|---|---|---|
-| INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=recognised_unpriced priced=False tiers=0 | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| classified | pass | an archetype name (or 'unknown') | batch_etl [recognised_unpriced] | Recognised as 'batch_etl' (matched 4 phrase(s), first 'every night'), which this engine can name but has not yet been taught to build. |
-| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| describes_the_recognised_shape | pass | a description of what this architecture needs | Object storage for the raw and processed data, a scheduled c |  |
-
-## probe:event-webhook
-
-| assertion | result | expected | actual | reason |
-|---|---|---|---|---|
-| INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=recognised_unpriced priced=False tiers=0 | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| classified | pass | an archetype name (or 'unknown') | event_driven [recognised_unpriced] | Recognised as 'event_driven' (matched 4 phrase(s), first 'webhook'), which this engine can name but has not yet been taught to build. |
-| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| describes_the_recognised_shape | pass | a description of what this architecture needs | An ingestion endpoint, a durable queue that holds each event |  |
-
-## probe:ml-inference
-
-| assertion | result | expected | actual | reason |
-|---|---|---|---|---|
-| INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=recognised_unpriced priced=False tiers=0 | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| classified | pass | an archetype name (or 'unknown') | ml_inference [recognised_unpriced] | Recognised as 'ml_inference' (matched 4 phrase(s), first 'trained model'), which this engine can name but has not yet been taught to build. |
-| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| describes_the_recognised_shape | pass | a description of what this architecture needs | A model-serving endpoint on accelerated or inference-optimis |  |
-
-## probe:realtime-chat
-
-| assertion | result | expected | actual | reason |
-|---|---|---|---|---|
-| INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=recognised_unpriced priced=False tiers=0 | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| classified | pass | an archetype name (or 'unknown') | realtime [recognised_unpriced] | Recognised as 'realtime' (matched 3 phrase(s), first 'in-app chat'), which this engine can name but has not yet been taught to build. |
-| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| describes_the_recognised_shape | pass | a description of what this architecture needs | A connection-oriented gateway holding persistent sockets, a  |  |
-
-## probe:static-site
-
-| assertion | result | expected | actual | reason |
-|---|---|---|---|---|
-| INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=recognised_unpriced priced=False tiers=0 | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| classified | pass | an archetype name (or 'unknown') | static_site [recognised_unpriced] | Recognised as 'static_site' (matched 5 phrase(s), first 'no database'), which this engine can name but has not yet been taught to build. |
-| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| describes_the_recognised_shape | pass | a description of what this architecture needs | Object storage holding the files, a CDN in front of it, and  |  |
-
-## probe:vm-migration
-
-| assertion | result | expected | actual | reason |
-|---|---|---|---|---|
-| INV-12 | pass | no priced tier when archetype_state is unknown or recognised_unpriced | state=recognised_unpriced priced=False tiers=0 | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| classified | pass | an archetype name (or 'unknown') | migration [recognised_unpriced] | Recognised as 'migration' (matched 4 phrase(s), first 'virtual machines'), which this engine can name but has not yet been taught to build. |
-| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | We recognise this shape, but pricing for it has not been validated yet, so no figure is shown. An estimate produced by pricing it as the one architecture this engine does model would be wrong in the components, not merely in the total. |
-| describes_the_recognised_shape | pass | a description of what this architecture needs | One instance per source machine, sized from each one's exist |  |
+| golden_totals:tier_1 | pass | $45.89 | $45.89 |  |
+| golden_totals:tier_2 | pass | $82.91 | $82.91 |  |
+| golden_totals:tier_3 | pass | $82.91 | $82.91 |  |

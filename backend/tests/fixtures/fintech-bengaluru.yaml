@@ -7,6 +7,23 @@ prompt: >
   documents and repayment records, RBI audits us, data must remain in
   India, budget $3,000 a month.
 
+constraints:
+  country: IN
+  sector: fintech
+  availability: low
+  durability: high
+  users: 0
+  requests_per_day: 2667
+  peak_shape: flat
+  budget_monthly_usd: 3000.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: true
+  country_lock: true
+  archetype: web_app
+  stated: [country, sector, durability, requests_per_day,
+           budget_monthly_usd, public_facing]
+
 expect:
   extraction:
     country: {value: IN, source: stated}

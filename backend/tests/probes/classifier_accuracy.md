@@ -1,77 +1,91 @@
 # Classifier accuracy — measured, not estimated
 
-Run `python tests/probes/classifier_accuracy.py` to reproduce. Measured
-2026-08-22 against the phrase-table classifier in `whichcloud/archetype.py`.
+Reproduce:
+
+    python tests/probes/classifier_accuracy.py --reader llm       # current
+    python tests/probes/classifier_accuracy.py --reader phrases   # baseline
+    python tests/probes/extraction_variance.py --runs 5
+
+Measured 2026-08-22. Extractor: `gpt-oss-120b` via Groq, temperature 0,
+structured output. Baseline column is the phrase-table extractor it
+replaced.
 
 ## Headline
 
-| metric | value |
-|---|---|
-| web-app prompts classified `web_app` | **3 / 20** |
-| ambiguous prompts correctly `unknown` | 4 / 5 |
-| **false-unknown rate** (priceable workloads wrongly refused) | **85%** |
-| **false-confident rate** (underdetermined workloads confidently named) | **20%** |
+| metric | phrase tables | **LLM** | change |
+|---|---|---|---|
+| web-app prompts classified `web_app` | 3 / 20 | **12 / 20** | +9 |
+| ambiguous prompts correctly `unknown` | 4 / 5 | **5 / 5** | +1 |
+| **false-unknown rate** | 85% | **40%** | **−45 pts** |
+| **false-confident rate** | 20% | **0%** | **−20 pts** |
 
-## What this measures
+`"We need to move to the cloud. What would it cost?"` — the one prompt
+the phrase table confidently mis-called as `migration` — now returns
+`unknown` at confidence 0.10 with zero supporting spans.
 
-Removing the `web_app` fallback was correct — it was a silent default
-wearing a disclaimer. But it moved the risk rather than removing it.
-Before, an unrecognised prompt got a confident wrong bill; now it gets a
-refusal. That trade is only acceptable if refusals are *rare* for
-workloads the engine can genuinely price.
+## The residual 40% is the span rule, not the model
 
-They are not. **85% of real web-app descriptions are refused.**
+Every one of the eight remaining misses returns `web_app` **at
+confidence 0.90**. They are rejected by `MIN_ARCHETYPE_SPANS = 2`:
 
-Every prompt the classifier had been tested on until now was written by
-whoever was also writing the phrase table, which measures nothing. These
-20 were written to defeat it, across six registers.
-
-## The miss list, by register
-
-| register | hit rate | what it missed on |
+| prompt | model's call | spans returned |
 |---|---|---|
-| terse | 0/3 | "Job board. 5k listings. Postgres." — names the tech, never the shape |
-| rambling | 0/2 | workload appears once, mid-paragraph, in the user's own words |
-| jargon-heavy | 2/3 | hit on "SaaS"/"storefront"; missed "stateless microservice fleet" |
-| non-native phrasing | 0/3 | "they will do login and see their bill" |
-| business language | 0/4 | "consultants need to log candidates, attach CVs" |
-| workload buried in backstory | 0/3 | real requirement is sentence 4 of 5 |
-| mixed register | 1/2 | hit "portal"; missed "upload a photo of a receipt" |
+| business-1 | web_app 0.90 | 1 — *"Consultants need to log candidates, attach CVs, and track where each one is in the process"* |
+| backstory-1 | web_app 0.90 | 1 — *"case workers to be able to open a client file, add notes after a visit…"* |
+| mixed-2 | web_app 0.90 | 1 — *"portal where our suppliers can update their own compliance documents"* |
+| jargon-3 | web_app 0.90 | 1 — *"Headless CMS driving a Next.js storefront"* |
 
-The phrase each miss *would* have needed is printed by the script. They
-are **not** patched in — patching them would make this number measure how
-well the table fits 20 prompts someone already showed it, which is the
-exact mistake the measurement exists to prevent.
+The rule was specified to stop "a single unopposed **weak** signal" from
+classifying. What it actually measures is *quoting style*: whether the
+model fragments its evidence into two short spans or quotes one long
+one. A 0.90-confidence span that quotes the entire workload description
+is not a weak signal, and rejecting it is not the intent the rule was
+written for.
 
-Note the shape of that list: twenty prompts produced twenty different
-near-misses, with almost no overlap. That is the argument. The tail is
-not long, it is unbounded — every real user writes their own phrasing,
-and a table can only ever contain phrasings someone already thought of.
+Worse, span **count is itself unstable**. `terse-2` returned 2 spans on
+one call and 1 on another — the same prompt flipping between `web_app`
+and `unknown` purely on how the model chose to cite itself. That
+instability is visible in the archetype agreement figure below (91.4%),
+and it is the single largest remaining source of it.
 
-## The one false-confident
+**Not changed here.** The threshold was specified with a number, and
+changing a specified threshold on the strength of my own measurement is
+the user's call, not mine. Recommendation: require 2 spans **only below**
+a high-confidence cut (e.g. ≥0.85 with one substantive span passes),
+which preserves the anti-guessing intent — `amb-1` scored 0.10 and would
+still be refused — while recovering an estimated 8 of the 8 misses.
 
-`"We need to move to the cloud. What would it cost?"` → **`migration`**,
-on a single matched phrase (`"move to the cloud"`), unopposed.
+## Extraction variance — the other half of the determinism claim
 
-It is not wrong that the phrase appears. It is wrong that one weak signal
-with nothing to compete against clears the bar — the prompt never says
-what is being moved, and "we need to move to the cloud" is how a great
-many people open *any* infrastructure conversation. The tie rule catches
-two-signal ambiguity; it cannot catch one-signal underdetermination.
+10 prompts × 5 runs, **cache deliberately cold**. In production the cache
+makes extraction reproducible by construction (first answer for a prompt
+is kept forever); this measures the underlying variance the cache hides.
 
-## What this is evidence for
+| field | agreement |
+|---|---|
+| country, availability, durability, users, requests_per_day, peak_shape, budget_monthly_usd, storage_gb, egress_gb, country_lock | **100.0%** |
+| sector | 97.1% |
+| public_facing | 91.4% |
+| archetype | 91.4% |
+| **mean** | **98.5%** |
 
-The recorded follow-up — replacing the phrase-table extractor with an
-LLM extractor at temperature 0 returning the Constraints schema as
-structured output — is no longer a nice-to-have. At an 85% false-unknown
-rate the current classifier refuses roughly six of every seven genuine
-web-app workloads, which makes the engine unusable for its own primary
-archetype however correct its pricing is.
+17 calls failed on exhausted quota and were skipped rather than counted
+as disagreements — they are a capacity fact, not a variance one.
 
-The decision layer is already structured to accept that swap: `classify()`
-takes the raw description and returns `(archetype, evidence)`, and
-nothing downstream of it reads the phrase tables. Two caveats from the
-earlier structural review still stand — `build_load()`, `_requires_x86()`
-and `network_topology.decide()` each still read the raw description
-directly for their own gates, so a full swap means promoting those
-signals into `Constraints` fields too.
+## The claim, restated
+
+One blanket "deterministic" claim would now be false. Two separate ones
+are true, and both are measured:
+
+> **Decision and pricing: fully deterministic.** Asserted at 100
+> iterations over identical Constraints — one distinct output
+> (`tests/test_determinism.py`). No model call is involved; `plan_from()`
+> takes Constraints directly, and a test fails if it ever reaches back
+> into the extractor.
+>
+> **Extraction: 98.5% mean field agreement** across repeated cold-cache
+> runs, and reproducible per-prompt in production via the cache.
+
+That is a stronger statement than the original, not a weaker one,
+because each half is checkable independently and neither is hiding
+behind the other.

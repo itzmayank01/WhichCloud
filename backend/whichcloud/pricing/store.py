@@ -383,6 +383,42 @@ def cache_architecture(
         )
 
 
+def cached_constraints(key: str, dsn: str | None = None) -> str | None:
+    """The stored extraction for this prompt, or None."""
+    with connect(dsn) as conn:
+        row = conn.execute(
+            "SELECT payload FROM constraints_cache WHERE key = %s", (key,)
+        ).fetchone()
+    return json.dumps(row["payload"]) if row else None
+
+
+def cache_constraints(
+    key: str,
+    description: str,
+    reader: str,
+    model: str,
+    schema_version: str,
+    payload: str,
+    dsn: str | None = None,
+) -> None:
+    """Keep an extraction so the same prompt answers the same way.
+
+    ON CONFLICT DO NOTHING, for the same reason as the architecture cache:
+    the first answer is the one a price was already quoted from, and
+    replacing it later is the drift this table exists to prevent.
+    """
+    with connect(dsn) as conn:
+        conn.execute(
+            """
+            INSERT INTO constraints_cache
+                (key, description, reader, model, schema_version, payload)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (key) DO NOTHING
+            """,
+            (key, description, reader, model, schema_version, payload),
+        )
+
+
 def save_architecture(
     owner: str,
     title: str,

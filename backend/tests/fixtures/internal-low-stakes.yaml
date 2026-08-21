@@ -8,6 +8,23 @@ prompt: >
   200 page views a day. If it is down for an hour nobody minds. We want to
   spend as little as possible, maybe $60 a month.
 
+constraints:
+  country: ''
+  sector: internal_tools
+  availability: low
+  durability: normal
+  users: 12
+  requests_per_day: 200
+  peak_shape: flat
+  budget_monthly_usd: 60.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: false
+  country_lock: false
+  archetype: web_app
+  stated: [sector, availability, users, requests_per_day,
+           budget_monthly_usd, public_facing]
+
 expect:
   extraction:
     availability: {value: low, source: stated}

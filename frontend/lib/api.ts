@@ -367,6 +367,13 @@ export type Plan = {
   provisional: boolean;
   provisional_reasons: string[];
   extraction_confidence: Record<string, string>;
+  extraction_reader: string;
+  extraction_model: string;
+  extraction_cached: boolean;
+  /** True when the phrase-table fallback answered instead of a model. */
+  degraded: boolean;
+  degraded_reason: string;
+  extraction_spans: Record<string, string>;
 };
 
 export const api = {

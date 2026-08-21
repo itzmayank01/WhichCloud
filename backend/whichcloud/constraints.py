@@ -210,17 +210,31 @@ class Constraints:
         """REQUIRED minus stated. Computed here, never maintained by hand."""
         return [f for f in REQUIRED if f not in self.stated]
 
+    #: Always surfaced as an assumption to confirm, even when the text
+    #: gave a figure. Storage drives the largest single line on a
+    #: records-heavy workload and the default behind it is a coarse
+    #: heuristic (load band x headcount x sector), so letting it pass
+    #: unremarked is how an unexamined guess quietly sets a total.
+    ALWAYS_CONFIRM = ("storage_gb",)
+
     def assumed_fields(self) -> list[dict]:
-        """Step 7's contract: field, what was assumed, what to ask -- every
-        entry here is, by construction, confidence "low"."""
+        """Field, what was assumed, what to ask -- every entry here is, by
+        construction, confidence "low", except the ALWAYS_CONFIRM ones,
+        which are listed even when stated and say so."""
+        names = list(self.assumed)
+        names += [n for n in self.ALWAYS_CONFIRM if n not in names]
         return [
             {
                 "field": name,
                 "assumption": getattr(self, name),
                 "question": QUESTIONS.get(name, f"What is {name}?"),
-                "confidence": "low",
+                "confidence": self.confidence(name),
+                # True when we are asking about a value the text DID give,
+                # because the figure drives the bill hard enough to be
+                # worth confirming rather than merely accepting.
+                "confirm_even_if_stated": name in self.ALWAYS_CONFIRM,
             }
-            for name in self.assumed
+            for name in names
         ]
 
 

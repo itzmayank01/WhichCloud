@@ -99,3 +99,26 @@ CREATE TABLE IF NOT EXISTS saved_architectures (
 
 CREATE INDEX IF NOT EXISTS idx_saved_owner
     ON saved_architectures (owner, created_at DESC);
+
+-- Extracted constraints, keyed by the prompt text.
+--
+-- Same reasoning as architecture_cache, applied to the other half of the
+-- pipeline. Extraction moved from phrase tables to a language model because
+-- the tables refused 85% of real phrasings (tests/probes/classifier_accuracy.md),
+-- and a model is the right tool for reading text. But a model asked the same
+-- question twice does not reliably answer the same way, and "the numbers are
+-- computed, not guessed" is this project's whole claim.
+--
+-- So the claim is split rather than weakened: the DECISION layer is fully
+-- deterministic given a Constraints object, and EXTRACTION is made
+-- reproducible by keeping the first answer. Two separately measurable
+-- statements instead of one blanket one.
+CREATE TABLE IF NOT EXISTS constraints_cache (
+    key            TEXT PRIMARY KEY,           -- sha256(prompt|model|schema)
+    description    TEXT NOT NULL,
+    reader         TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    payload        JSONB NOT NULL,             -- the extraction, as returned
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);

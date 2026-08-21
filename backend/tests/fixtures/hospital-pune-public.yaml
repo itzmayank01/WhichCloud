@@ -12,6 +12,23 @@ prompt: >
   unacceptable. Budget is about $900 a month. Patients also book their own
   appointments online through our website.
 
+constraints:
+  country: IN
+  sector: healthcare
+  availability: high
+  durability: high
+  users: 450
+  requests_per_day: 6000
+  peak_shape: morning
+  budget_monthly_usd: 900.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: true
+  country_lock: true
+  archetype: web_app
+  stated: [country, sector, availability, durability, users,
+           requests_per_day, peak_shape, budget_monthly_usd, public_facing]
+
 expect:
   extraction:
     country: {value: IN, source: stated}

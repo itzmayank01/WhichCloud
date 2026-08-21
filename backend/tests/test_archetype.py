@@ -252,3 +252,62 @@ def test_a_fully_stated_workload_is_not_flagged_provisional():
     )
     assert plan.priced is True
     assert plan.provisional is False, plan.provisional_reasons
+
+
+# ── the LLM path itself ──
+# Marked with the `llm` fixture, which opts back in to the model that
+# conftest disables for the rest of the suite. These are the only tests
+# here that touch the network, and they are about extraction rather than
+# about any decision made from it.
+
+
+def test_the_minimum_evidence_bar_refuses_a_single_weak_signal(llm):
+    """Part 3's requirement, end to end: one unopposed weak phrase must
+    not classify. This exact prompt was the phrase table's only
+    false-confident -- it called it `migration` on the strength of
+    'move to the cloud' alone."""
+    from whichcloud.llm_extract import extract
+
+    _c, meta = extract(
+        "We need to move to the cloud. What would it cost?",
+        use_cache=True, allow_fallback=False,
+    )
+    assert meta.archetype == UNKNOWN
+    assert meta.archetype_confidence < 0.6
+
+
+def test_extraction_reads_a_volume_the_phrase_tables_missed(llm):
+    """'80,000 loan applications a month' extracted as 0 under phrase
+    matching -- no unit phrase matched 'loan applications', and the
+    figure is monthly rather than daily. Both are handled by reading
+    rather than matching."""
+    from whichcloud.llm_extract import extract
+
+    c, _meta = extract(
+        "lending platform in Bengaluru, 80,000 loan applications a month, "
+        "KYC documents and repayment records, RBI audits us, data must "
+        "remain in India, budget $3,000 a month.",
+        use_cache=True, allow_fallback=False,
+    )
+    assert c.requests_per_day > 0
+    assert c.country == "IN"
+    assert c.country_lock is True
+
+
+def test_the_fallback_is_marked_degraded(monkeypatch):
+    """With no model reachable, a plan still comes back -- and says
+    plainly that it was read by the weaker reader."""
+    monkeypatch.setenv("WHICHCLOUD_DISABLE_LLM", "1")
+    plan = build(
+        "I manage IT for a 3-hospital group in Pune. We want to move "
+        "patient appointments, records and lab reports online. About 450 "
+        "staff use it, roughly 6,000 record lookups a day, with peaks in "
+        "the morning. Patient data must stay inside India and cannot be "
+        "lost. Downtime during OPD hours is unacceptable. Budget is about "
+        "$900 a month."
+    )
+    assert plan.degraded is True
+    assert plan.extraction_reader == "phrase-tables"
+    assert "phrase matching" in plan.degraded_reason
+    # Still a usable answer, not an error.
+    assert plan.tiers

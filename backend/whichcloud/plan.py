@@ -28,8 +28,9 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from whichcloud import archetype as archetype_module
+from whichcloud import llm_extract
 from whichcloud.constraint_filter import Architecture, check
-from whichcloud.constraints import Constraints, extract
+from whichcloud.constraints import Constraints
 from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
 from whichcloud.load_model import Load, build_load
 from whichcloud.network_topology import PUBLIC_SIMPLE, TopologyDecision
@@ -76,11 +77,30 @@ _EGRESS_BASE_BY_TIER: dict[str, float] = {
 _STORAGE_PER_USER_GB = 0.5
 _EGRESS_PER_USER_GB = 0.1
 
+#: Headcount alone is the wrong driver for a data-heavy sector. A
+#: hospital's storage is set by patients and imaging, not by how many
+#: staff log in -- 450 staff serving 200,000 patient records with scans
+#: attached is not a 250 GB system. The multiplier is a coarse stand-in
+#: for "how much data does one user of this kind of system generate",
+#: and like every other figure in this file it is conventional judgement
+#: rather than a measurement, which is why storage is ALWAYS surfaced as
+#: an assumption to confirm (see _storage_question).
+_STORAGE_SECTOR_MULTIPLIER: dict[str, float] = {
+    "healthcare": 8.0,      # imaging and scans dominate
+    "fintech": 3.0,         # documents and retained statements
+    "ecommerce": 4.0,       # product media and order history
+    "education": 2.0,       # course material, submissions
+    "public_web": 2.0,
+    "internal_tools": 1.0,
+    "other": 1.0,
+}
+
 
 def _default_storage_gb(constraints: Constraints, load: Load) -> float:
+    multiplier = _STORAGE_SECTOR_MULTIPLIER.get(constraints.sector, 1.0)
     return (
         _STORAGE_BASE_BY_TIER.get(load.tier, 500.0)
-        + constraints.users * _STORAGE_PER_USER_GB
+        + constraints.users * _STORAGE_PER_USER_GB * multiplier
     )
 
 
@@ -211,6 +231,17 @@ class Plan:
     #: the low ones in assumed_fields() -- so "what did the model trust"
     #: is answerable without inferring it from what is absent.
     extraction_confidence: dict[str, str] = field(default_factory=dict)
+    #: How the Constraints were read. `degraded` means the phrase-table
+    #: fallback produced them because no model could be reached -- it
+    #: reads far fewer phrasings, so a plan built on it must say so
+    #: rather than pass for one built on a full extraction.
+    extraction_reader: str = ""
+    extraction_model: str = ""
+    extraction_cached: bool = False
+    degraded: bool = False
+    degraded_reason: str = ""
+    #: field name -> the substring of the prompt it was drawn from.
+    extraction_spans: dict[str, str] = field(default_factory=dict)
 
 
 class BudgetMisallocationError(AssertionError):
@@ -683,6 +714,16 @@ def _pattern_diff(
     return diffs
 
 
+def _attach_extraction_meta(plan: Plan, meta: llm_extract.ExtractionMeta) -> None:
+    """Record how the Constraints were read, on whichever plan resulted."""
+    plan.extraction_reader = meta.reader
+    plan.extraction_model = meta.model
+    plan.extraction_cached = meta.cached
+    plan.degraded = meta.degraded
+    plan.degraded_reason = meta.degraded_reason
+    plan.extraction_spans = dict(meta.spans)
+
+
 def _withheld_plan(
     constraints: Constraints, load: Load, detected: str, evidence: str,
 ) -> Plan:
@@ -723,8 +764,47 @@ def _withheld_plan(
 
 
 def build(description: str, provider: str = "aws", dsn: str | None = None) -> Plan:
-    """The whole contract, in the order the modules are meant to run."""
-    constraints = extract(description)
+    """The whole contract, in the order the modules are meant to run.
+
+    EXTRACTION is the only step that reads free text, and the only step
+    that is not deterministic. Everything below `constraints` is pure
+    computation over the object it produces -- which is why `plan_from`
+    exists and why the decision layer can be tested without a model.
+    """
+    constraints, meta = llm_extract.extract(description, dsn=dsn)
+    return plan_from(constraints, description, meta, provider=provider, dsn=dsn)
+
+
+def plan_from(
+    constraints: Constraints,
+    description: str = "",
+    meta: llm_extract.ExtractionMeta | None = None,
+    *,
+    archetype: str | None = None,
+    provider: str = "aws",
+    dsn: str | None = None,
+) -> Plan:
+    """The deterministic half: Constraints in, priced tiers out.
+
+    Split out from build() so it can be driven directly, with no model
+    call and no text parsing. Given the same Constraints this returns the
+    same components and the same totals, every time -- asserted at 100
+    iterations in tests/test_determinism.py. `description` is still
+    accepted because a handful of gates (x86, network isolation) read raw
+    text; passing "" simply means those signals are absent.
+
+    `archetype` must be supplied when calling this directly: feeding
+    Constraints in bypasses classification, and defaulting the shape here
+    would reintroduce exactly the silent default that classification
+    exists to prevent. Omitting it yields a withheld plan, which is the
+    correct answer to "price this, I won't say what it is".
+    """
+    meta = meta or llm_extract.ExtractionMeta(
+        reader="direct", model="none",
+        archetype=archetype or llm_extract.UNKNOWN,
+    )
+    if archetype is not None:
+        meta.archetype = archetype
     load = build_load(constraints, description)
 
     # CLASSIFY BEFORE PRICING, AND REFUSE TO PRICE WHAT IS NOT COVERED.
@@ -732,9 +812,15 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
     # that only knows how to build one shape must not answer questions
     # about the other six by building that shape anyway. A refusal is a
     # usable answer; a confident bill for the wrong architecture is not.
-    detected, evidence = archetype_module.classify(description)
+    detected = meta.archetype
+    evidence = (
+        f"confidence {meta.archetype_confidence:.2f}, "
+        f"{len(meta.archetype_spans)} supporting span(s)"
+    )
     if not archetype_module.is_priceable(detected):
-        return _withheld_plan(constraints, load, detected, evidence)
+        plan = _withheld_plan(constraints, load, detected, evidence)
+        _attach_extraction_meta(plan, meta)
+        return plan
 
     regions = COUNTRY_REGIONS.get(constraints.country, ("india",))
     region = regions[0]
@@ -895,6 +981,7 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
                 f"${-spare:,.2f}. It is shown anyway, flagged, rather than "
                 "quietly downgraded to fit the number."
             )
+    _attach_extraction_meta(plan, meta)
     return plan
 
 

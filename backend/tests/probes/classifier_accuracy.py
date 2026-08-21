@@ -29,6 +29,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from whichcloud.archetype import UNKNOWN, classify  # noqa: E402
+from whichcloud.llm_extract import extract  # noqa: E402
+
+
+def _classify(prompt: str, use_llm: bool) -> tuple[str, str]:
+    """Either reader, same interface, so the two are directly comparable."""
+    if not use_llm:
+        return classify(prompt)
+    _c, meta = extract(prompt, use_cache=True, allow_fallback=False)
+    return meta.archetype, (
+        f"confidence {meta.archetype_confidence:.2f}, "
+        f"{len(meta.archetype_spans)} span(s): {meta.archetype_spans[:3]}"
+    )
 
 #: 20 workloads that ARE web apps -- request-serving, database-backed,
 #: the one shape this engine can actually price. Every one of these
@@ -141,15 +153,22 @@ AMBIGUOUS_PROMPTS: list[tuple[str, str]] = [
 
 
 def main() -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--reader", choices=("llm", "phrases"), default="llm")
+    args = ap.parse_args()
+    use_llm = args.reader == "llm"
+
     print("=" * 78)
-    print("CLASSIFIER ACCURACY — false-unknown and false-confident rates")
+    print(f"CLASSIFIER ACCURACY ({args.reader}) — false-unknown / false-confident")
     print("=" * 78)
 
     misses: list[tuple[str, str, str, str]] = []
     correct = 0
     print("\n--- 20 web-app prompts (should classify web_app) ---\n")
     for pid, style, prompt in WEB_APP_PROMPTS:
-        got, evidence = classify(prompt)
+        got, evidence = _classify(prompt, use_llm)
         ok = got == "web_app"
         correct += ok
         mark = "  ok " if ok else "MISS "
@@ -161,7 +180,7 @@ def main() -> int:
     false_confident: list[tuple[str, str]] = []
     print("\n--- 5 ambiguous prompts (should classify unknown) ---\n")
     for pid, prompt in AMBIGUOUS_PROMPTS:
-        got, evidence = classify(prompt)
+        got, evidence = _classify(prompt, use_llm)
         ok = got == UNKNOWN
         amb_correct += ok
         mark = "  ok " if ok else "WRONG"

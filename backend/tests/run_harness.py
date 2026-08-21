@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from whichcloud import plan as plan_module  # noqa: E402
 from whichcloud.constraint_filter import check as filter_check  # noqa: E402
+from whichcloud.constraints import Constraints  # noqa: E402
 from whichcloud.objectives import compliance_notes  # noqa: E402
 from whichcloud.plan import Plan  # noqa: E402
 from whichcloud.pricing import store as pricing_store  # noqa: E402
@@ -643,20 +644,57 @@ def run_catalog_fixture(fx: dict) -> FixtureRun:
 # ─────────────────────────── prompt fixture runner ─────────────────────────
 
 
-def build_prompt_fixtures(fixtures: list[dict]) -> dict[str, Plan | Exception]:
+def constraints_from_fixture(fx: dict) -> tuple[Constraints, str] | None:
+    """The fixture's `constraints:` block, as a Constraints object.
+
+    This is what makes the two claims separately measurable. A fixture
+    that carries an explicit Constraints block can have its DECISION
+    behaviour asserted without any model call at all -- deterministic,
+    offline, and unaffected by how extraction happens to read the prompt
+    that day. Extraction is then a separate question: does reading the
+    prompt produce this block?
+    """
+    block = fx.get("constraints")
+    if not block:
+        return None
+    c = Constraints()
+    for name, value in block.items():
+        if name in ("archetype", "stated"):
+            continue
+        setattr(c, name, value)
+    c.stated.update(block.get("stated", []))
+    return c, block.get("archetype", "web_app")
+
+
+def build_prompt_fixtures(
+    fixtures: list[dict], *, mode: str = "decision",
+) -> dict[str, Plan | Exception]:
     """Build every prompt fixture's plan before any assertions run, keyed
     by fixture id regardless of file order. diff_against needs its
     reference fixture already built, and alphabetical file order does not
     guarantee that -- "hospital-pune-public.yaml" sorts before
     "hospital-pune.yaml" ('-' < '.'), so building lazily inside the
     assertion loop silently skipped the cross-check it exists to run.
+
+    mode="decision" (the default) feeds the fixture's own Constraints
+    block straight into the decision layer, so the run is deterministic
+    and needs no model. mode="extraction" reads the prompt for real,
+    which is the only way to test extraction but makes every assertion
+    downstream contingent on it.
     """
     cache: dict[str, Plan | Exception] = {}
     for fx in fixtures:
         if fx.get("type") == "catalog":
             continue
         try:
-            cache[fx["id"]] = plan_module.build(fx["prompt"])
+            direct = constraints_from_fixture(fx) if mode == "decision" else None
+            if direct is not None:
+                constraints, archetype = direct
+                cache[fx["id"]] = plan_module.plan_from(
+                    constraints, fx["prompt"], archetype=archetype,
+                )
+            else:
+                cache[fx["id"]] = plan_module.build(fx["prompt"])
         except Exception as exc:  # noqa: BLE001 -- recorded as this fixture's error
             cache[fx["id"]] = exc
     return cache
@@ -915,6 +953,14 @@ def main() -> int:
         help="write current totals to golden_totals.json instead of checking "
              "against it -- use only when a total's move is intended",
     )
+    ap.add_argument(
+        "--mode", choices=("decision", "extraction"), default="decision",
+        help="decision (default): feed each fixture's own Constraints block "
+             "straight to the decision layer -- deterministic, no model "
+             "call. extraction: read each prompt with the real extractor, "
+             "which is the only way to test extraction and the only way "
+             "these results become model-dependent.",
+    )
     args = ap.parse_args()
 
     all_fixtures = load_fixtures()
@@ -925,7 +971,7 @@ def main() -> int:
     # Every prompt fixture is built once, up front, keyed by id -- not in
     # file order -- so diff_against always finds its reference plan
     # regardless of --fixture filtering or alphabetical file order.
-    plan_cache = build_prompt_fixtures(all_fixtures)
+    plan_cache = build_prompt_fixtures(all_fixtures, mode=args.mode)
 
     if args.approve_golden:
         fixture_ids = sorted(load_golden(GOLDEN_PATH))
@@ -941,10 +987,15 @@ def main() -> int:
         else:
             runs.append(run_prompt_fixture(fx, plan_cache))
 
-    for probe in load_probes():
-        if args.fixture and probe["id"] != args.fixture:
-            continue
-        runs.append(run_probe(probe))
+    # Probes ask "what does the engine make of a shape it has never been
+    # shown", which is a question about EXTRACTION -- so they belong to
+    # that mode. Running them in decision mode would put a model call in
+    # the middle of the run that exists precisely to have none.
+    if args.mode == "extraction":
+        for probe in load_probes():
+            if args.fixture and probe["id"] != args.fixture:
+                continue
+            runs.append(run_probe(probe))
 
     golden = load_golden(GOLDEN_PATH)
     golden_results = check_golden_totals(plan_cache, golden)
