@@ -51,6 +51,18 @@ _STATIC_ASSET_HINTS = (
     "video", "image", "photo", "media", "download", "static asset",
     "scan", "large file", "attachment", "pdf",
 )
+#: Multi-word on purpose: a bare "report" matches "lab report", which is a
+#: noun in the data, not a workload description -- the phrase that earns a
+#: replica below medium tier has to name the workload, not the data.
+_REPORTING_HINTS = (
+    "reporting workload", "reporting system", "analytics dashboard",
+    "business intelligence", "bi tool", "bi dashboard", "data warehouse",
+)
+_INTERNATIONAL_HINTS = (
+    "international users", "global users", "customers abroad",
+    "users overseas", "multiple countries", "worldwide", "across regions",
+    "users outside the country", "users in other countries",
+)
 
 
 @dataclass
@@ -73,6 +85,7 @@ class Load:
             "avg_rps": round(self.avg_rps, 4),
             "peak_rps": round(self.peak_rps, 4),
             "tier": self.tier,
+            "load_tier": self.tier,
             "sized_from": (
                 f"{self.peak_rps:.2f} req/sec peak "
                 f"({self.peak_shape} shape, x{self.multiplier:g} the "
@@ -107,18 +120,21 @@ def build_load(constraints: Constraints, description: str = "") -> Load:
     rate = f"{peak:.2f} peak req/sec"
     audience = "public-facing" if constraints.public_facing else "staff-only access"
     heavy_assets = any(h in text for h in _STATIC_ASSET_HINTS)
+    international = any(h in text for h in _INTERNATIONAL_HINTS)
     read_heavy = any(h in text for h in _READ_HEAVY_HINTS)
+    reporting = any(h in text for h in _REPORTING_HINTS)
     asynchronous = any(h in text for h in _ASYNC_HINTS)
 
     # ── CDN ──
-    if constraints.public_facing and heavy_assets:
+    if constraints.public_facing and (heavy_assets or international):
         load.included.append("network")
     else:
         why = []
         if not constraints.public_facing:
             why.append(audience)
-        if not heavy_assets:
-            why.append("no large static assets described")
+        if not heavy_assets and not international:
+            why.append("no large static assets and no users outside the "
+                        "home country described")
         load.excluded_with_reason.append(
             f"CloudFront (CDN): not added, {rate} and {', '.join(why)}"
         )
@@ -128,8 +144,10 @@ def build_load(constraints: Constraints, description: str = "") -> Load:
         load.included.append("waf")
     else:
         load.excluded_with_reason.append(
-            f"AWS WAF: not added, {audience} — a firewall in front of an "
-            "internal system filters traffic that never arrives"
+            f"AWS WAF: not added, {audience} — reachable only from known "
+            "networks, so security groups plus an IP allowlist are the "
+            "control that fits; a firewall in front of an internal system "
+            "filters traffic that never arrives"
         )
 
     # ── cache ──
@@ -144,7 +162,11 @@ def build_load(constraints: Constraints, description: str = "") -> Load:
         load.excluded_with_reason.append(f"ElastiCache: not added, {why}")
 
     # ── read replica ──
-    if load.at_least("medium"):
+    # Reporting/BI/analytics is a distinct, multi-word signal -- a bare
+    # "report" matches "lab report" (a noun in the data), which is exactly
+    # the false positive that would have added a replica to a hospital
+    # records lookup that never asked for one.
+    if load.at_least("medium") or reporting:
         load.included.append("database_replica")
     else:
         load.excluded_with_reason.append(

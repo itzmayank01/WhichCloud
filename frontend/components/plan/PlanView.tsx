@@ -54,6 +54,7 @@ function TierCard({
         {money(tier.monthly_total)}
         <span className="text-sm font-normal text-neutral-500">/mo</span>
       </div>
+      <p className="text-xs leading-relaxed text-neutral-600">{tier.philosophy}</p>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600">
         <span>RTO {tier.rto}</span>
         <span>RPO {tier.rpo}</span>
@@ -134,6 +135,40 @@ export function PlanView({ plan }: { plan: Plan }) {
           </p>
         )}
       </section>
+
+      {/* ── non-fatal findings from validation, e.g. NAT costing more than
+           trivial compute -- a fact about small workloads, not an error ── */}
+      {tier.warnings.length > 0 && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+          <ul className="flex flex-col gap-1.5">
+            {tier.warnings.map((w) => (
+              <li key={w} className="text-sm leading-relaxed text-amber-900/90">
+                {w}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ── what changed vs. the tier below, and the risk each change removes ── */}
+      {(tier.pattern_diff_vs_previous_tier.length > 0 || tier.no_further_improvement) && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            What changed from the tier below
+          </h3>
+          {tier.no_further_improvement ? (
+            <p className="text-sm text-neutral-600">{tier.no_further_improvement}</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {tier.pattern_diff_vs_previous_tier.map((d) => (
+                <li key={d} className="text-sm leading-relaxed text-neutral-700">
+                  {d}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* ── why each addition is there ── */}
       {Object.keys(tier.justifications).length > 0 && (

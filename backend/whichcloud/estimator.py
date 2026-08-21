@@ -97,7 +97,15 @@ class ArchitectureSpec:
     #: than assumed -- an architecture cannot point at what it never named.
     object_lock: bool = False
     region_deny_guardrail: bool = False
-    #: Interface endpoints, one per service kept off the NAT gateway.
+    #: S3 and DynamoDB gateway endpoints -- always free, so always worth
+    #: adding when there is any S3 traffic to divert. Priced at the
+    #: catalog's own published $0 rather than assumed free by omission.
+    gateway_endpoints: int = 0
+    #: Interface endpoints (ECR, SSM, Secrets Manager, CloudWatch Logs,
+    #: KMS...), pre-multiplied by AZ count at the point this spec is
+    #: built -- each one bills per AZ per hour, unlike the gateway kind.
+    #: Only worth adding when the NAT data-processing charge it diverts
+    #: is larger than its own hourly cost; see whichcloud.plan.
     vpc_endpoints: int = 0
     vpc_endpoint_gb: float = 0.0
     #: GB of write-once data aged into a colder class.
@@ -234,6 +242,7 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "storage_lifecycle", "infrequent"): "s3:standard-ia",
     ("aws", "endpoint", "interface-hour"): "vpce:interface-hour",
     ("aws", "endpoint", "gb-processed"): "vpce:gb-processed",
+    ("aws", "endpoint", "gateway"): "vpce:gateway",
     ("aws", "governance", "object-lock"): "s3:object-lock",
     ("aws", "governance", "region-deny"): "organizations:scp",
 
@@ -526,28 +535,50 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         else:
             result.missing.append("lifecycle storage")
 
-    # ---- VPC endpoints ----
-    # Both meters or neither: an endpoint billed by the hour with its data
-    # processing missing understates exactly the charge it exists to avoid.
+    # ---- gateway endpoints (S3, DynamoDB) ----
+    # Free on every account that has them, so there is no cost trade-off to
+    # make -- they are added whenever there is S3 traffic to divert, not
+    # gated on whether they earn their keep like the interface kind below.
+    if spec.gateway_endpoints:
+        point = _by_role(provider, region, "endpoint", "gateway", dsn)
+        if point:
+            result.items.append(
+                _metered_line(
+                    f"Gateway endpoints × {spec.gateway_endpoints} "
+                    "(S3 + DynamoDB — no charge, keeps that traffic off NAT)",
+                    point, spec.gateway_endpoints,
+                )
+            )
+        else:
+            result.missing.append("gateway endpoints")
+
+    # ---- interface endpoints (ECR, SSM, Secrets Manager, CloudWatch Logs, KMS) ----
+    # Unlike the gateway kind, these bill per AZ per hour -- five of them
+    # across two AZs costs more than the NAT gateway they would replace.
+    # whichcloud.plan only sets spec.vpc_endpoints when the NAT
+    # data-processing charge diverted is larger than that cost, so their
+    # presence here already means they were worth buying.
     if spec.vpc_endpoints:
         hourly = _by_role(provider, region, "endpoint", "interface-hour", dsn)
         processed = _by_role(provider, region, "endpoint", "gb-processed", dsn)
         if hourly and processed:
             result.items.append(
                 _hourly_line(
-                    f"VPC endpoints x {spec.vpc_endpoints} "
-                    "(S3 + ECR — reduces NAT data-processing charges)",
+                    f"Interface endpoints × {spec.vpc_endpoints} "
+                    "(ECR, SSM, Secrets Manager, CloudWatch Logs, KMS — "
+                    "cheaper than the NAT data they divert)",
                     hourly, spec.vpc_endpoints,
                 )
             )
             if spec.vpc_endpoint_gb:
                 result.items.append(
                     _metered_line(
-                        "VPC endpoint data processing", processed, spec.vpc_endpoint_gb
+                        "Interface endpoint data processing", processed,
+                        spec.vpc_endpoint_gb,
                     )
                 )
         else:
-            result.missing.append("VPC endpoints")
+            result.missing.append("VPC interface endpoints")
 
     # ---- governance controls AWS does not charge for ----
     # Priced at zero because that is the published rate, not because the

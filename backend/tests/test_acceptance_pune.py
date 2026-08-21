@@ -222,9 +222,15 @@ def test_the_plan_prices_three_compliant_tiers(plan):
 
 def test_no_priced_tier_is_generated_non_compliant(plan):
     """build() raises rather than emitting a tier that fails the filter, so
-    reaching this point at all is the assertion. These confirm the shape."""
+    reaching this point at all is the assertion. These confirm the shape.
+
+    Tier 1 runs self-managed EC2; Tier 2/3 move the same instance count
+    onto Fargate (a pattern change, not a resize) -- so "at least 2 copies
+    of the app" is checked across whichever compute field is active,
+    exactly as the availability filter itself reads it.
+    """
     for tier in plan.tiers:
-        assert tier.spec.compute_count >= 2
+        assert (tier.spec.compute_count or tier.spec.fargate_task_count) >= 2
         assert tier.spec.database_multi_az
         assert tier.spec.load_balancer
         assert tier.spec.backup_copy_gb > 0
@@ -248,11 +254,17 @@ def test_unspent_budget_is_reported_as_correct(plan):
     assert "correct result, not an error" in plan.unspent_budget["note"]
 
 
-def test_vpc_endpoints_are_always_present(plan):
+def test_gateway_endpoints_are_always_present(plan):
+    """S3 + DynamoDB gateway endpoints are free, so there is no cost
+    trade-off and every tier gets them. Interface endpoints (ECR, SSM,
+    Secrets Manager, CloudWatch Logs, KMS) bill per AZ per hour and are
+    only added when they are cheaper than the NAT charge they divert --
+    at this workload's trivial traffic they correctly are not, so
+    vpc_endpoints (the interface count) is 0 here, not asserted >= 2."""
     for tier in plan.tiers:
-        assert tier.spec.vpc_endpoints >= 2
+        assert tier.spec.gateway_endpoints >= 2
     labels = " ".join(i.label for i in plan.tiers[0].estimate.items)
-    assert "VPC endpoint" in labels
+    assert "Gateway endpoints" in labels
 
 
 def test_arm_instances_are_preferred(plan):

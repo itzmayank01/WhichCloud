@@ -883,6 +883,7 @@ def plan_endpoint(body: DescribeIn) -> dict:
             {
                 "name": tier.name,
                 "label": tier.label,
+                "philosophy": tier.philosophy,
                 "monthly_total": round(tier.monthly_total, 2),
                 "within_budget": tier.within_budget(constraints.budget_monthly_usd),
                 "rto": tier.rto,
@@ -891,6 +892,9 @@ def plan_endpoint(body: DescribeIn) -> dict:
                 "region_rpo": tier.region_rpo,
                 "gives_up": tier.gives_up,
                 "justifications": tier.justifications,
+                "pattern_diff_vs_previous_tier": tier.pattern_diff,
+                "no_further_improvement": tier.no_further_improvement,
+                "warnings": tier.warnings,
                 "committed_use_note": tier.committed_use_note,
                 "components": [
                     {

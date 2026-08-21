@@ -90,9 +90,13 @@ def test_committed_use_is_a_separate_note_not_part_of_the_total():
 
 
 def test_vpc_endpoint_line_explains_the_nat_saving():
+    """Gateway endpoints (S3 + DynamoDB) are free and always added, and say
+    so. Interface endpoints are a real per-AZ-per-hour cost and are only
+    added when they are cheaper than the NAT charge they divert -- not
+    asserted here, since this workload's traffic does not justify them."""
     plan = build(
         "A steady internal tool, 40 staff, 800 requests a day, budget "
         "$250 a month."
     )
     labels = " ".join(i.label for i in plan.tiers[0].estimate.items)
-    assert "reduces NAT data-processing charges" in labels
+    assert "keeps that traffic off NAT" in labels

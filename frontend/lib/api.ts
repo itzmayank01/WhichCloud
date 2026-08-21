@@ -305,6 +305,7 @@ export type PlanComponent = {
 export type PlanTier = {
   name: string;
   label: string;
+  philosophy: string;
   monthly_total: number;
   within_budget: boolean;
   rto: string;
@@ -313,6 +314,9 @@ export type PlanTier = {
   region_rpo: string;
   gives_up: string[];
   justifications: Record<string, string>;
+  pattern_diff_vs_previous_tier: string[];
+  no_further_improvement: string;
+  warnings: string[];
   committed_use_note: string;
   components: PlanComponent[];
   complete: boolean;
