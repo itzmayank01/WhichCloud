@@ -284,6 +284,69 @@ export type Provenance = {
   split: Record<string, number>;
 };
 
+
+/* ── the reasoning layer's contract ──
+   Distinct from Recommendation: this shape carries what was ruled OUT and
+   why, which is the part a reader cannot reconstruct from a price table. */
+export type SizingBasis = {
+  avg_rps: number;
+  peak_rps: number;
+  tier: "trivial" | "small" | "medium" | "large";
+  sized_from: string;
+};
+
+export type PlanComponent = {
+  label: string;
+  sku: string;
+  unit: string;
+  monthly_usd: number;
+};
+
+export type PlanTier = {
+  name: string;
+  label: string;
+  monthly_total: number;
+  within_budget: boolean;
+  rto: string;
+  rpo: string;
+  region_rto: string;
+  region_rpo: string;
+  gives_up: string[];
+  justifications: Record<string, string>;
+  components: PlanComponent[];
+  complete: boolean;
+  missing: string[];
+};
+
+export type ComplianceNote = {
+  regulation: string;
+  obligation: string;
+  control: string;
+};
+
+export type AssumedField = {
+  field: string;
+  assumption: string | number | boolean;
+  question: string;
+};
+
+export type Plan = {
+  sizing_basis: SizingBasis;
+  excluded_with_reason: string[];
+  tiers: PlanTier[];
+  default_tier: string;
+  below_requirements_panel: {
+    label: string;
+    violations: string[];
+    note: string;
+  } | null;
+  compliance_notes: ComplianceNote[];
+  assumed_fields: AssumedField[];
+  stated_fields: Record<string, string>;
+  unspent_budget: { amount_usd: number; note: string } | null;
+  over_budget_note: string;
+};
+
 export const api = {
   health: () => get<Health>("/health", 60),
 
@@ -311,6 +374,11 @@ export const api = {
     post<Comparison>("/compare", body, revalidate),
 
   /** Plain English straight through to three priced options. */
+  /* No cache. A plan is the answer to one description; serving a stale one
+     for a different description is the failure this whole layer exists to
+     avoid. */
+  plan: (body: Record<string, unknown>) => post<Plan>("/plan", body),
+
   describe: (body: Record<string, unknown>) =>
     post<Recommendation>("/describe", body),
 
