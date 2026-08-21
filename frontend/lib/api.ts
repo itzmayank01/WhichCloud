@@ -313,6 +313,7 @@ export type PlanTier = {
   region_rpo: string;
   gives_up: string[];
   justifications: Record<string, string>;
+  committed_use_note: string;
   components: PlanComponent[];
   complete: boolean;
   missing: string[];

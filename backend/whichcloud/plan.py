@@ -41,6 +41,16 @@ COUNTRY_REGIONS: dict[str, tuple[str, ...]] = {
 DEFAULT_STORAGE_GB = 500.0
 DEFAULT_EGRESS_GB = 100.0
 
+#: Named only when the description forces x86: everything else defaults to
+#: Graviton, on price and on the pricing rule that says so. A workload never
+#: gets ARM by omission-of-evidence -- it gets ARM unless something here
+#: rules it out.
+_X86_REQUIRED = (
+    "x86-only", "x86 only", "requires x86", "must run on x86",
+    "not arm compatible", "cannot run on arm", "no arm support",
+    ".net framework", "windows server", "sql server",
+)
+
 
 @dataclass
 class Tier:
@@ -54,6 +64,11 @@ class Tier:
     region_rpo: str = ""
     gives_up: list[str] = field(default_factory=list)
     justifications: dict[str, str] = field(default_factory=dict)
+    #: Advisory only -- never folded into monthly_total. List pricing has no
+    #: committed-use rate to look up, so this is a labelled range, not a
+    #: catalog figure, exactly like the advisory techniques in the
+    #: knowledge base that are surfaced without being priced.
+    committed_use_note: str = ""
 
     @property
     def monthly_total(self) -> float:
@@ -88,6 +103,12 @@ def _instances_for(peak_rps: float, *, high_availability: bool) -> int:
     return max(needed, 2) if high_availability else needed
 
 
+def _requires_x86(description: str) -> bool:
+    """Graviton is the default; only explicit evidence rules it out."""
+    text = description.lower()
+    return any(hint in text for hint in _X86_REQUIRED)
+
+
 def _spec_for(
     *,
     name: str,
@@ -96,6 +117,7 @@ def _spec_for(
     region: str,
     instances: int,
     tier_level: int,
+    requires_x86: bool,
 ) -> ArchitectureSpec:
     """One tier's spec. Every optional component traces to a filter or a gate."""
     high_availability = constraints.availability == "high"
@@ -111,7 +133,9 @@ def _spec_for(
         compute_count=instances,
         compute_vcpu=vcpu,
         compute_memory_gb=float(vcpu) * 2,
-        arch="arm64" if constraints.sector != "other" else None,
+        # Graviton by default, on price and on the pricing rule that says
+        # so; x86 only when the description names a reason for it.
+        arch=None if requires_x86 else "arm64",
         database_vcpu=2,
         database_memory_gb=8.0,
         # Required by availability=high; not a tier upsell.
@@ -132,7 +156,10 @@ def _spec_for(
         backup_copy_gb=storage if durable else 0.0,
         object_lock=durable,
         lifecycle_gb=storage * 0.4 if durable else 0.0,
-        region_deny_guardrail=bool(constraints.country),
+        # Only a stated residency requirement earns a guardrail. Naming a
+        # city tells us where the business is, not that data may never
+        # leave the country -- that needs its own trigger phrase.
+        region_deny_guardrail=constraints.country_lock,
         # Always: these exist to keep S3 and ECR traffic off the NAT gateway,
         # where the same bytes cost four times as much.
         vpc_endpoints=2,
@@ -174,10 +201,16 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
 
     regions = COUNTRY_REGIONS.get(constraints.country, ("india",))
     region = regions[0]
-    in_country = in_country_regions(_country_name(constraints.country))
+    # Only enforced when the text actually locked the country -- see
+    # Constraints.country_lock. A bare place name does not restrict regions.
+    in_country = (
+        in_country_regions(_country_name(constraints.country))
+        if constraints.country_lock else ()
+    )
 
     high_availability = constraints.availability == "high"
     instances = _instances_for(load.peak_rps, high_availability=high_availability)
+    requires_x86 = _requires_x86(description)
 
     plan = Plan(constraints=constraints, load=load)
 
@@ -191,7 +224,7 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
     for name, label, level, count in specs:
         spec = _spec_for(
             name=name, constraints=constraints, load=load, region=region,
-            instances=count, tier_level=level,
+            instances=count, tier_level=level, requires_x86=requires_x86,
         )
         # FILTER BEFORE PRICE. A spec that fails here is never given a
         # number, because a cheap number attached to a rejected design is
@@ -220,6 +253,7 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
             region_rto=obj["region_rto"], region_rpo=obj["region_rpo"],
         )
         tier.gives_up = _gives_up(spec, load)
+        tier.committed_use_note = _committed_use_note(spec)
         if level >= 2:
             tier.justifications.update(_tier_two_justifications(constraints))
         if level >= 3:
@@ -268,12 +302,16 @@ def _below_panel(constraints, load, region, dsn, provider) -> dict | None:
         database_multi_az=False, automated_backups=False, object_lock=False,
         regions=(_aws_region(region),), region_deny_guardrail=False,
     )
+    in_country = (
+        in_country_regions(_country_name(constraints.country))
+        if constraints.country_lock else ()
+    )
     verdict = check(
         naive,
         availability=constraints.availability,
         durability=constraints.durability,
         country=_country_name(constraints.country),
-        country_regions=_aws_regions(in_country_regions(_country_name(constraints.country))),
+        country_regions=_aws_regions(in_country),
     )
     return {
         "label": "Below your stated requirements",
@@ -284,6 +322,21 @@ def _below_panel(constraints, load, region, dsn, provider) -> dict | None:
             "options above."
         ),
     }
+
+
+def _committed_use_note(spec: ArchitectureSpec) -> str:
+    """Advisory, not priced: the catalog carries on-demand rates only, so
+    this is a labelled published-range caveat, never a figure looked up per
+    SKU -- and it must never be added into monthly_total."""
+    components = ["compute", "database"]
+    if spec.cache_vcpu:
+        components.append("cache")
+    return (
+        "available after usage stabilises: ~20-30% on "
+        f"{', '.join(components)} with a 1-year AWS Savings Plan or "
+        "Reserved Instance commitment (published list-price range, not "
+        "looked up per SKU — not included in the total above)"
+    )
 
 
 def _gives_up(spec: ArchitectureSpec, load: Load) -> list[str]:

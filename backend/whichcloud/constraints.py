@@ -72,6 +72,13 @@ _DURABILITY_HIGH = (
 _RESIDENCY = ("must stay inside", "must stay in", "must remain in",
               "data residency", "stay within", "not leave")
 
+#: Naming one of these alongside a country is itself a residency signal --
+#: "regulated by RBI" implies India-only storage even when nobody writes
+#: the word "residency". Kept separate from _RESIDENCY so the evidence
+#: string can say which kind of phrase triggered the lock.
+_REGULATORS = ("rbi", "sebi", "irdai", "dpdp", "hipaa", "gdpr", "abdm",
+               "pci dss", "sox", "ferpa", "ccpa", "reserve bank")
+
 _SECTORS: tuple[tuple[Sector, tuple[str, ...]], ...] = (
     ("healthcare", ("hospital", "patient", "clinic", "doctor", "medical",
                     "lab report", "health record", "opd", "diagnostic")),
@@ -131,6 +138,13 @@ class Constraints:
     storage_gb: float = 0.0
     egress_gb: float = 0.0
     public_facing: bool = False
+
+    #: Distinct from merely naming a country. Naming Pune infers where the
+    #: business is; it does not by itself demand a region-deny guardrail.
+    #: Only a residency phrase, or a country plus its regulator, does that
+    #: -- otherwise every prompt that names a city ends up hard-locked to
+    #: it, including ones that never asked for that.
+    country_lock: bool = False
 
     #: Which fields the TEXT supported. Everything in REQUIRED and not in
     #: here is assumed, computed after the fact rather than declared.
@@ -197,8 +211,14 @@ def extract(description: str) -> Constraints:
             c.country = code
             c.stated.add("country")
             residency = _find(text, _RESIDENCY)
+            regulator = _find(text, _REGULATORS)
+            # The lock is the residency phrase or the regulator, not the
+            # place name itself -- naming Pune says where the business is,
+            # not that data may never leave India.
+            c.country_lock = bool(residency or regulator)
+            trigger = residency or (f"regulator {regulator!r}" if regulator else "")
             c.evidence["country"] = (
-                f"named {place!r}" + (f"; {residency!r}" if residency else "")
+                f"named {place!r}" + (f"; {trigger}" if trigger else "")
             )
             break
 

@@ -535,7 +535,9 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         if hourly and processed:
             result.items.append(
                 _hourly_line(
-                    f"VPC endpoints x {spec.vpc_endpoints}", hourly, spec.vpc_endpoints
+                    f"VPC endpoints x {spec.vpc_endpoints} "
+                    "(S3 + ECR — reduces NAT data-processing charges)",
+                    hourly, spec.vpc_endpoints,
                 )
             )
             if spec.vpc_endpoint_gb:

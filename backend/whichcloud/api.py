@@ -891,6 +891,7 @@ def plan_endpoint(body: DescribeIn) -> dict:
                 "region_rpo": tier.region_rpo,
                 "gives_up": tier.gives_up,
                 "justifications": tier.justifications,
+                "committed_use_note": tier.committed_use_note,
                 "components": [
                     {
                         "label": item.label,
