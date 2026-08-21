@@ -1,0 +1,9 @@
+# PROBE-6 -- diagnostic only. See tests/probes/coverage.md.
+id: vm-migration
+prompt: >
+  We run 40 virtual machines in our own server room — a mix of Windows
+  and Linux, some with attached storage. We want to move them to the
+  cloud as-is before modernising later.
+shape_expected: >
+  EC2 lift-and-shift with EBS, sized from existing VMs. No greenfield
+  redesign.

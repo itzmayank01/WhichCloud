@@ -1,0 +1,8 @@
+# PROBE-5 -- diagnostic only. See tests/probes/coverage.md.
+id: realtime-chat
+prompt: >
+  In-app chat for our 100,000 users. Messages must arrive instantly and
+  history must be searchable.
+shape_expected: >
+  WebSocket API + DynamoDB + OpenSearch. Connection-based, not
+  request-based.

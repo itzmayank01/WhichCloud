@@ -1,0 +1,9 @@
+# PROBE-3 -- diagnostic only. See tests/probes/coverage.md.
+id: event-webhook
+prompt: >
+  We receive payment webhooks from three providers, roughly 40,000 a day
+  in unpredictable bursts. Each one triggers a few database writes and an
+  email. We cannot drop a single one.
+shape_expected: >
+  API Gateway + SQS + Lambda + DynamoDB or RDS. Queue is the durability
+  mechanism.

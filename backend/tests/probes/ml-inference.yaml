@@ -1,0 +1,7 @@
+# PROBE-4 -- diagnostic only. See tests/probes/coverage.md.
+id: ml-inference
+prompt: >
+  We have a trained model that scores loan applications. About 50
+  predictions a second during business hours, almost none at night.
+shape_expected: >
+  SageMaker endpoint or GPU/inference instances with autoscaling.

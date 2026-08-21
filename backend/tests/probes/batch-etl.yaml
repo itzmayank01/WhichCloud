@@ -1,0 +1,9 @@
+# PROBE-2 -- diagnostic only. See tests/probes/coverage.md.
+id: batch-etl
+prompt: >
+  Every night we pull about 500 GB of sensor readings off our factory
+  machines and turn them into next-day reports. Nobody uses it during the
+  day. If a night's run fails we can rerun it in the morning.
+shape_expected: >
+  S3 + Glue or Batch + Step Functions + Athena. Scheduled, not always-on.
+  No load balancer.
