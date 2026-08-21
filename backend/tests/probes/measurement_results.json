@@ -1,0 +1,404 @@
+{
+  "phrases": {
+    "adv-1": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "underdetermined",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-10": {
+      "confidence": 0.0,
+      "got": "static_site",
+      "kind": "adversarial",
+      "style": "contradictory",
+      "truth": "unknown",
+      "why": "matched 1 phrase(s), first 'no database'"
+    },
+    "adv-11": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "contradictory",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-12": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "non-workload",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-13": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "non-workload",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-14": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "non-workload",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-15": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "non-workload",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-2": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "underdetermined",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-3": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "underdetermined",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-4": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "underdetermined",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "adv-5": {
+      "confidence": 0.0,
+      "got": "batch_etl",
+      "kind": "adversarial",
+      "style": "multi-shape",
+      "truth": "unknown",
+      "why": "matched 2 phrase(s), first 'nightly'"
+    },
+    "adv-6": {
+      "confidence": 0.0,
+      "got": "static_site",
+      "kind": "adversarial",
+      "style": "multi-shape",
+      "truth": "unknown",
+      "why": "matched 2 phrase(s), first 'marketing site'"
+    },
+    "adv-7": {
+      "confidence": 0.0,
+      "got": "event_driven",
+      "kind": "adversarial",
+      "style": "multi-shape",
+      "truth": "unknown",
+      "why": "matched 2 phrase(s), first 'webhook'"
+    },
+    "adv-8": {
+      "confidence": 0.0,
+      "got": "realtime",
+      "kind": "adversarial",
+      "style": "multi-shape",
+      "truth": "unknown",
+      "why": "matched 1 phrase(s), first 'real-time'"
+    },
+    "adv-9": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "adversarial",
+      "style": "contradictory",
+      "truth": "unknown",
+      "why": "no archetype phrase matched the description"
+    },
+    "be-1": {
+      "confidence": 0.0,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "batch_etl",
+      "why": "matched 1 phrase(s), first 'nightly'"
+    },
+    "be-2": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "batch_etl",
+      "why": "no archetype phrase matched the description"
+    },
+    "be-3": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "batch_etl",
+      "why": "no archetype phrase matched the description"
+    },
+    "be-4": {
+      "confidence": 0.0,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "batch_etl",
+      "why": "matched 1 phrase(s), first 'overnight'"
+    },
+    "be-5": {
+      "confidence": 0.0,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "batch_etl",
+      "why": "matched 1 phrase(s), first 'every night'"
+    },
+    "ed-1": {
+      "confidence": 0.0,
+      "got": "event_driven",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "event_driven",
+      "why": "matched 2 phrase(s), first 'webhook'"
+    },
+    "ed-2": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "event_driven",
+      "why": "no archetype phrase matched the description"
+    },
+    "ed-3": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "event_driven",
+      "why": "no archetype phrase matched the description"
+    },
+    "ed-4": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "event_driven",
+      "why": "no archetype phrase matched the description"
+    },
+    "ed-5": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "event_driven",
+      "why": "no archetype phrase matched the description"
+    },
+    "mg-1": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "migration",
+      "why": "no archetype phrase matched the description"
+    },
+    "mg-2": {
+      "confidence": 0.0,
+      "got": "migration",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "migration",
+      "why": "matched 1 phrase(s), first 'server room'"
+    },
+    "mg-3": {
+      "confidence": 0.0,
+      "got": "migration",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "migration",
+      "why": "matched 1 phrase(s), first 'lift-and-shift'"
+    },
+    "mg-4": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "migration",
+      "why": "no archetype phrase matched the description"
+    },
+    "mi-1": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "ml_inference",
+      "why": "no archetype phrase matched the description"
+    },
+    "mi-2": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "ml_inference",
+      "why": "no archetype phrase matched the description"
+    },
+    "mi-3": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "ml_inference",
+      "why": "no archetype phrase matched the description"
+    },
+    "mi-4": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "ml_inference",
+      "why": "no archetype phrase matched the description"
+    },
+    "rt-1": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "realtime",
+      "why": "no archetype phrase matched the description"
+    },
+    "rt-2": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "realtime",
+      "why": "no archetype phrase matched the description"
+    },
+    "rt-3": {
+      "confidence": 0.0,
+      "got": "realtime",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "realtime",
+      "why": "matched 1 phrase(s), first 'websocket'"
+    },
+    "rt-4": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "realtime",
+      "why": "no archetype phrase matched the description"
+    },
+    "ss-1": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "static_site",
+      "why": "no archetype phrase matched the description"
+    },
+    "ss-2": {
+      "confidence": 0.0,
+      "got": "static_site",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "static_site",
+      "why": "matched 1 phrase(s), first 'brochure site'"
+    },
+    "ss-3": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "static_site",
+      "why": "no archetype phrase matched the description"
+    },
+    "ss-4": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "static_site",
+      "why": "no archetype phrase matched the description"
+    },
+    "ss-5": {
+      "confidence": 0.0,
+      "got": "static_site",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "static_site",
+      "why": "matched 2 phrase(s), first 'no database'"
+    },
+    "wa-1": {
+      "confidence": 0.0,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "web_app",
+      "why": "matched 1 phrase(s), first 'appointments'"
+    },
+    "wa-2": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "web_app",
+      "why": "no archetype phrase matched the description"
+    },
+    "wa-3": {
+      "confidence": 0.0,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "web_app",
+      "why": "matched 1 phrase(s), first 'portal'"
+    },
+    "wa-4": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "web_app",
+      "why": "no archetype phrase matched the description"
+    },
+    "wa-5": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "backstory",
+      "truth": "web_app",
+      "why": "no archetype phrase matched the description"
+    },
+    "wa-6": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "web_app",
+      "why": "no archetype phrase matched the description"
+    },
+    "wa-7": {
+      "confidence": 0.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "web_app",
+      "why": "no archetype phrase matched the description"
+    },
+    "wa-8": {
+      "confidence": 0.0,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "web_app",
+      "why": "matched 1 phrase(s), first 'log in'"
+    }
+  }
+}

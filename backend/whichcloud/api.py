@@ -951,6 +951,9 @@ def plan_endpoint(body: DescribeIn) -> dict:
         "extraction_cached": result.extraction_cached,
         "degraded": result.degraded,
         "degraded_reason": result.degraded_reason,
+        "extraction_failover": result.extraction_failover,
+        "extraction_failover_note": result.extraction_failover_note,
+        "archetype_evidence_verdict": result.archetype_evidence_verdict,
         "extraction_spans": result.extraction_spans,
     }
 

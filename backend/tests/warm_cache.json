@@ -1,0 +1,156 @@
+[
+  {
+    "key": "a81fb7a9c39d7db9fd7e71f699b699b23335ec852471308a41a98a1bd21e5cac",
+    "description": "patient records system for a clinic in Jaipur. Cannot lose data, cannot have downtime. Budget is $80 a month.\n",
+    "reader": "groq",
+    "model": "openai/gpt-oss-120b",
+    "schema_version": "constraints-v1",
+    "payload": {
+      "users": {
+        "span": "",
+        "value": "0",
+        "source": "assumed"
+      },
+      "sector": {
+        "span": "clinic",
+        "value": "healthcare",
+        "source": "stated"
+      },
+      "country": {
+        "span": "Jaipur",
+        "value": "IN",
+        "source": "stated"
+      },
+      "archetype": {
+        "spans": [
+          "patient records system"
+        ],
+        "archetype": "web_app",
+        "confidence": 0.9
+      },
+      "egress_gb": {
+        "span": "",
+        "value": "0",
+        "source": "assumed"
+      },
+      "durability": {
+        "span": "Cannot lose data",
+        "value": "high",
+        "source": "stated"
+      },
+      "peak_shape": {
+        "span": "",
+        "value": "flat",
+        "source": "assumed"
+      },
+      "storage_gb": {
+        "span": "",
+        "value": "0",
+        "source": "assumed"
+      },
+      "availability": {
+        "span": "cannot have downtime",
+        "value": "high",
+        "source": "stated"
+      },
+      "country_lock": {
+        "span": "",
+        "value": "false",
+        "source": "assumed"
+      },
+      "public_facing": {
+        "span": "",
+        "value": "false",
+        "source": "assumed"
+      },
+      "requests_per_day": {
+        "span": "",
+        "value": "0",
+        "source": "assumed"
+      },
+      "budget_monthly_usd": {
+        "span": "Budget is $80 a month",
+        "value": "80",
+        "source": "stated"
+      }
+    }
+  },
+  {
+    "key": "b968ce6c28ab270412dc3fe16d6384b87499ca0ac93e4d7913b267bd00d3dc57",
+    "description": "A consumer marketplace, customers across India, Singapore and UAE, about 2 million requests a day with evening peaks, product images and video, checkout must not go down, budget around $4,000 a month.\n",
+    "reader": "groq",
+    "model": "openai/gpt-oss-120b",
+    "schema_version": "constraints-v1",
+    "payload": {
+      "users": {
+        "span": "",
+        "value": "0",
+        "source": "assumed"
+      },
+      "sector": {
+        "span": "consumer marketplace",
+        "value": "ecommerce",
+        "source": "stated"
+      },
+      "country": {
+        "span": "India, Singapore and UAE",
+        "value": "IN, SG, AE",
+        "source": "stated"
+      },
+      "archetype": {
+        "spans": [
+          "consumer marketplace",
+          "checkout must not go down",
+          "about 2 million requests a day"
+        ],
+        "archetype": "web_app",
+        "confidence": 0.9
+      },
+      "egress_gb": {
+        "span": "",
+        "value": "0",
+        "source": "assumed"
+      },
+      "durability": {
+        "span": "",
+        "value": "normal",
+        "source": "assumed"
+      },
+      "peak_shape": {
+        "span": "evening peaks",
+        "value": "evening",
+        "source": "stated"
+      },
+      "storage_gb": {
+        "span": "",
+        "value": "0",
+        "source": "assumed"
+      },
+      "availability": {
+        "span": "checkout must not go down",
+        "value": "high",
+        "source": "stated"
+      },
+      "country_lock": {
+        "span": "",
+        "value": "false",
+        "source": "assumed"
+      },
+      "public_facing": {
+        "span": "consumer marketplace",
+        "value": "true",
+        "source": "stated"
+      },
+      "requests_per_day": {
+        "span": "about 2 million requests a day",
+        "value": "2000000",
+        "source": "stated"
+      },
+      "budget_monthly_usd": {
+        "span": "budget around $4,000 a month",
+        "value": "4000",
+        "source": "stated"
+      }
+    }
+  }
+]

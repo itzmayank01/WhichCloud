@@ -373,6 +373,10 @@ export type Plan = {
   /** True when the phrase-table fallback answered instead of a model. */
   degraded: boolean;
   degraded_reason: string;
+  /** True when a non-primary provider read the prompt. */
+  extraction_failover: boolean;
+  extraction_failover_note: string;
+  archetype_evidence_verdict: string;
   extraction_spans: Record<string, string>;
 };
 

@@ -311,3 +311,77 @@ def test_the_fallback_is_marked_degraded(monkeypatch):
     assert "phrase matching" in plan.degraded_reason
     # Still a usable answer, not an error.
     assert plan.tiers
+
+
+# ── the evidence bar (confidence bands) ──
+# Pure function over (confidence, spans), so these run offline and are
+# the authoritative check on the rule -- the measurement scripts only
+# confirm it against live model output.
+
+
+def test_high_confidence_with_one_substantive_span_classifies():
+    """The eight misses the flat two-span rule produced all looked like
+    this: 0.90 confidence, one long span quoting the workload. Rejecting
+    them measured quoting style, not evidence."""
+    from whichcloud.llm_extract import passes_evidence_bar
+
+    ok, why = passes_evidence_bar(
+        0.90,
+        ["Consultants need to log candidates, attach CVs, and track where "
+         "each one is in the process"],
+    )
+    assert ok, why
+
+
+def test_high_confidence_on_an_incidental_keyword_does_not_classify():
+    """A high score resting on a bare noun is still a guess -- the span
+    has to describe behaviour."""
+    from whichcloud.llm_extract import passes_evidence_bar
+
+    ok, why = passes_evidence_bar(0.95, ["Postgres"])
+    assert not ok
+    assert "incidental keyword" in why
+
+
+def test_mid_band_needs_corroboration():
+    from whichcloud.llm_extract import passes_evidence_bar
+
+    one, _ = passes_evidence_bar(0.70, ["drivers log what they picked up"])
+    two, _ = passes_evidence_bar(
+        0.70, ["drivers log what they picked up", "office can invoice from it"]
+    )
+    assert not one, "one mid-band span must not be enough"
+    assert two, "two mid-band spans corroborate"
+
+
+def test_low_confidence_never_classifies():
+    """'We need to move to the cloud. What would it cost?' scored 0.10
+    with no spans -- the single false-confident the phrase table produced,
+    and it must stay refused under every band."""
+    from whichcloud.llm_extract import passes_evidence_bar
+
+    for spans in ([], ["move to the cloud"], ["we need to move to the cloud now"]):
+        ok, why = passes_evidence_bar(0.10, spans)
+        assert not ok, f"0.10 classified on {spans}: {why}"
+
+
+def test_every_recorded_miss_now_classifies():
+    """Replayed from the measured run that produced the 40% figure. Each
+    of these returned web_app at 0.90 with exactly one span and was
+    refused by MIN_ARCHETYPE_SPANS=2. Checked here against the recorded
+    values so the fix is provable without re-spending model quota."""
+    from whichcloud.llm_extract import passes_evidence_bar
+
+    recorded = {
+        "business-1": (0.90, ["Consultants need to log candidates, attach CVs, "
+                              "and track where each one is in the process"]),
+        "backstory-1": (0.90, ["case workers to be able to open a client file, "
+                               "add notes after a visit, and have the "
+                               "supervisor sign it off"]),
+        "mixed-2": (0.90, ["portal where our suppliers can update their own "
+                           "compliance documents"]),
+        "jargon-3": (0.90, ["Headless CMS driving a Next.js storefront"]),
+    }
+    for pid, (confidence, spans) in recorded.items():
+        ok, why = passes_evidence_bar(confidence, spans)
+        assert ok, f"{pid} still refused: {why}"

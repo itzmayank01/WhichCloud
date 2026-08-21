@@ -31,7 +31,22 @@ def _no_model_calls(monkeypatch):
 
 @pytest.fixture
 def llm(monkeypatch):
-    """Opt back in, for a test that is actually about extraction."""
+    """Opt back in, for a test that is actually about extraction.
+
+    Skips rather than fails when no model is reachable. Free-tier quota
+    running out is a fact about the day, not a regression in this code --
+    and a suite that goes red every time a token budget resets teaches
+    people to ignore it. The behaviour these tests cover is separately
+    asserted offline against recorded model output (see the evidence-bar
+    tests), so skipping here loses coverage of the integration, not of
+    the rule.
+    """
     monkeypatch.delenv("WHICHCLOUD_DISABLE_LLM", raising=False)
-    if not os.getenv("WHICHCLOUD_EXTRACT_PROVIDER"):
-        monkeypatch.setenv("WHICHCLOUD_EXTRACT_PROVIDER", "groq")
+    monkeypatch.delenv("WHICHCLOUD_OFFLINE", raising=False)
+
+    from whichcloud import llm_extract
+
+    try:
+        llm_extract._call_with_failover("ping")
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"no model reachable: {str(exc)[:120]}")

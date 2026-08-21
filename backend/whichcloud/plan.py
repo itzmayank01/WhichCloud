@@ -240,6 +240,14 @@ class Plan:
     extraction_cached: bool = False
     degraded: bool = False
     degraded_reason: str = ""
+    #: True when a provider other than the pinned primary answered.
+    #: Marked for the same reason DEGRADED is: different models read the
+    #: same prompt differently, so the published agreement figures --
+    #: which are primary-to-primary -- do not cover this plan.
+    extraction_failover: bool = False
+    extraction_failover_note: str = ""
+    #: Why the archetype was believed or refused, in words.
+    archetype_evidence_verdict: str = ""
     #: field name -> the substring of the prompt it was drawn from.
     extraction_spans: dict[str, str] = field(default_factory=dict)
 
@@ -721,6 +729,9 @@ def _attach_extraction_meta(plan: Plan, meta: llm_extract.ExtractionMeta) -> Non
     plan.extraction_cached = meta.cached
     plan.degraded = meta.degraded
     plan.degraded_reason = meta.degraded_reason
+    plan.extraction_failover = meta.failover
+    plan.extraction_failover_note = meta.failover_note
+    plan.archetype_evidence_verdict = meta.evidence_verdict
     plan.extraction_spans = dict(meta.spans)
 
 

@@ -46,20 +46,80 @@ from whichcloud.pricing import store
 #: answer produced under different rules is never served as a current one.
 SCHEMA_VERSION = "constraints-v1"
 
-#: `gemini-2.5-flash` (what the older architecture reader still names) is
-#: no longer served to new keys -- it 404s. `gemini-flash-latest` tracks
-#: whatever the current flash model is, which is the right trade for an
-#: extractor whose output is cached per prompt anyway: a model change
-#: invalidates nothing already answered, because SCHEMA_VERSION and the
-#: model name are both in the cache key.
-_MODEL = "gemini-flash-latest"
+#: THE PINNED PRIMARY. One provider and one model, named, because
+#: different models return different Constraints from the same prompt --
+#: so "98.5% field agreement" is a statement about THIS pair, and a plan
+#: read by anything else is not strictly comparable to it. Failover still
+#: happens (a demo with no reachable model is worse than one read by a
+#: second choice), but it is marked rather than silent.
+PRIMARY_PROVIDER = "groq"
+PRIMARY_MODEL = "openai/gpt-oss-120b"
 
-#: Part 3's minimum-evidence bar. A single unopposed weak signal must not
-#: classify: "We need to move to the cloud. What would it cost?" contains
-#: the phrase "move to the cloud" and nothing else, and calling that a
-#: migration is guessing. Both conditions have to hold.
-MIN_ARCHETYPE_CONFIDENCE = 0.6
-MIN_ARCHETYPE_SPANS = 2
+#: Per-provider model names. Gemini's `gemini-2.5-flash` -- what the older
+#: architecture reader still names -- is no longer served to new keys and
+#: 404s, hence `-latest`.
+_MODELS: dict[str, str] = {
+    "groq": PRIMARY_MODEL,
+    "gemini": "gemini-flash-latest",
+    "anthropic": "claude-sonnet-4-5",
+}
+
+#: Part of the cache key, so a change of primary produces new extractions
+#: rather than silently serving ones made by a different model.
+_MODEL = PRIMARY_MODEL
+
+#: The minimum-evidence bar, as confidence BANDS rather than a flat
+#: two-span requirement.
+#:
+#: The flat rule measured the wrong thing. It rejected eight correct
+#: classifications that came back at 0.90 confidence, purely because the
+#: model quoted one long span ("Consultants need to log candidates,
+#: attach CVs, and track where each one is in the process") instead of
+#: fragmenting it into two short ones. Worse, span COUNT is not stable
+#: between calls on identical input -- the same prompt returned 1 span
+#: then 2 -- so it was injecting variance rather than filtering it.
+#:
+#: What the bar is actually for is stopping a guess: one incidental
+#: keyword, unopposed, must not classify. Confidence is the stable
+#: signal for that, and span count only earns a vote in the middle band
+#: where confidence alone is not decisive.
+HIGH_CONFIDENCE = 0.85       # one substantive span is enough
+MIN_ARCHETYPE_CONFIDENCE = 0.60  # below this, nothing classifies
+MID_BAND_MIN_SPANS = 2       # between the two, corroboration is required
+
+#: A span has to describe behaviour, not just contain a noun. "Postgres"
+#: is a keyword; "drivers log what they picked up and dropped off" is a
+#: workload. Four words is a coarse proxy for that difference, and coarse
+#: is appropriate -- the alternative is another table of what counts.
+MIN_SUBSTANTIVE_SPAN_WORDS = 4
+
+
+def _substantive(span: str) -> bool:
+    return len(span.split()) >= MIN_SUBSTANTIVE_SPAN_WORDS
+
+
+def passes_evidence_bar(confidence: float, spans: list[str]) -> tuple[bool, str]:
+    """Whether this classification has earned the right to be believed.
+
+    Returns (ok, why) so the reason survives into the output -- a refusal
+    that cannot say what it wanted is not much better than a guess.
+    """
+    substantive = [s for s in spans if _substantive(s)]
+    if confidence >= HIGH_CONFIDENCE:
+        if substantive:
+            return True, f"confidence {confidence:.2f} with a substantive span"
+        return False, (
+            f"confidence {confidence:.2f} but no span describing the workload "
+            "-- a high score resting on an incidental keyword is still a guess"
+        )
+    if confidence >= MIN_ARCHETYPE_CONFIDENCE:
+        if len(spans) >= MID_BAND_MIN_SPANS:
+            return True, f"confidence {confidence:.2f} corroborated by {len(spans)} spans"
+        return False, (
+            f"confidence {confidence:.2f} is mid-band and only {len(spans)} "
+            "span(s) support it"
+        )
+    return False, f"confidence {confidence:.2f} is below {MIN_ARCHETYPE_CONFIDENCE}"
 
 
 class ExtractionError(RuntimeError):
@@ -194,6 +254,15 @@ class ExtractionMeta:
     archetype: str = UNKNOWN
     archetype_confidence: float = 0.0
     archetype_spans: list[str] = field(default_factory=list)
+    #: Why the classification was believed or refused, in words.
+    evidence_verdict: str = ""
+    #: True when a provider OTHER than the pinned primary answered.
+    #: Different models produce different Constraints, so a plan read by
+    #: a failover provider is not strictly comparable to one read by the
+    #: primary -- and the agreement figures quoted in the report are
+    #: primary-to-primary. Surfaced for the same reason DEGRADED is.
+    failover: bool = False
+    failover_note: str = ""
     #: field name -> the input substring it was read from.
     spans: dict[str, str] = field(default_factory=dict)
 
@@ -277,18 +346,17 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
     call = payload.archetype
     name = (call.archetype or "").strip().lower()
     distinct_spans = [s for s in dict.fromkeys(call.spans) if s.strip()]
-    # PART 3: both conditions, not either. Confidence alone would let one
-    # strong-sounding guess through; span count alone would let two weak
-    # mentions through.
-    if (
-        name in ARCHETYPES
-        and call.confidence >= MIN_ARCHETYPE_CONFIDENCE
-        and len(distinct_spans) >= MIN_ARCHETYPE_SPANS
-    ):
-        meta.archetype = name
-    else:
+    confidence = float(call.confidence or 0.0)
+
+    if name not in ARCHETYPES:
         meta.archetype = UNKNOWN
-    meta.archetype_confidence = float(call.confidence or 0.0)
+        meta.evidence_verdict = f"{name!r} is not an archetype this engine knows"
+    else:
+        ok, why = passes_evidence_bar(confidence, distinct_spans)
+        meta.archetype = name if ok else UNKNOWN
+        meta.evidence_verdict = why
+
+    meta.archetype_confidence = confidence
     meta.archetype_spans = distinct_spans
 
     return c, meta
@@ -302,7 +370,7 @@ def _gemini(description: str, key: str) -> Extraction:
 
     client = genai.Client(api_key=key)
     result = client.models.generate_content(
-        model=_MODEL,
+        model=_MODELS["gemini"],
         contents=_INSTRUCTION + description,
         config={
             "response_mime_type": "application/json",
@@ -320,7 +388,7 @@ def _anthropic(description: str, key: str) -> Extraction:
     client = anthropic.Anthropic(api_key=key)
     schema = Extraction.model_json_schema()
     message = client.messages.create(
-        model="claude-sonnet-4-5",
+        model=_MODELS["anthropic"],
         max_tokens=2048,
         temperature=0,
         tools=[{
@@ -342,15 +410,12 @@ def _anthropic(description: str, key: str) -> Extraction:
 #: the Gemini keys are exhausted and the Anthropic ones are out of
 #: credit, and an extractor with no reachable model is an extractor that
 #: silently degrades to the phrase tables it was built to replace.
-_GROQ_MODEL = "openai/gpt-oss-120b"
-
-
 def _groq(description: str, key: str) -> Extraction:
     from openai import OpenAI
 
     client = OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1")
     completion = client.chat.completions.create(
-        model=_GROQ_MODEL,
+        model=_MODELS["groq"],
         temperature=0,
         response_format={
             "type": "json_schema",
@@ -377,7 +442,7 @@ def _call_with_failover(description: str) -> tuple[Extraction, str]:
     call still pays ~25s discovering that before reaching a key that
     works, which turns a 125-call measurement into an hour of timeouts.
     """
-    preferred = os.getenv("WHICHCLOUD_EXTRACT_PROVIDER") or None
+    preferred = os.getenv("WHICHCLOUD_EXTRACT_PROVIDER") or PRIMARY_PROVIDER
     chain = [c for c in candidates(preferred) if c.provider in _READERS]
     if not chain:
         raise ExtractionError("no model credentials configured")
@@ -398,6 +463,10 @@ def _call_with_failover(description: str) -> tuple[Extraction, str]:
     raise ExtractionError(f"{label}: {str(exc)[:200]}") from exc
 
 
+class NotInCacheError(RuntimeError):
+    """Offline mode, and this prompt has never been extracted."""
+
+
 def extract(
     description: str,
     *,
@@ -410,12 +479,20 @@ def extract(
     Never raises for a model failure when allow_fallback is on: a degraded
     answer that says it is degraded beats no answer, and the phrase tables
     still handle the phrasings they always did.
+
+    WHICHCLOUD_OFFLINE serves cache only and raises NotInCacheError for
+    anything missing. That is deliberately NOT the phrase-table fallback:
+    for a live demonstration, a clear "this prompt was not warmed" is a
+    recoverable mistake, whereas a silent 85%-miss reader producing a
+    confident-looking wrong answer on stage is not.
     """
-    if os.getenv("WHICHCLOUD_DISABLE_LLM"):
+    offline = bool(os.getenv("WHICHCLOUD_OFFLINE"))
+
+    if os.getenv("WHICHCLOUD_DISABLE_LLM") and not offline:
         return _fallback(description, "LLM extraction disabled by environment")
 
     key = cache_key(description)
-    if use_cache:
+    if use_cache or offline:
         try:
             stored = store.cached_constraints(key, dsn)
         except Exception:
@@ -426,9 +503,19 @@ def extract(
                 constraints, meta = _to_constraints(payload)
                 meta.cached = True
                 meta.model = _MODEL
+                meta.reader = f"{PRIMARY_PROVIDER} (cached)"
                 return constraints, meta
             except Exception:
                 pass  # a stale-shaped row is re-read, not fatal
+
+    if offline:
+        raise NotInCacheError(
+            "Offline mode: this description has not been extracted before, "
+            "so there is no cached reading of it. Run "
+            "`python scripts/warm_cache.py --prompt ...` while a model is "
+            "reachable, or unset WHICHCLOUD_OFFLINE. Pricing is not "
+            "attempted from an unread prompt."
+        )
 
     try:
         payload, label = _call_with_failover(description)
@@ -439,6 +526,20 @@ def extract(
 
     constraints, meta = _to_constraints(payload)
     meta.reader, meta.model = label, _MODEL
+    # `label` is "groq", "groq#2", "gemini"... -- the provider is the part
+    # before the '#', since a second key for the primary is still primary.
+    provider = label.split("#", 1)[0]
+    if provider != PRIMARY_PROVIDER:
+        meta.failover = True
+        meta.model = _MODELS.get(provider, provider)
+        meta.failover_note = (
+            f"Extracted by failover provider {provider!r} "
+            f"({meta.model}), not the pinned primary "
+            f"{PRIMARY_PROVIDER!r} ({PRIMARY_MODEL}). Different models read "
+            "the same prompt differently, so this plan is not strictly "
+            "comparable to one read by the primary, and the published "
+            "agreement figures do not cover it."
+        )
 
     if use_cache:
         try:
