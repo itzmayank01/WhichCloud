@@ -1,7 +1,27 @@
 {
-  "hospital-pune": {"tier_1": 307.10, "tier_2": 373.83, "tier_3": 517.95},
-  "hospital-pune-public": {"tier_1": 315.10, "tier_2": 381.83, "tier_3": 525.95},
-  "ecommerce-scale": {"tier_1": 1170.41, "tier_2": 1673.02, "tier_3": 3330.20},
-  "fintech-bengaluru": {"tier_1": 217.09, "tier_2": 254.11, "tier_3": 398.23},
-  "budget-floor-conflict": {"tier_1": 307.10, "tier_2": 373.83, "tier_3": 517.95}
+  "budget-floor-conflict": {
+    "tier_1": 182.27,
+    "tier_2": 249.01,
+    "tier_3": 393.12
+  },
+  "ecommerce-scale": {
+    "tier_1": 1272.95,
+    "tier_2": 1791.91,
+    "tier_3": 3449.1
+  },
+  "fintech-bengaluru": {
+    "tier_1": 92.27,
+    "tier_2": 129.29,
+    "tier_3": 273.4
+  },
+  "hospital-pune": {
+    "tier_1": 242.59,
+    "tier_2": 309.32,
+    "tier_3": 453.44
+  },
+  "hospital-pune-public": {
+    "tier_1": 250.59,
+    "tier_2": 317.32,
+    "tier_3": 461.44
+  }
 }

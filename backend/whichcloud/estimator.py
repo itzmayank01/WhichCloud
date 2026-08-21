@@ -93,6 +93,12 @@ class ArchitectureSpec:
     dns_monthly_queries: float = 0.0
     auth_monthly_active_users: float = 0.0
     backup_gb: float = 0.0
+    #: How long backups are kept. Carried for disclosure rather than
+    #: billing: AWS Backup's warm-storage rate is per GB-month of stored
+    #: data, which `backup_gb` already expresses, so multiplying by a
+    #: retention window here would double-count it. Recorded so the
+    #: architecture can state its retention rather than implying one.
+    backup_retention_days: int = 0
 
     # ── the components a stated requirement makes mandatory ──
     #: GB copied to a second region. Zero means every copy sits beside the

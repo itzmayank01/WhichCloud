@@ -43,6 +43,49 @@ UNKNOWN = "unknown"
 #: branch does not exist, however confidently classify() names it.
 IMPLEMENTED_ARCHETYPES = frozenset({"web_app"})
 
+#: The three states a classification can land in. Both non-priced states
+#: withhold pricing, but they are different claims and get different
+#: copy: "we know what this is and haven't built it" is a far more
+#: useful answer than "we don't know what this is", and collapsing them
+#: throws away the more informative half.
+PRICED = "priced"
+RECOGNISED_UNPRICED = "recognised_unpriced"
+STATE_UNKNOWN = "unknown"
+
+#: What each shape's architecture actually needs, in words. Used only for
+#: the recognised_unpriced copy: the engine can describe the shape it
+#: recognised without pretending to price it, which is the whole point of
+#: the state existing separately from unknown.
+ARCHETYPE_REQUIREMENTS: dict[str, str] = {
+    "static_site": "Object storage holding the files, a CDN in front of it, "
+                   "and DNS. No application server, no database, and no VPC "
+                   "— so none of the per-hour compute or NAT costs this "
+                   "engine currently models apply.",
+    "batch_etl": "Object storage for the raw and processed data, a scheduled "
+                 "compute runner that exists only while a run is in flight, "
+                 "an orchestrator to sequence the steps, and a query layer "
+                 "over the results. Billed by run, not by the month.",
+    "event_driven": "An ingestion endpoint, a durable queue that holds each "
+                    "event until it is confirmed processed, a compute "
+                    "consumer that scales with queue depth, and a datastore. "
+                    "The queue — not the database — is what stops an event "
+                    "being lost.",
+    "ml_inference": "A model-serving endpoint on accelerated or "
+                    "inference-optimised instances, autoscaled against "
+                    "prediction rate, plus storage for the model artefact. "
+                    "Sized from predictions/sec and model size, neither of "
+                    "which this engine currently measures.",
+    "realtime": "A connection-oriented gateway holding persistent sockets, a "
+                "low-latency datastore for messages, a search index for "
+                "history, and presence/fan-out state. Sized from concurrent "
+                "connections, not requests per second.",
+    "migration": "One instance per source machine, sized from each one's "
+                 "existing vCPU, RAM and disk, with block storage attached "
+                 "and the original operating systems preserved. Sized from "
+                 "an inventory of what you already run, not from a traffic "
+                 "estimate.",
+}
+
 #: Human-readable coverage, shown whenever pricing is withheld so the
 #: reader can tell whether they described something adjacent.
 ARCHETYPE_DESCRIPTIONS: dict[str, str] = {
@@ -165,6 +208,19 @@ def is_priceable(archetype: str) -> bool:
     return archetype in IMPLEMENTED_ARCHETYPES
 
 
+def state_for(archetype: str) -> str:
+    """Which of the three states this classification lands in."""
+    if archetype == UNKNOWN:
+        return STATE_UNKNOWN
+    return PRICED if is_priceable(archetype) else RECOGNISED_UNPRICED
+
+
+def requirements_for(archetype: str) -> str:
+    """What this shape's architecture needs, in words. Empty for shapes
+    that are already priced -- there the components speak for themselves."""
+    return ARCHETYPE_REQUIREMENTS.get(archetype, "")
+
+
 def coverage() -> list[dict[str, str]]:
     """Archetypes this engine can price, and those it can only name."""
     return [
@@ -175,3 +231,14 @@ def coverage() -> list[dict[str, str]]:
         }
         for name in ARCHETYPES
     ]
+
+
+def coverage_summary() -> dict[str, int]:
+    """Two numbers, reported rather than one: how many shapes the engine
+    can NAME, and how many it can PRICE. A single "coverage" figure would
+    hide which of the two it referred to, and they are very different
+    claims about what the product does."""
+    return {
+        "shapes_recognised": len(ARCHETYPES),
+        "shapes_priced": len(IMPLEMENTED_ARCHETYPES),
+    }

@@ -53,8 +53,42 @@ COUNTRY_REGIONS: dict[str, tuple[str, ...]] = {
 #: Storage assumed when the description gives none. Flagged, never hidden:
 #: it drives the largest single line on a records-heavy workload, so an
 #: unexamined default here quietly sets the total.
-DEFAULT_STORAGE_GB = 500.0
-DEFAULT_EGRESS_GB = 100.0
+#: Storage and egress assumed when the description gives neither. These
+#: are heuristics in the same class as BASE_SIZING -- conventional
+#: judgement, collected here so they can be argued with -- but a single
+#: flat constant was not even that: it assumed a 12-person equipment
+#: tracker and a 450-staff hospital hold the same 500 GB, which is the
+#: sort of unexamined default that quietly sets a total.
+#:
+#: Two inputs, because both matter and neither subsumes the other: the
+#: load band says how much traffic the system carries, the user count
+#: says how much data it accumulates. A busy public site with few
+#: accounts and a quiet internal system with many both exist.
+_STORAGE_BASE_BY_TIER: dict[str, float] = {
+    "trivial": 25.0, "small": 100.0, "medium": 500.0, "large": 2000.0,
+}
+_EGRESS_BASE_BY_TIER: dict[str, float] = {
+    "trivial": 10.0, "small": 50.0, "medium": 250.0, "large": 1000.0,
+}
+#: Records-oriented: documents, attachments and history per person on
+#: the system. Deliberately modest -- the tier base is what carries a
+#: media-heavy workload, not this.
+_STORAGE_PER_USER_GB = 0.5
+_EGRESS_PER_USER_GB = 0.1
+
+
+def _default_storage_gb(constraints: Constraints, load: Load) -> float:
+    return (
+        _STORAGE_BASE_BY_TIER.get(load.tier, 500.0)
+        + constraints.users * _STORAGE_PER_USER_GB
+    )
+
+
+def _default_egress_gb(constraints: Constraints, load: Load) -> float:
+    return (
+        _EGRESS_BASE_BY_TIER.get(load.tier, 100.0)
+        + constraints.users * _EGRESS_PER_USER_GB
+    )
 
 #: Named only when the description forces x86: everything else defaults to
 #: Graviton, on price and on the pricing rule that says so. A workload never
@@ -148,20 +182,26 @@ class Plan:
     #: forced private_standard regardless of how small the workload is.
     network_topology: str = ""
     network_topology_reason: str = ""
-    #: The workload shape, and the evidence for it. "unknown" whenever
-    #: nothing matched, two archetypes tied, or the match is real but has
-    #: no service graph yet -- see `detected_archetype` for the last case.
+    #: The workload shape as classified: a real archetype name, or
+    #: "unknown". Always the honest answer -- never flattened to hide a
+    #: recognised-but-unbuildable shape, which `archetype_state` reports
+    #: separately.
     archetype: str = ""
     archetype_note: str = ""
-    #: What classify() actually named, kept even when `archetype` is
-    #: reported unknown because the shape is recognised but unpriceable.
-    #: Withholding a price is not the same as having learned nothing.
-    detected_archetype: str = ""
+    #: One of archetype.PRICED / RECOGNISED_UNPRICED / STATE_UNKNOWN.
+    #: Two of the three withhold pricing, but for different reasons and
+    #: with different copy -- "we know what this is and haven't built it"
+    #: is a more useful answer than "we don't know what this is".
+    archetype_state: str = ""
+    #: What this shape's architecture needs, in words. Populated only for
+    #: recognised_unpriced: describing a shape is not pricing it.
+    archetype_requirements: str = ""
     #: Whether tiers were priced at all. False means `tiers` is empty by
     #: decision, not by failure -- INV-12's subject.
     priced: bool = True
     withheld_reason: str = ""
     covered_archetypes: list[dict] = field(default_factory=list)
+    coverage_summary: dict = field(default_factory=dict)
     clarifying_questions: list[str] = field(default_factory=list)
     #: Priced, but resting on an assumption that would change the answer
     #: if wrong. A number with a named caveat, not a refusal.
@@ -197,6 +237,17 @@ def _instances_for(peak_rps: float, *, high_availability: bool) -> int:
 WITHHELD_MESSAGE = (
     "This workload does not match an architecture pattern the engine has "
     "been validated on. Pricing is withheld rather than guessed."
+)
+
+#: recognised_unpriced says something more specific than the generic
+#: refusal above: the shape IS known, and what is missing is a validated
+#: price for it. Estimating one anyway is exactly the failure the
+#: coverage map documented.
+RECOGNISED_UNPRICED_MESSAGE = (
+    "We recognise this shape, but pricing for it has not been validated "
+    "yet, so no figure is shown. An estimate produced by pricing it as "
+    "the one architecture this engine does model would be wrong in the "
+    "components, not merely in the total."
 )
 
 #: Fields whose being assumed rather than stated would change the
@@ -357,10 +408,16 @@ def _spec_for(
     Tier 1's whole point is that it stops after rung 1."""
     high_availability = constraints.availability == "high"
     durable = constraints.durability == "high"
+    # Backups are not an availability feature. "If it's down for an hour
+    # nobody minds" says nothing about whether losing the data would be
+    # survivable, and the previous ladder conflated the two -- suppressing
+    # backups entirely whenever durability was merely `normal`. Only an
+    # explicitly STATED `ephemeral` removes them now.
+    ephemeral = constraints.durability == "ephemeral"
     public_simple = topology.value == PUBLIC_SIMPLE
     managed = tier_level >= 2  # Fargate + the rung 2/3 additions it buys
-    storage = constraints.storage_gb or DEFAULT_STORAGE_GB
-    egress = constraints.egress_gb or DEFAULT_EGRESS_GB
+    storage = constraints.storage_gb or _default_storage_gb(constraints, load)
+    egress = constraints.egress_gb or _default_egress_gb(constraints, load)
     vcpu = _vcpu_for(load.peak_rps)
 
     db_vcpu, db_memory_gb = _database_size_for(load.tier)
@@ -419,7 +476,12 @@ def _spec_for(
         # tier once the workload is public-facing, including Tier 1.
         waf_rule_count=3 if "waf" in load.included else None,
         # Required by durability=high, on every tier.
-        backup_gb=storage if durable else 0.0,
+        # Every workload is backed up unless it stated its data is
+        # disposable. What durability=high adds on top is survival of
+        # losing the whole REGION -- a second copy elsewhere and
+        # immutability -- not the existence of a backup at all.
+        backup_gb=0.0 if ephemeral else storage,
+        backup_retention_days=0 if ephemeral else (35 if durable else 7),
         backup_copy_gb=storage if durable else 0.0,
         object_lock=durable,
         lifecycle_gb=storage * 0.4 if durable else 0.0,
@@ -628,7 +690,8 @@ def _withheld_plan(
     and the sizing are still returned -- they are real findings, and a
     reader who can see them can tell whether the refusal is reasonable.
     What is withheld is only the number nothing has validated."""
-    recognised = detected != archetype_module.UNKNOWN
+    state = archetype_module.state_for(detected)
+    recognised = state == archetype_module.RECOGNISED_UNPRICED
     note = (
         f"Recognised as {detected!r} ({evidence}), which this engine can "
         "name but has not yet been taught to build."
@@ -639,16 +702,22 @@ def _withheld_plan(
         constraints=constraints,
         load=load,
         compliance=compliance_notes(constraints.country, constraints.sector),
-        # Reported as unknown whenever nothing priceable was matched --
-        # `detected_archetype` keeps what was actually recognised, so
-        # withholding a price never means discarding what was learned.
-        archetype=archetype_module.UNKNOWN,
-        detected_archetype=detected,
+        archetype=detected,
+        archetype_state=state,
         archetype_note=note,
+        archetype_requirements=archetype_module.requirements_for(detected),
         priced=False,
-        withheld_reason=WITHHELD_MESSAGE,
+        withheld_reason=(
+            RECOGNISED_UNPRICED_MESSAGE if recognised else WITHHELD_MESSAGE
+        ),
         covered_archetypes=archetype_module.coverage(),
-        clarifying_questions=list(archetype_module.CLARIFYING_QUESTIONS),
+        coverage_summary=archetype_module.coverage_summary(),
+        # Only useful when nothing was recognised. Asking a user to
+        # clarify a shape we have already named correctly would be
+        # busywork -- what they need there is the shape's requirements.
+        clarifying_questions=(
+            [] if recognised else list(archetype_module.CLARIFYING_QUESTIONS)
+        ),
         extraction_confidence=constraints.confidence_map(),
     )
 
@@ -690,7 +759,7 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
     topology = decide_topology(constraints, load, description, compliance)
 
     endpoints = _endpoint_plan(
-        egress_gb=constraints.egress_gb or DEFAULT_EGRESS_GB,
+        egress_gb=constraints.egress_gb or _default_egress_gb(constraints, load),
         az_count=az_count, aws_region=aws_region, dsn=dsn,
         nat_present=topology.value != PUBLIC_SIMPLE,
     )
@@ -700,10 +769,12 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
     plan = Plan(
         constraints=constraints, load=load, compliance=compliance,
         network_topology=topology.value, network_topology_reason=topology.reason,
-        archetype=detected, detected_archetype=detected,
+        archetype=detected,
+        archetype_state=archetype_module.PRICED,
         archetype_note=f"{detected}: {evidence}",
         priced=True,
         covered_archetypes=archetype_module.coverage(),
+        coverage_summary=archetype_module.coverage_summary(),
         # Priced, but resting on an assumption that would change the
         # architecture rather than just its size -- so the number is
         # given with the caveat attached, not withheld and not implied

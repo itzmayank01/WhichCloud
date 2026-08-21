@@ -12,6 +12,8 @@ import pytest
 
 from whichcloud.archetype import (
     IMPLEMENTED_ARCHETYPES,
+    RECOGNISED_UNPRICED,
+    STATE_UNKNOWN,
     UNKNOWN,
     classify,
     coverage,
@@ -99,24 +101,45 @@ def test_coverage_lists_every_archetype_with_its_status():
 
 @pytest.mark.parametrize("prompt", list(PROBES.values()))
 def test_no_priced_tier_is_emitted_for_an_unimplemented_shape(prompt):
+    """These are recognised_unpriced, not unknown -- the shape IS known,
+    what is missing is a validated price for it. Both states withhold."""
     plan = build(prompt)
-    assert plan.archetype == UNKNOWN
+    assert plan.archetype_state == RECOGNISED_UNPRICED
     assert plan.priced is False
     assert plan.tiers == []
-    assert "withheld rather than guessed" in plan.withheld_reason
+    assert plan.withheld_reason
 
 
 @pytest.mark.parametrize("prompt", list(PROBES.values()))
-def test_a_refusal_still_returns_what_it_did_work_out(prompt):
-    """Withholding a price must not mean discarding the analysis -- the
-    extraction and sizing are real findings, and a reader who can see
-    them can judge whether the refusal is reasonable."""
+def test_a_recognised_shape_is_named_and_described_not_just_refused(prompt):
+    """Withholding a price must not mean discarding the analysis. For a
+    recognised shape the useful answer is what that architecture needs --
+    not the clarifying questions, which would be asking the user to
+    re-explain something already understood."""
     plan = build(prompt)
     assert plan.constraints is not None
     assert plan.load.sizing_basis()["load_tier"]
-    assert plan.detected_archetype and plan.detected_archetype != UNKNOWN
-    assert len(plan.clarifying_questions) >= 3
+    assert plan.archetype != UNKNOWN
+    assert plan.archetype_requirements, "a recognised shape must be describable"
+    assert plan.clarifying_questions == []
     assert plan.covered_archetypes
+
+
+def test_an_unclassifiable_prompt_asks_questions_instead(prompt="Please help us with our infrastructure."):
+    plan = build(prompt)
+    assert plan.archetype_state == STATE_UNKNOWN
+    assert plan.priced is False
+    assert plan.tiers == []
+    assert len(plan.clarifying_questions) >= 3
+    assert "withheld rather than guessed" in plan.withheld_reason
+
+
+def test_coverage_is_reported_as_two_numbers_not_one():
+    """"Coverage" alone would hide which of two very different claims it
+    referred to: shapes we can name, versus shapes we can price."""
+    plan = build("Please help us with our infrastructure.")
+    assert plan.coverage_summary["shapes_recognised"] == 7
+    assert plan.coverage_summary["shapes_priced"] == 1
 
 
 def test_a_covered_workload_is_still_priced_normally():
@@ -141,6 +164,81 @@ def test_a_plan_resting_on_an_architecture_deciding_assumption_is_provisional():
     assert plan.provisional is True
     # durability was never stated, and that decides whether backups exist.
     assert any("durability" in r for r in plan.provisional_reasons)
+
+
+def test_durability_normal_still_takes_backups():
+    """The correction: being offline for an hour and losing the data are
+    independent axes. The old ladder read "nobody minds an hour of
+    downtime" as consent to hold no backups at all."""
+    plan = build(
+        "An internal tool for our ops team to track equipment. About 200 page "
+        "views a day. If it is down for an hour nobody minds. Budget $60."
+    )
+    assert plan.constraints.durability == "normal"
+    for tier in plan.tiers:
+        assert tier.spec.backup_gb > 0, "normal durability must still back up"
+        assert tier.spec.backup_retention_days == 7
+        # What high adds is surviving loss of the REGION, not backups at all.
+        assert tier.spec.backup_copy_gb == 0
+        assert tier.spec.object_lock is False
+
+
+def test_durability_high_adds_region_survival_on_top():
+    plan = build(
+        "A patient records system for a clinic in Jaipur. Cannot lose data, "
+        "cannot have downtime. Budget is $80 a month."
+    )
+    assert plan.constraints.durability == "high"
+    for tier in plan.tiers:
+        assert tier.spec.backup_gb > 0
+        assert tier.spec.backup_retention_days == 35
+        assert tier.spec.backup_copy_gb > 0
+        assert tier.spec.object_lock is True
+
+
+def test_ephemeral_is_the_only_value_that_removes_backups_and_must_be_stated():
+    plan = build(
+        "A rendering cache for our internal build system, about 300 requests "
+        "a day. The data is disposable, we can rebuild it any time. Budget $40."
+    )
+    assert plan.constraints.durability == "ephemeral"
+    assert plan.constraints.source("durability") == "stated"
+    for tier in plan.tiers:
+        assert tier.spec.backup_gb == 0
+
+
+def test_ephemeral_is_never_inferred_from_silence():
+    """Absence of a durability statement means `normal`, which backs up.
+    Only an explicit statement may remove backups."""
+    plan = build(
+        "An internal tool for our ops team to track equipment. About 200 page "
+        "views a day. Budget $60."
+    )
+    assert plan.constraints.durability == "normal"
+    assert plan.tiers[0].spec.backup_gb > 0
+
+
+# ── storage/egress defaults scale, rather than being one constant ──
+
+
+def test_default_storage_scales_with_headcount():
+    """A 12-person tool and a 450-staff hospital must not share a storage
+    assumption -- the flat 500 GB default was setting totals unexamined."""
+    small = build(
+        "An internal tool for our 12-person ops team to track equipment. "
+        "About 200 page views a day. Budget $60."
+    )
+    large = build(
+        "An internal tool for our 450 staff to track equipment. About 200 "
+        "page views a day. Budget $600."
+    )
+    assert small.tiers[0].spec.storage_gb < large.tiers[0].spec.storage_gb
+
+
+def test_default_storage_scales_with_load_band():
+    quiet = build("An internal tool, 300 requests a day. Budget $100.")
+    busy = build("A marketplace, about 2 million requests a day. Budget $5000.")
+    assert quiet.tiers[0].spec.storage_gb < busy.tiers[0].spec.storage_gb
 
 
 def test_a_fully_stated_workload_is_not_flagged_provisional():

@@ -86,6 +86,18 @@ _DURABILITY_HIGH = (
     "audited by", "audits us",
 )
 
+#: The ONLY value that removes backups entirely, and therefore the only
+#: one that must be stated rather than inferred. Every phrase here says
+#: the data can be recreated from something else -- a cache, a rebuild, a
+#: re-run -- not merely that losing it would be survivable.
+_DURABILITY_EPHEMERAL = (
+    "data is disposable", "disposable data", "can be regenerated",
+    "can be recreated", "reproducible from", "rebuilt from source",
+    "just a cache", "purely a cache", "scratch data", "throwaway data",
+    "no need to back up", "no need to back it up", "does not need backup",
+    "doesn't need backup", "no backups needed",
+)
+
 _RESIDENCY = ("must stay inside", "must stay in", "must remain in",
               "data residency", "stay within", "not leave")
 
@@ -303,11 +315,24 @@ def extract(description: str) -> Constraints:
             c.evidence["availability"] = f"{low_hit!r}"
 
     # ── durability ──
+    # High wins over ephemeral if both somehow appear: "cannot be lost"
+    # is a stronger claim than "can be regenerated", and the safe reading
+    # of a contradictory prompt is the one that keeps the data.
     hit = _find(text, _DURABILITY_HIGH)
     if hit:
         c.durability = "high"
         c.stated.add("durability")
         c.evidence["durability"] = f"{hit!r}"
+    else:
+        # `ephemeral` is the only value that removes backups entirely, so
+        # it is the only one that may never be inferred -- it has to be
+        # said. Absence of a durability statement means `normal`, which
+        # still takes backups.
+        ephemeral_hit = _find(text, _DURABILITY_EPHEMERAL)
+        if ephemeral_hit:
+            c.durability = "ephemeral"
+            c.stated.add("durability")
+            c.evidence["durability"] = f"{ephemeral_hit!r}"
 
     # ── volumes ──
     users, ev = _number_near(

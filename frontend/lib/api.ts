@@ -354,7 +354,10 @@ export type Plan = {
   network_topology_reason: string;
   archetype: string;
   archetype_note: string;
-  detected_archetype: string;
+  /** priced | recognised_unpriced | unknown */
+  archetype_state: string;
+  archetype_requirements: string;
+  coverage_summary: { shapes_recognised: number; shapes_priced: number };
   /** False means pricing was withheld by decision — `tiers` is empty on
    *  purpose, not because the request failed. */
   priced: boolean;

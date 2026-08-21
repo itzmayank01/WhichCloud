@@ -99,6 +99,9 @@ COMPONENT_CHECKS = {
     "extended_retention_audit": lambda t: t.spec.audit_logging and t.spec.lifecycle_gb > 0,
     "nat_gateway": lambda t: t.spec.nat_gateway_count > 0,
     "vpc_flow_logs": lambda t: t.spec.flowlog_gb > 0,
+    # Distinct from cross_region_backup_copy: this is "a backup exists at
+    # all", which every non-ephemeral workload must have.
+    "backup": lambda t: t.spec.backup_gb > 0,
 }
 
 #: When a must_exclude component is correctly absent, the reason usually
@@ -474,18 +477,46 @@ def inv_11_topology_forced_private_when_it_must_be(fx_id: str, built: Plan) -> l
 
 def inv_12_no_priced_tier_when_archetype_unknown(fx_id: str, built: Plan) -> list[Result]:
     """The refusal has to be real. An engine that classifies a workload
-    as unknown and then prices it anyway has only added a disclaimer to
-    the same wrong bill -- which is precisely what the coverage map found
-    the previous `archetype: unknown` note doing."""
-    unknown = built.archetype == "unknown"
-    ok = (not unknown) or (not built.tiers and not built.priced)
+    as unpriceable and then prices it anyway has only added a disclaimer
+    to the same wrong bill -- which is precisely what the coverage map
+    found the previous `archetype: unknown` note doing.
+
+    Covers BOTH withholding states: unknown (nothing matched, or a tie)
+    and recognised_unpriced (shape known, no service graph yet)."""
+    withholding = built.archetype_state in ("unknown", "recognised_unpriced")
+    ok = (not withholding) or (not built.tiers and not built.priced)
     return [Result(
         fx_id, "INV-12", passed=ok,
-        expected="no priced tier when archetype == unknown",
-        actual=f"archetype={built.archetype} priced={built.priced} "
+        expected="no priced tier when archetype_state is unknown or "
+                 "recognised_unpriced",
+        actual=f"state={built.archetype_state} priced={built.priced} "
                f"tiers={len(built.tiers)}",
         reason=built.withheld_reason,
     )]
+
+
+def inv_13_every_priced_tier_is_backed_up(fx_id: str, built: Plan) -> list[Result]:
+    """No workload silently ends up with zero backups. Only durability
+    == ephemeral removes them, and only when the text actually SAID the
+    data is disposable -- an inferred ephemeral would be the same
+    conflation of downtime tolerance with data-loss tolerance that this
+    invariant exists to prevent."""
+    c = built.constraints
+    stated_ephemeral = (
+        c.durability == "ephemeral" and c.source("durability") == "stated"
+    )
+    results = []
+    for tier in built.tiers:
+        backed_up = tier.spec.backup_gb > 0
+        ok = backed_up or stated_ephemeral
+        results.append(Result(
+            fx_id, f"INV-13:{tier.name}", passed=ok,
+            expected="a backup component, unless durability == ephemeral "
+                     "from stated text",
+            actual=f"backup_gb={tier.spec.backup_gb:g} "
+                   f"durability={c.durability} ({c.source('durability')})",
+        ))
+    return results
 
 
 INVARIANTS = {
@@ -500,6 +531,7 @@ INVARIANTS = {
     "INV-10": inv_10_compliance_matches_table,
     "INV-11": inv_11_topology_forced_private_when_it_must_be,
     "INV-12": inv_12_no_priced_tier_when_archetype_unknown,
+    "INV-13": inv_13_every_priced_tier_is_backed_up,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.
@@ -767,9 +799,9 @@ def run_probe(probe: dict) -> FixtureRun:
     priceable = built.priced
     run.results.extend(inv_12_no_priced_tier_when_archetype_unknown(run.fixture_id, built))
     run.results.append(Result(
-        run.fixture_id, "classified", passed=bool(built.detected_archetype),
+        run.fixture_id, "classified", passed=bool(built.archetype),
         expected="an archetype name (or 'unknown')",
-        actual=built.detected_archetype or "(nothing)",
+        actual=f"{built.archetype} [{built.archetype_state}]",
         reason=built.archetype_note,
     ))
     if not priceable:
@@ -779,13 +811,25 @@ def run_probe(probe: dict) -> FixtureRun:
             actual=f"{len(built.tiers)} tier(s)",
             reason=built.withheld_reason,
         ))
-        run.results.append(Result(
-            run.fixture_id, "offers_next_steps",
-            passed=bool(built.clarifying_questions and built.covered_archetypes),
-            expected="clarifying questions and a coverage list",
-            actual=f"{len(built.clarifying_questions)} question(s), "
-                   f"{len(built.covered_archetypes)} archetype(s) listed",
-        ))
+        # A recognised shape is owed a description of what it needs; an
+        # unknown one is owed the questions that would identify it.
+        # Asking a user to re-explain a shape already named correctly
+        # would be busywork, so the two states are checked differently.
+        if built.archetype_state == "recognised_unpriced":
+            run.results.append(Result(
+                run.fixture_id, "describes_the_recognised_shape",
+                passed=bool(built.archetype_requirements),
+                expected="a description of what this architecture needs",
+                actual=built.archetype_requirements[:60] or "(none)",
+            ))
+        else:
+            run.results.append(Result(
+                run.fixture_id, "offers_next_steps",
+                passed=bool(built.clarifying_questions and built.covered_archetypes),
+                expected="clarifying questions and a coverage list",
+                actual=f"{len(built.clarifying_questions)} question(s), "
+                       f"{len(built.covered_archetypes)} archetype(s) listed",
+            ))
     else:
         run.tier_totals = {t.name: t.monthly_total for t in built.tiers}
     return run

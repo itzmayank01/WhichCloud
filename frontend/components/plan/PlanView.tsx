@@ -72,11 +72,14 @@ function TierCard({
  * has validated. An empty tier list styled like a failure would read as a
  * bug and invite a retry, which is the opposite of the intent. */
 function WithheldView({ plan }: { plan: Plan }) {
+  const recognised = plan.archetype_state === "recognised_unpriced";
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-xl border border-amber-300 bg-amber-50 p-5">
         <h3 className="text-base font-semibold text-amber-900">
-          No price for this one
+          {recognised
+            ? `This looks like a ${plan.archetype.replace(/_/g, " ")} workload`
+            : "We could not identify this workload"}
         </h3>
         <p className="mt-2 text-sm leading-relaxed text-amber-900/90">
           {plan.withheld_reason}
@@ -87,6 +90,19 @@ function WithheldView({ plan }: { plan: Plan }) {
           </p>
         )}
       </section>
+
+      {/* A recognised shape can be described even when it cannot be
+          priced — that is the whole reason the two states are separate. */}
+      {recognised && plan.archetype_requirements && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            What this architecture needs
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-neutral-700">
+            {plan.archetype_requirements}
+          </p>
+        </section>
+      )}
 
       <section className="rounded-xl border border-neutral-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-neutral-900">
@@ -118,6 +134,12 @@ function WithheldView({ plan }: { plan: Plan }) {
         <section className="rounded-xl border border-neutral-200 bg-white p-4">
           <h3 className="text-sm font-semibold text-neutral-900">
             What this engine can price today
+            {plan.coverage_summary && (
+              <span className="ml-2 font-normal text-neutral-500">
+                — {plan.coverage_summary.shapes_priced} priced of{" "}
+                {plan.coverage_summary.shapes_recognised} recognised
+              </span>
+            )}
           </h3>
           <ul className="mt-2 flex flex-col gap-2">
             {plan.covered_archetypes.map((a) => (

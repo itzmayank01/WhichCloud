@@ -927,7 +927,12 @@ def plan_endpoint(body: DescribeIn) -> dict:
         "network_topology_reason": result.network_topology_reason,
         "archetype": result.archetype,
         "archetype_note": result.archetype_note,
-        "detected_archetype": result.detected_archetype,
+        # One of: priced | recognised_unpriced | unknown. The latter two
+        # both withhold pricing, but for different reasons and with
+        # different copy -- see whichcloud.archetype.
+        "archetype_state": result.archetype_state,
+        "archetype_requirements": result.archetype_requirements,
+        "coverage_summary": result.coverage_summary,
         # False means the engine declined to price this shape. `tiers` is
         # then empty by decision, not by failure -- the interface must say
         # so rather than rendering an empty result as a broken one.

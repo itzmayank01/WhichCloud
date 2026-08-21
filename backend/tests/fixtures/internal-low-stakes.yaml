@@ -21,6 +21,12 @@ expect:
 
   network_topology: public_simple
 
+  # cross_region_backup_copy stays excluded, but for a narrower reason
+  # than before: durability=normal now DOES take backups (7-day
+  # retention). What it does not buy is surviving loss of the whole
+  # region -- a second copy elsewhere and object lock. Being offline for
+  # an hour and losing the data are independent axes, and the old ladder
+  # read the first as consent to skip the second.
   must_exclude:
     - multi_az_database
     - cross_region_backup_copy
@@ -32,15 +38,14 @@ expect:
     - nat_gateway
     - vpc_flow_logs
 
-  # NOTE (see the harness report / task summary for detail): after the
-  # network-topology fix, Tier 1 is $65.61 -- NAT gateway and flow logs
-  # are gone (was $145.59), but it still does not clear $60. The
-  # remaining cost is DEFAULT_STORAGE_GB (500) and DEFAULT_EGRESS_GB
-  # (100), assumed defaults untouched by this task because Pune also
-  # relies on them -- fixing them here would move Pune's totals too,
-  # which the golden-totals check exists specifically to catch. Encoded
-  # as the correct target, left failing honestly rather than adjusted to
-  # pass.
+  must_include:
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+
+  # Now passes: storage/egress defaults scale by load band and headcount
+  # instead of a flat 500 GB / 100 GB, so a 12-person tool is assumed to
+  # hold 31 GB rather than the same as a 450-staff hospital. Tier 1 is
+  # $45.89 against the $60 budget.
   budget:
     tier_1: true
 
