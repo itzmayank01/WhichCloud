@@ -37,6 +37,7 @@ from whichcloud.pricing import store as pricing_store  # noqa: E402
 from whichcloud.pricing.models import provider_region  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+PROBES_DIR = Path(__file__).parent / "probes"
 REPORT_PATH = Path(__file__).parent / "report.md"
 HISTORY_PATH = Path(__file__).parent / "harness_history.jsonl"
 GOLDEN_PATH = Path(__file__).parent / "golden_totals.json"
@@ -471,6 +472,22 @@ def inv_11_topology_forced_private_when_it_must_be(fx_id: str, built: Plan) -> l
     )]
 
 
+def inv_12_no_priced_tier_when_archetype_unknown(fx_id: str, built: Plan) -> list[Result]:
+    """The refusal has to be real. An engine that classifies a workload
+    as unknown and then prices it anyway has only added a disclaimer to
+    the same wrong bill -- which is precisely what the coverage map found
+    the previous `archetype: unknown` note doing."""
+    unknown = built.archetype == "unknown"
+    ok = (not unknown) or (not built.tiers and not built.priced)
+    return [Result(
+        fx_id, "INV-12", passed=ok,
+        expected="no priced tier when archetype == unknown",
+        actual=f"archetype={built.archetype} priced={built.priced} "
+               f"tiers={len(built.tiers)}",
+        reason=built.withheld_reason,
+    )]
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -482,6 +499,7 @@ INVARIANTS = {
     "INV-9": inv_9_items_resolve_to_catalog_region,
     "INV-10": inv_10_compliance_matches_table,
     "INV-11": inv_11_topology_forced_private_when_it_must_be,
+    "INV-12": inv_12_no_priced_tier_when_archetype_unknown,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.
@@ -729,6 +747,59 @@ def append_history(runs: list[FixtureRun], path: Path) -> None:
             }) + "\n")
 
 
+# ──────────────────────────────── probes ───────────────────────────────────
+# Probes carry no expectations of their own -- they exist to be classified,
+# not to be right. What IS asserted is the safety property: an archetype
+# with no validated service graph must withhold pricing rather than fall
+# back to the one shape the engine happens to build. A probe that starts
+# passing here because its archetype got implemented is a signal to
+# promote it to a full fixture, not to delete this check.
+
+
+def run_probe(probe: dict) -> FixtureRun:
+    run = FixtureRun(fixture_id=f"probe:{probe['id']}")
+    try:
+        built = plan_module.build(probe["prompt"])
+    except Exception as exc:  # noqa: BLE001
+        run.error = f"{type(exc).__name__}: {exc}"
+        return run
+
+    priceable = built.priced
+    run.results.extend(inv_12_no_priced_tier_when_archetype_unknown(run.fixture_id, built))
+    run.results.append(Result(
+        run.fixture_id, "classified", passed=bool(built.detected_archetype),
+        expected="an archetype name (or 'unknown')",
+        actual=built.detected_archetype or "(nothing)",
+        reason=built.archetype_note,
+    ))
+    if not priceable:
+        run.results.append(Result(
+            run.fixture_id, "withholds_pricing", passed=not built.tiers,
+            expected="no priced tiers for an unimplemented archetype",
+            actual=f"{len(built.tiers)} tier(s)",
+            reason=built.withheld_reason,
+        ))
+        run.results.append(Result(
+            run.fixture_id, "offers_next_steps",
+            passed=bool(built.clarifying_questions and built.covered_archetypes),
+            expected="clarifying questions and a coverage list",
+            actual=f"{len(built.clarifying_questions)} question(s), "
+                   f"{len(built.covered_archetypes)} archetype(s) listed",
+        ))
+    else:
+        run.tier_totals = {t.name: t.monthly_total for t in built.tiers}
+    return run
+
+
+def load_probes() -> list[dict]:
+    if not PROBES_DIR.exists():
+        return []
+    return [
+        yaml.safe_load(p.read_text())
+        for p in sorted(PROBES_DIR.glob("*.yaml"))
+    ]
+
+
 # ────────────────────────────── golden totals ──────────────────────────────
 # The no-regression guard. Unlike a fixture's own must_include/must_exclude
 # checks, this asks a narrower and stricter question: not "is this design
@@ -825,6 +896,11 @@ def main() -> int:
             runs.append(run_catalog_fixture(fx))
         else:
             runs.append(run_prompt_fixture(fx, plan_cache))
+
+    for probe in load_probes():
+        if args.fixture and probe["id"] != args.fixture:
+            continue
+        runs.append(run_probe(probe))
 
     golden = load_golden(GOLDEN_PATH)
     golden_results = check_golden_totals(plan_cache, golden)

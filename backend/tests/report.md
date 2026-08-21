@@ -1,16 +1,22 @@
 # WhichCloud regression harness report
 
-Run at 2026-08-21 10:55:24 UTC
+Run at 2026-08-21 18:31:09 UTC
 
 | fixture | passed | failed | status |
 |---|---|---|---|
-| budget-floor-conflict | 103 | 0 | OK |
+| budget-floor-conflict | 104 | 0 | OK |
 | catalog-region-integrity | 5 | 0 | OK |
-| ecommerce-scale | 108 | 0 | OK |
-| fintech-bengaluru | 112 | 0 | OK |
-| hospital-pune-public | 143 | 0 | OK |
-| hospital-pune | 136 | 0 | OK |
-| internal-low-stakes | 96 | 1 | FAIL |
+| ecommerce-scale | 109 | 0 | OK |
+| fintech-bengaluru | 113 | 0 | OK |
+| hospital-pune-public | 144 | 0 | OK |
+| hospital-pune | 137 | 0 | OK |
+| internal-low-stakes | 97 | 1 | FAIL |
+| probe:batch-etl | 4 | 0 | OK |
+| probe:event-webhook | 4 | 0 | OK |
+| probe:ml-inference | 4 | 0 | OK |
+| probe:realtime-chat | 4 | 0 | OK |
+| probe:static-site | 4 | 0 | OK |
+| probe:vm-migration | 4 | 0 | OK |
 
 ## budget-floor-conflict
 
@@ -118,6 +124,7 @@ Tier totals: tier_1=$307.10, tier_2=$373.83, tier_3=$517.95
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=web_app priced=True tiers=3 |  |
 | golden_totals:tier_1 | pass | $307.10 | $307.10 |  |
 | golden_totals:tier_2 | pass | $373.83 | $373.83 |  |
 | golden_totals:tier_3 | pass | $517.95 | $517.95 |  |
@@ -243,6 +250,7 @@ Tier totals: tier_1=$1,170.41, tier_2=$1,673.02, tier_3=$3,330.20
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
 | INV-10 | pass | (none) | (none) |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=normal, isolation_required=False) |  |
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=web_app priced=True tiers=3 |  |
 | golden_totals:tier_1 | pass | $1170.41 | $1170.41 |  |
 | golden_totals:tier_2 | pass | $1673.02 | $1673.02 |  |
 | golden_totals:tier_3 | pass | $3330.20 | $3330.20 |  |
@@ -362,6 +370,7 @@ Tier totals: tier_1=$217.09, tier_2=$254.11, tier_3=$398.23
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | Digital Personal Data Protection Act 2023; RBI Storage of Payment System Data directive | Digital Personal Data Protection Act 2023; RBI Storage of Payment System Data directive |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=low, durability=high, isolation_required=True) |  |
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=web_app priced=True tiers=3 |  |
 | golden_totals:tier_1 | pass | $217.09 | $217.09 |  |
 | golden_totals:tier_2 | pass | $254.11 | $254.11 |  |
 | golden_totals:tier_3 | pass | $398.23 | $398.23 |  |
@@ -510,6 +519,7 @@ Tier totals: tier_1=$315.10, tier_2=$381.83, tier_3=$525.95
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=web_app priced=True tiers=3 |  |
 | diff_against:hospital-pune:sizing_unchanged | pass | sizing identical to hospital-pune | identical |  |
 | diff_against:hospital-pune:compliance_unchanged | pass | compliance identical to hospital-pune | identical |  |
 | golden_totals:tier_1 | pass | $315.10 | $315.10 |  |
@@ -655,6 +665,7 @@ Tier totals: tier_1=$307.10, tier_2=$373.83, tier_3=$517.95
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=web_app priced=True tiers=3 |  |
 | golden_totals:tier_1 | pass | $307.10 | $307.10 |  |
 | golden_totals:tier_2 | pass | $373.83 | $373.83 |  |
 | golden_totals:tier_3 | pass | $517.95 | $517.95 |  |
@@ -762,3 +773,58 @@ Tier totals: tier_1=$65.61, tier_2=$102.63, tier_3=$102.63
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
 | INV-10 | pass | (none) | (none) |  |
 | INV-11 | pass | private_standard whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=public_simple (availability=low, durability=normal, isolation_required=False) |  |
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=web_app priced=True tiers=3 |  |
+
+## probe:batch-etl
+
+| assertion | result | expected | actual | reason |
+|---|---|---|---|---|
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=unknown priced=False tiers=0 | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| classified | pass | an archetype name (or 'unknown') | batch_etl | Recognised as 'batch_etl' (matched 4 phrase(s), first 'every night'), which this engine can name but has not yet been taught to build. |
+| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| offers_next_steps | pass | clarifying questions and a coverage list | 5 question(s), 7 archetype(s) listed |  |
+
+## probe:event-webhook
+
+| assertion | result | expected | actual | reason |
+|---|---|---|---|---|
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=unknown priced=False tiers=0 | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| classified | pass | an archetype name (or 'unknown') | event_driven | Recognised as 'event_driven' (matched 4 phrase(s), first 'webhook'), which this engine can name but has not yet been taught to build. |
+| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| offers_next_steps | pass | clarifying questions and a coverage list | 5 question(s), 7 archetype(s) listed |  |
+
+## probe:ml-inference
+
+| assertion | result | expected | actual | reason |
+|---|---|---|---|---|
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=unknown priced=False tiers=0 | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| classified | pass | an archetype name (or 'unknown') | ml_inference | Recognised as 'ml_inference' (matched 4 phrase(s), first 'trained model'), which this engine can name but has not yet been taught to build. |
+| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| offers_next_steps | pass | clarifying questions and a coverage list | 5 question(s), 7 archetype(s) listed |  |
+
+## probe:realtime-chat
+
+| assertion | result | expected | actual | reason |
+|---|---|---|---|---|
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=unknown priced=False tiers=0 | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| classified | pass | an archetype name (or 'unknown') | realtime | Recognised as 'realtime' (matched 3 phrase(s), first 'in-app chat'), which this engine can name but has not yet been taught to build. |
+| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| offers_next_steps | pass | clarifying questions and a coverage list | 5 question(s), 7 archetype(s) listed |  |
+
+## probe:static-site
+
+| assertion | result | expected | actual | reason |
+|---|---|---|---|---|
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=unknown priced=False tiers=0 | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| classified | pass | an archetype name (or 'unknown') | static_site | Recognised as 'static_site' (matched 5 phrase(s), first 'no database'), which this engine can name but has not yet been taught to build. |
+| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| offers_next_steps | pass | clarifying questions and a coverage list | 5 question(s), 7 archetype(s) listed |  |
+
+## probe:vm-migration
+
+| assertion | result | expected | actual | reason |
+|---|---|---|---|---|
+| INV-12 | pass | no priced tier when archetype == unknown | archetype=unknown priced=False tiers=0 | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| classified | pass | an archetype name (or 'unknown') | migration | Recognised as 'migration' (matched 4 phrase(s), first 'virtual machines'), which this engine can name but has not yet been taught to build. |
+| withholds_pricing | pass | no priced tiers for an unimplemented archetype | 0 tier(s) | This workload does not match an architecture pattern the engine has been validated on. Pricing is withheld rather than guessed. |
+| offers_next_steps | pass | clarifying questions and a coverage list | 5 question(s), 7 archetype(s) listed |  |

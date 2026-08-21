@@ -66,13 +66,111 @@ function TierCard({
   );
 }
 
+/* Pricing withheld. Rendered as a deliberate answer rather than an empty
+ * results page: the engine did classify the workload and did derive its
+ * sizing, and both are shown — what is missing is only the number nothing
+ * has validated. An empty tier list styled like a failure would read as a
+ * bug and invite a retry, which is the opposite of the intent. */
+function WithheldView({ plan }: { plan: Plan }) {
+  return (
+    <div className="flex flex-col gap-6">
+      <section className="rounded-xl border border-amber-300 bg-amber-50 p-5">
+        <h3 className="text-base font-semibold text-amber-900">
+          No price for this one
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-amber-900/90">
+          {plan.withheld_reason}
+        </p>
+        {plan.archetype_note && (
+          <p className="mt-2 text-sm leading-relaxed text-amber-900/80">
+            {plan.archetype_note}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-neutral-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-neutral-900">
+          What we read from your description
+        </h3>
+        <div className="mt-2 flex flex-wrap gap-x-8 gap-y-1">
+          <Row label="average" value={`${plan.sizing_basis.avg_rps} req/sec`} />
+          <Row label="peak" value={`${plan.sizing_basis.peak_rps} req/sec`} />
+          <Row label="band" value={plan.sizing_basis.tier} />
+        </div>
+      </section>
+
+      {plan.clarifying_questions.length > 0 && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            Answering any of these would let us classify it
+          </h3>
+          <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5">
+            {plan.clarifying_questions.map((q) => (
+              <li key={q} className="text-sm leading-relaxed text-neutral-700">
+                {q}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {plan.covered_archetypes.length > 0 && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            What this engine can price today
+          </h3>
+          <ul className="mt-2 flex flex-col gap-2">
+            {plan.covered_archetypes.map((a) => (
+              <li key={a.archetype} className="text-sm text-neutral-700">
+                <span className="font-mono text-xs text-neutral-900">
+                  {a.archetype}
+                </span>{" "}
+                <span
+                  className={
+                    a.status === "priced"
+                      ? "text-emerald-700"
+                      : "text-neutral-500"
+                  }
+                >
+                  ({a.status})
+                </span>
+                <div className="text-neutral-600">{a.description}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
 export function PlanView({ plan }: { plan: Plan }) {
   const [selected, setSelected] = useState(plan.default_tier);
   const tier = plan.tiers.find((t) => t.name === selected) ?? plan.tiers[0];
   const [showBelow, setShowBelow] = useState(false);
 
+  if (!plan.priced || plan.tiers.length === 0) {
+    return <WithheldView plan={plan} />;
+  }
+
   return (
     <div className="flex flex-col gap-8">
+      {/* ── priced, but on an assumption that would change the shape ── */}
+      {plan.provisional && (
+        <section className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <h3 className="text-sm font-semibold text-amber-900">
+            Provisional — these numbers rest on an assumption
+          </h3>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {plan.provisional_reasons.map((r) => (
+              <li key={r} className="text-sm leading-relaxed text-amber-900/90">
+                {r}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* ── what it was sized from ── */}
       <section className="rounded-xl border border-neutral-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-neutral-900">Sized from</h3>

@@ -27,6 +27,7 @@ import math
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from whichcloud import archetype as archetype_module
 from whichcloud.constraint_filter import Architecture, check
 from whichcloud.constraints import Constraints, extract
 from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
@@ -147,12 +148,25 @@ class Plan:
     #: forced private_standard regardless of how small the workload is.
     network_topology: str = ""
     network_topology_reason: str = ""
-    #: Part 4.2: "unknown" when the description matches no known service
-    #: shape -- EC2/Fargate + RDS is still what gets built (that is the
-    #: only shape this engine knows how to build), but said plainly as an
-    #: inference to review rather than implied as a confident match.
+    #: The workload shape, and the evidence for it. "unknown" whenever
+    #: nothing matched, two archetypes tied, or the match is real but has
+    #: no service graph yet -- see `detected_archetype` for the last case.
     archetype: str = ""
     archetype_note: str = ""
+    #: What classify() actually named, kept even when `archetype` is
+    #: reported unknown because the shape is recognised but unpriceable.
+    #: Withholding a price is not the same as having learned nothing.
+    detected_archetype: str = ""
+    #: Whether tiers were priced at all. False means `tiers` is empty by
+    #: decision, not by failure -- INV-12's subject.
+    priced: bool = True
+    withheld_reason: str = ""
+    covered_archetypes: list[dict] = field(default_factory=list)
+    clarifying_questions: list[str] = field(default_factory=list)
+    #: Priced, but resting on an assumption that would change the answer
+    #: if wrong. A number with a named caveat, not a refusal.
+    provisional: bool = False
+    provisional_reasons: list[str] = field(default_factory=list)
     #: Part 4.1: every required field's confidence, high or low, not just
     #: the low ones in assumed_fields() -- so "what did the model trust"
     #: is answerable without inferring it from what is absent.
@@ -180,33 +194,37 @@ def _instances_for(peak_rps: float, *, high_availability: bool) -> int:
     return max(needed, 2) if high_availability else needed
 
 
-#: The only shape this engine knows how to build: compute in front of a
-#: relational database, sized from a request rate. Not a phrase-matched
-#: label -- see _classify_archetype for why.
-WEB_OR_API_ARCHETYPE = "web_or_api"
-UNKNOWN_ARCHETYPE = "unknown"
+WITHHELD_MESSAGE = (
+    "This workload does not match an architecture pattern the engine has "
+    "been validated on. Pricing is withheld rather than guessed."
+)
+
+#: Fields whose being assumed rather than stated would change the
+#: architecture, not merely its size -- so a plan resting on one is
+#: PROVISIONAL. Deliberately not every low-confidence field: an assumed
+#: egress_gb moves a number, an assumed durability moves whether backups
+#: and a cross-region copy exist at all.
+_ARCHITECTURE_DECIDING_FIELDS = ("availability", "durability", "public_facing")
 
 
-def _classify_archetype(constraints: Constraints) -> tuple[str, str]:
-    """Known vs. unknown, from structure already extracted -- not a new
-    phrase table. requests_per_day being STATED is direct evidence this is
-    a request-serving workload, which is the one shape (compute sized from
-    a rate, in front of a relational database) this engine actually
-    builds. Its absence means that shape is a generic default standing in
-    for evidence we don't have, and the output should say so rather than
-    imply a confident match."""
-    if "requests_per_day" in constraints.stated:
-        return WEB_OR_API_ARCHETYPE, (
-            f"{WEB_OR_API_ARCHETYPE}: a request volume was stated, matching "
-            "the compute + relational database shape this engine builds."
-        )
-    return UNKNOWN_ARCHETYPE, (
-        f"{UNKNOWN_ARCHETYPE}: no request volume was stated, so there is no "
-        "direct evidence this is a request-serving web/API workload. The "
-        "shape built here (compute + relational database) is a generic "
-        "default standing in for that evidence, not a confident match -- "
-        "review before use."
-    )
+def _provisional_reasons(constraints: Constraints) -> list[str]:
+    """Named assumptions that would change the shape of the answer, each
+    paired with what it currently assumes and what it would become."""
+    changes = {
+        "availability": "no redundancy is bought; if uptime actually matters, "
+                        "every tier gains a second instance, a load balancer "
+                        "and a Multi-AZ database",
+        "durability": "no backup, cross-region copy or object lock is bought; "
+                      "if this data cannot be lost, all three become mandatory",
+        "public_facing": "no WAF or CDN is considered; if the public reaches "
+                         "this directly, both come back into scope",
+    }
+    return [
+        f"{name} was assumed to be {getattr(constraints, name)!r}, not stated. "
+        f"On that assumption {changes[name]}."
+        for name in _ARCHITECTURE_DECIDING_FIELDS
+        if constraints.confidence(name) == "low"
+    ]
 
 
 def _requires_x86(description: str) -> bool:
@@ -603,10 +621,51 @@ def _pattern_diff(
     return diffs
 
 
+def _withheld_plan(
+    constraints: Constraints, load: Load, detected: str, evidence: str,
+) -> Plan:
+    """Everything the engine did work out, and no price. The extraction
+    and the sizing are still returned -- they are real findings, and a
+    reader who can see them can tell whether the refusal is reasonable.
+    What is withheld is only the number nothing has validated."""
+    recognised = detected != archetype_module.UNKNOWN
+    note = (
+        f"Recognised as {detected!r} ({evidence}), which this engine can "
+        "name but has not yet been taught to build."
+        if recognised
+        else f"Could not classify the workload: {evidence}."
+    )
+    return Plan(
+        constraints=constraints,
+        load=load,
+        compliance=compliance_notes(constraints.country, constraints.sector),
+        # Reported as unknown whenever nothing priceable was matched --
+        # `detected_archetype` keeps what was actually recognised, so
+        # withholding a price never means discarding what was learned.
+        archetype=archetype_module.UNKNOWN,
+        detected_archetype=detected,
+        archetype_note=note,
+        priced=False,
+        withheld_reason=WITHHELD_MESSAGE,
+        covered_archetypes=archetype_module.coverage(),
+        clarifying_questions=list(archetype_module.CLARIFYING_QUESTIONS),
+        extraction_confidence=constraints.confidence_map(),
+    )
+
+
 def build(description: str, provider: str = "aws", dsn: str | None = None) -> Plan:
     """The whole contract, in the order the modules are meant to run."""
     constraints = extract(description)
     load = build_load(constraints, description)
+
+    # CLASSIFY BEFORE PRICING, AND REFUSE TO PRICE WHAT IS NOT COVERED.
+    # The same discipline as filter-before-price one layer up: an engine
+    # that only knows how to build one shape must not answer questions
+    # about the other six by building that shape anyway. A refusal is a
+    # usable answer; a confident bill for the wrong architecture is not.
+    detected, evidence = archetype_module.classify(description)
+    if not archetype_module.is_priceable(detected):
+        return _withheld_plan(constraints, load, detected, evidence)
 
     regions = COUNTRY_REGIONS.get(constraints.country, ("india",))
     region = regions[0]
@@ -636,12 +695,21 @@ def build(description: str, provider: str = "aws", dsn: str | None = None) -> Pl
         nat_present=topology.value != PUBLIC_SIMPLE,
     )
     resource_count = instances + 1  # +1 for the database instance
-    archetype, archetype_note = _classify_archetype(constraints)
+    provisional_reasons = _provisional_reasons(constraints)
 
     plan = Plan(
         constraints=constraints, load=load, compliance=compliance,
         network_topology=topology.value, network_topology_reason=topology.reason,
-        archetype=archetype, archetype_note=archetype_note,
+        archetype=detected, detected_archetype=detected,
+        archetype_note=f"{detected}: {evidence}",
+        priced=True,
+        covered_archetypes=archetype_module.coverage(),
+        # Priced, but resting on an assumption that would change the
+        # architecture rather than just its size -- so the number is
+        # given with the caveat attached, not withheld and not implied
+        # to be firmer than it is.
+        provisional=bool(provisional_reasons),
+        provisional_reasons=provisional_reasons,
         extraction_confidence=constraints.confidence_map(),
     )
 

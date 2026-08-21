@@ -927,6 +927,16 @@ def plan_endpoint(body: DescribeIn) -> dict:
         "network_topology_reason": result.network_topology_reason,
         "archetype": result.archetype,
         "archetype_note": result.archetype_note,
+        "detected_archetype": result.detected_archetype,
+        # False means the engine declined to price this shape. `tiers` is
+        # then empty by decision, not by failure -- the interface must say
+        # so rather than rendering an empty result as a broken one.
+        "priced": result.priced,
+        "withheld_reason": result.withheld_reason,
+        "covered_archetypes": result.covered_archetypes,
+        "clarifying_questions": result.clarifying_questions,
+        "provisional": result.provisional,
+        "provisional_reasons": result.provisional_reasons,
         "extraction_confidence": result.extraction_confidence,
     }
 

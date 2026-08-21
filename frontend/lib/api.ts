@@ -354,6 +354,15 @@ export type Plan = {
   network_topology_reason: string;
   archetype: string;
   archetype_note: string;
+  detected_archetype: string;
+  /** False means pricing was withheld by decision — `tiers` is empty on
+   *  purpose, not because the request failed. */
+  priced: boolean;
+  withheld_reason: string;
+  covered_archetypes: { archetype: string; description: string; status: string }[];
+  clarifying_questions: string[];
+  provisional: boolean;
+  provisional_reasons: string[];
   extraction_confidence: Record<string, string>;
 };
 
