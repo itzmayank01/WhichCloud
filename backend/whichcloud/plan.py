@@ -23,6 +23,7 @@ where the workload's own rate justifies it.
 
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -30,7 +31,7 @@ from decimal import Decimal
 from whichcloud import archetype as archetype_module
 from whichcloud import llm_extract
 from whichcloud.constraint_filter import Architecture, check
-from whichcloud.constraints import Constraints
+from whichcloud.constraints import QUESTIONS as _QUESTIONS, Constraints
 from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
 from whichcloud.load_model import Load, build_load
 from whichcloud.network_topology import PUBLIC_SIMPLE, TopologyDecision
@@ -348,6 +349,23 @@ class Plan:
     #: turns on a figure nobody supplied.
     storage_dominates: bool = False
     storage_note: str = ""
+    #: STEP 1. Assumed sizing inputs ranked by how much moving them moves
+    #: the bill -- each priced at 0.5x and 2x, largest dollar swing first.
+    #: A flat list of assumptions is honest and useless when one of them
+    #: drives 86% of the number; this says which one, and by how much.
+    cost_drivers: list[dict] = field(default_factory=list)
+    #: The recommended tier's total as a range, not a point: the low end
+    #: is every assumption at 0.5x, the high end at 2x. "$X to $Y" is a
+    #: more truthful headline than a single figure resting on guesses.
+    total_low: float = 0.0
+    total_high: float = 0.0
+    #: The single biggest lever, phrased as a question, surfaced at the
+    #: TOP of the result rather than buried in the assumptions list.
+    dominant_driver_note: str = ""
+    #: STEP 3. Order-of-magnitude smoke alarms. Each is a warning, never a
+    #: build failure -- a genuinely storage-heavy workload is priceable,
+    #: it just has to say so loudly. (name, message) per fired guard.
+    guards: list[dict] = field(default_factory=list)
 
 
 class BudgetMisallocationError(AssertionError):
@@ -1000,6 +1018,7 @@ def plan_from(
     archetype: str | None = None,
     provider: str = "aws",
     dsn: str | None = None,
+    _analyse: bool = True,
 ) -> Plan:
     """The deterministic half: Constraints in, priced tiers out.
 
@@ -1210,8 +1229,223 @@ def plan_from(
         plan.storage_dominates, plan.storage_note = _storage_disclosure(
             constraints, plan.tiers[0]
         )
+    # The two analyses below re-price the plan, so they run only on the
+    # outer call -- _analyse=False on the recursions they spawn stops the
+    # obvious infinite loop, and keeps them off the determinism hot path.
+    if _analyse and plan.tiers:
+        _rank_cost_drivers(plan, constraints, load, description, archetype,
+                           provider, dsn)
+        _run_guards(plan, constraints)
     _attach_extraction_meta(plan, meta)
     return plan
+
+
+def _reprice_total(
+    constraints: Constraints, overrides: dict, description: str,
+    archetype: str | None, provider: str, dsn: str | None, tier_name: str,
+) -> float:
+    """The named tier's total with some constraint fields overridden.
+
+    A whole re-run of the deterministic layer, which is the point: a
+    sensitivity figure computed by scaling a line item in isolation would
+    miss that a bigger dataset also grows its backup, its transfer and
+    its cold tier. Only re-pricing the plan captures the knock-on."""
+    perturbed = copy.deepcopy(constraints)
+    for field_name, value in overrides.items():
+        setattr(perturbed, field_name, value)
+    plan = plan_from(
+        perturbed, description, archetype=archetype, provider=provider,
+        dsn=dsn, _analyse=False,
+    )
+    tier = next((t for t in plan.tiers if t.name == tier_name), None)
+    return tier.monthly_total if tier else 0.0
+
+
+def _rank_cost_drivers(
+    plan: Plan, constraints: Constraints, load: Load, description: str,
+    archetype: str | None, provider: str, dsn: str | None,
+) -> None:
+    """STEP 1. Each assumed sizing input, re-priced at 0.5x and 2x, ranked
+    by the dollar swing between them. The recommended tier (tier_2) is
+    the reference, since that is the number a reader acts on."""
+    ref = next((t for t in plan.tiers if t.name == "tier_2"), plan.tiers[0])
+    ref_name = ref.name
+    base_total = ref.monthly_total
+
+    # The assumed sizing knobs, with the value the engine assumed and the
+    # override that scales it. Storage is perturbed as a single figure
+    # (content collapsed onto content_storage_gb) so both its halves and
+    # everything derived from it move together.
+    targets: list[tuple[str, str, float, callable]] = []
+    if constraints.storage_gb == 0:
+        assumed = _default_storage_gb(constraints, load)
+        targets.append((
+            "storage", "shared library + per-user records", assumed,
+            lambda v: {"content_storage_gb": v, "user_data_gb": 0.0},
+        ))
+    if constraints.egress_gb == 0:
+        assumed = _default_egress_gb(constraints, load)
+        targets.append((
+            "egress", "monthly data served to users", assumed,
+            lambda v: {"egress_gb": v},
+        ))
+
+    drivers = []
+    for name, label, assumed, override in targets:
+        if assumed <= 0:
+            continue
+        low = _reprice_total(constraints, override(assumed * 0.5), description,
+                             archetype, provider, dsn, ref_name)
+        high = _reprice_total(constraints, override(assumed * 2.0), description,
+                              archetype, provider, dsn, ref_name)
+        drivers.append({
+            "field": name,
+            "label": label,
+            "assumed": round(assumed, 1),
+            "low_total": round(low, 2),
+            "high_total": round(high, 2),
+            "swing": round(high - low, 2),
+            "question": _QUESTIONS.get(f"{name}_gb", f"What is the {label}?"),
+        })
+
+    drivers.sort(key=lambda d: d["swing"], reverse=True)
+    plan.cost_drivers = drivers
+
+    if not drivers:
+        return
+
+    # The total as a range: everything cheap vs everything expensive.
+    plan.total_low = round(
+        _reprice_total(
+            constraints,
+            {k: v for _n, _l, a, ov in targets for k, v in ov(a * 0.5).items()},
+            description, archetype, provider, dsn, ref_name,
+        ), 2,
+    )
+    plan.total_high = round(
+        _reprice_total(
+            constraints,
+            {k: v for _n, _l, a, ov in targets for k, v in ov(a * 2.0).items()},
+            description, archetype, provider, dsn, ref_name,
+        ), 2,
+    )
+
+    top = drivers[0]
+    # Only shout when the driver actually dominates -- storage being the
+    # top of two small assumptions is not worth a headline.
+    storage_cost = sum(
+        float(i.monthly_usd) for i in ref.estimate.items
+        if any(i.label.startswith(p) for p in _STORAGE_LABELS)
+    ) if top["field"] == "storage" else top["swing"]
+    if top["field"] == "storage" and base_total > 0 and storage_cost / base_total >= 0.4:
+        plan.dominant_driver_note = (
+            f"Storage is ${storage_cost:,.0f} of this ${base_total:,.0f} "
+            "estimate and we assumed it. Your library size changes this "
+            "number more than any architecture choice here. What is it?"
+        )
+    elif top["swing"] > 0.2 * base_total:
+        plan.dominant_driver_note = (
+            f"The {top['label']} is the assumption that moves this estimate "
+            f"most: from ${top['low_total']:,.0f} to ${top['high_total']:,.0f} "
+            "depending on the figure. We assumed it — what is it?"
+        )
+
+
+def _run_guards(plan: Plan, constraints: Constraints) -> None:
+    """STEP 3. Order-of-magnitude smoke alarms. Warnings, never failures:
+    a genuinely storage-heavy or high-traffic workload is priceable, it
+    just has to say plainly that it is unusual. Each guard names the
+    quantity, the threshold, and what it actually saw."""
+    guards: list[dict] = []
+    ref = next((t for t in plan.tiers if t.name == "tier_2"), plan.tiers[0])
+    spec = ref.spec
+    total = ref.monthly_total
+
+    # 1. No line item may quietly be most of the bill.
+    for item in ref.estimate.items:
+        cost = float(item.monthly_usd)
+        if total > 0 and cost / total > 0.60:
+            guards.append({
+                "name": "LOW_CONFIDENCE_DOMINANT",
+                "message": (
+                    f"'{item.label}' is {100*cost/total:.0f}% of the "
+                    f"${total:,.0f} total (${cost:,.0f}). One line this large "
+                    "means the estimate turns on a single figure -- confirm it."
+                ),
+            })
+
+    # 2. Storage from headcount alone must stay under 1 TB.
+    user_derived = _user_data_gb(constraints)
+    if user_derived > MAX_USER_DERIVED_GB:
+        guards.append({
+            "name": "USER_STORAGE_IMPLAUSIBLE",
+            "message": (
+                f"{user_derived:,.0f} GB derived from {constraints.users:,} "
+                f"users alone exceeds the {MAX_USER_DERIVED_GB:,.0f} GB ceiling."
+            ),
+        })
+
+    # 3 & 4. Backup transfer vs source storage, NAT vs egress -- the two
+    # invariants defects 8 and 2 were about, restated as live smoke alarms
+    # rather than test-only assertions.
+    storage_cost = sum(
+        float(i.monthly_usd) for i in ref.estimate.items
+        if i.label.startswith("Object storage")
+    )
+    transfer_cost = sum(
+        float(i.monthly_usd) for i in ref.estimate.items
+        if i.label.startswith("Cross-region backup transfer")
+    )
+    if transfer_cost > storage_cost and storage_cost > 0:
+        guards.append({
+            "name": "TRANSFER_EXCEEDS_STORAGE",
+            "message": (
+                f"Monthly cross-region transfer (${transfer_cost:,.0f}) exceeds "
+                f"the source storage it protects (${storage_cost:,.0f}) -- that "
+                "implies copying the whole dataset every month."
+            ),
+        })
+    if spec.egress_gb > 0 and spec.nat_gb_processed >= spec.egress_gb:
+        guards.append({
+            "name": "NAT_EXCEEDS_EGRESS",
+            "message": (
+                f"NAT-processed {spec.nat_gb_processed:,.0f} GB >= internet "
+                f"egress {spec.egress_gb:,.0f} GB; NAT should carry a fraction "
+                "of outbound, not a mirror of it."
+            ),
+        })
+
+    # 5. Per-user egress sanity. Both meters, since a CDN moves the bytes
+    # from origin egress to CDN transfer without changing the volume.
+    egress_gb = spec.egress_gb + spec.cdn_gb
+    if constraints.users and egress_gb / constraints.users > 100.0:
+        guards.append({
+            "name": "EGRESS_PER_USER_IMPLAUSIBLE",
+            "message": (
+                f"{egress_gb / constraints.users:,.0f} GB of egress per user "
+                "per month is implausibly high; check the traffic assumption."
+            ),
+        })
+
+    # 6. Cost per user, flagged for a consumer-scale workload.
+    if constraints.public_facing and constraints.users >= 1000:
+        per_user_cost = total / constraints.users
+        if per_user_cost > 1.0:
+            guards.append({
+                "name": "COST_PER_USER_HIGH",
+                "message": (
+                    f"${per_user_cost:.2f} per user per month across "
+                    f"{constraints.users:,} users. Above $1 for a consumer "
+                    "workload usually means an over-sized component."
+                ),
+            })
+        plan.guards.append({
+            "name": "COST_PER_USER",
+            "message": f"${per_user_cost:.2f} per user per month "
+                       f"({constraints.users:,} users).",
+        })
+
+    plan.guards = guards + plan.guards
 
 
 def _below_panel(constraints, load, region, dsn, provider) -> dict | None:

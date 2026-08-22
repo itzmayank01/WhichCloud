@@ -177,6 +177,75 @@ export function PlanView({ plan }: { plan: Plan }) {
 
   return (
     <div className="flex flex-col gap-8">
+      {/* ── the assumption that moves the bill most, at the TOP ── */}
+      {plan.dominant_driver_note && (
+        <section className="rounded-xl border border-indigo-300 bg-indigo-50 p-5">
+          <p className="text-base font-semibold leading-relaxed text-indigo-950">
+            {plan.dominant_driver_note}
+          </p>
+          {plan.total_high > plan.total_low && (
+            <p className="mt-2 font-mono text-sm text-indigo-900">
+              {money(plan.total_low)} to {money(plan.total_high)} depending on
+              the assumptions below.
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* ── order-of-magnitude smoke alarms ── */}
+      {plan.guards.filter((g) => g.name !== "COST_PER_USER").length > 0 && (
+        <section className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <h3 className="text-sm font-semibold text-amber-900">Worth a look</h3>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {plan.guards
+              .filter((g) => g.name !== "COST_PER_USER")
+              .map((g) => (
+                <li
+                  key={g.name}
+                  className="text-sm leading-relaxed text-amber-900/90"
+                >
+                  {g.message}
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ── which assumptions move the number, ranked ── */}
+      {plan.cost_drivers.length > 0 && (
+        <section className="rounded-xl border border-neutral-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            What moves this estimate
+          </h3>
+          <table className="mt-2 w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-neutral-500">
+                <th className="py-1 font-medium">assumption</th>
+                <th className="py-1 text-right font-medium">at half</th>
+                <th className="py-1 text-right font-medium">at double</th>
+                <th className="py-1 text-right font-medium">swing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.cost_drivers.map((d) => (
+                <tr key={d.field} className="border-t border-neutral-100">
+                  <td className="py-1.5 text-neutral-800">{d.label}</td>
+                  <td className="py-1.5 text-right font-mono tabular-nums text-neutral-600">
+                    {money(d.low_total)}
+                  </td>
+                  <td className="py-1.5 text-right font-mono tabular-nums text-neutral-600">
+                    {money(d.high_total)}
+                  </td>
+                  <td className="py-1.5 text-right font-mono tabular-nums font-semibold text-neutral-900">
+                    {money(d.swing)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {/* ── priced, but on an assumption that would change the shape ── */}
       {plan.provisional && (
         <section className="rounded-xl border border-amber-300 bg-amber-50 p-4">

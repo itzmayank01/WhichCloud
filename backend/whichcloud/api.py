@@ -954,6 +954,15 @@ def plan_endpoint(body: DescribeIn) -> dict:
         "extraction_failover": result.extraction_failover,
         "extraction_failover_note": result.extraction_failover_note,
         "archetype_evidence_verdict": result.archetype_evidence_verdict,
+        # STEP 1: the assumption that moves the bill most, at the top.
+        "dominant_driver_note": result.dominant_driver_note,
+        "cost_drivers": result.cost_drivers,
+        "total_low": result.total_low,
+        "total_high": result.total_high,
+        "storage_dominates": result.storage_dominates,
+        "storage_note": result.storage_note,
+        # STEP 3: order-of-magnitude smoke alarms, warnings not failures.
+        "guards": result.guards,
         "extraction_spans": result.extraction_spans,
     }
 

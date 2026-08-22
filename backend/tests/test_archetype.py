@@ -663,3 +663,149 @@ def test_the_seed_copy_is_carried_separately_from_the_monthly_figure():
         "the one-off seed must be the whole dataset, the monthly figure "
         "only what changed"
     )
+
+
+# ── cost-driver ranking (step 1) ──
+
+
+def _constraints_from_fixture(fx):
+    import sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).parent))
+    from run_harness import constraints_from_fixture
+    return constraints_from_fixture(fx)
+
+
+def _fixture_plan(fid):
+    import yaml, pathlib
+    from whichcloud.plan import plan_from
+    fx = yaml.safe_load(pathlib.Path(f"tests/fixtures/{fid}.yaml").read_text())
+    c, a = _constraints_from_fixture(fx)
+    return plan_from(c, fx["prompt"], archetype=a)
+
+
+def test_cost_drivers_are_ranked_by_dollar_swing():
+    """The whole point: not a flat list, but ordered by how much moving
+    each assumption moves the bill, biggest first."""
+    plan = _fixture_plan("coaching-platform")
+    assert plan.cost_drivers
+    swings = [d["swing"] for d in plan.cost_drivers]
+    assert swings == sorted(swings, reverse=True)
+    # Each driver is a real re-price: low < assumed-price < high.
+    for d in plan.cost_drivers:
+        assert d["low_total"] < d["high_total"]
+
+
+def test_the_total_is_reported_as_a_range():
+    plan = _fixture_plan("coaching-platform")
+    assert plan.total_low > 0
+    assert plan.total_high > plan.total_low
+    # The recommended tier sits inside its own range.
+    assert plan.total_low <= plan.tiers[1].monthly_total <= plan.total_high
+
+
+def test_the_dominant_driver_is_surfaced_as_a_question():
+    plan = _fixture_plan("coaching-platform")
+    assert plan.dominant_driver_note
+    assert "?" in plan.dominant_driver_note
+
+
+def test_a_fully_stated_plan_has_no_cost_drivers():
+    """Sensitivity is about ASSUMPTIONS. A workload that stated its
+    storage and egress has nothing here to rank."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(
+        country="IN", sector="internal_tools", availability="low",
+        durability="normal", users=50, requests_per_day=300,
+        peak_shape="flat", public_facing=False,
+        storage_gb=100.0, egress_gb=50.0,
+    )
+    c.stated.update({"country", "sector", "availability", "durability",
+                     "users", "requests_per_day", "peak_shape",
+                     "public_facing", "storage_gb", "egress_gb"})
+    plan = plan_from(c, "an internal tool", archetype="web_app")
+    assert plan.cost_drivers == []
+
+
+# ── order-of-magnitude guards (step 3) ──
+
+
+def _guard_names(plan):
+    return {g["name"] for g in plan.guards}
+
+
+def test_guard_low_confidence_dominant_fires_on_a_single_huge_line():
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(
+        country="IN", sector="internal_tools", availability="low",
+        durability="normal", users=50, requests_per_day=300,
+        peak_shape="flat", public_facing=False, egress_gb=500_000.0,
+    )
+    c.stated.update({"country", "sector", "availability", "durability",
+                     "users", "requests_per_day", "peak_shape",
+                     "public_facing", "egress_gb"})
+    plan = plan_from(c, "huge egress", archetype="web_app")
+    assert "LOW_CONFIDENCE_DOMINANT" in _guard_names(plan)
+
+
+def test_guard_egress_per_user_fires_when_traffic_is_absurd():
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(
+        country="IN", sector="internal_tools", availability="low",
+        durability="normal", users=50, requests_per_day=300,
+        peak_shape="flat", public_facing=False, egress_gb=500_000.0,
+    )
+    c.stated.update({"country", "sector", "availability", "durability",
+                     "users", "requests_per_day", "peak_shape",
+                     "public_facing", "egress_gb"})
+    plan = plan_from(c, "huge egress", archetype="web_app")
+    assert "EGRESS_PER_USER_IMPLAUSIBLE" in _guard_names(plan)
+
+
+def test_guard_cost_per_user_high_fires_and_is_always_reported_for_consumer():
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(
+        country="IN", sector="healthcare", availability="high",
+        durability="high", users=1000, requests_per_day=500,
+        peak_shape="flat", public_facing=True,
+        content_storage_gb=200_000.0, user_data_gb=0.0,
+    )
+    c.stated.update({"country", "sector", "availability", "durability",
+                     "users", "requests_per_day", "peak_shape",
+                     "public_facing"})
+    plan = plan_from(c, "expensive per user", archetype="web_app")
+    names = _guard_names(plan)
+    assert "COST_PER_USER_HIGH" in names
+    assert "COST_PER_USER" in names   # the informational one is always present
+
+
+def test_regression_backstops_stay_silent_on_every_fixture():
+    """USER_STORAGE_IMPLAUSIBLE, TRANSFER_EXCEEDS_STORAGE and
+    NAT_EXCEEDS_EGRESS are prevented by the formulas (a cap, a change
+    rate < 1, a NAT share of 0.05). They exist to fire if a future change
+    breaks one of those, and must be silent while the formulas hold --
+    otherwise they are noise that trains people to ignore the guards."""
+    import pathlib
+    import yaml
+    from whichcloud.plan import plan_from
+
+    backstops = {"USER_STORAGE_IMPLAUSIBLE", "TRANSFER_EXCEEDS_STORAGE",
+                 "NAT_EXCEEDS_EGRESS"}
+    for path in sorted(pathlib.Path("tests/fixtures").glob("*.yaml")):
+        fx = yaml.safe_load(path.read_text())
+        if fx.get("type") == "catalog":
+            continue
+        got = _constraints_from_fixture(fx)
+        if not got:
+            continue
+        c, a = got
+        plan = plan_from(c, fx["prompt"], archetype=a)
+        fired = {g["name"] for g in plan.guards} & backstops
+        assert not fired, f"{fx['id']} tripped a backstop: {fired}"

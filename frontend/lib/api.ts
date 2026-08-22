@@ -377,6 +377,18 @@ export type Plan = {
   extraction_failover: boolean;
   extraction_failover_note: string;
   archetype_evidence_verdict: string;
+  /** The assumption that moves the bill most, phrased as a question. */
+  dominant_driver_note: string;
+  cost_drivers: {
+    field: string; label: string; assumed: number;
+    low_total: number; high_total: number; swing: number; question: string;
+  }[];
+  total_low: number;
+  total_high: number;
+  storage_dominates: boolean;
+  storage_note: string;
+  /** Order-of-magnitude smoke alarms. Warnings, not errors. */
+  guards: { name: string; message: string }[];
   extraction_spans: Record<string, string>;
 };
 
