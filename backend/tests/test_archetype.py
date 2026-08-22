@@ -445,6 +445,8 @@ def test_two_shapes_above_the_bar_becomes_composite_not_a_coin_flip():
         durability=f("normal"), users=f("0"), requests_per_day=f("0"),
         peak_shape=f("flat"), budget_monthly_usd=f("0"), storage_gb=f("0"),
         egress_gb=f("0"), public_facing=f("false"), country_lock=f("false"),
+        static_assets=f("none"), emails_per_month=f("0"),
+        async_processing=f("false"),
         archetypes=[
             ArchetypeCall(name="web_app", confidence=0.9,
                           spans=["people book slots on the site"]),
@@ -470,6 +472,8 @@ def test_one_shape_above_the_bar_is_still_an_ordinary_classification():
         durability=f("normal"), users=f("0"), requests_per_day=f("0"),
         peak_shape=f("flat"), budget_monthly_usd=f("0"), storage_gb=f("0"),
         egress_gb=f("0"), public_facing=f("false"), country_lock=f("false"),
+        static_assets=f("none"), emails_per_month=f("0"),
+        async_processing=f("false"),
         archetypes=[
             ArchetypeCall(name="web_app", confidence=0.9,
                           spans=["people book slots on the site"]),
@@ -479,3 +483,65 @@ def test_one_shape_above_the_bar_is_still_an_ordinary_classification():
     _c, meta = _to_constraints(payload)
     assert meta.archetype == "web_app"
     assert meta.composite_of == []
+
+
+# ── defect 6: the spend ladder, re-checked ──
+
+
+def test_inv1_catches_a_cache_bought_while_rung_1_is_unmet():
+    """DEFECT 6. Tier 1 of the coaching workload bought a $59 cache while
+    having no load balancer. That only ever passed because availability
+    was mis-extracted as low -- with it read correctly, rung 1 demands
+    the balancer and INV-1 is what would catch the inversion if a future
+    change reintroduced it. Asserted directly against the invariant, on a
+    hand-built spec, so it does not depend on any gate happening to
+    misfire."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from run_harness import inv_1_no_rung4_without_rung1
+
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(
+        availability="high", durability="normal", users=40000,
+        requests_per_day=200000, peak_shape="evening", public_facing=True,
+    )
+    c.stated.update({"availability", "users", "requests_per_day",
+                     "peak_shape", "public_facing"})
+    plan = plan_from(c, "a read-heavy marketplace", archetype="web_app")
+
+    # Every tier that bought rung 4 must also have rung 1 in place.
+    for result in inv_1_no_rung4_without_rung1("defect-6", plan):
+        assert result.passed, result.actual
+    for tier in plan.tiers:
+        if tier.spec.cache_vcpu or tier.spec.database_read_replicas:
+            assert tier.spec.load_balancer, (
+                f"{tier.name} bought rung-4 capacity without a load balancer"
+            )
+
+
+def test_nat_never_exceeds_internet_egress():
+    """DEFECT 2, as an invariant rather than a number. NAT processes what
+    the application ORIGINATES; egress is what users pull. The first can
+    never legitimately be the larger of the two, and billing them as
+    mirrors charged ~2.5 TB of NAT beside ~2 TB of egress."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    for users, reqs, media in ((40000, 200000, "heavy"), (450, 6000, "none"),
+                               (12, 200, "none")):
+        c = Constraints(
+            availability="high", durability="high", users=users,
+            requests_per_day=reqs, peak_shape="evening", public_facing=True,
+            static_assets=media,
+        )
+        c.stated.update({"availability", "durability", "users",
+                         "requests_per_day", "peak_shape", "public_facing"})
+        plan = plan_from(c, "a platform", archetype="web_app")
+        for tier in plan.tiers:
+            assert tier.spec.nat_gb_processed < max(tier.spec.egress_gb, 1e-9), (
+                f"NAT {tier.spec.nat_gb_processed} >= egress {tier.spec.egress_gb}"
+            )

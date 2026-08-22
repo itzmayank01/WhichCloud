@@ -54,6 +54,9 @@ BULK_SERVICES = {
     "secrets": "AWSSecretsManager",
     "endpoint": "AmazonVPC",
     "cdn": "AmazonCloudFront",
+    "email": "AmazonSES",
+    "queue": "AWSQueueService",
+    "notification": "AmazonSNS",
 }
 
 #: CloudFront bills by the VIEWER's edge location group, not the origin
@@ -1583,6 +1586,100 @@ def load_cdn_prices(region_key: str) -> list[PricePoint]:
     return list(found.values())
 
 
+def _regional_prefix(region: str) -> str:
+    """AWS's usagetype prefix for a region ("ap-south-1" -> "APS3-").
+
+    Read off the feed rather than tabulated: the mapping is AWS's own and
+    a hand-written table of it is a second source of truth that can drift.
+    us-east-1 omits the prefix entirely, which is why callers must accept
+    an empty string as a valid answer.
+    """
+    return _REGION_PREFIX.get(region, "")
+
+
+#: The prefixes actually needed by the meters below. Extracted here
+#: rather than inline so an unmapped region returns "" (matching
+#: us-east-1's own convention) instead of silently matching nothing.
+_REGION_PREFIX: dict[str, str] = {
+    "ap-south-1": "APS3-", "ap-south-2": "APS4-",
+    "ap-southeast-1": "APS1-", "eu-west-1": "EUW1-", "us-east-1": "",
+}
+
+
+def load_email_prices(region_key: str) -> list[PricePoint]:
+    """SES outbound email, per message.
+
+    The plain `<region>-Message` meter, not Essentials/Pro/Enterprise --
+    those are the tiered feature bundles, and billing a transactional
+    send at the Enterprise rate would overstate a 30,000-email month by
+    more than double. Graduated bands are kept, since SES publishes
+    genuinely cheaper rates at volume.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["email"], region_key)
+
+    wanted = f"{prefix}Message"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category="email", sku="ses:outbound-email",
+            name="SES outbound email", region=region, unit=unit or "message",
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
+def load_queue_prices(region_key: str) -> list[PricePoint]:
+    """SQS standard-queue API requests. FIFO is a different meter and a
+    different guarantee; nothing in this engine selects it yet, so
+    quoting its rate would price a queue we do not build."""
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["queue"], region_key)
+
+    wanted = f"{prefix}Requests-Tier1"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category="queue", sku="sqs:requests",
+            name="SQS requests", region=region, unit=unit or "Requests",
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
+def load_notification_prices(region_key: str) -> list[PricePoint]:
+    """SNS publish/delivery requests, standard topics."""
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["notification"], region_key)
+
+    wanted = f"{prefix}Requests-Tier1"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        # SNS publishes a genuine $0 first band; keep every tier so the
+        # free allowance is honoured rather than billed.
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category="notification", sku="sns:requests",
+            name="SNS requests", region=region, unit=unit or "Requests",
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
 def load_cognito_prices(region_key: str) -> list[PricePoint]:
     """Cognito user pools, priced per monthly active user with a free band.
 
@@ -1981,6 +2078,9 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_s3_request_prices,
         load_secrets_prices,
         load_cdn_prices,
+        load_email_prices,
+        load_queue_prices,
+        load_notification_prices,
     ):
         try:
             points.extend(loader(region_key))

@@ -103,6 +103,9 @@ COMPONENT_CHECKS = {
     # Distinct from cross_region_backup_copy: this is "a backup exists at
     # all", which every non-ephemeral workload must have.
     "backup": lambda t: t.spec.backup_gb > 0,
+    "email": lambda t: t.spec.emails_per_month > 0,
+    "queue": lambda t: t.spec.queue_requests_per_month > 0,
+    "notifications": lambda t: t.spec.notifications_per_month > 0,
 }
 
 #: When a must_exclude component is correctly absent, the reason usually
@@ -117,7 +120,7 @@ _EXCLUSION_MARKER = {
 #: nat_gateway/vpc_flow_logs are a topology decision, not a load gate --
 #: their absence is explained by Plan.network_topology_reason, not by
 #: anything in load.excluded_with_reason.
-_TOPOLOGY_DRIVEN = {"nat_gateway", "vpc_flow_logs"}
+_TOPOLOGY_DRIVEN = {"nat_gateway"}
 
 
 def _excluded_reason(plan: Plan, component: str) -> str:

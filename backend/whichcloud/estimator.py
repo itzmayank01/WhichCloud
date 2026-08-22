@@ -114,6 +114,12 @@ class ArchitectureSpec:
     #: adding when there is any S3 traffic to divert. Priced at the
     #: catalog's own published $0 rather than assumed free by omission.
     gateway_endpoints: int = 0
+    #: Transactional email, queue and push, each priced only when the
+    #: workload actually stated the volume -- an unstated 0 means no
+    #: component, which is different from a component priced at nothing.
+    emails_per_month: float = 0.0
+    queue_requests_per_month: float = 0.0
+    notifications_per_month: float = 0.0
     #: Interface endpoints (ECR, SSM, Secrets Manager, CloudWatch Logs,
     #: KMS...), pre-multiplied by AZ count at the point this spec is
     #: built -- each one bills per AZ per hour, unlike the gateway kind.
@@ -256,6 +262,9 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "endpoint", "interface-hour"): "vpce:interface-hour",
     ("aws", "endpoint", "gb-processed"): "vpce:gb-processed",
     ("aws", "endpoint", "gateway"): "vpce:gateway",
+    ("aws", "email", "outbound"): "ses:outbound-email",
+    ("aws", "queue", "requests"): "sqs:requests",
+    ("aws", "notification", "requests"): "sns:requests",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
     ("aws", "governance", "object-lock"): "s3:object-lock",
@@ -542,6 +551,36 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
         else:
             result.missing.append("CDN")
+
+    # ---- transactional email (SES) ----
+    if spec.emails_per_month:
+        point = _by_role(provider, region, "email", "outbound", dsn)
+        if point:
+            result.items.append(
+                _tiered_line("Transactional email", point, spec.emails_per_month)
+            )
+        else:
+            result.missing.append("transactional email")
+
+    # ---- queue (SQS) ----
+    if spec.queue_requests_per_month:
+        point = _by_role(provider, region, "queue", "requests", dsn)
+        if point:
+            result.items.append(
+                _tiered_line("Queue requests", point, spec.queue_requests_per_month)
+            )
+        else:
+            result.missing.append("queue")
+
+    # ---- push / fan-out (SNS) ----
+    if spec.notifications_per_month:
+        point = _by_role(provider, region, "notification", "requests", dsn)
+        if point:
+            result.items.append(
+                _tiered_line("Notifications", point, spec.notifications_per_month)
+            )
+        else:
+            result.missing.append("notifications")
 
     # ---- cross-region backup copy ----
     if spec.backup_copy_gb:

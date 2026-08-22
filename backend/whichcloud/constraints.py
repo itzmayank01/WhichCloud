@@ -25,6 +25,7 @@ Sector = Literal[
     "internal_tools", "public_web", "other",
 ]
 PeakShape = Literal["flat", "morning", "evening", "spiky"]
+StaticAssets = Literal["none", "light", "heavy"]
 
 #: Fields the planner cannot run without. `assumed` is this set minus
 #: whatever extraction actually found -- never a hand-maintained list.
@@ -183,6 +184,25 @@ class Constraints:
     #: -- otherwise every prompt that names a city ends up hard-locked to
     #: it, including ones that never asked for that.
     country_lock: bool = False
+
+    # ── signals that select components, rather than size them ────────
+    # Deliberately OUTSIDE `REQUIRED`: these answer "does this workload
+    # do X", not "how big is it". A workload that never mentions email
+    # has not left `emails_per_month` unanswered -- the answer is none --
+    # so listing them as assumptions to confirm would add noise to every
+    # plan that legitimately has none of them.
+
+    #: How much of the user-facing traffic is media or file downloads.
+    #: `heavy` means serving media IS the product (video lessons, large
+    #: PDFs): at that point a CDN stops being a performance nicety and
+    #: becomes what keeps the origin from serving terabytes itself.
+    static_assets: StaticAssets = "none"
+    #: Transactional email volume. Stated volume selects SES; nothing
+    #: mentioned means no email component, not an unpriced one.
+    emails_per_month: int = 0
+    #: Work that happens after the response is returned -- grading,
+    #: notification fan-out, report generation. Selects a queue.
+    async_processing: bool = False
 
     #: Which fields the TEXT supported. Everything in REQUIRED and not in
     #: here is assumed, computed after the fact rather than declared.

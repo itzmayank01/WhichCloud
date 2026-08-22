@@ -1,0 +1,72 @@
+# Fixture 8 -- the media-heavy workload that exposed six defects at once.
+#
+# Every fixture before this one was records-oriented: a database, some
+# documents, modest traffic. This one serves video as its product, sends
+# real email volume, and states its availability need in business
+# language rather than technical vocabulary -- and the engine got the CDN
+# gate, the egress/NAT split, flow logs, availability extraction, email
+# and the spend ladder wrong on it simultaneously.
+id: coaching-platform
+prompt: >
+  Online coaching platform, Bengaluru. 40,000 student accounts, ~6,000
+  active 7pm-11pm, quiet by day. Recorded video lessons, PDF notes, timed
+  practice tests. Slowness during a test causes refund requests. Test
+  results and progress must not be lost. ~30,000 result emails and
+  notifications a month. All students in India. Razorpay handles payments,
+  no card data stored. Currently two rented servers that fall over most
+  exam weekends. ~$700/month.
+
+constraints:
+  country: IN
+  sector: education
+  # "refund requests" and "fall over most exam weekends" are availability
+  # statements with no technical vocabulary in them -- the extractor read
+  # `low` before defect 4's prompt fix.
+  availability: high
+  durability: high
+  users: 40000
+  requests_per_day: 200000
+  peak_shape: evening
+  budget_monthly_usd: 700.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: true
+  country_lock: true
+  static_assets: heavy
+  emails_per_month: 30000
+  async_processing: true
+  archetype: web_app
+  stated: [country, sector, availability, durability, users,
+           requests_per_day, peak_shape, budget_monthly_usd, public_facing]
+
+expect:
+  must_include:
+    # DEFECT 1: static_assets=heavy makes the CDN rung 1, not rung 4 --
+    # present in the cheapest tier, because with video as the product the
+    # alternative is the origin serving terabytes itself.
+    - component: cdn
+      tiers: [tier_1, tier_2, tier_3]
+    # DEFECT 5: stated email volume, and async grading/notification work.
+    - component: email
+      tiers: [tier_1, tier_2, tier_3]
+    - component: queue
+      tiers: [tier_1, tier_2, tier_3]
+    # DEFECT 6: availability=high means these are rung 1 in EVERY tier.
+    # Tier 1 previously bought a cache while having no load balancer.
+    - component: load_balancer
+      tiers: [tier_1, tier_2, tier_3]
+    - component: multi_az_database
+      tiers: [tier_1, tier_2, tier_3]
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+
+  must_exclude:
+    # DEFECT 3: an audit control nothing here asked for. Education is not
+    # in the compliance table with a network-isolation obligation, and no
+    # security requirement is stated.
+    - vpc_flow_logs
+
+  compliance: []
+  forbidden: [HIPAA, GDPR]
+
+  invariants: [all]

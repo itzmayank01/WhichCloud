@@ -77,6 +77,25 @@ _EGRESS_BASE_BY_TIER: dict[str, float] = {
 _STORAGE_PER_USER_GB = 0.5
 _EGRESS_PER_USER_GB = 0.1
 
+#: DEFECT 2. NAT processes traffic a private subnet ORIGINATES -- package
+#: installs, third-party API calls, outbound webhooks. Responses to
+#: inbound user requests return the way they came and never touch it.
+#: Billing NAT for a mirror of internet egress double-counted every byte
+#: the users pulled: ~2.5 TB of "NAT processing" beside ~2 TB of egress
+#: on a workload whose actual outbound-initiated traffic is a rounding
+#: error. This fraction is a heuristic, and a deliberately small one --
+#: the honest reading of "we do not know how chatty this app is" is a
+#: modest number, not the largest one available.
+NAT_SHARE_OF_EGRESS = 0.05
+
+#: When a CDN is in front, user-facing bytes leave from the EDGE, not from
+#: the origin. What still leaves the origin is cache fill -- each object
+#: fetched once per edge location rather than once per viewer. Billing the
+#: full user traffic as origin egress AND again as CDN transfer was the
+#: same double-count as NAT, on a different pair: on the coaching
+#: workload it charged 4 TB twice.
+ORIGIN_FILL_SHARE = 0.15
+
 #: Headcount alone is the wrong driver for a data-heavy sector. A
 #: hospital's storage is set by patients and imaging, not by how many
 #: staff log in -- 450 staff serving 200,000 patient records with scans
@@ -321,6 +340,46 @@ def _provisional_reasons(constraints: Constraints) -> list[str]:
     ]
 
 
+#: A stated security/audit need, distinct from a compliance obligation.
+#: Narrow on purpose: "secure" appears in almost every prompt and means
+#: nothing; these phrases ask specifically for the network to be watched.
+_NETWORK_AUDIT_HINTS = (
+    "network audit", "audit network", "traffic log", "flow log",
+    "network monitoring", "intrusion detection", "detect intrusion",
+    "security audit", "forensic", "who accessed what",
+)
+
+
+def _flow_logs_wanted(
+    constraints: Constraints, compliance: list[dict], description: str,
+) -> tuple[bool, str]:
+    """DEFECT 3. Flow logs are an audit control, and audit controls are
+    bought because something requires them -- not by default.
+
+    Unconditionally on and sized at half of egress, they were $134/mo and
+    17% of a media workload's bill, scaling with traffic nobody had asked
+    to have logged. Returns (wanted, reason) so the refusal can be
+    explained rather than merely happening.
+    """
+    obligation = next(
+        (str(c["regulation"]) for c in compliance
+         if c.get("requires_network_isolation")),
+        "",
+    )
+    if obligation:
+        return True, f"required by {obligation}"
+
+    text = description.lower()
+    hit = next((h for h in _NETWORK_AUDIT_HINTS if h in text), "")
+    if hit and constraints.availability == "high":
+        return True, f"availability=high and {hit!r} was stated"
+
+    why = "no compliance obligation requires network audit"
+    if hit:
+        why = f"{hit!r} was stated, but availability is low"
+    return False, why
+
+
 def _requires_x86(description: str) -> bool:
     """Graviton is the default; only explicit evidence rules it out."""
     text = description.lower()
@@ -445,6 +504,7 @@ def _spec_for(
     endpoints: EndpointPlan,
     posture_resource_count: int,
     topology: TopologyDecision,
+    flow_logs: bool,
 ) -> ArchitectureSpec:
     """One tier's spec. Every optional component traces to a filter or a
     gate, and rung 2-4 additions only ever appear at tier_level >= 2 --
@@ -460,7 +520,8 @@ def _spec_for(
     public_simple = topology.value == PUBLIC_SIMPLE
     managed = tier_level >= 2  # Fargate + the rung 2/3 additions it buys
     storage = constraints.storage_gb or _default_storage_gb(constraints, load)
-    egress = constraints.egress_gb or _default_egress_gb(constraints, load)
+    #: Total bytes reaching users, however they get there.
+    user_traffic_gb = constraints.egress_gb or _default_egress_gb(constraints, load)
     vcpu = _vcpu_for(load.peak_rps)
 
     db_vcpu, db_memory_gb = _database_size_for(load.tier)
@@ -470,7 +531,23 @@ def _spec_for(
     # things, and a cache or a replica is optional by Part 2's own ranking.
     replicas = _replica_count(load, database_vcpu=db_vcpu) if managed else 0
     cache_wanted = managed and "cache" in load.included
-    cdn_wanted = managed and "network" in load.included
+    # DEFECT 1. A CDN is rung 4 -- a performance nicety -- only while the
+    # media it would serve is incidental. When serving media IS the
+    # product, the origin is otherwise pushing terabytes itself, and the
+    # CDN becomes rung 1: present in every tier including the cheapest,
+    # exactly like a load balancer under availability=high.
+    media_heavy = constraints.static_assets == "heavy"
+    cdn_wanted = "network" in load.included and (media_heavy or managed)
+
+    # DEFECT 2, second pair. Route the user traffic to exactly one meter:
+    # the edge when a CDN is present, the origin otherwise. `egress` from
+    # here on is ORIGIN egress only.
+    cdn_gb = user_traffic_gb if cdn_wanted else 0.0
+    egress = user_traffic_gb * ORIGIN_FILL_SHARE if cdn_wanted else user_traffic_gb
+    #: What the application itself initiates outbound -- package pulls,
+    #: third-party APIs, webhooks. A fraction of user traffic, never a
+    #: mirror of it, and the only thing NAT actually processes.
+    nat_eligible_gb = user_traffic_gb * NAT_SHARE_OF_EGRESS
 
     fargate_vcpu, fargate_memory = _fargate_sizing(vcpu, instances)
 
@@ -504,7 +581,7 @@ def _spec_for(
         serves_requests=True,
         # rung 4 -- same gate as cache: gated on the load model AND on
         # tier_level >= 2, so a public workload's Tier 1 still omits it.
-        cdn_gb=egress if cdn_wanted else 0.0,
+        cdn_gb=cdn_gb,
         cdn_monthly_requests=(
             float(constraints.requests_per_day) * 30.0 if cdn_wanted else 0.0
         ),
@@ -514,6 +591,15 @@ def _spec_for(
         # the database could itself buffer buys nothing more, whatever
         # the instance family's default size would suggest.
         cache_memory_gb=min(4.0, db_memory_gb) if cache_wanted else None,
+        # DEFECT 5. Priced only where the workload stated the volume.
+        emails_per_month=float(constraints.emails_per_month),
+        # One enqueue + one dequeue + one delete per unit of async work,
+        # which is SQS's own billing shape rather than a round number.
+        queue_requests_per_month=(
+            float(constraints.requests_per_day) * 30.0 * 3.0
+            if constraints.async_processing else 0.0
+        ),
+        notifications_per_month=float(constraints.emails_per_month),
         monitored_metrics=30,
         # WAF is exposure-driven, not a capacity upsell -- present on every
         # tier once the workload is public-facing, including Tier 1.
@@ -541,18 +627,25 @@ def _spec_for(
         # through a NAT gateway to reach it -- not a smaller NAT, none at
         # all. See whichcloud.network_topology.
         nat_gateway_count=0 if public_simple else (2 if high_availability else 1),
+        # DEFECT 2: a fraction of egress, not a mirror of it. Endpoints
+        # divert part of even that, so the two reductions compose.
+        # Endpoints divert a share of the NAT-eligible traffic, not of
+        # everything -- diverting a fraction of total egress was how this
+        # clamped to zero once egress stopped being NAT's mirror.
         nat_gb_processed=(
             0.0 if public_simple
-            else (max(0.0, egress - endpoints.diverted_gb)
-                  if endpoints.justified else egress)
+            else nat_eligible_gb * (0.5 if endpoints.justified else 1.0)
         ),
         audit_logging=True,
         tls_certificate=True,
         dns_hosted_zones=1,
         kms_key_count=1,
-        # Off by default under public_simple (nothing stated a network-audit
-        # need); on everywhere else, unchanged.
-        flowlog_gb=(egress * 0.5) if (not public_simple or topology.flow_logs_wanted) else 0.0,
+        # DEFECT 3: flow logs are an AUDIT control, not infrastructure.
+        # Unconditionally on, sized at half of egress, they were 17% of a
+        # media workload's bill for a capability nothing had asked for.
+        # Now gated on a compliance obligation or a stated security need
+        # -- see _flow_logs_wanted.
+        flowlog_gb=(egress * 0.5) if flow_logs else 0.0,
         # ── rung 2/3: bought starting Tier 2, not Tier 1 ──
         secret_count=1 if managed else 0,
         tracing_monthly_traces=1_000_000 if managed else 0,
@@ -882,6 +975,12 @@ def plan_from(
         nat_present=topology.value != PUBLIC_SIMPLE,
     )
     resource_count = instances + 1  # +1 for the database instance
+    flow_logs, flow_logs_why = _flow_logs_wanted(constraints, compliance, description)
+    if not flow_logs:
+        load.excluded_with_reason.append(
+            f"VPC flow logs: not added, {flow_logs_why} — they are an audit "
+            "control billed per GB of traffic, not baseline infrastructure"
+        )
     provisional_reasons = _provisional_reasons(constraints)
 
     plan = Plan(
@@ -917,7 +1016,7 @@ def plan_from(
             name=name, constraints=constraints, load=load, region=region,
             instances=count, tier_level=level, requires_x86=requires_x86,
             endpoints=endpoints, posture_resource_count=resource_count,
-            topology=topology,
+            topology=topology, flow_logs=flow_logs,
         )
         # FILTER BEFORE PRICE. A spec that fails here is never given a
         # number, because a cheap number attached to a rejected design is

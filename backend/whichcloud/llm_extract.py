@@ -177,8 +177,12 @@ class Extraction(BaseModel):
     sector: Field_ = Field(
         description="healthcare|fintech|ecommerce|education|internal_tools|public_web|other")
     availability: Field_ = Field(
-        description="high|low. 'busiest during business hours' is traffic "
-                    "timing, NOT an uptime need")
+        description="high|low. HIGH when the text names a business "
+                    "consequence of being slow or down (lost revenue, "
+                    "refunds, complaints, missed deadlines, safety), or "
+                    "describes an existing system failing under load -- no "
+                    "technical wording needed. 'busiest during business "
+                    "hours' is traffic timing, NOT an uptime need")
     durability: Field_ = Field(
         description="high if loss is serious/regulated | ephemeral ONLY if text "
                     "says disposable | else normal. Downtime tolerance implies "
@@ -198,6 +202,14 @@ class Extraction(BaseModel):
     country_lock: Field_ = Field(
         description="true if data must stay in a country, or a national "
                     "regulator is named; a city name alone is NOT")
+    static_assets: Field_ = Field(
+        description="none|light|heavy. heavy when serving video, large media "
+                    "or file downloads is a core user activity")
+    emails_per_month: Field_ = Field(
+        description="transactional emails/notifications per month, 0 if none")
+    async_processing: Field_ = Field(
+        description="true if work happens after the response (grading, "
+                    "notification fan-out, report generation)")
     #: A LIST, not one value. A prompt describing a web app AND a nightly
     #: batch job is two workloads, and a single-valued field forces the
     #: model to discard one of them -- which is how "0/4 multi-shape
@@ -303,7 +315,16 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "availability": ("low", "high"),
     "durability": ("normal", "high", "ephemeral"),
     "peak_shape": ("flat", "morning", "evening", "spiky"),
+    "static_assets": ("none", "light", "heavy"),
 }
+
+#: Fields outside REQUIRED that the model still returns. Coerced and set
+#: like any other, but never added to `stated` -- they select components
+#: rather than sizing anything, so they have no assumed/stated accounting
+#: of their own and must not appear in assumed_fields().
+_NON_REQUIRED_FIELDS = (
+    "country_lock", "static_assets", "emails_per_month", "async_processing",
+)
 
 
 def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
@@ -316,7 +337,7 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
     c = Constraints()
     meta = ExtractionMeta()
 
-    for name in REQUIRED + ("country_lock",):
+    for name in REQUIRED + _NON_REQUIRED_FIELDS:
         entry: Field_ = getattr(payload, name)
         raw = entry.value
 
@@ -324,11 +345,11 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
             value = str(raw).strip().lower()
             if value not in _ENUMS[name]:
                 continue  # keep the dataclass default, and leave it 'assumed'
-        elif name in ("users", "requests_per_day"):
+        elif name in ("users", "requests_per_day", "emails_per_month"):
             value = _as_int(raw)
         elif name in ("budget_monthly_usd", "storage_gb", "egress_gb"):
             value = _as_float(raw)
-        elif name in ("public_facing", "country_lock"):
+        elif name in ("public_facing", "country_lock", "async_processing"):
             value = _as_bool(raw)
         else:  # country
             value = str(raw).strip().upper()[:2]
@@ -340,9 +361,10 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
             if entry.span:
                 meta.spans[name] = entry.span
 
-    # country_lock is not a REQUIRED field -- it has no stated/assumed
-    # accounting of its own -- so drop it back out of the stated set.
-    c.stated.discard("country_lock")
+    # These are not REQUIRED fields -- they have no stated/assumed
+    # accounting of their own -- so drop them back out of the stated set.
+    for name in _NON_REQUIRED_FIELDS:
+        c.stated.discard(name)
 
     # Every shape that clears the bar, strongest first. One is an
     # ordinary classification; two or more is a composite -- a prompt

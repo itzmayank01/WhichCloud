@@ -120,11 +120,23 @@ def build_load(constraints: Constraints, description: str = "") -> Load:
 
     rate = f"{peak:.2f} peak req/sec"
     audience = "public-facing" if constraints.public_facing else "staff-only access"
-    heavy_assets = any(h in text for h in _STATIC_ASSET_HINTS)
+    # DEFECT 1. Read the extracted CONSTRAINT, not the raw text. The
+    # phrase table is kept as a fallback for the degraded path only:
+    # under LLM extraction `static_assets` is a real field, and matching
+    # "video" in prose was both redundant and, on any prompt the table
+    # missed, silently wrong.
+    heavy_assets = constraints.static_assets in ("light", "heavy") or (
+        constraints.static_assets == "none"
+        and any(h in text for h in _STATIC_ASSET_HINTS)
+    )
     international = any(h in text for h in _INTERNATIONAL_HINTS)
     read_heavy = any(h in text for h in _READ_HEAVY_HINTS)
     reporting = any(h in text for h in _REPORTING_HINTS)
-    asynchronous = any(h in text for h in _ASYNC_HINTS)
+    # Same reasoning as static assets: the extracted field first, the
+    # phrase table only where extraction said nothing.
+    asynchronous = constraints.async_processing or any(
+        h in text for h in _ASYNC_HINTS
+    )
 
     # ── CDN ──
     if constraints.public_facing and (heavy_assets or international):
