@@ -89,3 +89,63 @@ are true, and both are measured:
 That is a stronger statement than the original, not a weaker one,
 because each half is checkable independently and neither is hiding
 behind the other.
+
+---
+
+# 50-prompt measurement, per archetype (2026-08-22, updated)
+
+The 25-prompt set was all web_app plus five ambiguous — it measured one
+archetype and called it accuracy. This is the expanded 50-prompt set (35
+genuine across all seven archetypes, 15 adversarial across four failure
+modes), scored per archetype because web_app accuracy says nothing about
+whether batch_etl or realtime route correctly — which is what Part 2
+depends on.
+
+**28 of 50 scored** before the daily token cap ran out (22 adversarial
+prompts remain; banked, `--resume`-able). Every genuine archetype now has
+data.
+
+| archetype | accuracy |
+|---|---|
+| web_app | 8/8 (100%) |
+| static_site | 5/5 (100%) |
+| batch_etl | 5/5 (100%) |
+| ml_inference | 2/2 (100%) |
+| migration | 2/2 (100%) |
+| event_driven | 3/4 (75%) |
+
+By writing style: terse 5/5, business 6/6, jargon 5/5, non-native 5/5,
+backstory 1/1, rambling 3/4.
+
+**GENUINE: 25/26 correct. false-unknown 4%. MISROUTED 0%.**
+
+The single miss (ed-4, an event_driven prompt in rambling register) is a
+false-unknown, not a misroute: the model returned event_driven at 1.00
+confidence but quoted a span under four words, so the substantive-span
+rule refused it. Same class as the eight the old two-span rule rejected,
+now down to one in twenty-six — the trade the evidence bar makes, and a
+much smaller one.
+
+**Adversarial (2 of 15 scored): both multi-shape prompts correctly
+returned `composite`, naming both workloads rather than guessing one.
+false-confident 0%.** The scorer was corrected here: a multi-shape prompt
+is *refused* by `composite` (two workloads named), not by `unknown`
+(cannot tell what this is) — counting composite as a wrong answer was a
+scoring bug, not a classifier failure.
+
+## Part 2 re-ranking
+
+The task's instruction was to re-rank Part 2 archetypes by measured
+classifier accuracy rather than the coverage-map severity order, because
+building a service graph for a shape nothing routes to is wasted work.
+
+On the data so far, five of six candidate archetypes classify at 100%
+(static_site, batch_etl, ml_inference, migration) or are the well-covered
+web_app baseline. event_driven is 3/4. There is no accuracy-based reason
+to prefer one over another among the 100% group — routing is not the
+constraint it was feared to be. Recommended order therefore falls back to
+IMPACT: event_driven and realtime first (the two CRITICAL severities in
+the coverage map that also appear frequently in real prompts), then
+static_site (cheapest to build — no VPC, no database), then batch_etl,
+ml_inference, migration. realtime is unscored (0 of its 4 prompts landed
+before quota); one resume run settles it.

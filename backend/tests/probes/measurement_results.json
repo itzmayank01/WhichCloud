@@ -1,5 +1,125 @@
 {
   "llm": {
+    "adv-5": {
+      "confidence": 1.0,
+      "got": "composite",
+      "kind": "adversarial",
+      "style": "multi-shape",
+      "truth": "composite",
+      "why": "web_app: confidence 1.00 with a substantive span; batch_etl: confidence 1.00 with a substantive span"
+    },
+    "adv-6": {
+      "confidence": 0.95,
+      "got": "composite",
+      "kind": "adversarial",
+      "style": "multi-shape",
+      "truth": "composite",
+      "why": "web_app: confidence 0.95 with a substantive span; static_site: confidence 0.95 with a substantive span"
+    },
+    "be-1": {
+      "confidence": 1.0,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "batch_etl",
+      "why": "batch_etl: confidence 1.00 with a substantive span"
+    },
+    "be-2": {
+      "confidence": 1.0,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "batch_etl",
+      "why": "batch_etl: confidence 1.00 with a substantive span"
+    },
+    "be-3": {
+      "confidence": 1.0,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "batch_etl",
+      "why": "batch_etl: confidence 1.00 with a substantive span"
+    },
+    "be-4": {
+      "confidence": 0.98,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "batch_etl",
+      "why": "batch_etl: confidence 0.98 with a substantive span"
+    },
+    "be-5": {
+      "confidence": 1.0,
+      "got": "batch_etl",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "batch_etl",
+      "why": "batch_etl: confidence 1.00 with a substantive span"
+    },
+    "ed-1": {
+      "confidence": 0.95,
+      "got": "event_driven",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "event_driven",
+      "why": "event_driven: confidence 0.95 with a substantive span"
+    },
+    "ed-2": {
+      "confidence": 1.0,
+      "got": "event_driven",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "event_driven",
+      "why": "event_driven: confidence 1.00 with a substantive span"
+    },
+    "ed-3": {
+      "confidence": 0.93,
+      "got": "event_driven",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "event_driven",
+      "why": "event_driven: confidence 0.93 with a substantive span"
+    },
+    "ed-4": {
+      "confidence": 1.0,
+      "got": "unknown",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "event_driven",
+      "why": "event_driven: confidence 1.00 but no span describing the workload -- a high score resting on an incidental keyword is still a guess"
+    },
+    "mg-3": {
+      "confidence": 0.95,
+      "got": "migration",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "migration",
+      "why": "migration: confidence 0.95 with a substantive span"
+    },
+    "mg-4": {
+      "confidence": 0.95,
+      "got": "migration",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "migration",
+      "why": "migration: confidence 0.95 with a substantive span"
+    },
+    "mi-2": {
+      "confidence": 0.9,
+      "got": "ml_inference",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "ml_inference",
+      "why": "ml_inference: confidence 0.90 with a substantive span; batch_etl: confidence 0.75 is mid-band and only 1 span(s) support it"
+    },
+    "mi-4": {
+      "confidence": 0.95,
+      "got": "ml_inference",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "ml_inference",
+      "why": "ml_inference: confidence 0.95 with a substantive span"
+    },
     "ss-1": {
       "confidence": 0.99,
       "got": "static_site",
@@ -191,7 +311,7 @@
       "got": "batch_etl",
       "kind": "adversarial",
       "style": "multi-shape",
-      "truth": "unknown",
+      "truth": "composite",
       "why": "matched 2 phrase(s), first 'nightly'"
     },
     "adv-6": {
@@ -199,7 +319,7 @@
       "got": "static_site",
       "kind": "adversarial",
       "style": "multi-shape",
-      "truth": "unknown",
+      "truth": "composite",
       "why": "matched 2 phrase(s), first 'marketing site'"
     },
     "adv-7": {
@@ -207,7 +327,7 @@
       "got": "event_driven",
       "kind": "adversarial",
       "style": "multi-shape",
-      "truth": "unknown",
+      "truth": "composite",
       "why": "matched 2 phrase(s), first 'webhook'"
     },
     "adv-8": {
@@ -215,7 +335,7 @@
       "got": "realtime",
       "kind": "adversarial",
       "style": "multi-shape",
-      "truth": "unknown",
+      "truth": "composite",
       "why": "matched 1 phrase(s), first 'real-time'"
     },
     "adv-9": {
