@@ -248,6 +248,10 @@ class Plan:
     extraction_failover_note: str = ""
     #: Why the archetype was believed or refused, in words.
     archetype_evidence_verdict: str = ""
+    #: When archetype_state is COMPOSITE: the shapes that both cleared
+    #: the bar. Costing one and presenting it as the whole would be the
+    #: confident wrong answer this engine exists to refuse.
+    composite_of: list[str] = field(default_factory=list)
     #: field name -> the substring of the prompt it was drawn from.
     extraction_spans: dict[str, str] = field(default_factory=dict)
 
@@ -732,24 +736,33 @@ def _attach_extraction_meta(plan: Plan, meta: llm_extract.ExtractionMeta) -> Non
     plan.extraction_failover = meta.failover
     plan.extraction_failover_note = meta.failover_note
     plan.archetype_evidence_verdict = meta.evidence_verdict
+    plan.composite_of = list(meta.composite_of)
     plan.extraction_spans = dict(meta.spans)
 
 
 def _withheld_plan(
     constraints: Constraints, load: Load, detected: str, evidence: str,
+    composite_of: list[str] | None = None,
 ) -> Plan:
     """Everything the engine did work out, and no price. The extraction
     and the sizing are still returned -- they are real findings, and a
     reader who can see them can tell whether the refusal is reasonable.
     What is withheld is only the number nothing has validated."""
-    state = archetype_module.state_for(detected)
-    recognised = state == archetype_module.RECOGNISED_UNPRICED
-    note = (
-        f"Recognised as {detected!r} ({evidence}), which this engine can "
-        "name but has not yet been taught to build."
-        if recognised
-        else f"Could not classify the workload: {evidence}."
+    composite = detected == archetype_module.COMPOSITE
+    state = (
+        archetype_module.COMPOSITE if composite
+        else archetype_module.state_for(detected)
     )
+    recognised = state == archetype_module.RECOGNISED_UNPRICED
+    if composite:
+        note = archetype_module.composite_message(composite_of or [])
+    elif recognised:
+        note = (
+            f"Recognised as {detected!r} ({evidence}), which this engine can "
+            "name but has not yet been taught to build."
+        )
+    else:
+        note = f"Could not classify the workload: {evidence}."
     return Plan(
         constraints=constraints,
         load=load,
@@ -760,15 +773,21 @@ def _withheld_plan(
         archetype_requirements=archetype_module.requirements_for(detected),
         priced=False,
         withheld_reason=(
-            RECOGNISED_UNPRICED_MESSAGE if recognised else WITHHELD_MESSAGE
+            archetype_module.composite_message(composite_of or []) if composite
+            else RECOGNISED_UNPRICED_MESSAGE if recognised
+            else WITHHELD_MESSAGE
         ),
         covered_archetypes=archetype_module.coverage(),
         coverage_summary=archetype_module.coverage_summary(),
         # Only useful when nothing was recognised. Asking a user to
         # clarify a shape we have already named correctly would be
         # busywork -- what they need there is the shape's requirements.
+        # A composite prompt does not need the "what shape is this"
+        # questions -- both shapes were identified. What it needs is a
+        # decision about which to cost, which the message asks for.
         clarifying_questions=(
-            [] if recognised else list(archetype_module.CLARIFYING_QUESTIONS)
+            [] if (recognised or composite)
+            else list(archetype_module.CLARIFYING_QUESTIONS)
         ),
         extraction_confidence=constraints.confidence_map(),
     )
@@ -829,7 +848,9 @@ def plan_from(
         f"{len(meta.archetype_spans)} supporting span(s)"
     )
     if not archetype_module.is_priceable(detected):
-        plan = _withheld_plan(constraints, load, detected, evidence)
+        plan = _withheld_plan(
+            constraints, load, detected, evidence, meta.composite_of,
+        )
         _attach_extraction_meta(plan, meta)
         return plan
 

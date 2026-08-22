@@ -1,4 +1,110 @@
 {
+  "llm": {
+    "ss-1": {
+      "confidence": 0.99,
+      "got": "static_site",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "static_site",
+      "why": "static_site: confidence 0.99 with a substantive span"
+    },
+    "ss-2": {
+      "confidence": 1.0,
+      "got": "static_site",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "static_site",
+      "why": "static_site: confidence 1.00 with a substantive span"
+    },
+    "ss-3": {
+      "confidence": 1.0,
+      "got": "static_site",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "static_site",
+      "why": "static_site: confidence 1.00 with a substantive span"
+    },
+    "ss-4": {
+      "confidence": 1.0,
+      "got": "static_site",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "static_site",
+      "why": "static_site: confidence 1.00 with a substantive span"
+    },
+    "ss-5": {
+      "confidence": 0.95,
+      "got": "static_site",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "static_site",
+      "why": "static_site: confidence 0.95 with a substantive span"
+    },
+    "wa-1": {
+      "confidence": 0.9,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.90 with a substantive span"
+    },
+    "wa-2": {
+      "confidence": 0.9,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.90 with a substantive span"
+    },
+    "wa-3": {
+      "confidence": 0.93,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "non-native",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.93 with a substantive span"
+    },
+    "wa-4": {
+      "confidence": 0.9,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "jargon",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.90 with a substantive span"
+    },
+    "wa-5": {
+      "confidence": 0.9,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "backstory",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.90 with a substantive span"
+    },
+    "wa-6": {
+      "confidence": 0.9,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "rambling",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.90 with a substantive span"
+    },
+    "wa-7": {
+      "confidence": 0.9,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "terse",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.90 with a substantive span"
+    },
+    "wa-8": {
+      "confidence": 0.9,
+      "got": "web_app",
+      "kind": "genuine",
+      "style": "business",
+      "truth": "web_app",
+      "why": "web_app: confidence 0.90 with a substantive span"
+    }
+  },
   "phrases": {
     "adv-1": {
       "confidence": 0.0,

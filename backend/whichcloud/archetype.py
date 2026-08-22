@@ -51,6 +51,38 @@ IMPLEMENTED_ARCHETYPES = frozenset({"web_app"})
 PRICED = "priced"
 RECOGNISED_UNPRICED = "recognised_unpriced"
 STATE_UNKNOWN = "unknown"
+#: Two or more shapes both clear the evidence bar. Not a failure to
+#: classify -- a correct reading of a prompt that describes two
+#: workloads. Withholds pricing like the other non-priced states,
+#: because costing one half and presenting it as the whole is precisely
+#: the confident-wrong-answer this engine refuses to give.
+COMPOSITE = "composite"
+
+#: Human-readable names, for copy that has to say what was found.
+ARCHETYPE_LABELS: dict[str, str] = {
+    "web_app": "a web application",
+    "static_site": "a static site",
+    "batch_etl": "a scheduled batch job",
+    "event_driven": "an event-driven service",
+    "ml_inference": "a model-serving endpoint",
+    "realtime": "a real-time service",
+    "migration": "a server migration",
+}
+
+
+def describe(name: str) -> str:
+    return ARCHETYPE_LABELS.get(name, name)
+
+
+def composite_message(names: list[str]) -> str:
+    """Copy that names BOTH shapes. A refusal that cannot say what it
+    found is barely better than a guess, and here we found rather a
+    lot -- the user needs to know which two things they described."""
+    described = " and ".join(describe(n) for n in names)
+    return (
+        f"This describes two workloads — {described}. Price them "
+        "separately, or tell us which to cost first."
+    )
 
 #: What each shape's architecture actually needs, in words. Used only for
 #: the recognised_unpriced copy: the engine can describe the shape it

@@ -36,7 +36,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from whichcloud.archetype import ARCHETYPES, UNKNOWN
+from whichcloud.archetype import ARCHETYPES, COMPOSITE, UNKNOWN
 from whichcloud.architecture.readers import candidates, is_exhausted
 from whichcloud.constraints import REQUIRED, Constraints
 from whichcloud.constraints import extract as phrase_extract
@@ -44,7 +44,11 @@ from whichcloud.pricing import store
 
 #: Bumped whenever the prompt or schema below changes meaning, so a cached
 #: answer produced under different rules is never served as a current one.
-SCHEMA_VERSION = "constraints-v1"
+#: v2: `archetype` (one value) became `archetypes` (a list), so a prompt
+#: describing two workloads can say so. Bumped rather than reused --
+#: a v1 row cannot be read as v2, and serving one silently would answer
+#: a multi-shape prompt with whichever half v1 happened to pick.
+SCHEMA_VERSION = "constraints-v2"
 
 #: THE PINNED PRIMARY. One provider and one model, named, because
 #: different models return different Constraints from the same prompt --
@@ -135,103 +139,96 @@ class ExtractionError(RuntimeError):
 Source = Literal["stated", "assumed"]
 
 
-class Field_(BaseModel):
-    """One extracted value, with where it came from."""
+#: Cap on returned evidence. Spans are evidence, not transcript: two
+#: short quotes prove a classification as well as five long ones, and
+#: the difference is output tokens against a daily cap.
+MAX_SPANS = 2
+MAX_SPAN_WORDS = 12
 
-    value: str = Field(description="The value. Numbers as digits, booleans as true/false.")
-    source: Source = Field(description="'stated' if the text says it, else 'assumed'")
-    span: str = Field(
-        default="",
-        description="The exact substring of the input this was drawn from. "
-                    "Empty when source is 'assumed'.",
-    )
+
+class Field_(BaseModel):
+    # No docstring: pydantic emits it as a schema "description", and this
+    # one is for readers of the code, not the model.
+    value: str = Field(description="digits for numbers, true/false for booleans")
+    source: Source = Field(description="stated if the text says it, else assumed")
+    span: str = Field(default="", description="quote it came from, <=12 words, '' if assumed")
 
 
 class ArchetypeCall(BaseModel):
-    archetype: str = Field(description=f"One of: {', '.join(ARCHETYPES)}, or unknown")
-    confidence: float = Field(description="0.0 to 1.0")
+    name: str = Field(description=f"one of: {', '.join(ARCHETYPES)}")
+    confidence: float = Field(description="0.0-1.0")
     spans: list[str] = Field(
         default_factory=list,
-        description="Distinct substrings of the input supporting this archetype.",
+        description="<=2 quotes, <=12 words each, describing the workload",
     )
 
 
 class Extraction(BaseModel):
-    country: Field_
-    sector: Field_
-    availability: Field_
-    durability: Field_
-    users: Field_
-    requests_per_day: Field_
-    peak_shape: Field_
-    budget_monthly_usd: Field_
-    storage_gb: Field_
-    egress_gb: Field_
-    public_facing: Field_
-    country_lock: Field_
-    archetype: ArchetypeCall
+    """The wire shape: a mirror of Constraints, never a superset.
+
+    Per-field guidance lives HERE rather than in the prose instruction,
+    because the JSON schema is sent to the provider either way and
+    saying it twice was costing ~900 tokens a call against a 200k/day
+    org cap. There is nowhere in this shape for the model to put a
+    service name, a price or a regulation even if it wanted to.
+    """
+
+    country: Field_ = Field(description="ISO-2 from any place named, '' if none")
+    sector: Field_ = Field(
+        description="healthcare|fintech|ecommerce|education|internal_tools|public_web|other")
+    availability: Field_ = Field(
+        description="high|low. 'busiest during business hours' is traffic "
+                    "timing, NOT an uptime need")
+    durability: Field_ = Field(
+        description="high if loss is serious/regulated | ephemeral ONLY if text "
+                    "says disposable | else normal. Downtime tolerance implies "
+                    "NOTHING about data loss")
+    users: Field_ = Field(description="people using it, 0 if unstated")
+    requests_per_day: Field_ = Field(
+        description="per DAY: 80,000/month->2667; 50/sec->4320000; 0 if none")
+    peak_shape: Field_ = Field(description="flat|morning|evening|spiky")
+    budget_monthly_usd: Field_ = Field(description="monthly USD, 0 if unstated")
+    storage_gb: Field_ = Field(description="GB, 0 if unstated")
+    egress_gb: Field_ = Field(description="GB/month, 0 if unstated")
+    public_facing: Field_ = Field(
+        description="used BY the public, not merely holding data ABOUT them")
+    # "data must stay in <country>" is the actual trigger, and the
+    # shorter wording that omitted it dropped the Pune hospital's lock --
+    # measured, not guessed. Length here buys accuracy.
+    country_lock: Field_ = Field(
+        description="true if data must stay in a country, or a national "
+                    "regulator is named; a city name alone is NOT")
+    #: A LIST, not one value. A prompt describing a web app AND a nightly
+    #: batch job is two workloads, and a single-valued field forces the
+    #: model to discard one of them -- which is how "0/4 multi-shape
+    #: prompts refused" happened. See _to_constraints for what a
+    #: multi-entry answer becomes.
+    archetypes: list[ArchetypeCall] = Field(
+        default_factory=list,
+        description="shapes described, strongest first; two only for two "
+                    "separate workloads; empty if undeterminable",
+    )
 
 
-_INSTRUCTION = f"""You read a description of a software workload and return
-structured constraints. You do not design architectures, name cloud services,
-name regulations, or estimate prices — another system does all of that from
-what you return. Return only what the text supports.
+#: Everything the field descriptions cannot carry: the role, the
+#: archetype definitions (which belong to no single field), and the two
+#: judgement calls the model gets wrong without being told. Deliberately
+#: short -- per-field guidance is in the schema, sent once.
+_INSTRUCTION = """Extract constraints from a workload description. Return only
+what the text supports. Do not name services, regulations or prices.
 
-For every field return: value, source, and span.
-  source = "stated"  the text says it, directly or by clear implication
-  source = "assumed" the text does not say it; you are returning a default
-  span   = the exact substring you drew it from, or "" when assumed
+Shapes:
+web_app request-serving app with a database | static_site files only, no app
+server or database | batch_etl scheduled, idle between runs | event_driven
+reacts to webhooks/queues | ml_inference serves model predictions | realtime
+persistent connections (chat, live feeds) | migration moving EXISTING
+servers/VMs as-is
 
-Fields:
-  country            ISO-2 code inferred from any place named (Pune -> IN).
-                     "" if no place is named.
-  sector             one of: healthcare, fintech, ecommerce, education,
-                     internal_tools, public_web, other
-  availability       "high" if being offline would be a serious problem
-                     (uptime promises, "cannot go down", named business hours
-                     that must hold). "low" if the text says downtime is
-                     tolerable. Assume "low" only when the text is silent.
-                     Beware: "busiest during business hours" describes TRAFFIC
-                     TIMING, not an uptime requirement.
-  durability         "high" if losing the data would be serious or it is
-                     regulated. "ephemeral" ONLY if the text explicitly says
-                     the data is disposable or can be regenerated. Otherwise
-                     "normal". Note: tolerance for DOWNTIME says nothing about
-                     tolerance for DATA LOSS — do not infer one from the other.
-  users              integer count of people using it. 0 if not stated.
-                     Interpret "12-person team" as 12, "100,000 users" as 100000.
-  requests_per_day   integer. Convert whatever unit the text uses into requests
-                     per DAY: "2 million requests a day" -> 2000000,
-                     "80,000 applications a month" -> 2667,
-                     "50 predictions a second" -> 4320000,
-                     "30,000 visitors a month" -> 1000.
-                     0 only if the text gives no volume at all.
-  peak_shape         one of: flat, morning, evening, spiky
-  budget_monthly_usd number, monthly. 0 if not stated.
-  storage_gb         number. 0 if not stated.
-  egress_gb          number. 0 if not stated.
-  public_facing      true if end consumers/the public use it directly over the
-                     internet; false if only staff on known sites do. A system
-                     that HOLDS data about the public is not necessarily USED
-                     by them.
-  country_lock       true only if the text requires data to stay in a country
-                     (a residency phrase, or a named national regulator).
-                     Merely naming a city is NOT a country lock.
-
-archetype: classify the SHAPE of the workload.
-  web_app       request-serving application with a database behind it
-  static_site   files served to visitors, no app server, no database
-  batch_etl     scheduled work, idle between runs
-  event_driven  reacting to external events (webhooks, queues, uploads)
-  ml_inference  serving predictions from a trained model
-  realtime      persistent connections (chat, live feeds)
-  migration     moving EXISTING servers/VMs to the cloud as they are
-  unknown       genuinely underdetermined
-
-  Return confidence 0.0-1.0 and the distinct substrings supporting it.
-  Return "unknown" with low confidence when the description does not say
-  enough to tell these apart. A vague request to "move to the cloud" with no
-  statement of WHAT is being moved is unknown, not migration.
+Return every shape the text actually describes. Two entries only when it
+describes two separate workloads (e.g. a web app AND a nightly batch job) --
+not for one workload with several features. Return none when the text does not
+say enough to tell the shapes apart: "we need to move to the cloud" without
+saying what is being moved is undeterminable, not migration.
 
 Description:
 """
@@ -256,6 +253,10 @@ class ExtractionMeta:
     archetype_spans: list[str] = field(default_factory=list)
     #: Why the classification was believed or refused, in words.
     evidence_verdict: str = ""
+    #: Every shape that cleared the bar, strongest first. Length > 1 is
+    #: what makes `archetype` COMPOSITE.
+    archetype_candidates: list[dict] = field(default_factory=list)
+    composite_of: list[str] = field(default_factory=list)
     #: True when a provider OTHER than the pinned primary answered.
     #: Different models produce different Constraints, so a plan read by
     #: a failover provider is not strictly comparable to one read by the
@@ -343,21 +344,47 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
     # accounting of its own -- so drop it back out of the stated set.
     c.stated.discard("country_lock")
 
-    call = payload.archetype
-    name = (call.archetype or "").strip().lower()
-    distinct_spans = [s for s in dict.fromkeys(call.spans) if s.strip()]
-    confidence = float(call.confidence or 0.0)
+    # Every shape that clears the bar, strongest first. One is an
+    # ordinary classification; two or more is a composite -- a prompt
+    # describing two workloads, which a single-valued field could only
+    # ever answer by discarding one of them.
+    passing: list[tuple[str, float, list[str]]] = []
+    verdicts: list[str] = []
+    for call in payload.archetypes:
+        name = (call.name or "").strip().lower()
+        spans = [s for s in dict.fromkeys(call.spans) if s.strip()][:MAX_SPANS]
+        confidence = float(call.confidence or 0.0)
+        if name not in ARCHETYPES:
+            verdicts.append(f"{name!r} is not an archetype this engine knows")
+            continue
+        ok, why = passes_evidence_bar(confidence, spans)
+        verdicts.append(f"{name}: {why}")
+        if ok:
+            passing.append((name, confidence, spans))
 
-    if name not in ARCHETYPES:
+    passing.sort(key=lambda t: t[1], reverse=True)
+    meta.archetype_candidates = [
+        {"name": n, "confidence": c, "spans": s} for n, c, s in passing
+    ]
+
+    if not passing:
         meta.archetype = UNKNOWN
-        meta.evidence_verdict = f"{name!r} is not an archetype this engine knows"
+        meta.archetype_confidence = max(
+            (float(c.confidence or 0.0) for c in payload.archetypes), default=0.0
+        )
+        meta.archetype_spans = []
+    elif len(passing) == 1:
+        name, confidence, spans = passing[0]
+        meta.archetype = name
+        meta.archetype_confidence = confidence
+        meta.archetype_spans = spans
     else:
-        ok, why = passes_evidence_bar(confidence, distinct_spans)
-        meta.archetype = name if ok else UNKNOWN
-        meta.evidence_verdict = why
+        meta.archetype = COMPOSITE
+        meta.composite_of = [n for n, _c, _s in passing]
+        meta.archetype_confidence = passing[0][1]
+        meta.archetype_spans = passing[0][2]
 
-    meta.archetype_confidence = confidence
-    meta.archetype_spans = distinct_spans
+    meta.evidence_verdict = "; ".join(verdicts) or "no archetype returned"
 
     return c, meta
 
@@ -386,7 +413,7 @@ def _anthropic(description: str, key: str) -> Extraction:
     import anthropic
 
     client = anthropic.Anthropic(api_key=key)
-    schema = Extraction.model_json_schema()
+    schema = _lean_schema()
     message = client.messages.create(
         model=_MODELS["anthropic"],
         max_tokens=2048,
@@ -410,23 +437,54 @@ def _anthropic(description: str, key: str) -> Extraction:
 #: the Gemini keys are exhausted and the Anthropic ones are out of
 #: credit, and an extractor with no reachable model is an extractor that
 #: silently degrades to the phrase tables it was built to replace.
+def _lean_schema() -> dict:
+    """The JSON schema with pydantic's boilerplate removed.
+
+    `title` is emitted for every field and every model and carries no
+    information the description does not -- it was ~350 characters of
+    pure cost per call against a 200,000 token/day org cap.
+    """
+    def strip(node):
+        if isinstance(node, dict):
+            return {k: strip(v) for k, v in node.items() if k != "title"}
+        if isinstance(node, list):
+            return [strip(v) for v in node]
+        return node
+
+    return strip(Extraction.model_json_schema())
+
+
+#: Last observed prompt-token count, for the token budget report. Set on
+#: every real call; None until one happens.
+LAST_PROMPT_TOKENS: int | None = None
+
+
 def _groq(description: str, key: str) -> Extraction:
     from openai import OpenAI
 
+    global LAST_PROMPT_TOKENS
     client = OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1")
     completion = client.chat.completions.create(
         model=_MODELS["groq"],
         temperature=0,
+        # gpt-oss is a reasoning model, and reasoning was the single
+        # largest cost per call: 1302 of 1532 completion tokens at the
+        # default effort. Extraction is a reading task with a fixed
+        # schema, not a problem that needs working through -- measured
+        # identical classifications at "low" for 2/3 of the tokens.
+        reasoning_effort="low",
         response_format={
             "type": "json_schema",
             "json_schema": {
                 "name": "extraction",
-                "schema": Extraction.model_json_schema(),
+                "schema": _lean_schema(),
                 "strict": False,
             },
         },
         messages=[{"role": "user", "content": _INSTRUCTION + description}],
     )
+    if completion.usage:
+        LAST_PROMPT_TOKENS = completion.usage.total_tokens
     return Extraction.model_validate_json(completion.choices[0].message.content)
 
 

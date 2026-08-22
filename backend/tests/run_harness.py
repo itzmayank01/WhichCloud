@@ -484,7 +484,9 @@ def inv_12_no_priced_tier_when_archetype_unknown(fx_id: str, built: Plan) -> lis
 
     Covers BOTH withholding states: unknown (nothing matched, or a tie)
     and recognised_unpriced (shape known, no service graph yet)."""
-    withholding = built.archetype_state in ("unknown", "recognised_unpriced")
+    withholding = built.archetype_state in (
+        "unknown", "recognised_unpriced", "composite",
+    )
     ok = (not withholding) or (not built.tiers and not built.priced)
     return [Result(
         fx_id, "INV-12", passed=ok,
@@ -520,6 +522,23 @@ def inv_13_every_priced_tier_is_backed_up(fx_id: str, built: Plan) -> list[Resul
     return results
 
 
+def inv_14_composite_never_prices(fx_id: str, built: Plan) -> list[Result]:
+    """A prompt describing two workloads must not be answered with a
+    price for one of them. Separate from INV-12 because the failure it
+    guards is different: not "we could not tell what this is" but "we
+    could tell, and it is two things" -- and costing half of it while
+    presenting a total is the confident wrong answer, not a partial one."""
+    composite = built.archetype_state == "composite"
+    ok = (not composite) or (not built.tiers and not built.priced)
+    return [Result(
+        fx_id, "INV-14", passed=ok,
+        expected="no priced tier when the prompt describes two workloads",
+        actual=f"state={built.archetype_state} tiers={len(built.tiers)} "
+               f"composite_of={built.composite_of}",
+        reason=built.withheld_reason,
+    )]
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -533,6 +552,7 @@ INVARIANTS = {
     "INV-11": inv_11_topology_forced_private_when_it_must_be,
     "INV-12": inv_12_no_priced_tier_when_archetype_unknown,
     "INV-13": inv_13_every_priced_tier_is_backed_up,
+    "INV-14": inv_14_composite_never_prices,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.

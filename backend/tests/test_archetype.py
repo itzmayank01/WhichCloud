@@ -385,3 +385,97 @@ def test_every_recorded_miss_now_classifies():
     for pid, (confidence, spans) in recorded.items():
         ok, why = passes_evidence_bar(confidence, spans)
         assert ok, f"{pid} still refused: {why}"
+
+
+# ── composite: two workloads in one prompt ──
+# Offline, driven through plan_from with a hand-built meta, so the
+# behaviour is asserted without depending on how any model reads the
+# prompt on a given day.
+
+
+def _composite_meta(*names):
+    from whichcloud.llm_extract import ExtractionMeta
+
+    return ExtractionMeta(archetype="composite", composite_of=list(names))
+
+
+def test_composite_withholds_pricing():
+    """INV-14. Costing one half of a two-workload prompt and presenting a
+    total is a confident wrong answer, not a partial one."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(users=100, requests_per_day=5000)
+    c.stated.update({"users", "requests_per_day"})
+    plan = plan_from(c, "", _composite_meta("web_app", "batch_etl"))
+    assert plan.archetype_state == "composite"
+    assert plan.priced is False
+    assert plan.tiers == []
+
+
+def test_composite_copy_names_both_shapes():
+    """A refusal that cannot say what it found is barely better than a
+    guess -- and here we found two specific things."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(users=100, requests_per_day=5000)
+    c.stated.update({"users", "requests_per_day"})
+    plan = plan_from(c, "", _composite_meta("web_app", "batch_etl"))
+    assert "web application" in plan.withheld_reason
+    assert "scheduled batch job" in plan.withheld_reason
+    assert "separately" in plan.withheld_reason
+    assert plan.composite_of == ["web_app", "batch_etl"]
+    # Both shapes were identified, so asking "what shape is this" would
+    # be busywork. What is needed is a choice about which to cost.
+    assert plan.clarifying_questions == []
+
+
+def test_two_shapes_above_the_bar_becomes_composite_not_a_coin_flip():
+    """The schema change is the fix. With one archetype field the model
+    had to discard a shape it had correctly seen; with a list it can
+    report both, and two passing entries become composite."""
+    from whichcloud.llm_extract import ArchetypeCall, Extraction, Field_, _to_constraints
+
+    def f(v, src="assumed"):
+        return Field_(value=v, source=src, span="")
+
+    payload = Extraction(
+        country=f(""), sector=f("other"), availability=f("low"),
+        durability=f("normal"), users=f("0"), requests_per_day=f("0"),
+        peak_shape=f("flat"), budget_monthly_usd=f("0"), storage_gb=f("0"),
+        egress_gb=f("0"), public_facing=f("false"), country_lock=f("false"),
+        archetypes=[
+            ArchetypeCall(name="web_app", confidence=0.9,
+                          spans=["people book slots on the site"]),
+            ArchetypeCall(name="batch_etl", confidence=0.88,
+                          spans=["nightly job reconciles against finance"]),
+        ],
+    )
+    _c, meta = _to_constraints(payload)
+    assert meta.archetype == "composite"
+    assert meta.composite_of == ["web_app", "batch_etl"]
+
+
+def test_one_shape_above_the_bar_is_still_an_ordinary_classification():
+    """Composite must not fire just because a second shape was mentioned
+    -- only when it also clears the evidence bar."""
+    from whichcloud.llm_extract import ArchetypeCall, Extraction, Field_, _to_constraints
+
+    def f(v, src="assumed"):
+        return Field_(value=v, source=src, span="")
+
+    payload = Extraction(
+        country=f(""), sector=f("other"), availability=f("low"),
+        durability=f("normal"), users=f("0"), requests_per_day=f("0"),
+        peak_shape=f("flat"), budget_monthly_usd=f("0"), storage_gb=f("0"),
+        egress_gb=f("0"), public_facing=f("false"), country_lock=f("false"),
+        archetypes=[
+            ArchetypeCall(name="web_app", confidence=0.9,
+                          spans=["people book slots on the site"]),
+            ArchetypeCall(name="batch_etl", confidence=0.2, spans=["nightly"]),
+        ],
+    )
+    _c, meta = _to_constraints(payload)
+    assert meta.archetype == "web_app"
+    assert meta.composite_of == []
