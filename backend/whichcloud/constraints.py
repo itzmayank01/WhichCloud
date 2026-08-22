@@ -47,6 +47,14 @@ QUESTIONS: dict[str, str] = {
     "peak_shape": "When during the day is it busiest?",
     "budget_monthly_usd": "What is the monthly budget?",
     "storage_gb": "How much data is stored today, and how fast does it grow?",
+    "content_storage_gb": (
+        "How large is the shared library — total size of the videos, "
+        "documents or catalogue everyone reads from?"
+    ),
+    "user_data_gb": (
+        "Roughly how much data does one user accumulate — profile, "
+        "submissions and history?"
+    ),
     "egress_gb": "Roughly how much data leaves the network each month?",
     "public_facing": "Do members of the public use this directly, or only staff?",
 }
@@ -204,6 +212,15 @@ class Constraints:
     #: notification fan-out, report generation. Selects a queue.
     async_processing: bool = False
 
+    #: DEFECT 7. Storage split in two, because they scale differently.
+    #: `content` is the shared library/repository everyone reads and does
+    #: NOT grow with headcount; `user_data` is per-person records and
+    #: does. Conflating them assumed 40,000 students each carry their own
+    #: copy of the video library. Both 0 means "derive a default", and
+    #: the default is always surfaced as an assumption to confirm.
+    content_storage_gb: float = 0.0
+    user_data_gb: float = 0.0
+
     #: Which fields the TEXT supported. Everything in REQUIRED and not in
     #: here is assumed, computed after the fact rather than declared.
     stated: set[str] = field(default_factory=set)
@@ -235,7 +252,7 @@ class Constraints:
     #: records-heavy workload and the default behind it is a coarse
     #: heuristic (load band x headcount x sector), so letting it pass
     #: unremarked is how an unexamined guess quietly sets a total.
-    ALWAYS_CONFIRM = ("storage_gb",)
+    ALWAYS_CONFIRM = ("storage_gb", "content_storage_gb", "user_data_gb")
 
     def assumed_fields(self) -> list[dict]:
         """Field, what was assumed, what to ask -- every entry here is, by

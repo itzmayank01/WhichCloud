@@ -446,7 +446,8 @@ def test_two_shapes_above_the_bar_becomes_composite_not_a_coin_flip():
         peak_shape=f("flat"), budget_monthly_usd=f("0"), storage_gb=f("0"),
         egress_gb=f("0"), public_facing=f("false"), country_lock=f("false"),
         static_assets=f("none"), emails_per_month=f("0"),
-        async_processing=f("false"),
+        async_processing=f("false"), content_storage_gb=f("0"),
+        user_data_gb=f("0"),
         archetypes=[
             ArchetypeCall(name="web_app", confidence=0.9,
                           spans=["people book slots on the site"]),
@@ -473,7 +474,8 @@ def test_one_shape_above_the_bar_is_still_an_ordinary_classification():
         peak_shape=f("flat"), budget_monthly_usd=f("0"), storage_gb=f("0"),
         egress_gb=f("0"), public_facing=f("false"), country_lock=f("false"),
         static_assets=f("none"), emails_per_month=f("0"),
-        async_processing=f("false"),
+        async_processing=f("false"), content_storage_gb=f("0"),
+        user_data_gb=f("0"),
         archetypes=[
             ArchetypeCall(name="web_app", confidence=0.9,
                           spans=["people book slots on the site"]),
@@ -545,3 +547,119 @@ def test_nat_never_exceeds_internet_egress():
             assert tier.spec.nat_gb_processed < max(tier.spec.egress_gb, 1e-9), (
                 f"NAT {tier.spec.nat_gb_processed} >= egress {tier.spec.egress_gb}"
             )
+
+
+# ── defect 7: storage is not a function of user count ──
+
+
+def test_no_plan_derives_more_than_a_terabyte_from_headcount_alone():
+    """The cap is not decoration. Without it a million-user consumer app
+    reproduces exactly the defect being fixed -- 40,000 students each
+    assumed to carry their own copy of the video library -- at a larger
+    scale and with a straighter face."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import MAX_USER_DERIVED_GB, _user_data_gb
+
+    for sector in ("healthcare", "fintech", "education", "ecommerce",
+                   "internal_tools", "public_web", "other"):
+        for users in (1_000, 100_000, 5_000_000):
+            c = Constraints(sector=sector, users=users)
+            derived = _user_data_gb(c)
+            assert derived <= MAX_USER_DERIVED_GB, (
+                f"{sector} x {users} users derived {derived} GB from headcount"
+            )
+
+
+def test_shared_content_does_not_scale_with_users():
+    """40,000 students share one video library. The whole point."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import _content_storage_gb
+
+    small = Constraints(sector="education", users=50, static_assets="heavy")
+    huge = Constraints(sector="education", users=400_000, static_assets="heavy")
+    assert _content_storage_gb(small) == _content_storage_gb(huge)
+
+
+def test_storage_dominance_is_disclosed_when_it_was_assumed():
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(
+        country="IN", sector="healthcare", availability="high",
+        durability="high", users=450, requests_per_day=6000,
+        peak_shape="morning", country_lock=True,
+    )
+    c.stated.update({"country", "sector", "availability", "durability",
+                     "users", "requests_per_day", "peak_shape"})
+    plan = plan_from(c, "a records system", archetype="web_app")
+    if plan.storage_dominates:
+        assert "assumed, not stated" in plan.storage_note
+        assert "library size" in plan.storage_note
+
+
+def test_storage_questions_are_always_offered():
+    """Both halves of the split are surfaced for confirmation even when a
+    figure was given -- storage sets the largest line on a records
+    workload, so an unexamined default there quietly sets the total."""
+    from whichcloud.constraints import Constraints
+
+    fields = {a["field"] for a in Constraints().assumed_fields()}
+    assert "content_storage_gb" in fields
+    assert "user_data_gb" in fields
+
+
+# ── defect 8: a cross-region copy is not a monthly full transfer ──
+
+
+def test_monthly_transfer_never_costs_more_than_the_source_storage():
+    """A backup that costs 3.4x the data it protects is transferring the
+    whole dataset every month. Only what changed crosses."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    for sector, media in (("education", "heavy"), ("healthcare", "none"),
+                          ("fintech", "none"), ("ecommerce", "light")):
+        c = Constraints(
+            country="IN", sector=sector, availability="high",
+            durability="high", users=20_000, requests_per_day=100_000,
+            peak_shape="evening", public_facing=True, static_assets=media,
+        )
+        c.stated.update({"country", "sector", "availability", "durability",
+                         "users", "requests_per_day", "peak_shape",
+                         "public_facing"})
+        plan = plan_from(c, "a platform", archetype="web_app")
+        for tier in plan.tiers:
+            source = sum(
+                float(i.monthly_usd) for i in tier.estimate.items
+                if i.label.startswith("Object storage")
+            )
+            transfer = sum(
+                float(i.monthly_usd) for i in tier.estimate.items
+                if i.label.startswith("Cross-region backup transfer")
+            )
+            assert transfer <= source, (
+                f"{sector}/{tier.name}: transfer ${transfer:.2f} > "
+                f"source storage ${source:.2f}"
+            )
+
+
+def test_the_seed_copy_is_carried_separately_from_the_monthly_figure():
+    """The full dataset crosses once. Folding that into a monthly total
+    is what made the copy look like it cost more than the data."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.plan import plan_from
+
+    c = Constraints(
+        country="IN", sector="education", availability="high",
+        durability="high", users=40_000, requests_per_day=200_000,
+        peak_shape="evening", public_facing=True, static_assets="heavy",
+    )
+    c.stated.update({"country", "sector", "availability", "durability",
+                     "users", "requests_per_day", "peak_shape",
+                     "public_facing"})
+    plan = plan_from(c, "coaching platform", archetype="web_app")
+    tier = plan.tiers[0]
+    assert tier.spec.backup_seed_gb > tier.spec.backup_transfer_gb, (
+        "the one-off seed must be the whole dataset, the monthly figure "
+        "only what changed"
+    )

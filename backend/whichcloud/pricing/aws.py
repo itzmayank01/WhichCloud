@@ -1606,6 +1606,49 @@ _REGION_PREFIX: dict[str, str] = {
 }
 
 
+#: Where a cross-region backup copy goes, per source region. The pair is
+#: what AWS bills on -- there is no generic "inter-region" rate -- so the
+#: destination has to be the one the planner actually copies to.
+_INTERREGION_PAIR: dict[str, str] = {
+    "ap-south-1": "APS2",   # Mumbai -> Hyderabad, the in-country pair
+    "ap-south-2": "APS3",
+    "us-east-1": "USW2",
+    "eu-west-1": "EUC1",
+    "ap-southeast-1": "APS2",
+}
+
+
+def load_interregion_transfer_prices(region_key: str) -> list[PricePoint]:
+    """Inter-region data transfer OUT, for the pair the planner uses.
+
+    Distinct from `egress:internet` and from the destination's storage
+    rate, and previously absent -- which is why a cross-region backup was
+    modelled as storage alone, with the transfer that fills it never
+    priced at all.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region).rstrip("-")
+    destination = _INTERREGION_PAIR.get(region)
+    if not prefix or not destination:
+        return []
+
+    doc = _load_bulk(BULK_SERVICES["network"], region_key)
+    wanted = f"{prefix}-{destination}-AWS-Out-Bytes"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+        return [PricePoint(
+            provider="aws", category="network", sku="transfer:inter-region",
+            name="Inter-region data transfer", region=region,
+            unit=unit or "GB", price_usd=price,
+        )]
+    return []
+
+
 def load_email_prices(region_key: str) -> list[PricePoint]:
     """SES outbound email, per message.
 
@@ -2078,6 +2121,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_s3_request_prices,
         load_secrets_prices,
         load_cdn_prices,
+        load_interregion_transfer_prices,
         load_email_prices,
         load_queue_prices,
         load_notification_prices,

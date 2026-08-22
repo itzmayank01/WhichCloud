@@ -210,6 +210,11 @@ class Extraction(BaseModel):
     async_processing: Field_ = Field(
         description="true if work happens after the response (grading, "
                     "notification fan-out, report generation)")
+    content_storage_gb: Field_ = Field(
+        description="GB of SHARED library/catalogue everyone reads; does not "
+                    "scale with users; 0 if unstated")
+    user_data_gb: Field_ = Field(
+        description="GB ONE user accumulates (not the total); 0 if unstated")
     #: A LIST, not one value. A prompt describing a web app AND a nightly
     #: batch job is two workloads, and a single-valued field forces the
     #: model to discard one of them -- which is how "0/4 multi-shape
@@ -324,6 +329,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
 #: of their own and must not appear in assumed_fields().
 _NON_REQUIRED_FIELDS = (
     "country_lock", "static_assets", "emails_per_month", "async_processing",
+    "content_storage_gb", "user_data_gb",
 )
 
 
@@ -347,7 +353,8 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
                 continue  # keep the dataclass default, and leave it 'assumed'
         elif name in ("users", "requests_per_day", "emails_per_month"):
             value = _as_int(raw)
-        elif name in ("budget_monthly_usd", "storage_gb", "egress_gb"):
+        elif name in ("budget_monthly_usd", "storage_gb", "egress_gb",
+                      "content_storage_gb", "user_data_gb"):
             value = _as_float(raw)
         elif name in ("public_facing", "country_lock", "async_processing"):
             value = _as_bool(raw)

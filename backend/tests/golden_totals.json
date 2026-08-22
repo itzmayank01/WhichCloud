@@ -1,37 +1,37 @@
 {
   "budget-floor-conflict": {
-    "tier_1": 181.74,
-    "tier_2": 248.47,
-    "tier_3": 392.59
+    "tier_1": 264.98,
+    "tier_2": 331.71,
+    "tier_3": 475.83
   },
   "coaching-platform": {
-    "tier_1": 7777.1,
-    "tier_2": 7843.83,
-    "tier_3": 7987.95
+    "tier_1": 1213.24,
+    "tier_2": 1279.97,
+    "tier_3": 1424.09
   },
   "ecommerce-scale": {
-    "tier_1": 1175.9,
-    "tier_2": 1671.63,
-    "tier_3": 3328.82
+    "tier_1": 1551.37,
+    "tier_2": 1971.07,
+    "tier_3": 3628.26
   },
   "fintech-bengaluru": {
-    "tier_1": 99.73,
-    "tier_2": 136.75,
-    "tier_3": 280.87
+    "tier_1": 140.76,
+    "tier_2": 177.78,
+    "tier_3": 321.9
   },
   "hospital-pune": {
-    "tier_1": 504.26,
-    "tier_2": 570.99,
-    "tier_3": 715.11
+    "tier_1": 287.02,
+    "tier_2": 353.75,
+    "tier_3": 497.87
   },
   "hospital-pune-public": {
-    "tier_1": 512.26,
-    "tier_2": 578.99,
-    "tier_3": 723.11
+    "tier_1": 295.02,
+    "tier_2": 347.19,
+    "tier_3": 491.31
   },
   "internal-low-stakes": {
-    "tier_1": 45.89,
-    "tier_2": 82.91,
-    "tier_3": 82.91
+    "tier_1": 45.01,
+    "tier_2": 82.03,
+    "tier_3": 82.03
   }
 }

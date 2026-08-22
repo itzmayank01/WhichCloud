@@ -104,6 +104,14 @@ class ArchitectureSpec:
     #: GB copied to a second region. Zero means every copy sits beside the
     #: thing it protects, which does not survive losing the region.
     backup_copy_gb: float = 0.0
+    #: DEFECT 8. What actually crosses the region boundary each month --
+    #: the CHANGED fraction of the dataset, not the whole of it. The full
+    #: dataset crosses once, at seed; billing that every month charged a
+    #: video library 3.4x its own storage cost to sit still.
+    backup_transfer_gb: float = 0.0
+    #: The one-off seed, carried so it can be shown and labelled rather
+    #: than folded into a monthly figure it is not part of.
+    backup_seed_gb: float = 0.0
     #: Write-once retention on the primary document store, and a policy
     #: denying regions outside the lock. Both are billed at nothing and
     #: both are load-bearing, so they are carried as components rather
@@ -257,6 +265,7 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("azure", "s3_requests", "get"): "blob:get-requests",
 
     ("aws", "backup_copy", "warm"): "backup:cross-region-warm",
+    ("aws", "network", "inter-region"): "transfer:inter-region",
     ("aws", "storage_lifecycle", "archive-instant"): "s3:glacier-instant",
     ("aws", "storage_lifecycle", "infrequent"): "s3:standard-ia",
     ("aws", "endpoint", "interface-hour"): "vpce:interface-hour",
@@ -586,9 +595,28 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     if spec.backup_copy_gb:
         point = _by_role(provider, region, "backup_copy", "warm", dsn)
         if point:
+            # Destination STORAGE: the full dataset does sit in the second
+            # region every month, and that part was always right.
             result.items.append(
-                _metered_line("Cross-region backup copy", point, spec.backup_copy_gb)
+                _metered_line(
+                    "Cross-region backup copy (storage at destination)",
+                    point, spec.backup_copy_gb,
+                )
             )
+            # Destination TRANSFER: only what changed. Previously absent
+            # entirely, which is why the storage line was doing duty for
+            # both and looked like a monthly full copy.
+            if spec.backup_transfer_gb:
+                moved = _by_role(provider, region, "network", "inter-region", dsn)
+                if moved:
+                    result.items.append(
+                        _metered_line(
+                            "Cross-region backup transfer (changed data)",
+                            moved, spec.backup_transfer_gb,
+                        )
+                    )
+                else:
+                    result.missing.append("inter-region transfer")
         else:
             result.missing.append("cross-region backup copy")
 

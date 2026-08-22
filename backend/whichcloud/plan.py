@@ -71,56 +71,125 @@ _STORAGE_BASE_BY_TIER: dict[str, float] = {
 _EGRESS_BASE_BY_TIER: dict[str, float] = {
     "trivial": 10.0, "small": 50.0, "medium": 250.0, "large": 1000.0,
 }
-#: Records-oriented: documents, attachments and history per person on
-#: the system. Deliberately modest -- the tier base is what carries a
-#: media-heavy workload, not this.
-_STORAGE_PER_USER_GB = 0.5
-_EGRESS_PER_USER_GB = 0.1
-
 #: DEFECT 2. NAT processes traffic a private subnet ORIGINATES -- package
 #: installs, third-party API calls, outbound webhooks. Responses to
 #: inbound user requests return the way they came and never touch it.
 #: Billing NAT for a mirror of internet egress double-counted every byte
-#: the users pulled: ~2.5 TB of "NAT processing" beside ~2 TB of egress
-#: on a workload whose actual outbound-initiated traffic is a rounding
-#: error. This fraction is a heuristic, and a deliberately small one --
-#: the honest reading of "we do not know how chatty this app is" is a
-#: modest number, not the largest one available.
+#: the users pulled.
 NAT_SHARE_OF_EGRESS = 0.05
 
-#: When a CDN is in front, user-facing bytes leave from the EDGE, not from
-#: the origin. What still leaves the origin is cache fill -- each object
-#: fetched once per edge location rather than once per viewer. Billing the
-#: full user traffic as origin egress AND again as CDN transfer was the
-#: same double-count as NAT, on a different pair: on the coaching
-#: workload it charged 4 TB twice.
+#: When a CDN is in front, user-facing bytes leave from the EDGE, not the
+#: origin. What still leaves the origin is cache fill -- each object
+#: fetched once per edge location rather than once per viewer. Billing
+#: the full user traffic as origin egress AND again as CDN transfer was
+#: the same double-count as NAT, on a different pair.
 ORIGIN_FILL_SHARE = 0.15
 
-#: Headcount alone is the wrong driver for a data-heavy sector. A
-#: hospital's storage is set by patients and imaging, not by how many
-#: staff log in -- 450 staff serving 200,000 patient records with scans
-#: attached is not a 250 GB system. The multiplier is a coarse stand-in
-#: for "how much data does one user of this kind of system generate",
-#: and like every other figure in this file it is conventional judgement
-#: rather than a measurement, which is why storage is ALWAYS surfaced as
-#: an assumption to confirm (see _storage_question).
-_STORAGE_SECTOR_MULTIPLIER: dict[str, float] = {
-    "healthcare": 8.0,      # imaging and scans dominate
-    "fintech": 3.0,         # documents and retained statements
-    "ecommerce": 4.0,       # product media and order history
-    "education": 2.0,       # course material, submissions
+#: Egress still scales with headcount -- unlike storage, more users
+#: genuinely does mean more bytes pulled. Kept per-user for that reason.
+_EGRESS_PER_USER_GB = 0.1
+
+# ── DEFECT 7: storage is two independent things ──────────────────────
+#
+# The old model was `base + users x 0.5GB x sector`, which assumed every
+# user carries half a gigabyte of their own data. Almost no workload
+# works that way, and on a 40,000-student coaching platform it produced
+# 40 TB and 86% of the bill. 40,000 students share ONE video library.
+#
+# So: shared content does not scale with users at all, and per-user data
+# is measured in MEGABYTES.
+
+#: Per-user records: profile, submissions, history. Megabytes, and
+#: deliberately at the low end -- these are rows and small attachments,
+#: not media. Anything above low-tens of MB needs justifying, and none of
+#: these are.
+_USER_DATA_MB_BY_SECTOR: dict[str, float] = {
+    "healthcare": 25.0,     # notes and referrals per person on the system
+    "fintech": 15.0,        # statements, KYC documents
+    "education": 10.0,      # submissions and progress history
+    "ecommerce": 5.0,       # order history
+    "internal_tools": 5.0,
     "public_web": 2.0,
-    "internal_tools": 1.0,
-    "other": 1.0,
+    "other": 5.0,
 }
+
+#: Shared repository: the record store, catalogue or library everybody
+#: reads from. Independent of headcount -- a 3-hospital records system
+#: and a 30-hospital one differ in this figure, but not because of how
+#: many staff log in.
+_REPOSITORY_GB_BY_SECTOR: dict[str, float] = {
+    "healthcare": 500.0, "fintech": 250.0, "ecommerce": 100.0,
+    "education": 50.0, "internal_tools": 20.0, "public_web": 10.0,
+    "other": 25.0,
+}
+
+#: A media library, when the description says media is the product. This
+#: is the figure most likely to be wrong by an order of magnitude, which
+#: is why `storage_is_dominant` exists to say so out loud rather than
+#: letting it quietly set the total.
+_CONTENT_GB_BY_ASSETS: dict[str, float] = {
+    "none": 0.0, "light": 250.0, "heavy": 2000.0,
+}
+
+#: Hard ceiling on what headcount alone may contribute. The assertion
+#: this backs is not decoration: without it, a million-user consumer app
+#: would reproduce exactly the defect being fixed here at a larger scale.
+MAX_USER_DERIVED_GB = 1024.0
+
+#: A stated async workload with no stated volume still has a queue. This
+#: floor exists so the COMPONENT appears; the figure is nominal and, like
+#: every other derived quantity here, is surfaced as an assumption rather
+#: than presented as measured.
+_QUEUE_FLOOR_UNITS = 10_000.0
+
+# ── DEFECT 8: what actually crosses a region boundary each month ─────
+#
+# The old model copied the whole dataset every month, so a cross-region
+# backup cost 3.4x the storage it was protecting. What crosses monthly is
+# what CHANGED. How much that is depends on the workload: a video library
+# is written once and read forever; a transactional database rewrites a
+# meaningful slice of itself every month.
+_MONTHLY_CHANGE_RATE_BY_SECTOR: dict[str, float] = {
+    "fintech": 0.15,        # transactions accumulate continuously
+    "ecommerce": 0.12,
+    "healthcare": 0.08,     # records appended, rarely rewritten
+    "internal_tools": 0.08,
+    "education": 0.04,      # a course library changes between terms
+    "public_web": 0.04,
+    "other": 0.10,
+}
+#: Media is written once and read forever, whatever the sector. A heavy
+#: asset library changes far less than the records beside it.
+_MEDIA_CHANGE_RATE = 0.02
+
+
+def _monthly_change_rate(constraints: Constraints) -> float:
+    if constraints.static_assets == "heavy":
+        return _MEDIA_CHANGE_RATE
+    return _MONTHLY_CHANGE_RATE_BY_SECTOR.get(constraints.sector, 0.10)
+
+
+def _content_storage_gb(constraints: Constraints) -> float:
+    """Shared assets. Does not scale with users, by construction."""
+    return max(
+        _CONTENT_GB_BY_ASSETS.get(constraints.static_assets, 0.0),
+        _REPOSITORY_GB_BY_SECTOR.get(constraints.sector, 25.0),
+    )
+
+
+def _user_data_gb(constraints: Constraints) -> float:
+    """Per-user records, in GB, capped so headcount can never dominate."""
+    per_user_mb = _USER_DATA_MB_BY_SECTOR.get(constraints.sector, 5.0)
+    return min(constraints.users * per_user_mb / 1024.0, MAX_USER_DERIVED_GB)
 
 
 def _default_storage_gb(constraints: Constraints, load: Load) -> float:
-    multiplier = _STORAGE_SECTOR_MULTIPLIER.get(constraints.sector, 1.0)
-    return (
-        _STORAGE_BASE_BY_TIER.get(load.tier, 500.0)
-        + constraints.users * _STORAGE_PER_USER_GB * multiplier
-    )
+    """Shared content plus per-user data. The load band no longer enters
+    it: how much traffic a system carries says nothing about how much
+    data it holds."""
+    if constraints.content_storage_gb or constraints.user_data_gb:
+        return constraints.content_storage_gb + constraints.user_data_gb
+    return _content_storage_gb(constraints) + _user_data_gb(constraints)
 
 
 def _default_egress_gb(constraints: Constraints, load: Load) -> float:
@@ -273,6 +342,12 @@ class Plan:
     composite_of: list[str] = field(default_factory=list)
     #: field name -> the substring of the prompt it was drawn from.
     extraction_spans: dict[str, str] = field(default_factory=dict)
+    #: DEFECT 7. Set when storage is the largest line AND was derived
+    #: rather than stated. An assumption that sets most of the total has
+    #: to say so -- the reader otherwise has no way to know the number
+    #: turns on a figure nobody supplied.
+    storage_dominates: bool = False
+    storage_note: str = ""
 
 
 class BudgetMisallocationError(AssertionError):
@@ -595,8 +670,20 @@ def _spec_for(
         emails_per_month=float(constraints.emails_per_month),
         # One enqueue + one dequeue + one delete per unit of async work,
         # which is SQS's own billing shape rather than a round number.
+        #
+        # Sized from whatever signal exists, and never from request rate
+        # ALONE: the coaching prompt states async grading and 30,000
+        # notifications but no request figure, and keying off
+        # requests_per_day dropped the queue entirely -- turning "we
+        # cannot size this" into "this workload has no queue", which is a
+        # different and wrong claim. Whether a queue EXISTS is a
+        # selection decision; how big it is, is a sizing one.
         queue_requests_per_month=(
-            float(constraints.requests_per_day) * 30.0 * 3.0
+            max(
+                float(constraints.requests_per_day) * 30.0,
+                float(constraints.emails_per_month),
+                _QUEUE_FLOOR_UNITS,
+            ) * 3.0
             if constraints.async_processing else 0.0
         ),
         notifications_per_month=float(constraints.emails_per_month),
@@ -612,6 +699,13 @@ def _spec_for(
         backup_gb=0.0 if ephemeral else storage,
         backup_retention_days=0 if ephemeral else (35 if durable else 7),
         backup_copy_gb=storage if durable else 0.0,
+        # DEFECT 8: only the changed fraction crosses each month; the
+        # full dataset crosses once, at seed, and is reported as a
+        # one-off rather than folded into a monthly total.
+        backup_transfer_gb=(
+            storage * _monthly_change_rate(constraints) if durable else 0.0
+        ),
+        backup_seed_gb=storage if durable else 0.0,
         object_lock=durable,
         lifecycle_gb=storage * 0.4 if durable else 0.0,
         # Only a stated residency requirement earns a guardrail. Naming a
@@ -1112,6 +1206,10 @@ def plan_from(
                 f"${-spare:,.2f}. It is shown anyway, flagged, rather than "
                 "quietly downgraded to fit the number."
             )
+    if plan.tiers:
+        plan.storage_dominates, plan.storage_note = _storage_disclosure(
+            constraints, plan.tiers[0]
+        )
     _attach_extraction_meta(plan, meta)
     return plan
 
@@ -1146,6 +1244,48 @@ def _below_panel(constraints, load, region, dsn, provider) -> dict | None:
             "options above."
         ),
     }
+
+
+#: Storage lines, for working out whether storage is what sets the bill.
+_STORAGE_LABELS = (
+    "Object storage", "Backup storage", "Cross-region backup copy",
+    "Archived retention", "Database storage",
+)
+
+
+def _storage_disclosure(
+    constraints: Constraints, tier: Tier,
+) -> tuple[bool, str]:
+    """Whether storage sets this bill, and whether anybody said so.
+
+    The point is not the percentage. It is that a derived storage figure
+    which happens to dominate deserves to be challenged, and a reader
+    cannot challenge what the output never mentions.
+    """
+    total = float(tier.estimate.total_monthly)
+    if total <= 0:
+        return False, ""
+    storage_cost = sum(
+        float(i.monthly_usd) for i in tier.estimate.items
+        if any(i.label.startswith(p) for p in _STORAGE_LABELS)
+    )
+    if storage_cost / total < 0.35:
+        return False, ""
+
+    stated = bool(
+        constraints.storage_gb or constraints.content_storage_gb
+        or constraints.user_data_gb
+    )
+    if stated:
+        return False, ""
+    share = 100.0 * storage_cost / total
+    return True, (
+        f"Storage is the largest line ({share:.0f}% of the total) and it was "
+        "assumed, not stated. Tell us your library size and this number "
+        f"changes. Current assumption: {_content_storage_gb(constraints):,.0f} GB "
+        f"of shared content plus {_user_data_gb(constraints):,.0f} GB across "
+        f"{constraints.users:,} users."
+    )
 
 
 def _committed_use_note(spec: ArchitectureSpec) -> str:

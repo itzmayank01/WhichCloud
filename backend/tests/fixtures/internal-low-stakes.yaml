@@ -8,6 +8,12 @@ prompt: >
   200 page views a day. If it is down for an hour nobody minds. We want to
   spend as little as possible, maybe $60 a month.
 
+# Extracted from the prompt above by the pinned primary under schema v2
+# and recorded verbatim -- NOT hand-written. Earlier versions of this
+# block were typed by hand and had invented values in them (a request
+# rate the prompt never gave, a single country for a three-country
+# marketplace), which meant part of the golden baseline rested on
+# numbers no extractor ever produced.
 constraints:
   country: ''
   sector: internal_tools
@@ -21,9 +27,13 @@ constraints:
   egress_gb: 0.0
   public_facing: false
   country_lock: false
+  static_assets: none
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
   archetype: web_app
-  stated: [sector, availability, users, requests_per_day,
-           budget_monthly_usd, public_facing]
+  stated: [budget_monthly_usd, requests_per_day, users]
 
 expect:
   extraction:

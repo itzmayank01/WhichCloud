@@ -10,11 +10,13 @@ prompt: >
   stay inside India and cannot be lost. Downtime during OPD hours is
   unacceptable. Budget is about $900 a month.
 
-# Decision-layer input. The harness feeds THIS straight into plan_from()
-# by default, so component and total assertions are deterministic and
-# need no model call. `--mode extraction` instead reads the prompt for
-# real and checks it produces these values -- the two claims, measured
-# separately.
+
+# Extracted from the prompt above by the pinned primary under schema v2
+# and recorded verbatim -- NOT hand-written. Earlier versions of this
+# block were typed by hand and had invented values in them (a request
+# rate the prompt never gave, a single country for a three-country
+# marketplace), which meant part of the golden baseline rested on
+# numbers no extractor ever produced.
 constraints:
   country: IN
   sector: healthcare
@@ -28,9 +30,13 @@ constraints:
   egress_gb: 0.0
   public_facing: false
   country_lock: true
+  static_assets: none
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
   archetype: web_app
-  stated: [country, sector, availability, durability, users,
-           requests_per_day, peak_shape, budget_monthly_usd, public_facing]
+  stated: [availability, budget_monthly_usd, country, durability, peak_shape, requests_per_day, sector, users]
 
 expect:
   extraction:

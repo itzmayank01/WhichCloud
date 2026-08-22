@@ -7,6 +7,12 @@ prompt: >
   patient records system for a clinic in Jaipur. Cannot lose data, cannot
   have downtime. Budget is $80 a month.
 
+# Extracted from the prompt above by the pinned primary under schema v2
+# and recorded verbatim -- NOT hand-written. Earlier versions of this
+# block were typed by hand and had invented values in them (a request
+# rate the prompt never gave, a single country for a three-country
+# marketplace), which meant part of the golden baseline rested on
+# numbers no extractor ever produced.
 constraints:
   country: IN
   sector: healthcare
@@ -20,8 +26,13 @@ constraints:
   egress_gb: 0.0
   public_facing: false
   country_lock: false
+  static_assets: none
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
   archetype: web_app
-  stated: [country, sector, availability, durability, budget_monthly_usd]
+  stated: [availability, budget_monthly_usd, country, durability, sector]
 
 expect:
   budget:

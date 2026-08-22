@@ -273,6 +273,14 @@ def test_arm_instances_are_preferred(plan):
 
 
 def test_the_cross_region_copy_is_billed_and_stays_in_india(plan):
-    labels = {i.label: i for i in plan.tiers[0].estimate.items}
-    assert "Cross-region backup copy" in labels
-    assert labels["Cross-region backup copy"].monthly_usd > 0
+    # The label gained a "(storage at destination)" suffix when the copy
+    # was split from the transfer that fills it -- see DEFECT 8. Matched
+    # on the prefix so the assertion tracks the component, not the
+    # wording, and the transfer half is checked beside it.
+    items = plan.tiers[0].estimate.items
+    stored = [i for i in items if i.label.startswith("Cross-region backup copy")]
+    moved = [i for i in items if i.label.startswith("Cross-region backup transfer")]
+    assert stored and stored[0].monthly_usd > 0
+    assert moved and moved[0].monthly_usd > 0
+    # Only what CHANGED crosses each month; the whole dataset sits there.
+    assert moved[0].monthly_usd < stored[0].monthly_usd

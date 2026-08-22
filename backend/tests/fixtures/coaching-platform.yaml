@@ -16,28 +16,32 @@ prompt: >
   no card data stored. Currently two rented servers that fall over most
   exam weekends. ~$700/month.
 
+# Extracted from the prompt above by the pinned primary under schema v2
+# and recorded verbatim -- NOT hand-written. Earlier versions of this
+# block were typed by hand and had invented values in them (a request
+# rate the prompt never gave, a single country for a three-country
+# marketplace), which meant part of the golden baseline rested on
+# numbers no extractor ever produced.
 constraints:
   country: IN
   sector: education
-  # "refund requests" and "fall over most exam weekends" are availability
-  # statements with no technical vocabulary in them -- the extractor read
-  # `low` before defect 4's prompt fix.
   availability: high
   durability: high
   users: 40000
-  requests_per_day: 200000
+  requests_per_day: 0
   peak_shape: evening
   budget_monthly_usd: 700.0
   storage_gb: 0.0
   egress_gb: 0.0
   public_facing: true
-  country_lock: true
+  country_lock: false
   static_assets: heavy
   emails_per_month: 30000
   async_processing: true
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
   archetype: web_app
-  stated: [country, sector, availability, durability, users,
-           requests_per_day, peak_shape, budget_monthly_usd, public_facing]
+  stated: [availability, budget_monthly_usd, country, durability, peak_shape, public_facing, sector, users]
 
 expect:
   must_include:

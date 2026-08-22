@@ -9,11 +9,17 @@ prompt: >
   2 million requests a day with evening peaks, product images and video,
   checkout must not go down, budget around $4,000 a month.
 
+# Extracted from the prompt above by the pinned primary under schema v2
+# and recorded verbatim -- NOT hand-written. Earlier versions of this
+# block were typed by hand and had invented values in them (a request
+# rate the prompt never gave, a single country for a three-country
+# marketplace), which meant part of the golden baseline rested on
+# numbers no extractor ever produced.
 constraints:
-  country: IN
+  country: ''
   sector: ecommerce
   availability: high
-  durability: normal
+  durability: high
   users: 0
   requests_per_day: 2000000
   peak_shape: evening
@@ -22,9 +28,13 @@ constraints:
   egress_gb: 0.0
   public_facing: true
   country_lock: false
+  static_assets: heavy
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
   archetype: web_app
-  stated: [country, sector, availability, requests_per_day, peak_shape,
-           budget_monthly_usd, public_facing]
+  stated: [availability, budget_monthly_usd, peak_shape, requests_per_day]
 
 expect:
   sizing:
