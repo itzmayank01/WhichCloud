@@ -918,13 +918,33 @@ def _serverless_variants(
 ) -> list[tuple[str, str, dict, tuple[str, ...]]]:
     """The three serverless options, as deltas from `serverless_spec`.
 
-    The levers are serverless levers -- memory, provisioned concurrency,
-    protection -- not instance counts, because there are no instances. Each
-    one changes a number the estimator actually prices.
+    The tiers differ BY SERVICE, not only by a warm-capacity number: a
+    reliable serverless design adds durable async (SQS) and fan-out/alerting
+    (SNS) so a failed or bursty invocation is retried rather than dropped, and
+    the optimized one adds edge protection and serverless analytics (Athena +
+    Glue) over the data the functions write. Every added service is serverless
+    too -- no VPC, no NAT, no server appears -- so the shape stays what it is.
     """
-    reliable: dict = {"lambda_provisioned_concurrency": PROVISIONED_CONCURRENCY}
+    invocations = _monthly_invocations(requirement)
+
+    # Most reliable: warm capacity, plus a durable async path. SQS absorbs
+    # bursts and retries failures; SNS fans out and carries the dead-letter
+    # alert. These are the serverless reliability primitives -- the equivalent
+    # of the server shape's standby and load balancer.
+    reliable: dict = {
+        "lambda_provisioned_concurrency": PROVISIONED_CONCURRENCY,
+        "queue_requests_per_month": invocations,
+        "notifications_per_month": max(500.0, invocations * 0.001),
+    }
+
+    # Most optimized: everything reliable buys, plus edge protection and a
+    # serverless analytics path (Athena querying S3, Glue cataloguing it) so
+    # reporting runs off the data lake instead of scanning DynamoDB. Still no
+    # server -- Athena and Glue are serverless, so no VPC is dragged in.
     optimized = dict(reliable)
     optimized["lambda_memory_mb"] = 1024.0
+    optimized["athena_tb_scanned_per_month"] = 2.0
+    optimized["glue_dpu_hours_per_month"] = 50.0
     if requirement.serves_requests:
         optimized["waf_rule_count"] = WAF_RULE_COUNT
         optimized["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
@@ -938,28 +958,34 @@ def _serverless_variants(
             (
                 "Cold starts add latency to the first request after idle",
                 "No provisioned capacity, so a sudden burst warms up as it arrives",
+                "No durable queue — a failed invocation is not retried for you",
             ),
         ),
         (
             "Most reliable",
-            f"Keeps {PROVISIONED_CONCURRENCY} functions warm so there are no cold "
-            "starts on the critical path, and still scales past them on demand.",
+            f"Keeps {PROVISIONED_CONCURRENCY} functions warm and adds a durable "
+            "async path — SQS absorbs bursts and retries failures, SNS fans out "
+            "and carries the dead-letter alert.",
             reliable,
             (
                 f"{PROVISIONED_CONCURRENCY} warmed environments bill around the "
                 "clock whether or not traffic needs them — the one always-on "
                 "cost in an otherwise pay-per-use design",
+                "A queue and topic add moving parts to operate and monitor",
             ),
         ),
         (
             "Most optimized",
-            "More memory per function (faster, so less billed duration per call), "
-            "warm capacity, and protection at the edge.",
+            "More memory per function (faster, so less billed duration), warm "
+            "capacity, a durable async path, protection at the edge, and "
+            "serverless analytics (Athena + Glue) over the data lake.",
             optimized,
             (
                 "Higher memory costs more per GB-second but finishes sooner; the "
                 "net depends on the workload",
                 "A Web ACL and its rules bill whether or not anything is blocked",
+                "Athena scans data per query, so reporting cost tracks how much "
+                "history each question reads",
             ),
         ),
     ]
