@@ -23,7 +23,10 @@ const BUCKETS: { key: string; label: string; kinds: string[] }[] = [
     label: "Compute",
     kinds: ["compute", "compute_fargate", "cache", "lambda", "apigateway"],
   },
-  { key: "database", label: "Database", kinds: ["database", "database_replica", "dynamodb"] },
+  // Timestream is a purpose-built database, not "Other" -- on an IoT bill it
+  // is one of the largest lines and belongs where the reader looks for the
+  // store.
+  { key: "database", label: "Database", kinds: ["database", "database_replica", "dynamodb", "timestream"] },
   { key: "storage", label: "Storage", kinds: ["storage", "backup"] },
   {
     key: "network",
@@ -44,10 +47,17 @@ const BUCKETS: { key: string; label: string; kinds: string[] }[] = [
     label: "AI / ML",
     kinds: ["rekognition", "comprehend"],
   },
+  // The event pipeline's front door: device connectivity and the stream that
+  // carries events in. Distinct from the analytics that query them.
+  {
+    key: "ingest",
+    label: "Ingest / streaming",
+    kinds: ["iot", "streaming", "kafka", "firehose"],
+  },
   {
     key: "analytics",
     label: "Analytics & search",
-    kinds: ["warehouse", "search", "streaming", "kafka"],
+    kinds: ["warehouse", "search", "athena", "glue"],
   },
   {
     key: "messaging",
