@@ -86,6 +86,14 @@ AWS_SERVICE: dict[str, tuple[str, str, str, str]] = {
     # "edge" like the other managed services, tier "ml".
     "rekognition": ("Amazon Rekognition", "ml", "Image recognition and moderation", "edge"),
     "comprehend": ("Amazon Comprehend", "ml", "Sentiment and language analysis", "edge"),
+    # Event-driven / IoT. Managed regional services, placed "edge" (no VPC):
+    # devices publish to IoT Core, events flow through a stream, and land in a
+    # purpose-built time-series store queried by the analytics services.
+    "iot": ("AWS IoT Core", "edge", "Device connectivity and messaging", "edge"),
+    "firehose": ("Kinesis Data Firehose", "async", "Managed delivery of the stream to storage", "edge"),
+    "timestream": ("Amazon Timestream", "data", "Purpose-built time-series store", "edge"),
+    "athena": ("Amazon Athena", "analytics", "Serverless SQL over the data lake", "edge"),
+    "glue": ("AWS Glue", "analytics", "Managed ETL and data catalog", "edge"),
 }
 
 #: The request path, in order. Only pairs where both ends exist are drawn, so
@@ -138,6 +146,32 @@ FLOW_ORDER: tuple[tuple[str, str], ...] = (
     ("streaming", "warehouse"),
     ("kafka", "search"),
     ("kafka", "warehouse"),
+    # ── event-driven / IoT pipeline ──
+    # Devices publish to IoT Core, which feeds the stream; processors consume
+    # it and write to the time-series store; analytics query that store and
+    # the data lake. Only drawn where both ends exist per tier, so each tier's
+    # own graph shows exactly the services it selected.
+    ("iot", "streaming"),
+    ("iot", "kafka"),
+    ("streaming", "compute"),
+    ("streaming", "compute_fargate"),
+    ("streaming", "lambda"),
+    ("streaming", "firehose"),
+    ("kafka", "compute"),
+    ("kafka", "compute_fargate"),
+    ("kafka", "firehose"),
+    ("firehose", "storage"),
+    ("compute", "timestream"),
+    ("compute_fargate", "timestream"),
+    ("lambda", "timestream"),
+    ("streaming", "timestream"),
+    ("kafka", "timestream"),
+    ("timestream", "athena"),
+    ("timestream", "search"),
+    ("timestream", "warehouse"),
+    ("storage", "athena"),
+    ("storage", "glue"),
+    ("glue", "warehouse"),
 )
 
 #: Kinds that genuinely run inside a subnet, and therefore require a VPC to be

@@ -78,6 +78,12 @@ _KIND_BY_PREFIX = {
     "DynamoDB storage": "dynamodb",
     "Rekognition images": "rekognition",
     "Comprehend sentiment": "comprehend",
+    "IoT Core messages": "iot",
+    "Timestream writes": "timestream",
+    "Timestream storage": "timestream",
+    "Firehose delivery": "firehose",
+    "Athena data scanned": "athena",
+    "Glue ETL": "glue",
     # Was falling through to the "compute" default -- harmless-looking on a
     # server diagram (its $0.40 quietly summed onto the compute box) but on a
     # serverless one it MANUFACTURED an EC2 box, and an EC2 box in a subnet
@@ -192,6 +198,11 @@ _LABELS = {
     "secrets": "Secrets Manager",
     "rekognition": "Amazon Rekognition",
     "comprehend": "Amazon Comprehend",
+    "iot": "AWS IoT Core",
+    "timestream": "Amazon Timestream",
+    "firehose": "Kinesis Data Firehose",
+    "athena": "Amazon Athena",
+    "glue": "AWS Glue",
     "waf": "AWS WAF",
     "audit": "Audit logging",
     "kms": "KMS keys",
@@ -245,6 +256,11 @@ _MISSING_PHRASES: tuple[tuple[str, str], ...] = (
     ("dynamodb", "dynamodb"),
     ("rekognition", "rekognition"),
     ("comprehend", "comprehend"),
+    ("iot core", "iot"),
+    ("timestream", "timestream"),
+    ("firehose", "firehose"),
+    ("athena", "athena"),
+    ("glue", "glue"),
 )
 
 
@@ -348,8 +364,9 @@ def build(
     # produce a line for must have an entry here.
     for kind in ("waf", "network", "apigateway", "loadbalancer",
                  "compute", "compute_fargate", "lambda", "cache",
-                 "database", "database_replica", "dynamodb", "rekognition",
-                 "comprehend", "storage",
+                 "iot", "firehose",
+                 "database", "database_replica", "dynamodb", "timestream",
+                 "rekognition", "comprehend", "athena", "glue", "storage",
                  "monitoring", "audit", "kms", "secrets", "nat", "tls", "dns", "auth",
                  "backup", "email", "queue", "notification",
                  "streaming", "kafka", "search", "warehouse",

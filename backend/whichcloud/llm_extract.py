@@ -237,9 +237,11 @@ what the text supports. Do not name services, regulations or prices.
 Shapes:
 web_app request-serving app with a database | static_site files only, no app
 server or database | batch_etl scheduled, idle between runs | event_driven
-reacts to webhooks/queues | ml_inference serves model predictions | realtime
-persistent connections (chat, live feeds) | migration moving EXISTING
-servers/VMs as-is
+ingests and processes a STREAM of events or telemetry as it arrives --
+streaming ingest, continuous event processing, sensor/IoT or clickstream data,
+a metrics or logs pipeline -- rather than serving user requests |
+ml_inference serves model predictions | realtime persistent connections
+(chat, live feeds) | migration moving EXISTING servers/VMs as-is
 
 Return every shape the text actually describes. Two entries only when it
 describes two separate workloads (e.g. a web app AND a nightly batch job) --

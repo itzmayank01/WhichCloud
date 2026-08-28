@@ -43,6 +43,8 @@ const AWS: Record<string, string> = {
   "control tower": "controltower",
   "nat gateway": "vpcnatgateway",
   "api gateway": "apigateway",
+  "iot core": "iotcore",
+  "iot": "iotcore",
   "auto scaling": "autoscaling",
   "cloudformation": "cloudformation",
   "elasticache": "elasticache",

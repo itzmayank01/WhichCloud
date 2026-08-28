@@ -140,6 +140,15 @@ images or video (recognition, detection, moderation, faces, "analyse \
 photos/uploads"); ai_language for anything about text (sentiment, NLP, \
 entities, key phrases, "analyse reviews/comments"). Set both if both are \
 described. When ai is false, both ai_vision and ai_language are false.
+- event_driven is true when the system's job is to INGEST AND PROCESS A \
+STREAM of events or telemetry rather than to serve user requests: streaming \
+ingest, continuous or real-time event processing, sensor/IoT data, \
+clickstream, a metrics or logs pipeline, "events a day streaming in", \
+"processed as they arrive". A request-serving web app with a database is \
+NOT event_driven even if it emits some events. Set telemetry when that \
+stream is time-series, append-only or sensor data (IoT readings, metrics, \
+device events) — the signal that the data must NOT go in a relational \
+database. When event_driven is false, telemetry is false.
 - daily_transactions: the stated number of orders/transactions/payments per \
 day. Convert other periods (per month / 30, per year / 365). Use 0 when the \
 description gives no number — never estimate one from company size.
@@ -192,6 +201,8 @@ class RequirementDraft(BaseModel):
     ai: bool = Field(description="Is the app's core value a managed AI/ML capability (image recognition, NLP/sentiment)?")
     ai_vision: bool = Field(description="Analyses images/video — recognition, detection, moderation, faces?")
     ai_language: bool = Field(description="Analyses text — sentiment, NLP, entities, key phrases?")
+    event_driven: bool = Field(description="A stream/event processor — continuous ingestion of events or telemetry processed as they arrive, not a request-serving app?")
+    telemetry: bool = Field(description="Time-series, append-only or sensor telemetry data (IoT, metrics, clickstream)?")
     daily_transactions: int = Field(description="Transactions/orders per day if stated, else 0")
     latency_target_ms: int = Field(
         description="Stated or implied response-time bound in ms; 0 if none implied"
@@ -243,6 +254,8 @@ class RequirementDraft(BaseModel):
             ai=self.ai,
             ai_vision=self.ai_vision,
             ai_language=self.ai_language,
+            event_driven=self.event_driven,
+            telemetry=self.telemetry,
             daily_transactions=self.daily_transactions or None,
             latency_target_ms=self.latency_target_ms or None,
             provider_preference=(
@@ -466,7 +479,8 @@ _GROQ_SHAPE = """Reply with JSON in exactly this form, filled in from the text:
 "needs_waf":false,"needs_event_streaming":false,"needs_analytics":false,
 "needs_search":false,"needs_email":false,"needs_queue":false,
 "needs_notifications":false,"serverless":false,"ai":false,"ai_vision":false,
-"ai_language":false,"daily_transactions":8000,
+"ai_language":false,"event_driven":false,"telemetry":false,
+"daily_transactions":8000,
 "latency_target_ms":0,"provider_preference":"none","compliance":[],
 "assumed":["storage_gb"],"clarifying_question":"How much data do you store?"}
 
@@ -486,6 +500,9 @@ serverless: spiky/event-driven/scale-to-zero, pay-per-use, no always-on \
 servers or SQL database. False for steady always-on apps. Be conservative.
 ai: core value is an ML capability (image recognition, sentiment/NLP). \
 ai_vision: images/video. ai_language: text/sentiment. All false if ai false.
+event_driven: ingests/processes a STREAM of events or telemetry, not a \
+request-serving app. telemetry: time-series/append-only/sensor data (IoT, \
+metrics). Both false for an ordinary web app.
 daily_transactions: stated transactions per day; 0 if not stated.
 latency_target_ms: a stated or implied response-time bound; 0 if none.
 assumed: names of fields you had to guess. clarifying_question: "" if none."""

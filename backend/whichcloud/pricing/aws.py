@@ -68,6 +68,15 @@ BULK_SERVICES = {
     # offer code is lowercase, unlike every other service here.
     "rekognition": "AmazonRekognition",
     "comprehend": "comprehend",
+    # Event-driven / IoT. All on the same credential-free bulk API. Timestream
+    # is the purpose-built time-series store telemetry belongs in instead of a
+    # relational database; the rest are the ingest and analytics services an
+    # event pipeline is assembled from.
+    "iot": "AWSIoT",
+    "timestream": "AmazonTimestream",
+    "firehose": "AmazonKinesisFirehose",
+    "athena": "AmazonAthena",
+    "glue": "AWSGlue",
 }
 
 #: CloudFront bills by the VIEWER's edge location group, not the origin
@@ -1895,6 +1904,82 @@ def load_comprehend_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+def _metered_single(
+    region_key: str, service: str, usagetype: str,
+    category: str, sku_name: str, label: str, default_unit: str,
+) -> list[PricePoint]:
+    """One graduated meter, matched by exact usagetype. The shape most of the
+    event-driven services share: a single per-unit rate with volume bands."""
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES[service], region_key)
+    wanted = f"{prefix}{usagetype}"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category=category, sku=sku_name,
+            name=label, region=region, unit=unit or default_unit,
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
+def load_iot_prices(region_key: str) -> list[PricePoint]:
+    """AWS IoT Core messaging, per message exchanged with a device."""
+    return _metered_single(
+        region_key, "iot", "Messages",
+        "iot", "iot:messages", "IoT Core messages", "message",
+    )
+
+
+def load_timestream_prices(region_key: str) -> list[PricePoint]:
+    """Amazon Timestream: writes ingested, and magnetic long-term storage.
+
+    The purpose-built time-series store. Two meters -- per GB written and per
+    GB-month kept in the magnetic (cheap, long-retention) store -- which is
+    what makes it the right home for append-only telemetry that a relational
+    database would store expensively and query slowly.
+    """
+    return (
+        _metered_single(
+            region_key, "timestream", "DataIngestion-Bytes",
+            "timestream-ingest", "timestream:ingest", "Timestream writes", "GB",
+        )
+        + _metered_single(
+            region_key, "timestream", "MagneticStore-ByteHrs",
+            "timestream-storage", "timestream:storage", "Timestream storage", "GB-Mo",
+        )
+    )
+
+
+def load_firehose_prices(region_key: str) -> list[PricePoint]:
+    """Kinesis Data Firehose, per GB ingested and delivered."""
+    return _metered_single(
+        region_key, "firehose", "BilledBytes",
+        "firehose", "firehose:ingest", "Firehose delivery", "GB",
+    )
+
+
+def load_athena_prices(region_key: str) -> list[PricePoint]:
+    """Amazon Athena, per terabyte of data scanned by a query."""
+    return _metered_single(
+        region_key, "athena", "DataScannedInTB",
+        "athena", "athena:scanned", "Athena data scanned", "TB",
+    )
+
+
+def load_glue_prices(region_key: str) -> list[PricePoint]:
+    """AWS Glue ETL, per DPU-hour of job runtime."""
+    return _metered_single(
+        region_key, "glue", "ETL-DPU-Hour",
+        "glue", "glue:etl-dpu-hour", "Glue ETL", "DPU-Hour",
+    )
+
+
 def load_cognito_prices(region_key: str) -> list[PricePoint]:
     """Cognito user pools, priced per monthly active user with a free band.
 
@@ -2302,6 +2387,11 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_dynamodb_prices,
         load_rekognition_prices,
         load_comprehend_prices,
+        load_iot_prices,
+        load_timestream_prices,
+        load_firehose_prices,
+        load_athena_prices,
+        load_glue_prices,
     ):
         try:
             points.extend(loader(region_key))

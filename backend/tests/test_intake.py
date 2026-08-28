@@ -49,6 +49,8 @@ def draft(**overrides) -> RequirementDraft:
         ai=False,
         ai_vision=False,
         ai_language=False,
+        event_driven=False,
+        telemetry=False,
         daily_transactions=0,
         latency_target_ms=0,
         provider_preference="none",

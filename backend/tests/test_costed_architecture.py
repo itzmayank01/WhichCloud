@@ -108,6 +108,7 @@ def test_the_mapping_covers_every_category_the_catalog_prices():
         "email", "queue", "notification",
         "lambda", "apigateway", "dynamodb", "secrets",
         "rekognition", "comprehend",
+        "iot", "timestream", "firehose", "athena", "glue",
     }
 
 

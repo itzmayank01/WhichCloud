@@ -213,6 +213,16 @@ class ArchitectureSpec:
     #: Comprehend units of text (1 unit = 100 characters).
     comprehend_units_per_month: float = 0.0
 
+    # ── event-driven / IoT ──
+    # All default 0. Timestream is the purpose-built time-series store an
+    # event pipeline routes telemetry to instead of a relational database.
+    iot_messages_per_month: float = 0.0
+    timestream_write_gb: float = 0.0
+    timestream_storage_gb: float = 0.0
+    firehose_gb_per_month: float = 0.0
+    athena_tb_scanned_per_month: float = 0.0
+    glue_dpu_hours_per_month: float = 0.0
+
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
     use_spot: bool = False
@@ -314,6 +324,12 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "dynamodb-storage", "gb-month"): "dynamodb:storage",
     ("aws", "rekognition", "images"): "rekognition:images",
     ("aws", "comprehend", "units"): "comprehend:sentiment",
+    ("aws", "iot", "messages"): "iot:messages",
+    ("aws", "timestream-ingest", "gb"): "timestream:ingest",
+    ("aws", "timestream-storage", "gb-month"): "timestream:storage",
+    ("aws", "firehose", "gb"): "firehose:ingest",
+    ("aws", "athena", "tb"): "athena:scanned",
+    ("aws", "glue", "dpu-hour"): "glue:etl-dpu-hour",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
     ("aws", "governance", "object-lock"): "s3:object-lock",
@@ -714,6 +730,45 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
         else:
             result.missing.append("comprehend")
+
+    # ---- event-driven / IoT ----
+    if spec.iot_messages_per_month:
+        point = _by_role(provider, region, "iot", "messages", dsn)
+        if point:
+            result.items.append(_tiered_line("IoT Core messages", point, spec.iot_messages_per_month))
+        else:
+            result.missing.append("iot core")
+
+    if spec.timestream_write_gb:
+        w = _by_role(provider, region, "timestream-ingest", "gb", dsn)
+        s = _by_role(provider, region, "timestream-storage", "gb-month", dsn)
+        if w:
+            result.items.append(_tiered_line("Timestream writes", w, spec.timestream_write_gb))
+            if s and spec.timestream_storage_gb:
+                result.items.append(_tiered_line("Timestream storage", s, spec.timestream_storage_gb))
+        else:
+            result.missing.append("timestream")
+
+    if spec.firehose_gb_per_month:
+        point = _by_role(provider, region, "firehose", "gb", dsn)
+        if point:
+            result.items.append(_tiered_line("Firehose delivery", point, spec.firehose_gb_per_month))
+        else:
+            result.missing.append("firehose")
+
+    if spec.athena_tb_scanned_per_month:
+        point = _by_role(provider, region, "athena", "tb", dsn)
+        if point:
+            result.items.append(_tiered_line("Athena data scanned", point, spec.athena_tb_scanned_per_month))
+        else:
+            result.missing.append("athena")
+
+    if spec.glue_dpu_hours_per_month:
+        point = _by_role(provider, region, "glue", "dpu-hour", dsn)
+        if point:
+            result.items.append(_tiered_line("Glue ETL", point, spec.glue_dpu_hours_per_month))
+        else:
+            result.missing.append("glue")
 
     # ---- cross-region backup copy ----
     if spec.backup_copy_gb:

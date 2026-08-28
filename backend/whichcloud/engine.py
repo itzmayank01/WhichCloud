@@ -858,6 +858,181 @@ def _ai_variants(
     return relabelled
 
 
+# ── event-driven / IoT sizing ──
+# HEURISTIC. A stated events/day becomes events/month, and the per-event
+# sizing turns that into stream shards, function invocations, and bytes
+# written to the time-series store. Every figure is an assumption; the
+# arithmetic on top of them is not.
+EVENT_SIZE_KB = 1.0            # a sensor reading / event payload
+TELEMETRY_RETENTION_MONTHS = 12   # how long the append-only history is kept
+ATHENA_TB_PER_MONTH = 5.0     # analytics queries scanning the data lake
+GLUE_DPU_HOURS = 200.0        # managed ETL cataloguing the stream
+EVENT_FLOOR_PER_DAY = 100_000
+
+
+def _event_volume(requirement: Requirement) -> float:
+    daily = requirement.daily_transactions or EVENT_FLOOR_PER_DAY
+    return float(daily) * 30.0
+
+
+def event_driven_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
+    """The event pipeline for one tier. A stream processor, NOT a web app.
+
+    The tiers differ BY SERVICE, so this builds each tier's own graph rather
+    than one graph at three sizes:
+
+      cheapest   Kinesis -> Lambda (+ Spot workers if the work is restartable)
+                 -> Timestream, queried with Athena. Serverless and pay-per-
+                 use; Spot where the description says jobs can be rerun.
+      balanced   adds Firehose for managed delivery and swaps Lambda for
+                 Fargate and adds Glue -- managed where it removes real ops
+                 risk, each swap answering a phrase in the description.
+      optimized  MSK and IoT Core for device-scale ingest, OpenSearch and
+                 Redshift for purpose-built analytics -- the architecture the
+                 platform grows into, every choice still right at 10x load.
+
+    Telemetry NEVER lands in a relational database: `telemetry` routes the
+    primary store to Timestream, otherwise DynamoDB. RDS is never set.
+    """
+    events = _event_volume(requirement)
+    write_gb = events * EVENT_SIZE_KB / 1_000_000.0
+    telemetry = requirement.telemetry
+
+    # The primary store: a purpose-built time-series store for telemetry, a
+    # key-value store otherwise. Never RDS.
+    store: dict = {}
+    if telemetry:
+        store["timestream_write_gb"] = write_gb
+        store["timestream_storage_gb"] = write_gb * TELEMETRY_RETENTION_MONTHS
+    else:
+        store["dynamodb_write_units_per_month"] = events
+        store["dynamodb_read_units_per_month"] = events * 2
+        store["dynamodb_storage_gb"] = max(25.0, write_gb)
+
+    common = dict(
+        name=label,
+        region=requirement.region,
+        compute_count=0,
+        database_vcpu=None,          # never a relational primary store
+        storage_gb=max(requirement.storage_gb, write_gb),  # the S3 data lake
+        egress_gb=requirement.egress_gb,
+        serves_requests=requirement.serves_requests,
+        # An event pipeline is fronted by an API for control/queries.
+        apigateway_requests_per_month=events if requirement.serves_requests else 0.0,
+        monitored_metrics=30,
+        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        audit_logging=True,
+        kms_key_count=1,
+        s3_put_requests=events,
+        s3_get_requests=events * S3_GETS_PER_PUT,
+        **store,
+    )
+
+    if label == "Cheapest":
+        spec = ArchitectureSpec(
+            **common,
+            stream_shards=stream_shards_for(requirement) or 1,
+            stream_put_units=events,
+            athena_tb_scanned_per_month=ATHENA_TB_PER_MONTH,
+        )
+        # The stream processor. Where the work is restartable the cheapest
+        # tier runs it on Spot -- the discount the stated retry tolerance
+        # unlocks -- INSTEAD of on-demand Lambda, not on top of it. Otherwise
+        # it is serverless Lambda, which scales to zero between bursts.
+        if requirement.interruptible:
+            count, vcpu, memory = size_for(requirement)
+            return replace(
+                spec, compute_count=max(1, count // 2),
+                compute_vcpu=vcpu, compute_memory_gb=memory, use_spot=True,
+            )
+        return replace(
+            spec,
+            lambda_invocations_per_month=events,
+            lambda_avg_ms=LAMBDA_AVG_MS,
+            lambda_memory_mb=LAMBDA_MEMORY_MB,
+        )
+
+    if label == "Most reliable":
+        base, _peak = fargate_tasks_for(requirement)
+        return ArchitectureSpec(
+            **common,
+            stream_shards=stream_shards_for(requirement) or 1,
+            stream_put_units=events,
+            firehose_gb_per_month=write_gb,          # managed delivery to S3
+            fargate_task_count=max(2, base),         # managed containers
+            fargate_task_vcpu=1.0, fargate_task_memory_gb=2.0,
+            athena_tb_scanned_per_month=ATHENA_TB_PER_MONTH,
+            glue_dpu_hours_per_month=GLUE_DPU_HOURS,  # managed ETL/catalog
+            threat_detection=True,
+        )
+
+    # Most optimized
+    base, _peak = fargate_tasks_for(requirement)
+    return ArchitectureSpec(
+        **common,
+        kafka_broker_count=KAFKA_MIN_BROKERS,        # managed high-throughput
+        kafka_broker_vcpu=2, kafka_broker_memory_gb=8.0,
+        iot_messages_per_month=events if telemetry else 0.0,  # device fleet
+        fargate_task_count=max(3, base),
+        fargate_task_vcpu=1.0, fargate_task_memory_gb=2.0,
+        glue_dpu_hours_per_month=GLUE_DPU_HOURS,
+        search_node_count=SEARCH_NODES[requirement.traffic_scale],  # dashboards
+        search_node_vcpu=2, search_node_memory_gb=8.0,
+        search_storage_gb=max(requirement.storage_gb, write_gb),
+        warehouse_node_count=WAREHOUSE_NODES[requirement.traffic_scale],  # OLAP
+        warehouse_node_vcpu=2, warehouse_node_memory_gb=16.0,
+        threat_detection=True,
+        posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
+    )
+
+
+def _event_driven_variants(
+    requirement: Requirement,
+) -> list[tuple[str, str, dict, tuple[str, ...]]]:
+    """Three event-pipeline options that differ BY SERVICE. The deltas are
+    empty: `event_driven_spec` builds each tier's own graph, because a tier
+    that swaps Kinesis for MSK is a different architecture, not a bigger one."""
+    spot_note = (
+        "Restartable workers run on Spot — reclaimable at two minutes' "
+        "notice, which the stated retry tolerance accepts"
+        if requirement.interruptible else
+        "Serverless processing scales to zero between event bursts"
+    )
+    return [
+        (
+            "Cheapest",
+            "Serverless, pay-per-use pipeline: Kinesis into Lambda into a "
+            "time-series store, queried on demand with Athena.",
+            {},
+            (
+                spot_note,
+                "Athena scans the raw data lake, so query cost tracks how "
+                "much history each question reads",
+            ),
+        ),
+        (
+            "Most reliable",
+            "Managed where it removes operational risk: Firehose delivers the "
+            "stream, Fargate runs the processors, Glue catalogues the data.",
+            {},
+            (
+                "Managed services cost more per unit than self-run, buying back "
+                "the operational time self-managing them would take",
+            ),
+        ),
+        (
+            "Most optimized",
+            "The platform it grows into: MSK and IoT Core for device-scale "
+            "ingest, OpenSearch and Redshift for purpose-built analytics.",
+            {},
+            (
+                "MSK and a warehouse run continuously — sized for 10x the "
+                "stated load, so they carry cost before that growth arrives",
+            ),
+        ),
+    ]
+
+
 def apply_effects(spec: ArchitectureSpec, matched: list[Match]) -> ArchitectureSpec:
     """Fold every priceable technique into the architecture."""
     updates: dict[str, object] = {}
@@ -1101,8 +1276,11 @@ def recommend(
     ai = getattr(requirement, "ai", False) and (
         requirement.ai_vision or requirement.ai_language
     )
+    event_driven = getattr(requirement, "event_driven", False)
     serverless = getattr(requirement, "serverless", False)
-    if ai:
+    if event_driven:
+        variants = _event_driven_variants(requirement)
+    elif ai:
         variants = _ai_variants(requirement)
     elif serverless:
         variants = _serverless_variants(requirement)
@@ -1110,7 +1288,9 @@ def recommend(
         variants = _shape_variants(requirement)
 
     for label, rationale, delta, tradeoffs in variants:
-        if ai:
+        if event_driven:
+            spec = event_driven_spec(requirement, label)
+        elif ai:
             spec = ai_spec(requirement, label)
         elif serverless:
             spec = serverless_spec(requirement, label)
@@ -1122,9 +1302,10 @@ def recommend(
         # was applied to "Most reliable" alone, so on a small workload the
         # top tier came out with ONE instance where the middle tier had two
         # -- spanning three availability zones with nothing in two of them.
-        # Server shapes only: serverless and AI shapes have no instance count
-        # to floor, and forcing one would manufacture a phantom EC2 fleet.
-        server_shape = not serverless and not ai
+        # Server shapes only: serverless, AI and event-driven shapes have no
+        # fixed instance count to floor, and forcing one would manufacture a
+        # phantom EC2 fleet (or, for event_driven, override its Spot workers).
+        server_shape = not serverless and not ai and not event_driven
         if server_shape and label == "Most reliable":
             spec = replace(spec, compute_count=max(2, spec.compute_count))
         elif server_shape and label == "Most optimized":

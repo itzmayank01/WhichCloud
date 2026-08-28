@@ -73,6 +73,14 @@ class Requirement:
     ai: bool = False
     ai_vision: bool = False       # image recognition / detection -> Rekognition
     ai_language: bool = False     # sentiment / NLP on text -> Comprehend
+    #: A stream processor / event pipeline: continuous ingestion of events or
+    #: telemetry, processed as they arrive, rather than a request-serving app.
+    #: Selects the event_driven service graph (Kinesis/MSK -> Lambda/Fargate ->
+    #: Timestream/DynamoDB -> Athena/OpenSearch) instead of the web shape.
+    event_driven: bool = False
+    #: Time-series, append-only or sensor telemetry. Routes the PRIMARY store
+    #: to a purpose-built time-series store (Timestream), never to RDS.
+    telemetry: bool = False
 
     #: Transactions per day, when the description states one. Drives stream
     #: shard count, which is arithmetic rather than a tier lookup.
