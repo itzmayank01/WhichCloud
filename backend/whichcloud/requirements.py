@@ -58,6 +58,15 @@ class Requirement:
     needs_event_streaming: bool = False  # real-time processing of an event stream
     needs_analytics: bool = False  # OLAP / dashboards over the data, not just CRUD
     needs_search: bool = False  # full-text / faceted search over the data
+    needs_email: bool = False  # transactional email -- confirmations, receipts, alerts
+    needs_queue: bool = False  # background jobs, async work off the request path
+    needs_notifications: bool = False  # push/SMS alerts, distinct from email
+    #: A genuine serverless fit -- spiky/unpredictable/event-driven, scales to
+    #: zero, no need for always-on servers or a relational database. Selects a
+    #: different architecture (Lambda + API Gateway + DynamoDB) rather than a
+    #: bigger or smaller server one. Deliberately conservative: a steady app
+    #: with a real RDBMS is not serverless.
+    serverless: bool = False
 
     #: Transactions per day, when the description states one. Drives stream
     #: shard count, which is arithmetic rather than a tier lookup.

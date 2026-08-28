@@ -147,25 +147,41 @@ export function ArchitectureCanvas({
   const [scale, setScale] = useState(1);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const lastWidth = useRef(-1);
+  const lastFit = useRef("");
 
   useIsomorphic(() => {
     const el = shell.current;
     if (!el) return;
 
+    /* Fits BOTH axes, not just width. Scaling on width alone let a tall
+       multi-tier architecture -- which is most of them, since tiers stack
+       vertically -- overflow the bottom of its container and get clipped:
+       the diagram was "fitted" to a dimension it was never going to run
+       out of first. */
     const fit = () => {
-      const available = el.clientWidth;
-      if (available === lastWidth.current || available === 0) return;
-      lastWidth.current = available;
-      const baseScale = Math.min(1, (available - 16) / view.canvas.width);
-      setScale(baseScale);
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      const key = `${w}x${h}`;
+      if (key === lastFit.current || w === 0 || h === 0) return;
+      lastFit.current = key;
+
+      // Breathing room so the outermost boundary stroke is not flush
+      // against the container edge. More is reserved at the bottom than
+      // the sides because the floating action bar sits there -- without
+      // it the last row of services renders underneath the toolbar.
+      const byWidth = (w - 24) / view.canvas.width;
+      const byHeight = (h - 96) / view.canvas.height;
+      // Floored at 40%: below that the service labels and price pills stop
+      // being readable, and a diagram nobody can read is worse than one
+      // that scrolls.
+      setScale(Math.max(0.4, Math.min(1, byWidth, byHeight)));
     };
 
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [view.canvas.width]);
+  }, [view.canvas.width, view.canvas.height]);
 
   const shown = revealed ?? view.nodes.length;
   const visibleNodes = useMemo(
@@ -211,8 +227,39 @@ export function ArchitectureCanvas({
   const totalHeight = view.canvas.height;
   const effectiveScale = scale * zoomLevel;
 
+  const flowsPresent = useMemo(
+    () => new Set(view.edges.map((e) => e.flow)),
+    [view.edges],
+  );
+
   return (
-    <div ref={shell} className="relative w-full overflow-hidden select-none">
+    <div ref={shell} className="relative h-full w-full overflow-hidden select-none">
+      {/* What each line style means. Only the flow kinds actually present in
+          this option get a row, so a simple two-tier shape does not carry a
+          legend entry for streaming or replication it never uses. */}
+      <div className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+        {(Object.keys(FLOW_CONFIG) as Flow[])
+          .filter((flow) => flowsPresent.has(flow))
+          .map((flow) => {
+            const cfg = FLOW_CONFIG[flow];
+            return (
+              <span key={flow} className="flex items-center gap-1.5">
+                <svg width="18" height="6" viewBox="0 0 18 6" aria-hidden>
+                  <line
+                    x1="0" y1="3" x2="18" y2="3"
+                    stroke={cfg.stroke}
+                    strokeWidth={cfg.width}
+                    strokeDasharray={cfg.dash}
+                  />
+                </svg>
+                <span className="text-[10.5px] font-medium text-neutral-600">
+                  {cfg.label}
+                </span>
+              </span>
+            );
+          })}
+      </div>
+
       {/* Zoom controls */}
       <div className="absolute right-4 top-4 z-20 flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
         <button
@@ -246,13 +293,10 @@ export function ArchitectureCanvas({
         </button>
       </div>
 
-      <div
-        className="overflow-auto scrollbar-thin transition-all"
-        style={{
-          width: "100%",
-          maxHeight: "820px",
-        }}
-      >
+      {/* Fills the shell and centres the diagram in it. Scrolls only when
+          zoomed past the fit, which is the one case where the drawing is
+          deliberately larger than its container. */}
+      <div className="grid h-full w-full place-items-center overflow-auto scrollbar-thin p-3">
         <div
           style={{
             width: totalWidth * effectiveScale,
@@ -522,6 +566,14 @@ export function ArchitectureCanvas({
                   : flowCfg.stroke;
                 const strokeWidth = isStepActive || isHoverConnected ? 2.4 : flowCfg.width;
                 const d = formatPoints(edge.points);
+                /* An edge the router could not place has no points, so
+                   `d` is empty. A <path> with no `d` draws nothing and is
+                   harmless, but the flow particle below is a <circle> whose
+                   position comes from animateMotion -- given an empty path
+                   it falls back to the SVG origin and parks a coloured dot
+                   in the top-left corner of the canvas, which reads as a
+                   rendering fault rather than as the missing edge it is. */
+                if (!d) return null;
 
                 // Calculate approximate path length for draw animation
                 const pathLen = edge.points.reduce((sum, p, idx) => {
@@ -609,41 +661,55 @@ export function ArchitectureCanvas({
                 const badgeIsRevealed = eRevealIdx < shown;
                 const badgeAnimDelay = isAnimating ? `${eRevealIdx * buildDelay + buildDelay * 0.8}ms` : "0ms";
 
+                /* Two elements, not one. The placement is an SVG
+                   `transform` attribute and the pop-in is a CSS `animation`
+                   whose keyframes set `transform: scale(...)` -- on the same
+                   element the CSS transform REPLACES the attribute rather
+                   than composing with it, so every badge lost its translate
+                   and stacked up at the SVG origin as a single blue square
+                   in the corner of the canvas. The outer <g> positions; the
+                   inner one scales about its own centre. */
                 return (
                   <g
                     key={`step-badge-${i}`}
                     transform={`translate(${edge.badge.x}, ${edge.badge.y})`}
-                    className="cursor-pointer transition-transform hover:scale-110"
-                    filter={isStepActive ? "url(#badge-glow)" : undefined}
-                    style={{
-                      opacity: badgeIsRevealed ? undefined : 0,
-                      transformOrigin: `${edge.badge.x}px ${edge.badge.y}px`,
-                      ...(isAnimating && badgeIsRevealed ? {
-                        animation: `archPopIn 400ms cubic-bezier(0.34, 1.56, 0.64, 1) ${badgeAnimDelay} both`,
-                      } : {}),
-                    }}
+                    style={{ opacity: badgeIsRevealed ? undefined : 0 }}
                   >
-                    <rect
-                      x={-11}
-                      y={-11}
-                      width={22}
-                      height={22}
-                      rx={4}
-                      fill={isStepActive ? "#1D4ED8" : isHoverConnected ? "#2563EB" : "#0066CC"}
-                      stroke="#FFFFFF"
-                      strokeWidth={1.5}
-                    />
-                    <text
-                      x={0}
-                      y={4}
-                      textAnchor="middle"
-                      fontSize="11.5"
-                      fontWeight="800"
-                      fill="#FFFFFF"
-                      fontFamily="system-ui, sans-serif"
+                    <g
+                      className="cursor-pointer transition-transform hover:scale-110"
+                      filter={isStepActive ? "url(#badge-glow)" : undefined}
+                      style={{
+                        transformOrigin: "center",
+                        transformBox: "fill-box",
+                        ...(isAnimating && badgeIsRevealed
+                          ? {
+                              animation: `archPopIn 400ms cubic-bezier(0.34, 1.56, 0.64, 1) ${badgeAnimDelay} both`,
+                            }
+                          : {}),
+                      }}
                     >
-                      {edge.step}
-                    </text>
+                      <rect
+                        x={-11}
+                        y={-11}
+                        width={22}
+                        height={22}
+                        rx={4}
+                        fill={isStepActive ? "#1D4ED8" : isHoverConnected ? "#2563EB" : "#0066CC"}
+                        stroke="#FFFFFF"
+                        strokeWidth={1.5}
+                      />
+                      <text
+                        x={0}
+                        y={4}
+                        textAnchor="middle"
+                        fontSize="11.5"
+                        fontWeight="800"
+                        fill="#FFFFFF"
+                        fontFamily="system-ui, sans-serif"
+                      >
+                        {edge.step}
+                      </text>
+                    </g>
                   </g>
                 );
               })}

@@ -57,6 +57,12 @@ BULK_SERVICES = {
     "email": "AmazonSES",
     "queue": "AWSQueueService",
     "notification": "AmazonSNS",
+    # Serverless. Priced from the same credential-free bulk API as everything
+    # above -- Lambda per-invocation and per-GB-second, API Gateway per HTTP
+    # request, DynamoDB per on-demand request unit and per GB-month stored.
+    "lambda": "AWSLambda",
+    "apigateway": "AmazonApiGateway",
+    "dynamodb": "AmazonDynamoDB",
 }
 
 #: CloudFront bills by the VIEWER's edge location group, not the origin
@@ -1723,6 +1729,112 @@ def load_notification_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+def load_lambda_prices(region_key: str) -> list[PricePoint]:
+    """Lambda invocations and duration, on the ARM (Graviton) meters.
+
+    Two meters, because Lambda bills two things: a flat charge per request
+    and a charge per GB-second of execution. ARM is the default here for the
+    same reason the rest of the engine prefers Graviton -- it is cheaper for
+    the same work and Lambda supports it transparently. Both meters carry a
+    real free tier (the first million requests, the first 400,000 GB-s), so
+    the graduated bands are kept exactly as SNS's and Cognito's are.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["lambda"], region_key)
+
+    wanted = {
+        f"{prefix}Request-ARM": ("lambda-requests", "lambda:requests", "Lambda requests"),
+        f"{prefix}Lambda-GB-Second-ARM": (
+            "lambda-duration", "lambda:duration", "Lambda duration",
+        ),
+    }
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        ut = product.get("attributes", {}).get("usagetype")
+        if ut not in wanted:
+            continue
+        category, sku_name, label = wanted[ut]
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        points.append(PricePoint(
+            provider="aws", category=category, sku=sku_name,
+            name=label, region=region, unit=unit or "request",
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        ))
+    return points
+
+
+def load_apigateway_prices(region_key: str) -> list[PricePoint]:
+    """API Gateway HTTP API requests.
+
+    The HTTP API meter, not the REST API one: HTTP APIs are the cheaper,
+    recommended front for a Lambda-backed service, so quoting REST rates
+    would overstate the exact architecture this shape builds. WebSocket and
+    cache meters are different products and are not ingested.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["apigateway"], region_key)
+
+    wanted = f"{prefix}ApiGatewayHttpRequest"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category="apigateway", sku="apigateway:http-requests",
+            name="API Gateway HTTP requests", region=region,
+            unit=unit or "request", price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
+def load_dynamodb_prices(region_key: str) -> list[PricePoint]:
+    """DynamoDB on-demand: read and write request units, plus stored data.
+
+    On-demand (PayPerRequest), not provisioned capacity: it is the honest
+    default for the spiky, scale-to-zero workloads a serverless shape suits,
+    where paying for provisioned throughput around the clock is exactly the
+    always-on cost serverless exists to avoid. Exact usagetype equality keeps
+    the Standard-class meters and rejects the Infrequent-Access, PITR and
+    backup variants, which are different storage classes billed separately.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["dynamodb"], region_key)
+
+    wanted = {
+        f"{prefix}ReadRequestUnits": (
+            "dynamodb-reads", "dynamodb:read-request-units", "DynamoDB read units",
+        ),
+        f"{prefix}WriteRequestUnits": (
+            "dynamodb-writes", "dynamodb:write-request-units", "DynamoDB write units",
+        ),
+        f"{prefix}TimedStorage-ByteHrs": (
+            "dynamodb-storage", "dynamodb:storage", "DynamoDB storage",
+        ),
+    }
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        ut = product.get("attributes", {}).get("usagetype")
+        if ut not in wanted:
+            continue
+        category, sku_name, label = wanted[ut]
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        points.append(PricePoint(
+            provider="aws", category=category, sku=sku_name,
+            name=label, region=region, unit=unit or "request",
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        ))
+    return points
+
+
 def load_cognito_prices(region_key: str) -> list[PricePoint]:
     """Cognito user pools, priced per monthly active user with a free band.
 
@@ -2125,6 +2237,9 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_email_prices,
         load_queue_prices,
         load_notification_prices,
+        load_lambda_prices,
+        load_apigateway_prices,
+        load_dynamodb_prices,
     ):
         try:
             points.extend(loader(region_key))

@@ -441,6 +441,28 @@ export const api = {
     return response.text();
   },
 
+  /** One priced tier as a downloadable Terraform project. */
+  planExportTf: async (body: Record<string, unknown>): Promise<Blob> => {
+    const response = await fetch(`${BASE}/plan/export.tf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`export failed: ${response.status}`);
+    return response.blob();
+  },
+
+  /** One priced option from `/describe`, as a downloadable Terraform project. */
+  describeExportTf: async (body: Record<string, unknown>): Promise<Blob> => {
+    const response = await fetch(`${BASE}/describe/export.tf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`export failed: ${response.status}`);
+    return response.blob();
+  },
+
   saveArchitecture: (body: Record<string, unknown>) =>
     post<SavedArchitecture>("/architecture/save", body),
 

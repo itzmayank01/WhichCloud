@@ -195,6 +195,20 @@ S3_GETS_PER_PUT = 10.0
 SEARCH_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 3}
 WAREHOUSE_NODES: dict[str, int] = {"low": 2, "medium": 2, "high": 4}
 
+# ── async messaging volumes ──
+#
+# One email/notification per transaction is the simplest honest reading of
+# "send a confirmation" -- not a guess at open rates or retries. A workload
+# that asked for one of these but stated no transaction volume still gets a
+# floor rather than a silent zero, the same reasoning stream_shards_for uses
+# below: the requirement decided there IS one, volume only decides how big.
+EMAILS_PER_TRANSACTION = 1.0
+QUEUE_JOBS_PER_TRANSACTION = 1.0
+NOTIFICATIONS_PER_TRANSACTION = 1.0
+EMAIL_MONTHLY_FLOOR = 500.0
+QUEUE_MONTHLY_FLOOR = 1_000.0
+NOTIFICATION_MONTHLY_FLOOR = 500.0
+
 # ── threat detection & observability volumes ──
 #
 # These are production hygiene, on by default like audit logging, not a
@@ -526,6 +540,34 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         ),
         s3_put_requests=float((requirement.daily_transactions or 0) * 30),
         s3_get_requests=float((requirement.daily_transactions or 0) * 30 * S3_GETS_PER_PUT),
+        # ── async messaging ──
+        # Gated on the requirement first, same as WAF/search/analytics above:
+        # a CRUD app that never mentioned email acquires no SES line, however
+        # many transactions it does.
+        emails_per_month=(
+            max(
+                EMAIL_MONTHLY_FLOOR,
+                (requirement.daily_transactions or 0) * 30 * EMAILS_PER_TRANSACTION,
+            )
+            if requirement.needs_email
+            else 0.0
+        ),
+        queue_requests_per_month=(
+            max(
+                QUEUE_MONTHLY_FLOOR,
+                (requirement.daily_transactions or 0) * 30 * QUEUE_JOBS_PER_TRANSACTION,
+            )
+            if requirement.needs_queue
+            else 0.0
+        ),
+        notifications_per_month=(
+            max(
+                NOTIFICATION_MONTHLY_FLOOR,
+                (requirement.daily_transactions or 0) * 30 * NOTIFICATIONS_PER_TRANSACTION,
+            )
+            if requirement.needs_notifications
+            else 0.0
+        ),
         # ── data pipeline & analytics ──
         # Kafka only where volume genuinely justifies it; Kinesis otherwise.
         # Both are gated on the requirement first, so no CRUD app acquires a
@@ -559,6 +601,156 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         ),
         flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
     )
+
+
+# ── serverless sizing ──
+# HEURISTIC, like every sizing rule here. A request runs a function that does
+# a little database work; the rates below turn a stated transaction volume
+# into invocations, request-units and stored bytes. The arithmetic on top of
+# them is exact -- double the load, double the numbers.
+
+#: One invocation per stated transaction. The honest floor when a workload
+#: asked for serverless but stated no volume -- the requirement decided there
+#: IS a function, the volume only decides how busy it is.
+LAMBDA_INVOCATIONS_FLOOR = 1_000_000.0
+#: A function that does real work but is not a heavy compute job. 150ms at
+#: 512MB is a conventional CRUD/API handler.
+LAMBDA_AVG_MS = 150.0
+LAMBDA_MEMORY_MB = 512.0
+#: Reads run ahead of writes -- a request reads several items and writes one,
+#: the same asymmetry the S3 GET/PUT ratio already encodes.
+DYNAMO_READS_PER_TXN = 3.0
+DYNAMO_WRITES_PER_TXN = 1.0
+#: Stored data floor, GB. A real table holds something even before traffic.
+DYNAMO_STORAGE_FLOOR_GB = 25.0
+#: Warm environments the reliability tier keeps ready, to remove cold-start
+#: latency from the critical path.
+PROVISIONED_CONCURRENCY = 5
+
+
+def _monthly_invocations(requirement: Requirement) -> float:
+    daily = requirement.daily_transactions or 0
+    if not daily:
+        return LAMBDA_INVOCATIONS_FLOOR
+    return max(LAMBDA_INVOCATIONS_FLOOR, float(daily) * 30.0)
+
+
+def serverless_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
+    """The serverless shape: Lambda + API Gateway + DynamoDB, no servers.
+
+    Deliberately NOT `base_spec` with compute zeroed. A serverless
+    architecture is a different system, not a smaller one -- there is no
+    VPC, no NAT gateway, no load balancer, no standby database, because none
+    of those exist in it. Everything it does keep is billed by use, so an
+    idle month genuinely costs almost nothing, which is the property the
+    shape exists to express.
+    """
+    invocations = _monthly_invocations(requirement)
+    serves = requirement.serves_requests
+
+    return ArchitectureSpec(
+        name=label,
+        region=requirement.region,
+        # No always-on compute or relational database -- the whole point.
+        compute_count=0,
+        database_vcpu=None,
+        # ── the serverless core ──
+        lambda_invocations_per_month=invocations,
+        lambda_avg_ms=LAMBDA_AVG_MS,
+        lambda_memory_mb=LAMBDA_MEMORY_MB,
+        apigateway_requests_per_month=invocations if serves else 0.0,
+        dynamodb_read_units_per_month=invocations * DYNAMO_READS_PER_TXN,
+        dynamodb_write_units_per_month=invocations * DYNAMO_WRITES_PER_TXN,
+        dynamodb_storage_gb=max(DYNAMO_STORAGE_FLOOR_GB, requirement.storage_gb),
+        # Assets and their egress still live on S3/CloudFront.
+        storage_gb=requirement.storage_gb,
+        egress_gb=requirement.egress_gb,
+        serves_requests=serves,
+        # Edge and identity, where the workload faces users.
+        dns_hosted_zones=1 if serves else 0,
+        dns_monthly_queries=DNS_MONTHLY_QUERIES[requirement.traffic_scale] if serves else 0.0,
+        auth_monthly_active_users=(
+            AUTH_MONTHLY_ACTIVE_USERS[requirement.traffic_scale] if serves else 0.0
+        ),
+        tls_certificate=serves,
+        waf_rule_count=(
+            WAF_RULE_COUNT if requirement.needs_waf and serves else None
+        ),
+        waf_monthly_requests=(
+            WAF_MONTHLY_REQUESTS[requirement.traffic_scale] if requirement.needs_waf else 0.0
+        ),
+        # Production hygiene that is not server-specific: metrics, tracing,
+        # audit, a key, secrets. Priced the same way every tier prices them.
+        monitored_metrics=20,
+        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        audit_logging=True,
+        kms_key_count=1,
+        secret_count=BASE_SECRET_COUNT,
+        # S3 request volume tracks the same transaction count.
+        s3_put_requests=float((requirement.daily_transactions or 0) * 30),
+        s3_get_requests=float((requirement.daily_transactions or 0) * 30 * S3_GETS_PER_PUT),
+        emails_per_month=(
+            max(500.0, invocations * 0.0) if requirement.needs_email else 0.0
+        ),
+        queue_requests_per_month=(
+            invocations if requirement.needs_queue else 0.0
+        ),
+        notifications_per_month=(
+            500.0 if requirement.needs_notifications else 0.0
+        ),
+    )
+
+
+def _serverless_variants(
+    requirement: Requirement,
+) -> list[tuple[str, str, dict, tuple[str, ...]]]:
+    """The three serverless options, as deltas from `serverless_spec`.
+
+    The levers are serverless levers -- memory, provisioned concurrency,
+    protection -- not instance counts, because there are no instances. Each
+    one changes a number the estimator actually prices.
+    """
+    reliable: dict = {"lambda_provisioned_concurrency": PROVISIONED_CONCURRENCY}
+    optimized = dict(reliable)
+    optimized["lambda_memory_mb"] = 1024.0
+    if requirement.serves_requests:
+        optimized["waf_rule_count"] = WAF_RULE_COUNT
+        optimized["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
+
+    return [
+        (
+            "Cheapest",
+            "Pure pay-per-use: functions scale to zero between requests, so an "
+            "idle month costs almost nothing.",
+            {},
+            (
+                "Cold starts add latency to the first request after idle",
+                "No provisioned capacity, so a sudden burst warms up as it arrives",
+            ),
+        ),
+        (
+            "Most reliable",
+            f"Keeps {PROVISIONED_CONCURRENCY} functions warm so there are no cold "
+            "starts on the critical path, and still scales past them on demand.",
+            reliable,
+            (
+                f"{PROVISIONED_CONCURRENCY} warmed environments bill around the "
+                "clock whether or not traffic needs them — the one always-on "
+                "cost in an otherwise pay-per-use design",
+            ),
+        ),
+        (
+            "Most optimized",
+            "More memory per function (faster, so less billed duration per call), "
+            "warm capacity, and protection at the edge.",
+            optimized,
+            (
+                "Higher memory costs more per GB-second but finishes sooner; the "
+                "net depends on the workload",
+                "A Web ACL and its rules bill whether or not anything is blocked",
+            ),
+        ),
+    ]
 
 
 def apply_effects(spec: ArchitectureSpec, matched: list[Match]) -> ArchitectureSpec:
@@ -773,6 +965,18 @@ def _apply_techniques(
     return current, applied
 
 
+#: Effect keys that buy a lower bill at the cost of availability -- spot
+#: capacity that can be reclaimed, and scaling to zero that adds cold-start
+#: latency and cannot absorb a sudden spike. A technique touching either is
+#: appropriate for the Cheapest tier and wrong for the ones whose whole
+#: point is guaranteed capacity.
+_AVAILABILITY_TRADING_EFFECTS = frozenset({"use_spot", "compute_duty_cycle"})
+
+
+def _trades_availability(technique: Technique) -> bool:
+    return bool(_AVAILABILITY_TRADING_EFFECTS & set(technique.effect))
+
+
 def recommend(
     requirement: Requirement,
     provider: str = "aws",
@@ -783,17 +987,25 @@ def recommend(
     catalog = techniques if techniques is not None else load_techniques()
     options: list[Option] = []
 
-    for label, rationale, delta, tradeoffs in _shape_variants(requirement):
-        spec = base_spec(requirement, label)
+    # A serverless workload is a different architecture, not a smaller server
+    # one, so it is built from its own spec and its own three variants. The
+    # instance-count floors below are meaningless here (there are no
+    # instances) and are skipped.
+    serverless = getattr(requirement, "serverless", False)
+    variants = _serverless_variants(requirement) if serverless else _shape_variants(requirement)
+
+    for label, rationale, delta, tradeoffs in variants:
+        spec = serverless_spec(requirement, label) if serverless else base_spec(requirement, label)
         if delta:
             spec = replace(spec, **delta)
         # A tier cannot be less available than the one below it. This floor
         # was applied to "Most reliable" alone, so on a small workload the
         # top tier came out with ONE instance where the middle tier had two
         # -- spanning three availability zones with nothing in two of them.
-        if label == "Most reliable":
+        # Server shapes only: serverless has no instance count to floor.
+        if not serverless and label == "Most reliable":
             spec = replace(spec, compute_count=max(2, spec.compute_count))
-        elif label == "Most optimized":
+        elif not serverless and label == "Most optimized":
             # One per zone, since this tier pays for three of them.
             spec = replace(spec, compute_count=max(3, spec.compute_count))
 
@@ -805,9 +1017,21 @@ def recommend(
             provider=provider,
             estimated_spend=float(baseline.total_monthly) or None,
         )
-        advisory = [m for m in matched if not m.technique.is_priceable]
+        # Availability-trading techniques belong to the Cheapest tier ONLY.
+        # Spot capacity can be reclaimed and scale-to-zero adds cold-start
+        # latency; applying them to every tier made "Most reliable" run on
+        # exactly the reclaimable, cold-starting infrastructure its name
+        # promises to avoid -- and, for a compute-only workload with no
+        # database or load balancer to vary, left all three tiers identical
+        # but for their instance count. Withholding them here is what makes
+        # the tiers three distinct postures: Cheapest trades reliability for
+        # cost; the dearer tiers pay for guaranteed, always-on capacity.
+        usable = matched if label == "Cheapest" else [
+            m for m in matched if not _trades_availability(m.technique)
+        ]
+        advisory = [m for m in usable if not m.technique.is_priceable]
 
-        current, applied = _apply_techniques(spec, matched, provider, dsn)
+        current, applied = _apply_techniques(spec, usable, provider, dsn)
 
         final = estimate(current, provider, dsn=dsn) if applied else baseline
 

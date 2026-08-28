@@ -53,12 +53,35 @@ _KIND_BY_PREFIX = {
     "Telemetry ingestion": "tracing",
     "Security posture checks": "posture",
     "VPC flow logs": "flowlogs",
-    "Fargate vCPU": "compute",
-    "Fargate memory": "compute",
+    "Fargate vCPU": "compute_fargate",
+    "Fargate memory": "compute_fargate",
     "Database storage": "database",
     "Load balancer LCUs": "loadbalancer",
     "S3 write requests": "storage",
     "S3 read requests": "storage",
+    # Previously unmapped -- fell through to "compute" by default (see
+    # _kind_for below), which folded their cost into the compute box and
+    # meant these services never appeared on the diagram at all.
+    "CDN data transfer": "network",
+    "CDN requests": "network",
+    "Transactional email": "email",
+    "Queue requests": "queue",
+    "Notifications": "notification",
+    # Serverless. "API Gateway" must be checked before the plain prefixes it
+    # would otherwise fall through on, and each DynamoDB/Lambda line folds
+    # onto one box per service via the summing in build() below.
+    "Lambda requests": "lambda",
+    "Lambda duration": "lambda",
+    "API Gateway requests": "apigateway",
+    "DynamoDB reads": "dynamodb",
+    "DynamoDB writes": "dynamodb",
+    "DynamoDB storage": "dynamodb",
+    # Was falling through to the "compute" default -- harmless-looking on a
+    # server diagram (its $0.40 quietly summed onto the compute box) but on a
+    # serverless one it MANUFACTURED an EC2 box, and an EC2 box in a subnet
+    # dragged a whole VPC in with it. Secrets Manager is a real service; it
+    # gets its own node.
+    "Secrets": "secrets",
 }
 
 
@@ -114,6 +137,11 @@ def _detail_for(item: LineItem, spec: ArchitectureSpec, kind: str) -> str:
         if spec.compute_duty_cycle < 1.0:
             parts.append(f"@ {spec.compute_duty_cycle:.0%}")
         return " ".join(parts)
+    if kind == "compute_fargate":
+        return (
+            f"{spec.fargate_task_count} task(s), "
+            f"{spec.fargate_task_vcpu:g} vCPU / {spec.fargate_task_memory_gb:g} GB"
+        )
     if kind in ("database", "database_replica"):
         return item.sku
     if kind in ("storage", "network"):
@@ -152,6 +180,14 @@ _LABELS = {
     "database": "Database",
     "database_replica": "Database read replica",
     "compute": "Compute",
+    "compute_fargate": "Fargate compute",
+    "email": "Transactional email",
+    "queue": "Queue",
+    "notification": "Notifications",
+    "lambda": "AWS Lambda",
+    "apigateway": "API Gateway",
+    "dynamodb": "DynamoDB",
+    "secrets": "Secrets Manager",
     "waf": "AWS WAF",
     "audit": "Audit logging",
     "kms": "KMS keys",
@@ -197,6 +233,12 @@ _MISSING_PHRASES: tuple[tuple[str, str], ...] = (
     ("distributed tracing", "tracing"),
     ("security posture", "posture"),
     ("vpc flow logs", "flowlogs"),
+    ("transactional email", "email"),
+    ("queue", "queue"),
+    ("notification", "notification"),
+    ("api gateway", "apigateway"),
+    ("lambda", "lambda"),
+    ("dynamodb", "dynamodb"),
 )
 
 
@@ -264,7 +306,14 @@ def build(
             sku=item.sku,
             detail=_detail_for(item, spec, kind),
             priced=True,
-            optimized_by=tuple(dict.fromkeys(touched.get(kind, ()))),
+            # _EFFECT_TARGETS points ARM/spot techniques at "compute" -- a
+            # Fargate box is compute too, and would otherwise show no badge
+            # for the same optimization an EC2 box gets credited for.
+            optimized_by=tuple(dict.fromkeys(
+                touched.get(kind, [])
+                if kind != "compute_fargate"
+                else touched.get("compute_fargate", []) + touched.get("compute", [])
+            )),
         )
         by_kind[kind] = node
 
@@ -286,9 +335,16 @@ def build(
     topology.nodes.append(
         Node(id="users", label="Users", kind="client", monthly_usd=Decimal(0))
     )
-    for kind in ("waf", "network", "loadbalancer", "compute", "cache", "database",
-                 "database_replica", "storage", "monitoring", "audit", "kms",
-                 "nat", "tls", "dns", "auth", "backup",
+    # The draw order, roughly edge -> compute -> data -> async -> ops. A kind
+    # absent from this list is built above but never shown, which is how the
+    # serverless and messaging services silently vanished from the diagram
+    # while still appearing on the bill -- so every kind the estimator can
+    # produce a line for must have an entry here.
+    for kind in ("waf", "network", "apigateway", "loadbalancer",
+                 "compute", "compute_fargate", "lambda", "cache",
+                 "database", "database_replica", "dynamodb", "storage",
+                 "monitoring", "audit", "kms", "secrets", "nat", "tls", "dns", "auth",
+                 "backup", "email", "queue", "notification",
                  "streaming", "kafka", "search", "warehouse",
                  "threat", "tracing", "posture", "flowlogs"):
         if kind in by_kind:

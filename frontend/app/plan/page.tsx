@@ -15,6 +15,7 @@ const EXAMPLE =
 export default function PlanPage() {
   const [description, setDescription] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [plannedDescription, setPlannedDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,6 +25,7 @@ export default function PlanPage() {
     setError("");
     try {
       setPlan(await api.plan({ description: text }));
+      setPlannedDescription(text);
     } catch (cause) {
       /* The message says what to do, not merely that something failed. */
       setError(
@@ -81,7 +83,7 @@ export default function PlanPage() {
         )}
       </section>
 
-      {plan && <PlanView plan={plan} />}
+      {plan && <PlanView plan={plan} description={plannedDescription} />}
     </main>
   );
 }

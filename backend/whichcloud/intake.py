@@ -108,6 +108,21 @@ already serves.
 - needs_search is true only if the description asks to search or filter \
 across records by content — a product catalogue search, a log search. Not \
 for fetching one record by id.
+- needs_email is true only if the description mentions sending email — \
+confirmations, receipts, invoices, alerts — to users or staff.
+- needs_queue is true only if the description mentions background jobs, \
+async processing, or work that happens after the request returns rather \
+than during it (report generation, video encoding, batch invoicing).
+- needs_notifications is true only if the description mentions push \
+notifications, SMS, or in-app/mobile alerts — not email, which needs_email \
+already covers.
+- serverless is true ONLY when the workload is a genuine fit for a \
+pay-per-use, scale-to-zero design: spiky or unpredictable or bursty traffic, \
+event-driven or API backends, low or idle baseline, "only pay when used", or \
+an explicit ask for Lambda/serverless. It is FALSE for a steady always-on \
+application, anything that states it needs a relational/SQL database, or a \
+system that must not go down during business hours (that implies always-on \
+servers). Be conservative — when unsure, false.
 - daily_transactions: the stated number of orders/transactions/payments per \
 day. Convert other periods (per month / 30, per year / 365). Use 0 when the \
 description gives no number — never estimate one from company size.
@@ -153,6 +168,10 @@ class RequirementDraft(BaseModel):
     needs_event_streaming: bool = Field(description="Must react to events as they happen, not on a batch schedule?")
     needs_analytics: bool = Field(description="Dashboards/reporting/aggregation over the data, not just record lookups?")
     needs_search: bool = Field(description="Full-text or faceted search over the data?")
+    needs_email: bool = Field(description="Sends transactional email — confirmations, receipts, alerts?")
+    needs_queue: bool = Field(description="Background jobs or async work decoupled from the request path?")
+    needs_notifications: bool = Field(description="Push notifications or SMS alerts, separate from email?")
+    serverless: bool = Field(description="Genuine serverless fit — spiky/event-driven/scale-to-zero, no always-on servers or relational DB needed?")
     daily_transactions: int = Field(description="Transactions/orders per day if stated, else 0")
     latency_target_ms: int = Field(
         description="Stated or implied response-time bound in ms; 0 if none implied"
@@ -197,6 +216,10 @@ class RequirementDraft(BaseModel):
             needs_event_streaming=self.needs_event_streaming,
             needs_analytics=self.needs_analytics,
             needs_search=self.needs_search,
+            needs_email=self.needs_email,
+            needs_queue=self.needs_queue,
+            needs_notifications=self.needs_notifications,
+            serverless=self.serverless,
             daily_transactions=self.daily_transactions or None,
             latency_target_ms=self.latency_target_ms or None,
             provider_preference=(
@@ -418,8 +441,9 @@ _GROQ_SHAPE = """Reply with JSON in exactly this form, filled in from the text:
 "region":"india","budget_monthly_usd":500,"storage_gb":100,"egress_gb":50,
 "interruptible":false,"high_availability":true,"arm_compatible":true,
 "needs_waf":false,"needs_event_streaming":false,"needs_analytics":false,
-"needs_search":false,"daily_transactions":8000,"latency_target_ms":0,
-"provider_preference":"none","compliance":[],
+"needs_search":false,"needs_email":false,"needs_queue":false,
+"needs_notifications":false,"serverless":false,"daily_transactions":8000,
+"latency_target_ms":0,"provider_preference":"none","compliance":[],
 "assumed":["storage_gb"],"clarifying_question":"How much data do you store?"}
 
 workload_type: web, api, batch, ml, storage, mixed
@@ -431,6 +455,11 @@ needs_waf: attacks/DDoS/bots/fraud on incoming traffic, not ordinary auth.
 needs_event_streaming: must react as events happen, not on a batch schedule.
 needs_analytics: dashboards/reporting/aggregation, not single-record lookups.
 needs_search: searching/filtering across records by content.
+needs_email: sends confirmations, receipts, invoices or alerts by email.
+needs_queue: background jobs or async work off the request path.
+needs_notifications: push/SMS/app alerts, not email.
+serverless: spiky/event-driven/scale-to-zero, pay-per-use, no always-on \
+servers or SQL database. False for steady always-on apps. Be conservative.
 daily_transactions: stated transactions per day; 0 if not stated.
 latency_target_ms: a stated or implied response-time bound; 0 if none.
 assumed: names of fields you had to guess. clarifying_question: "" if none."""

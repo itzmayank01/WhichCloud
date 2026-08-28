@@ -22,7 +22,7 @@ def test_every_priced_category_becomes_a_named_aws_service():
 
     assert "Amazon RDS" in names
     assert "Elastic Load Balancing" in names
-    assert "Amazon ECS" in names
+    assert "Amazon EC2 Auto Scaling" in names
     assert len(prices) == 5
 
 
@@ -39,7 +39,7 @@ def test_without_a_load_balancer_the_cdn_reaches_compute():
     arch, _ = architecture_from(nodes("network", "compute"), False)
     cdn = next(s for s in arch.services if s.name == "Amazon CloudFront")
 
-    assert cdn.connects_to == ["Amazon ECS"]
+    assert cdn.connects_to == ["Amazon EC2 Auto Scaling"]
 
 
 def test_high_availability_states_its_zone_count_on_one_frame():
@@ -100,11 +100,13 @@ def test_an_unpriced_category_is_drawn_without_a_price():
 def test_the_mapping_covers_every_category_the_catalog_prices():
     """A category with no row here is silently dropped from the drawing."""
     assert set(AWS_SERVICE) == {
-        "network", "loadbalancer", "compute", "cache",
+        "network", "loadbalancer", "compute", "compute_fargate", "cache",
         "database", "database_replica", "storage", "monitoring", "waf",
         "audit", "kms", "nat", "tls", "dns", "auth", "backup",
         "streaming", "kafka", "search", "warehouse",
         "threat", "tracing", "posture", "flowlogs",
+        "email", "queue", "notification",
+        "lambda", "apigateway", "dynamodb", "secrets",
     }
 
 

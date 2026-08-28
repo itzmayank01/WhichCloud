@@ -16,6 +16,7 @@ Two things it deliberately exposes that a typical API would hide:
 
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
 from typing import Literal
 
@@ -59,6 +60,26 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+#: `parse_description` has no cache of its own -- unlike `extract_architecture`
+#: and `llm_extract`'s Constraints reading, which measured that the same
+#: model asked the same question twice does not reliably answer the same way.
+#: Without this, `/describe/export.tf` re-reading the description could price
+#: a different architecture than the one already on screen -- exactly the
+#: drift this whole feature exists to rule out. In-process only: good enough
+#: for one request's export to match its own display, not durable across a
+#: restart.
+_intake_cache: dict[str, object] = {}
+
+
+def _cached_intake(description: str, reader: str | None):
+    from .intake import parse_description
+
+    key = hashlib.sha256(f"{description.strip()}|{reader or ''}".encode()).hexdigest()
+    if key not in _intake_cache:
+        _intake_cache[key] = parse_description(description, provider=reader)
+    return _intake_cache[key]
 
 
 # ── response shapes ─────────────────────────────────────────────────────
@@ -428,6 +449,18 @@ class RecommendIn(BaseModel):
 class DescribeIn(BaseModel):
     description: str
     reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
+
+
+class PlanExportIn(BaseModel):
+    description: str
+    tier: Literal["tier_1", "tier_2", "tier_3"] = "tier_2"
+
+
+class DescribeExportIn(BaseModel):
+    description: str
+    reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
+    #: One of the labels `/describe` returned, e.g. "Cheapest".
+    option: str
 
 
 class SaveArchitectureIn(BaseModel):
@@ -967,6 +1000,43 @@ def plan_endpoint(body: DescribeIn) -> dict:
     }
 
 
+@app.post("/plan/export.tf")
+def plan_export_terraform_route(body: PlanExportIn):
+    """One tier of `/plan`, as a downloadable Terraform project.
+
+    Re-runs the same planner rather than accepting a spec from the client,
+    for the same reason `/architecture/export.svg` re-runs extraction: the
+    server is the only thing that has actually priced anything, so it is
+    the only thing that gets to decide what the SKUs were.
+    """
+    from fastapi.responses import Response
+
+    from . import plan as planning
+    from . import terraform_export
+
+    if not body.description.strip():
+        raise HTTPException(400, "description is empty")
+
+    try:
+        result = planning.build(body.description)
+    except AssertionError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    tier = next((t for t in result.tiers if t.name == body.tier), None)
+    if tier is None:
+        raise HTTPException(404, f"no priced tier named {body.tier!r}")
+
+    files = terraform_export.generate(tier.spec, tier.estimate)
+    archive = terraform_export.zip_bytes(files)
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="whichcloud-terraform.zip"'
+        },
+    )
+
+
 @app.post("/describe", response_model=RecommendationOut)
 def describe_route(body: DescribeIn) -> RecommendationOut:
     """Plain English straight through to three priced architectures.
@@ -975,10 +1045,10 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
     assumed and what it would ask next, so the interface can surface guesses
     as guesses.
     """
-    from .intake import IntakeError, parse_description
+    from .intake import IntakeError
 
     try:
-        intake = parse_description(body.description, provider=body.reader)
+        intake = _cached_intake(body.description, body.reader)
     except IntakeError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1004,4 +1074,50 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
         assumed=list(intake.assumed),
         clarifying_question=intake.clarifying_question,
         read_by=intake.provider,
+    )
+
+
+@app.post("/describe/export.tf")
+def describe_export_terraform_route(body: DescribeExportIn):
+    """One option from `/describe`, as a downloadable Terraform project.
+
+    Reads through `_cached_intake` rather than `parse_description` directly:
+    `/describe` already cached this description's extraction (or is about to
+    cache it, if this export request comes first), and reusing it is the only
+    way to guarantee this matches what `/describe` showed. `parse_description`
+    has no cache of its own -- re-running it here would risk a different
+    priced architecture than the one already on screen.
+    """
+    from fastapi.responses import Response
+
+    from . import terraform_export
+    from .intake import IntakeError
+
+    try:
+        intake = _cached_intake(body.description, body.reader)
+    except IntakeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    requirement = intake.requirement
+    provider = requirement.provider_preference or "aws"
+    if provider != "aws":
+        raise HTTPException(
+            400,
+            "Terraform export only generates AWS resources for now — this "
+            f"description priced on {provider}.",
+        )
+    options = recommend(requirement, provider)
+
+    option = next((o for o in options if o.label == body.option), None)
+    if option is None:
+        raise HTTPException(404, f"no priced option named {body.option!r}")
+
+    files = terraform_export.generate(option.spec, option.estimate)
+    archive = terraform_export.zip_bytes(files)
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="whichcloud-terraform.zip"'
+        },
     )

@@ -7,6 +7,8 @@ import {
   type Option,
   type Recommendation,
 } from "@/lib/api";
+import { ArchitectureCanvas } from "@/components/architecture/ArchitectureCanvas";
+import { CostBreakdownChart } from "@/components/architecture/CostBreakdownChart";
 
 /**
  * The advisor: a description of a business problem in, three costed options
@@ -85,6 +87,49 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
         ? "It fits the budget and survives an availability-zone failure."
         : "It fits the budget with room to spare, and handles the expected peak.",
   };
+}
+
+function DownloadTerraformButton({
+  description,
+  option,
+}: {
+  description: string;
+  option: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function download() {
+    setBusy(true);
+    setError("");
+    try {
+      const blob = await api.describeExportTf({ description, option });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "whichcloud-terraform.zip";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Export failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy}
+        className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-sunk disabled:opacity-60"
+      >
+        {busy ? "Generating…" : "Download Terraform"}
+      </button>
+      {error && <span className="text-[12.5px] text-spend">{error}</span>}
+    </div>
+  );
 }
 
 export function CostedAdvisor() {
@@ -250,7 +295,9 @@ export function CostedAdvisor() {
               </p>
               <p className="mt-1.5 font-mono text-[13px] text-ink-3">{shown.shape}</p>
 
-              <table className="mt-4 w-full border-collapse text-left">
+              <CostBreakdownChart nodes={shown.topology.nodes} />
+
+              <table className="mt-6 w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-line font-mono text-[11.5px] uppercase tracking-[0.08em] text-ink-3">
                     <th className="py-2 font-medium">Service</th>
@@ -281,14 +328,115 @@ export function CostedAdvisor() {
                 </tbody>
               </table>
 
-              {/* The priced diagram used to render here. Withdrawn while the
-                  engine's reasoning layer is being reworked -- it draws what
-                  the engine decides, so it can only be as right as the
-                  decisions behind it, and shipping a picture of an
-                  architecture that is still moving invites people to trust
-                  the picture. ArchitectureCanvas, the layout engine and
-                  lib/priceMatch are all still in the tree; this is a
-                  disconnected renderer, not a deleted feature. */}
+              <DownloadTerraformButton description={description} option={shown.label} />
+
+              {/* option.drawn is the same priced shape as the table above,
+                  laid out server-side by topo.build() + the architecture
+                  layer -- the diagram and the bill can't disagree because
+                  they're built from the same estimate. Null on non-AWS
+                  options until a service-equivalence table exists. */}
+              {shown.drawn ? (
+                <div className="mt-6">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+                    Architecture
+                  </p>
+                  <div className="mt-3 overflow-hidden rounded-xl border border-line bg-canvas p-2">
+                    {/* Keyed on the option label so switching Cheapest ->
+                        Most reliable remounts the canvas and replays the
+                        build-in animation, instead of silently swapping
+                        node positions in place on a diagram the reveal
+                        animation already finished playing once. */}
+                    <ArchitectureCanvas
+                      key={shown.label}
+                      view={shown.drawn}
+                      isPlaying
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-6 text-[13px] text-ink-3">
+                  Diagram not available for {shown.label} — only AWS
+                  architectures are drawn today.
+                </p>
+              )}
+
+              {(shown.applied.length > 0 ||
+                shown.advisory.length > 0 ||
+                result.not_applied.length > 0) && (
+                <div className="mt-6">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">
+                    Why these choices
+                  </p>
+
+                  {shown.applied.length > 0 && (
+                    <div className="mt-3 space-y-3">
+                      {shown.applied.map((t) => (
+                        <div
+                          key={t.id}
+                          className="flex items-start gap-3 rounded-lg bg-sunk px-3.5 py-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[14px] font-medium leading-snug text-ink">
+                              {t.name}
+                            </p>
+                            {t.versus_sku && (
+                              <p className="mt-0.5 font-mono text-[11.5px] text-ink-3">
+                                vs {t.versus_sku}
+                              </p>
+                            )}
+                            {t.reasons.length > 0 && (
+                              <ul className="mt-1.5 space-y-0.5">
+                                {t.reasons.map((r) => (
+                                  <li
+                                    key={r}
+                                    className="text-[13px] leading-relaxed text-ink-2"
+                                  >
+                                    · {r}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                          {t.saved_monthly_usd != null && (
+                            <span className="shrink-0 font-mono text-[13.5px] font-semibold text-save">
+                              −{money(t.saved_monthly_usd)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {shown.advisory.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-[12px] font-medium text-ink-3">
+                        Also worth doing, not priceable
+                      </p>
+                      <ul className="mt-1.5 space-y-1">
+                        {shown.advisory.map((t) => (
+                          <li key={t.id} className="text-[13.5px] leading-relaxed text-ink-2">
+                            <span className="font-medium text-ink">{t.name}</span>
+                            {t.reasons.length > 0 && ` — ${t.reasons.join("; ")}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {result.not_applied.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-[12px] font-medium text-ink-3">Ruled out</p>
+                      <ul className="mt-1.5 space-y-1">
+                        {result.not_applied.map((n) => (
+                          <li key={n.id} className="text-[13px] leading-relaxed text-ink-3">
+                            <span className="text-ink-2">{n.name}</span> — {n.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {shown.tradeoffs.length > 0 && (
                 <div className="mt-5 rounded-lg bg-caution-wash px-4 py-3">

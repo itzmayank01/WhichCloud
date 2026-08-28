@@ -32,7 +32,14 @@ AWS_SERVICE: dict[str, tuple[str, str, str, str]] = {
     "waf": ("AWS WAF", "edge", "Filters malicious requests before they reach the app", "edge"),
     "network": ("Amazon CloudFront", "edge", "Content delivery", "edge"),
     "loadbalancer": ("Elastic Load Balancing", "api", "Traffic distribution", "public"),
-    "compute": ("Amazon ECS", "compute", "Application containers", "private"),
+    # The engine's default compute is priced as raw instances (BASE_SIZING
+    # picks an EC2 instance type, not a task definition), so that is what
+    # gets drawn. "compute_fargate" below is the container-orchestrated
+    # alternative, priced and drawn separately -- collapsing both onto one
+    # "Amazon ECS" label meant an EC2-only architecture was mislabeled as
+    # running containers it never provisioned.
+    "compute": ("Amazon EC2 Auto Scaling", "compute", "Application servers, sized to the traffic described", "private"),
+    "compute_fargate": ("AWS Fargate (ECS)", "compute", "Serverless application containers", "private"),
     "cache": ("Amazon ElastiCache", "data", "In-memory cache", "private"),
     "database": ("Amazon RDS", "data", "Relational database", "private"),
     # A distinct name, not another "Amazon RDS" -- two services would collide
@@ -58,6 +65,23 @@ AWS_SERVICE: dict[str, tuple[str, str, str, str]] = {
     "posture": ("AWS Security Hub", "security", "Continuous compliance and posture checks", "edge"),
     "flowlogs": ("VPC Flow Logs", "observability", "Records network traffic crossing the VPC", "edge"),
     "tls": ("AWS Certificate Manager", "security", "TLS certificates for the load balancer and CDN", "edge"),
+    # Previously unmapped in topology.py -- these line items existed and
+    # were priced, but silently added their cost onto the compute node and
+    # never appeared as their own service.
+    "email": ("Amazon SES", "async", "Sends transactional email", "private"),
+    "queue": ("Amazon SQS", "async", "Decouples requests from the work that processes them", "private"),
+    "notification": ("Amazon SNS", "async", "Push notifications and fan-out", "private"),
+    # Serverless. No VPC placement -- Lambda, API Gateway and DynamoDB are
+    # regional managed services, not boxes inside a subnet, which is exactly
+    # why a serverless architecture has no NAT gateway or private subnet to
+    # draw. "edge" keeps them out of the VPC container the server shapes use.
+    "apigateway": ("Amazon API Gateway", "api", "Managed HTTP front for the functions", "edge"),
+    "lambda": ("AWS Lambda", "compute", "Runs application code per request, scales to zero", "edge"),
+    "dynamodb": ("Amazon DynamoDB", "data", "Serverless key-value and document store", "edge"),
+    # Placed at "edge", not "private": Secrets Manager is a regional managed
+    # service reached over the network, and pinning it inside a subnet was
+    # forcing a VPC around a serverless architecture that has none.
+    "secrets": ("AWS Secrets Manager", "security", "Stores database and API credentials", "edge"),
 }
 
 #: The request path, in order. Only pairs where both ends exist are drawn, so
@@ -82,7 +106,22 @@ FLOW_ORDER: tuple[tuple[str, str], ...] = (
     ("dns", "network"),
     ("dns", "loadbalancer"),
     ("compute", "auth"),
+    ("compute", "email"),
+    ("compute", "queue"),
+    ("compute", "notification"),
     ("storage", "backup"),
+    # ── serverless request path ──
+    # The edge tier reaches API Gateway, which invokes Lambda, which reads
+    # and writes DynamoDB and serves assets from S3. Only drawn where both
+    # ends exist, so a server shape (no apigateway/lambda) shows none of them.
+    ("network", "apigateway"),
+    ("dns", "apigateway"),
+    ("apigateway", "lambda"),
+    ("lambda", "dynamodb"),
+    ("lambda", "storage"),
+    ("lambda", "auth"),
+    ("lambda", "queue"),
+    ("lambda", "notification"),
     # The async buffer: compute publishes events, the stores consume them.
     ("compute", "streaming"),
     ("compute", "kafka"),
@@ -93,6 +132,16 @@ FLOW_ORDER: tuple[tuple[str, str], ...] = (
     ("kafka", "search"),
     ("kafka", "warehouse"),
 )
+
+#: Kinds that genuinely run inside a subnet, and therefore require a VPC to be
+#: drawn around them. A managed service like KMS or Secrets Manager may be
+#: PLACED "private" for tidiness, but it does not itself justify a VPC -- a
+#: serverless architecture reaches all of them over the network and has no VPC
+#: at all, which is precisely why it pays for no NAT gateway.
+_VPC_RESIDENT_KINDS = frozenset({
+    "compute", "compute_fargate", "cache", "database", "database_replica",
+    "nat", "loadbalancer", "streaming", "kafka", "search", "warehouse",
+})
 
 
 @dataclass
@@ -171,6 +220,14 @@ def architecture_from(
             if match:
                 by_kind[kind] = match
 
+    # A Fargate compute node plays the same role in the request path as EC2
+    # compute -- everything FLOW_ORDER says about "compute" (what reaches it,
+    # what it reaches) applies unchanged. Aliasing here means the routing
+    # table below never needs a parallel "compute_fargate" entry for every
+    # edge compute already has.
+    if "compute_fargate" in by_kind and "compute" not in by_kind:
+        by_kind["compute"] = by_kind["compute_fargate"]
+
     for source_kind, target_kind in FLOW_ORDER:
         if source_kind in by_kind and target_kind in by_kind:
             # A CDN that reaches a load balancer must not also reach compute
@@ -242,18 +299,29 @@ def architecture_from(
     zone = f"Availability Zone{suffix}"
 
     boundaries: list[Boundary] = []
-    zone_names: list[str] = []
 
-    boundaries.append(
-        Boundary(kind="subnet", name=public, contains=list(placement["public"]))
-    )
-    boundaries.append(
-        Boundary(kind="subnet", name=private, contains=list(placement["private"]))
-    )
-    boundaries.append(Boundary(kind="az", name=zone, contains=[public, private]))
-    zone_names.append(zone)
-
-    boundaries.insert(0, Boundary(kind="vpc", name="VPC", contains=zone_names))
+    # A VPC only where something actually RUNS in a subnet. A managed service
+    # placed "private" for tidiness (KMS, Secrets Manager) does not justify a
+    # VPC on its own -- a serverless architecture reaches all of them over the
+    # network and has none. The absence of the VPC is itself true information:
+    # it is *why* the serverless option pays for no NAT gateway. Managed
+    # services that were placed inside the (now absent) subnets fall back to
+    # sitting directly in the cloud boundary.
+    needs_vpc = any(kind in _VPC_RESIDENT_KINDS for kind in present)
+    if not needs_vpc:
+        placement["edge"].extend(placement["public"])
+        placement["edge"].extend(placement["private"])
+        placement["public"].clear()
+        placement["private"].clear()
+    if needs_vpc:
+        boundaries.append(
+            Boundary(kind="subnet", name=public, contains=list(placement["public"]))
+        )
+        boundaries.append(
+            Boundary(kind="subnet", name=private, contains=list(placement["private"]))
+        )
+        boundaries.append(Boundary(kind="az", name=zone, contains=[public, private]))
+        boundaries.insert(0, Boundary(kind="vpc", name="VPC", contains=[zone]))
 
     return (
         Architecture(

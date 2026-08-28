@@ -48,15 +48,18 @@ ROW_GAP = 104
 
 #: Beyond this a row is wrapped rather than allowed to run off the canvas.
 #:
-#: Eight put the whole observability and security tier -- CloudWatch,
-#: CloudTrail, ACM, Cognito, GuardDuty, X-Ray, Security Hub, Flow Logs --
-#: on one line 1,840px wide. The canvas is scaled to fit its container, so
-#: that meant rendering at roughly 59%: text too small to read, arrows too
-#: thin to follow, and long horizontal runs crossing everything above them.
+#: This was 5, chosen when the canvas was scaled to fit its container **on
+#: width alone** -- under that rule narrow-and-tall was free, because height
+#: never entered the calculation. It produced a 1252x1328 canvas: portrait,
+#: for a workspace whose canvas area is landscape.
 #:
-#: Five brings it to 1,252px, which fits at full size. Narrower and taller
-#: beats wider and squashed, because the fit is computed from width alone.
-MAX_PER_ROW = 5
+#: The renderer now fits both axes, so height is usually the binding
+#: constraint and that trade inverts -- a portrait diagram in a landscape
+#: frame wastes the width it has and gets scaled down to fit the height it
+#: does not. Eight per row is wider and considerably shorter, which lands
+#: much closer to the aspect ratio of the frame it is drawn in and so
+#: renders LARGER, not smaller.
+MAX_PER_ROW = 8
 
 #: Space between a group's edge and the boxes inside it, per level of nesting,
 #: so a region does not sit flush against the VPC drawn inside it.

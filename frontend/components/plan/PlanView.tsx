@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Plan, PlanTier } from "@/lib/api";
-import { money } from "@/lib/api";
+import { api, money } from "@/lib/api";
 
 /* The reasoning layer, rendered.
  *
@@ -18,6 +18,49 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline justify-between gap-4 py-1">
       <span className="text-xs uppercase tracking-wide text-neutral-500">{label}</span>
       <span className="font-mono text-sm text-neutral-900">{value}</span>
+    </div>
+  );
+}
+
+function DownloadTerraformButton({
+  description,
+  tier,
+}: {
+  description: string;
+  tier: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function download() {
+    setBusy(true);
+    setError("");
+    try {
+      const blob = await api.planExportTf({ description, tier });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "whichcloud-terraform.zip";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Export failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy || !description}
+        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 transition hover:bg-neutral-50 disabled:opacity-60"
+      >
+        {busy ? "Generating…" : "Download Terraform"}
+      </button>
+      {error && <span className="text-xs text-red-700">{error}</span>}
     </div>
   );
 }
@@ -166,7 +209,13 @@ function WithheldView({ plan }: { plan: Plan }) {
   );
 }
 
-export function PlanView({ plan }: { plan: Plan }) {
+export function PlanView({
+  plan,
+  description,
+}: {
+  plan: Plan;
+  description: string;
+}) {
   const [selected, setSelected] = useState(plan.default_tier);
   const tier = plan.tiers.find((t) => t.name === selected) ?? plan.tiers[0];
   const [showBelow, setShowBelow] = useState(false);
@@ -318,10 +367,11 @@ export function PlanView({ plan }: { plan: Plan }) {
 
       {/* ── the selected tier's bill ── */}
       <section className="rounded-xl border border-neutral-200 bg-white">
-        <div className="border-b border-neutral-200 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
           <h3 className="text-sm font-semibold text-neutral-900">
             {tier.label} — line items
           </h3>
+          <DownloadTerraformButton description={description} tier={tier.name} />
         </div>
         <div className="divide-y divide-neutral-100">
           {tier.components.map((c) => (

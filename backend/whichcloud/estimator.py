@@ -184,6 +184,27 @@ class ArchitectureSpec:
     s3_put_requests: float = 0.0
     s3_get_requests: float = 0.0
 
+    # ── serverless ──
+    # All default to 0, so no server-based shape ever acquires a Lambda or
+    # DynamoDB line -- these are filled only by the serverless spec builder.
+    # Lambda bills per invocation AND per GB-second (invocations x duration x
+    # memory), so the spec carries all three and the estimator does the
+    # arithmetic rather than storing a pre-multiplied number that hides it.
+    lambda_invocations_per_month: float = 0.0
+    lambda_avg_ms: float = 0.0
+    lambda_memory_mb: float = 0.0
+    #: Provisioned concurrency keeps N execution environments warm around the
+    #: clock -- the reliability lever for a latency-sensitive serverless API.
+    #: Billed as its own GB-second stream on top of on-demand duration.
+    lambda_provisioned_concurrency: int = 0
+    apigateway_requests_per_month: float = 0.0
+    #: DynamoDB on-demand, in request units. A strongly-consistent or
+    #: transactional read costs more than one unit, but the sizing layer
+    #: states the unit count directly so the estimator never has to guess.
+    dynamodb_read_units_per_month: float = 0.0
+    dynamodb_write_units_per_month: float = 0.0
+    dynamodb_storage_gb: float = 0.0
+
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
     use_spot: bool = False
@@ -274,6 +295,15 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "email", "outbound"): "ses:outbound-email",
     ("aws", "queue", "requests"): "sqs:requests",
     ("aws", "notification", "requests"): "sns:requests",
+    # Serverless meters. Each is a straight category->sku lookup, priced by
+    # its graduated tiers so the real free allowances (Lambda's first
+    # million requests, DynamoDB's first 25 GB) are honoured, not billed.
+    ("aws", "lambda-requests", "requests"): "lambda:requests",
+    ("aws", "lambda-duration", "gb-second"): "lambda:duration",
+    ("aws", "apigateway", "requests"): "apigateway:http-requests",
+    ("aws", "dynamodb-reads", "request-units"): "dynamodb:read-request-units",
+    ("aws", "dynamodb-writes", "request-units"): "dynamodb:write-request-units",
+    ("aws", "dynamodb-storage", "gb-month"): "dynamodb:storage",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
     ("aws", "governance", "object-lock"): "s3:object-lock",
@@ -590,6 +620,70 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
         else:
             result.missing.append("notifications")
+
+    # ---- serverless compute (Lambda) ----
+    # Two lines, because Lambda is billed two ways. Both are tiered so the
+    # free allowances are honoured rather than billed.
+    if spec.lambda_invocations_per_month:
+        req = _by_role(provider, region, "lambda-requests", "requests", dsn)
+        dur = _by_role(provider, region, "lambda-duration", "gb-second", dsn)
+        if req and dur:
+            result.items.append(
+                _tiered_line(
+                    "Lambda requests", req, spec.lambda_invocations_per_month
+                )
+            )
+            # GB-seconds = invocations x (avg duration in seconds) x (memory in GB).
+            gb_seconds = (
+                spec.lambda_invocations_per_month
+                * (spec.lambda_avg_ms / 1000.0)
+                * (spec.lambda_memory_mb / 1024.0)
+            )
+            # Provisioned concurrency keeps N environments warm every second of
+            # the month, on the same GB-second meter -- an always-on cost the
+            # reliability tier opts into, priced for real, not a multiplier.
+            if spec.lambda_provisioned_concurrency > 0:
+                gb_seconds += (
+                    spec.lambda_provisioned_concurrency
+                    * (spec.lambda_memory_mb / 1024.0)
+                    * float(HOURS_PER_MONTH)
+                    * 3600.0
+                )
+            if gb_seconds:
+                result.items.append(_tiered_line("Lambda duration", dur, gb_seconds))
+        else:
+            result.missing.append("lambda")
+
+    # ---- API Gateway (HTTP API) ----
+    if spec.apigateway_requests_per_month:
+        point = _by_role(provider, region, "apigateway", "requests", dsn)
+        if point:
+            result.items.append(
+                _tiered_line("API Gateway requests", point, spec.apigateway_requests_per_month)
+            )
+        else:
+            result.missing.append("api gateway")
+
+    # ---- DynamoDB (on-demand) ----
+    if spec.dynamodb_read_units_per_month or spec.dynamodb_write_units_per_month:
+        reads = _by_role(provider, region, "dynamodb-reads", "request-units", dsn)
+        writes = _by_role(provider, region, "dynamodb-writes", "request-units", dsn)
+        store_pt = _by_role(provider, region, "dynamodb-storage", "gb-month", dsn)
+        if reads and writes:
+            if spec.dynamodb_read_units_per_month:
+                result.items.append(
+                    _tiered_line("DynamoDB reads", reads, spec.dynamodb_read_units_per_month)
+                )
+            if spec.dynamodb_write_units_per_month:
+                result.items.append(
+                    _tiered_line("DynamoDB writes", writes, spec.dynamodb_write_units_per_month)
+                )
+            if store_pt and spec.dynamodb_storage_gb:
+                result.items.append(
+                    _tiered_line("DynamoDB storage", store_pt, spec.dynamodb_storage_gb)
+                )
+        else:
+            result.missing.append("dynamodb")
 
     # ---- cross-region backup copy ----
     if spec.backup_copy_gb:
