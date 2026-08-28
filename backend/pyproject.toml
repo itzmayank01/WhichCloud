@@ -21,5 +21,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
+[tool.pytest.ini_options]
+# The stability test runs recommend() 100x against the live catalog; it proves
+# determinism but costs minutes. It is opt-in: `pytest -m slow` runs it, the
+# default run skips it. Determinism is a logic property, unaffected by skipping.
+addopts = "-m 'not slow'"
+markers = [
+    "slow: opt-in; excluded from the default run (see addopts)",
+]
+
 [tool.setuptools.packages.find]
 include = ["whichcloud*"]

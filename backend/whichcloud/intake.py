@@ -149,6 +149,24 @@ NOT event_driven even if it emits some events. Set telemetry when that \
 stream is time-series, append-only or sensor data (IoT readings, metrics, \
 device events) — the signal that the data must NOT go in a relational \
 database. When event_driven is false, telemetry is false.
+- The four derivation axes describe the workload's shape and DRIVE the \
+architecture. Answer each from the text, defaulting to the web-app answer \
+only when nothing indicates otherwise:
+  ingress_shape — what enters: "requests" (users calling an API/site), \
+"events" (webhooks, messages, discrete signals), "files" (uploads, media), \
+"batches" (scheduled bulk loads), "connections" (persistent sockets, live \
+chat), "streams" (continuous high-rate telemetry/clickstream).
+  processing_mode — "synchronous" (answered in the request), \
+"near-real-time" (processed as it arrives, seconds of latency), "batch" \
+(accumulated into scheduled runs), "offline" (deferred, no latency need).
+  data_shape — what the data IS: "relational" (records with relationships), \
+"time-series" (telemetry, metrics, append-only by time), "key-value", \
+"document", "object" (media/blobs), "search" (full-text), "warehouse" \
+(analytics/OLAP), "mixed" (genuinely several). Sensor/IoT/metrics data is \
+time-series, NOT relational.
+  egress_shape — what leaves: "api", "media" (video/large files to users), \
+"notifications", "dashboards" (reporting views), "exports" (bulk data out), \
+"none" (internal pipeline, nothing served).
 - daily_transactions: the stated number of orders/transactions/payments per \
 day. Convert other periods (per month / 30, per year / 365). Use 0 when the \
 description gives no number — never estimate one from company size.
@@ -203,6 +221,18 @@ class RequirementDraft(BaseModel):
     ai_language: bool = Field(description="Analyses text — sentiment, NLP, entities, key phrases?")
     event_driven: bool = Field(description="A stream/event processor — continuous ingestion of events or telemetry processed as they arrive, not a request-serving app?")
     telemetry: bool = Field(description="Time-series, append-only or sensor telemetry data (IoT, metrics, clickstream)?")
+    ingress_shape: Literal["requests", "events", "files", "batches", "connections", "streams"] = Field(
+        description="What ENTERS the system: user requests, discrete events, uploaded files, scheduled batches, persistent connections, or continuous streams"
+    )
+    processing_mode: Literal["synchronous", "near-real-time", "batch", "offline"] = Field(
+        description="What must HAPPEN to the input: answered in the request (synchronous), processed as it arrives (near-real-time), accumulated into runs (batch), or deferred (offline)"
+    )
+    data_shape: Literal["relational", "time-series", "key-value", "document", "object", "search", "warehouse", "mixed"] = Field(
+        description="What the data IS at rest: relational records, time-series/telemetry, key-value, documents, large objects/media, full-text search, analytics warehouse, or mixed"
+    )
+    egress_shape: Literal["api", "media", "notifications", "dashboards", "exports", "none"] = Field(
+        description="What LEAVES, to whom: API responses, media/files, notifications, dashboards/reports, bulk exports, or nothing (internal pipeline)"
+    )
     daily_transactions: int = Field(description="Transactions/orders per day if stated, else 0")
     latency_target_ms: int = Field(
         description="Stated or implied response-time bound in ms; 0 if none implied"
@@ -256,6 +286,10 @@ class RequirementDraft(BaseModel):
             ai_language=self.ai_language,
             event_driven=self.event_driven,
             telemetry=self.telemetry,
+            ingress_shape=self.ingress_shape,
+            processing_mode=self.processing_mode,
+            data_shape=self.data_shape,
+            egress_shape=self.egress_shape,
             daily_transactions=self.daily_transactions or None,
             latency_target_ms=self.latency_target_ms or None,
             provider_preference=(
@@ -480,6 +514,8 @@ _GROQ_SHAPE = """Reply with JSON in exactly this form, filled in from the text:
 "needs_search":false,"needs_email":false,"needs_queue":false,
 "needs_notifications":false,"serverless":false,"ai":false,"ai_vision":false,
 "ai_language":false,"event_driven":false,"telemetry":false,
+"ingress_shape":"requests","processing_mode":"synchronous",
+"data_shape":"relational","egress_shape":"api",
 "daily_transactions":8000,
 "latency_target_ms":0,"provider_preference":"none","compliance":[],
 "assumed":["storage_gb"],"clarifying_question":"How much data do you store?"}
@@ -503,6 +539,11 @@ ai_vision: images/video. ai_language: text/sentiment. All false if ai false.
 event_driven: ingests/processes a STREAM of events or telemetry, not a \
 request-serving app. telemetry: time-series/append-only/sensor data (IoT, \
 metrics). Both false for an ordinary web app.
+ingress_shape: requests|events|files|batches|connections|streams — what enters.
+processing_mode: synchronous|near-real-time|batch|offline — what happens to it.
+data_shape: relational|time-series|key-value|document|object|search|warehouse\
+|mixed — what the data is. Sensor/IoT/metrics = time-series, not relational.
+egress_shape: api|media|notifications|dashboards|exports|none — what leaves.
 daily_transactions: stated transactions per day; 0 if not stated.
 latency_target_ms: a stated or implied response-time bound; 0 if none.
 assumed: names of fields you had to guess. clarifying_question: "" if none."""

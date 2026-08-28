@@ -17,6 +17,39 @@ Scale = Literal["low", "medium", "high"]
 Tolerance = Literal["low", "medium", "high"]
 Skill = Literal["beginner", "intermediate", "expert"]
 
+# ── the four derivation axes ──
+# Every architecture is derived from the workload by answering these, not
+# from a template. Compute and networking FOLLOW from them; they are never
+# the starting point. Two workloads answering these differently must produce
+# different component sets. Defaults describe a plain request/response web
+# app -- the shape an unqualified prompt still lands on.
+IngressShape = Literal[
+    "requests",     # HTTP/API calls from users
+    "events",       # discrete events (webhooks, messages, device signals)
+    "files",        # uploaded documents, media, blobs
+    "batches",      # scheduled bulk loads
+    "connections",  # persistent/long-lived sockets
+    "streams",      # continuous high-rate telemetry / clickstream
+]
+ProcessingMode = Literal[
+    "synchronous",     # answered in the request
+    "near-real-time",  # processed as it arrives, seconds of latency
+    "batch",           # accumulated and processed in runs
+    "offline",         # deferred, no latency requirement
+]
+DataShape = Literal[
+    "relational", "time-series", "key-value", "document",
+    "object", "search", "warehouse", "mixed",
+]
+EgressShape = Literal[
+    "api",            # JSON/API responses
+    "media",          # video/large files served to users
+    "notifications",  # push/email/SMS out
+    "dashboards",     # reporting / analytics views
+    "exports",        # bulk data out
+    "none",           # nothing leaves (internal pipeline)
+]
+
 VALID_WORKLOADS = ("web", "api", "batch", "ml", "storage", "mixed")
 VALID_PATTERNS = ("steady", "spiky", "unknown")
 VALID_SCALES = ("low", "medium", "high")
@@ -81,6 +114,16 @@ class Requirement:
     #: Time-series, append-only or sensor telemetry. Routes the PRIMARY store
     #: to a purpose-built time-series store (Timestream), never to RDS.
     telemetry: bool = False
+
+    # ── the four derivation axes ──
+    # What enters, what happens to it, where it rests, what leaves. The
+    # architecture is derived from these rather than fitted to a template.
+    # Defaults are the plain web-app answers, so a prompt that specifies none
+    # of them still resolves to the shape it does today.
+    ingress_shape: IngressShape = "requests"
+    processing_mode: ProcessingMode = "synchronous"
+    data_shape: DataShape = "relational"
+    egress_shape: EgressShape = "api"
 
     #: Transactions per day, when the description states one. Drives stream
     #: shard count, which is arithmetic rather than a tier lookup.
