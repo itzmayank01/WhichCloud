@@ -377,31 +377,45 @@ def fargate_tasks_for(requirement: Requirement) -> tuple[int, int]:
     return base, peak
 
 
+def _streaming_ingestion(requirement: Requirement) -> dict:
+    """The stream that ingests events -- Kinesis, or Kafka at volume.
+
+    This is the FRONT DOOR for an event-driven workload, not an optimization:
+    when a system's reason for existing is to ingest a real-time stream (IoT
+    telemetry, clickstream, a payments feed), the stream is how the data
+    arrives. Withholding it from the cheaper tiers -- as this once did,
+    placing it on the top option only -- left them describing an architecture
+    that physically could not do the job the description stated. So it lives
+    in the base shape, present on every tier, whenever event streaming is
+    required. The dedicated ANALYTICS store behind it is the genuine tier
+    upgrade and stays in `_pipeline_delta`.
+    """
+    if not requirement.needs_event_streaming:
+        return {}
+    if _wants_kafka(requirement):
+        return {
+            "kafka_broker_count": KAFKA_MIN_BROKERS,
+            "kafka_broker_vcpu": 2,
+            "kafka_broker_memory_gb": 8.0,
+        }
+    return {
+        "stream_shards": stream_shards_for(requirement),
+        "stream_put_units": float((requirement.daily_transactions or 0) * 30),
+    }
+
+
 def _pipeline_delta(requirement: Requirement) -> dict:
-    """The dedicated event and analytics tier, for the top option only.
+    """The dedicated analytics store, for the top option only.
 
-    The cheaper tiers answer the same requirement with the database they
-    already have: reporting queries hit the primary on Cheapest and a read
-    replica on Most reliable. That works, and for a workload doing a
-    handful of transactions a second it is the right answer.
-
-    This is the third way of serving it -- events onto a stream, a store
-    built for aggregation behind it -- which decouples reporting from the
-    transactional path entirely and keeps working when neither the query
-    volume nor the row count would fit on a replica. It is a different
-    architecture, not a bigger one, which is the distinction the tiers are
-    supposed to draw.
+    The stream that ingests events is in the base shape now (every tier needs
+    the front door). What the top tier adds is a store built for aggregation
+    -- a warehouse, a search cluster -- behind that stream, so reporting is
+    decoupled from the transactional path and keeps working when neither the
+    query volume nor the row count would fit on a database read replica. It is
+    a different architecture, not a bigger one, which is the distinction the
+    tiers are supposed to draw.
     """
     delta: dict = {}
-
-    if requirement.needs_event_streaming:
-        if _wants_kafka(requirement):
-            delta["kafka_broker_count"] = KAFKA_MIN_BROKERS
-            delta["kafka_broker_vcpu"] = 2
-            delta["kafka_broker_memory_gb"] = 8.0
-        else:
-            delta["stream_shards"] = stream_shards_for(requirement)
-            delta["stream_put_units"] = float((requirement.daily_transactions or 0) * 30)
 
     if requirement.needs_search:
         delta["search_node_count"] = SEARCH_NODES[requirement.traffic_scale]
@@ -451,12 +465,43 @@ def stream_shards_for(requirement: Requirement) -> int:
     return max(1, math.ceil(peak / STREAM_RECORDS_PER_SHARD))
 
 
+#: Above this monthly egress, a workload that serves requests is delivering
+#: real content -- media, downloads, a busy site -- and belongs behind a CDN.
+#: A video platform pushing hundreds of TB direct from EC2, with no
+#: CloudFront in the picture, is not an architecture anyone ships; the whole
+#: point of a CDN is to be the thing that serves that traffic.
+CDN_EGRESS_THRESHOLD_GB = 1000.0
+
+
+def _delivery(requirement: Requirement) -> tuple[float, float, float]:
+    """Split egress between a CDN and the origin, for content-heavy sites.
+
+    Returns (cdn_gb, origin_egress_gb, cdn_requests). Below the threshold, or
+    for a workload that serves nothing, delivery stays direct and no CDN is
+    added. Above it, the bytes are attributed to CloudFront -- which is where
+    they are actually served -- and origin egress drops to zero: AWS does not
+    charge for the origin-to-edge fetch, so inventing a separate origin-egress
+    line would overstate the bill for the exact optimization a CDN represents.
+    CloudFront's per-GB rate is within a rounding error of direct egress here,
+    so this corrects the ARCHITECTURE without inventing a saving the catalog
+    cannot substantiate.
+    """
+    egress = requirement.egress_gb
+    if not requirement.serves_requests or egress < CDN_EGRESS_THRESHOLD_GB:
+        return 0.0, egress, 0.0
+    # One HTTPS request per ~2 MB object delivered -- a coarse, stated
+    # approximation, like every volume heuristic here.
+    requests = egress / 0.002
+    return egress, 0.0, requests
+
+
 def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
     """The untuned shape for this workload, before any technique applies."""
     count, vcpu, memory = size_for(requirement)
     db_vcpu, db_memory = db_size_for(requirement)
+    cdn_gb, origin_egress_gb, cdn_requests = _delivery(requirement)
 
-    return ArchitectureSpec(
+    spec = ArchitectureSpec(
         name=label,
         region=requirement.region,
         compute_count=count,
@@ -466,7 +511,9 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         database_memory_gb=db_memory if requirement.needs_database else None,
         database_multi_az=False,
         storage_gb=requirement.storage_gb,
-        egress_gb=requirement.egress_gb,
+        egress_gb=origin_egress_gb,
+        cdn_gb=cdn_gb,
+        cdn_monthly_requests=cdn_requests,
         serves_requests=requirement.serves_requests,
         load_balancer=requirement.needs_database and count > 1,
         # A read-heavy app in front of a database wants a cache, and anything
@@ -601,6 +648,10 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         ),
         flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
     )
+    # The ingestion stream is part of the base shape -- it is how events reach
+    # an event-driven system, present on every tier, not a top-tier add-on.
+    stream = _streaming_ingestion(requirement)
+    return replace(spec, **stream) if stream else spec
 
 
 # ── serverless sizing ──
