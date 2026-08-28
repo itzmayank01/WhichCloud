@@ -487,7 +487,12 @@ def _delivery(requirement: Requirement) -> tuple[float, float, float]:
     cannot substantiate.
     """
     egress = requirement.egress_gb
-    if not requirement.serves_requests or egress < CDN_EGRESS_THRESHOLD_GB:
+    # A media/object workload is served THROUGH CloudFront by definition --
+    # that is what an object primary means -- so it goes behind a CDN whatever
+    # the byte count. Other shapes only earn a CDN once egress is large enough
+    # to be real content delivery rather than API responses.
+    is_media = requirement.serves_requests and requirement.data_shape == "object"
+    if not requirement.serves_requests or (egress < CDN_EGRESS_THRESHOLD_GB and not is_media):
         return 0.0, egress, 0.0
     # One HTTPS request per ~2 MB object delivered -- a coarse, stated
     # approximation, like every volume heuristic here.
@@ -495,10 +500,155 @@ def _delivery(requirement: Requirement) -> tuple[float, float, float]:
     return egress, 0.0, requests
 
 
-def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
-    """The untuned shape for this workload, before any technique applies."""
-    count, vcpu, memory = size_for(requirement)
+@dataclass(frozen=True, slots=True)
+class _PrimaryStore:
+    """The store a serving workload keeps its own data in, DERIVED from
+    `data_shape` rather than defaulted to a relational database.
+
+    This is the heart of "derived, not templated": a media platform and a
+    relational shop are the same `web` workload_type, so the old shape gave
+    both an RDS instance and they came out as the same architecture. The data
+    they hold is not the same, so the store they need is not the same.
+
+      has_rds   a managed SQL primary the tier ladder acts on (Multi-AZ, read
+                replicas, an ElastiCache in front). Only relational stores get
+                those levers; a key-value or object store scales differently.
+      stateful  there is application data at rest here that must be encrypted,
+                have its secrets held and its users authenticated. A pure
+                media/CDN origin is not stateful in this sense -- it serves
+                bytes from S3 and holds no relational session state.
+    """
+
+    kind: str
+    fields: dict
+    has_rds: bool
+    stateful: bool
+    reason: str
+
+
+def _store_for(requirement: Requirement) -> _PrimaryStore:
+    """Route the primary store from `data_shape`. Never relational by default.
+
+    A workload that serves no requests (batch, ML, bulk storage) keeps no
+    serving store at all -- the same rule `needs_database` encoded before,
+    preserved here so those shapes are unchanged.
+    """
+    if not requirement.needs_database:
+        return _PrimaryStore(
+            "none", {}, has_rds=False, stateful=False,
+            reason="a batch/storage workload serves no requests and keeps no online database",
+        )
+
+    shape = requirement.data_shape
+    daily = requirement.daily_transactions or 0
+
+    if shape in ("relational", "mixed"):
+        db_vcpu, db_memory = db_size_for(requirement)
+        return _PrimaryStore(
+            "relational",
+            {"database_vcpu": db_vcpu, "database_memory_gb": db_memory},
+            has_rds=True, stateful=True,
+            reason="records with relationships and joins — a managed SQL database (RDS)",
+        )
+
+    if shape in ("key-value", "document"):
+        # DynamoDB stands in for both: the catalog prices it, and it is the
+        # honest key-value/document primary. (DocumentDB is not in the
+        # catalog; the plan says fall back to DynamoDB rather than invent a
+        # rate.) Sized from the stated volume, floored so a real table costs
+        # something before traffic.
+        return _PrimaryStore(
+            "key-value",
+            {
+                "dynamodb_read_units_per_month": max(
+                    LAMBDA_INVOCATIONS_FLOOR, daily * 30 * DYNAMO_READS_PER_TXN
+                ),
+                "dynamodb_write_units_per_month": max(
+                    DYNAMO_STORAGE_FLOOR_GB * 1000, daily * 30 * DYNAMO_WRITES_PER_TXN
+                ),
+                "dynamodb_storage_gb": max(DYNAMO_STORAGE_FLOOR_GB, requirement.storage_gb),
+            },
+            has_rds=False, stateful=True,
+            reason=(
+                "single-key lookups at scale — a DynamoDB table, not a SQL "
+                "database it would only bottleneck on"
+            ),
+        )
+
+    if shape == "object":
+        # Media/blobs. S3 IS the primary store (already in the base shape as
+        # object storage), served through CloudFront. No relational database
+        # exists in this architecture at all -- which is exactly what makes a
+        # media platform diverge from a shop.
+        return _PrimaryStore(
+            "object", {}, has_rds=False, stateful=False,
+            reason="media and large objects — served from S3 behind CloudFront, no relational database",
+        )
+
+    if shape == "search":
+        return _PrimaryStore(
+            "search",
+            {
+                "search_node_count": SEARCH_NODES[requirement.traffic_scale],
+                "search_node_vcpu": 2,
+                "search_node_memory_gb": 8.0,
+                "search_storage_gb": requirement.storage_gb,
+            },
+            has_rds=False, stateful=True,
+            reason="full-text and faceted access is the primary read path — an OpenSearch cluster",
+        )
+
+    if shape == "warehouse":
+        return _PrimaryStore(
+            "warehouse",
+            {
+                "warehouse_node_count": WAREHOUSE_NODES[requirement.traffic_scale],
+                "warehouse_node_vcpu": 2,
+                "warehouse_node_memory_gb": 16.0,
+            },
+            has_rds=False, stateful=True,
+            reason="analytics/OLAP over columns, not row-at-a-time OLTP — a Redshift warehouse",
+        )
+
+    if shape == "time-series":
+        # A serving workload whose data is genuinely time-series (metrics UI,
+        # a status board over live readings) routes to Timestream, NEVER a
+        # relational store -- the standing rule the extraction prompt states.
+        return _PrimaryStore(
+            "time-series",
+            {
+                "timestream_write_gb": max(1.0, requirement.storage_gb * 0.1),
+                "timestream_storage_gb": requirement.storage_gb,
+            },
+            has_rds=False, stateful=True,
+            reason="append-only readings by time — Timestream, never a relational store",
+        )
+
+    # Unreached: data_shape is a closed Literal. Relational is the honest
+    # fallback if a new member is ever added without routing.
     db_vcpu, db_memory = db_size_for(requirement)
+    return _PrimaryStore(
+        "relational",
+        {"database_vcpu": db_vcpu, "database_memory_gb": db_memory},
+        has_rds=True, stateful=True,
+        reason="relational default",
+    )
+
+
+def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
+    """The untuned shape for this workload, before any technique applies.
+
+    The primary store is DERIVED from `data_shape` (see `_store_for`), so two
+    `web` workloads holding different data no longer collapse to the same
+    RDS-backed architecture. Everything that used to gate on `needs_database`
+    now gates on what the store actually is: `has_rds` for the SQL-specific
+    levers (cache, read replicas, DB storage), `stateful` for the data-at-rest
+    concerns (encryption keys, secrets, sign-in).
+    """
+    count, vcpu, memory = size_for(requirement)
+    store = _store_for(requirement)
+    has_rds = store.has_rds
+    stateful = store.stateful
     cdn_gb, origin_egress_gb, cdn_requests = _delivery(requirement)
 
     spec = ArchitectureSpec(
@@ -507,28 +657,37 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         compute_count=count,
         compute_vcpu=vcpu,
         compute_memory_gb=memory,
-        database_vcpu=db_vcpu if requirement.needs_database else None,
-        database_memory_gb=db_memory if requirement.needs_database else None,
+        # The primary store is filled from `store.fields` below, derived from
+        # data_shape rather than hardcoded to a relational database here.
+        database_vcpu=None,
+        database_memory_gb=None,
         database_multi_az=False,
         storage_gb=requirement.storage_gb,
         egress_gb=origin_egress_gb,
         cdn_gb=cdn_gb,
         cdn_monthly_requests=cdn_requests,
         serves_requests=requirement.serves_requests,
-        load_balancer=requirement.needs_database and count > 1,
+        # A balancer sits in front of an app tier that serves requests and has
+        # more than one instance to balance -- independent of whether that app
+        # talks to a SQL database or an object store behind it.
+        load_balancer=requirement.serves_requests and count > 1,
         # A read-heavy app in front of a database wants a cache, and anything
         # in production is monitored. Both are heuristic, like the sizing.
         # A cache only where there is enough traffic for one to pay for
         # itself. Low traffic against a small database gets nothing: the
         # smallest node was billing $37.96/mo to memoise queries a site
         # serving 200 visitors a day does not repeat often enough to matter.
+        # A cache fronts a RELATIONAL primary under load -- a DynamoDB or
+        # OpenSearch store scales on its own and does not take an ElastiCache
+        # in front. Held out of the Cheapest tier (see _shape_variants), which
+        # accepts hitting the database directly to save the node.
         cache_vcpu=(
-            2 if requirement.needs_database and requirement.traffic_scale != "low" else None
+            2 if has_rds and requirement.traffic_scale != "low" else None
         ),
         cache_memory_gb=(
-            2.0 if requirement.needs_database and requirement.traffic_scale != "low" else None
+            2.0 if has_rds and requirement.traffic_scale != "low" else None
         ),
-        monitored_metrics=30 if requirement.needs_database else 10,
+        monitored_metrics=30 if stateful else 10,
         waf_rule_count=(
             WAF_RULE_COUNT if requirement.needs_waf and requirement.serves_requests else None
         ),
@@ -541,7 +700,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # reliability or scale feature -- every tier gets it, the same way
         # every tier already gets monitoring.
         audit_logging=True,
-        kms_key_count=1 if requirement.needs_database else None,
+        kms_key_count=1 if stateful else None,
         # A certificate terminates inbound TLS; a batch job has none.
         tls_certificate=requirement.serves_requests,
         # One NAT gateway per zone the workload spans, so a zone failure
@@ -564,7 +723,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # ML workloads have none, so they get no auth line at all.
         auth_monthly_active_users=(
             AUTH_MONTHLY_ACTIVE_USERS[requirement.traffic_scale]
-            if requirement.needs_database
+            if stateful
             else 0.0
         ),
         # Backing up the object store. RDS automated backups are free
@@ -577,7 +736,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
                 DB_STORAGE_FLOOR_GB,
                 (requirement.daily_transactions or 0) * DB_STORAGE_GB_PER_DAILY_TXN,
             )
-            if requirement.needs_database
+            if has_rds
             else 0.0
         ),
         alb_lcu=(
@@ -632,7 +791,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # about $42/mo of compute nobody asked for -- so a caller choosing
         # Fargate must zero compute_count. `fargate_tasks_for` derives the
         # base and peak counts; see scripts/ for the selecting call.
-        secret_count=BASE_SECRET_COUNT if requirement.needs_database else 0,
+        secret_count=BASE_SECRET_COUNT if stateful else 0,
         threat_detection=True,
         tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
         # Security Hub is a compliance product, and it was being billed on
@@ -648,10 +807,12 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         ),
         flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
     )
-    # The ingestion stream is part of the base shape -- it is how events reach
-    # an event-driven system, present on every tier, not a top-tier add-on.
-    stream = _streaming_ingestion(requirement)
-    return replace(spec, **stream) if stream else spec
+    # The primary store, derived from data_shape (RDS / DynamoDB / OpenSearch
+    # / Redshift / Timestream / none), plus the ingestion stream where the
+    # workload is event-driven. Both are part of the base shape -- present on
+    # every tier, not a top-tier add-on.
+    overrides = {**store.fields, **_streaming_ingestion(requirement)}
+    return replace(spec, **overrides) if overrides else spec
 
 
 # ── serverless sizing ──
@@ -1033,6 +1194,142 @@ def _event_driven_variants(
     ]
 
 
+#: A batch/ETL run scans the raw lake; the warehouse tier loads curated
+#: tables instead. Both HEURISTIC, restated by a real workload.
+BATCH_ATHENA_TB_PER_MONTH = 5.0
+BATCH_GLUE_DPU_HOURS = 150.0
+
+
+def batch_etl_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
+    """A batch/ETL pipeline for one tier — NOT a web app with the database off.
+
+    A nightly ETL job reads from an object lake, transforms on compute that can
+    be reclaimed and restarted (that is what makes the work interruptible), and
+    lands results a query engine reads. It has no load balancer, no relational
+    OLTP database, no cache and no CDN, because nothing calls it over the
+    network and nothing serves a user in the request path.
+
+    The tiers differ BY SERVICE, the same way the event-driven shape does:
+
+      cheapest   S3 lake -> Spot EC2 workers -> Athena over the raw files.
+                 Reclaimable capacity and pay-per-query; the cheapest way to
+                 run work that can simply be rerun.
+      balanced   swaps self-run Spot for managed Fargate and adds Glue to
+                 catalogue and transform — managed where it removes real ops
+                 risk, still querying with Athena.
+      optimized  loads a Redshift warehouse for fast repeated analytics
+                 instead of re-scanning the lake each time, on managed Fargate
+                 with Glue — the shape a data platform grows into.
+    """
+    daily = requirement.daily_transactions or 0
+    # Rows processed per month, floored so an unquantified pipeline still has a
+    # real object-request volume rather than zero.
+    rows = max(1_000_000.0, daily * 30.0)
+
+    common = dict(
+        name=label,
+        region=requirement.region,
+        database_vcpu=None,          # never a relational primary
+        serves_requests=False,       # nothing calls it; no edge, no LB, no CDN
+        storage_gb=requirement.storage_gb,   # the S3 data lake
+        egress_gb=requirement.egress_gb,
+        monitored_metrics=20,
+        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        audit_logging=True,
+        kms_key_count=1,
+        s3_put_requests=rows,
+        s3_get_requests=rows * S3_GETS_PER_PUT,
+        flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
+    )
+
+    if label == "Cheapest":
+        # Self-run workers on Spot — the discount interruptible work unlocks —
+        # scanning the lake with Athena. Where the work is NOT restartable,
+        # on-demand EC2 (Spot is withheld by the technique layer regardless).
+        count, vcpu, memory = size_for(requirement)
+        return ArchitectureSpec(
+            **common,
+            compute_count=max(1, count),
+            compute_vcpu=vcpu,
+            compute_memory_gb=memory,
+            use_spot=requirement.interruptible,
+            athena_tb_scanned_per_month=BATCH_ATHENA_TB_PER_MONTH,
+        )
+
+    if label == "Most reliable":
+        base, _peak = fargate_tasks_for(requirement)
+        return ArchitectureSpec(
+            **common,
+            compute_count=0,                   # no EC2; the work runs on Fargate
+            fargate_task_count=max(2, base),   # managed containers
+            fargate_task_vcpu=1.0, fargate_task_memory_gb=2.0,
+            glue_dpu_hours_per_month=BATCH_GLUE_DPU_HOURS,   # managed ETL/catalog
+            athena_tb_scanned_per_month=BATCH_ATHENA_TB_PER_MONTH,
+            threat_detection=True,
+        )
+
+    # Most optimized — Redshift replaces re-scanning the lake with Athena.
+    base, _peak = fargate_tasks_for(requirement)
+    return ArchitectureSpec(
+        **common,
+        compute_count=0,                   # no EC2; the work runs on Fargate
+        fargate_task_count=max(3, base),
+        fargate_task_vcpu=1.0, fargate_task_memory_gb=2.0,
+        glue_dpu_hours_per_month=BATCH_GLUE_DPU_HOURS,
+        warehouse_node_count=WAREHOUSE_NODES[requirement.traffic_scale],
+        warehouse_node_vcpu=2, warehouse_node_memory_gb=16.0,
+        threat_detection=True,
+        posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
+    )
+
+
+def _batch_etl_variants(
+    requirement: Requirement,
+) -> list[tuple[str, str, dict, tuple[str, ...]]]:
+    """Three batch/ETL options that differ BY SERVICE — `batch_etl_spec` builds
+    each tier's own graph, so the deltas are empty."""
+    spot_note = (
+        "Workers run on Spot — reclaimable at two minutes' notice, which a "
+        "rerunnable batch job accepts for the discount"
+        if requirement.interruptible else
+        "Self-run workers on on-demand capacity; the job is not marked "
+        "restartable, so reclaimable Spot is withheld"
+    )
+    return [
+        (
+            "Cheapest",
+            "Self-run workers over an S3 data lake, queried on demand with "
+            "Athena. The cheapest way to run work that can simply be rerun.",
+            {},
+            (
+                spot_note,
+                "Athena scans the raw lake, so query cost tracks how much data "
+                "each run reads",
+            ),
+        ),
+        (
+            "Most reliable",
+            "Managed where it removes operational risk: Fargate runs the "
+            "transforms, Glue catalogues and cleans the data.",
+            {},
+            (
+                "Managed containers and Glue cost more per unit than self-run "
+                "Spot, buying back the operational time of running them",
+            ),
+        ),
+        (
+            "Most optimized",
+            "Loads a Redshift warehouse for fast repeated analytics instead of "
+            "re-scanning the lake every run, on managed Fargate with Glue.",
+            {},
+            (
+                "A warehouse runs continuously — sized for 10x the stated load, "
+                "so it carries cost before that growth arrives",
+            ),
+        ),
+    ]
+
+
 def apply_effects(spec: ArchitectureSpec, matched: list[Match]) -> ArchitectureSpec:
     """Fold every priceable technique into the architecture."""
     updates: dict[str, object] = {}
@@ -1050,24 +1347,44 @@ def _shape_variants(
     Three, never one: a single "best" is always wrong for someone, and the
     first time it is wrong the user stops trusting the tool.
     """
-    replicas = (
-        DB_READ_REPLICAS[requirement.traffic_scale] if requirement.needs_database else 0
-    )
+    # Read replicas, Multi-AZ standby and a fronting cache are RELATIONAL
+    # levers -- they act on an RDS primary. A DynamoDB, OpenSearch or object
+    # store scales by its own units, so a shape derived to one of those must
+    # not acquire a phantom replica or ElastiCache here. `has_rds` gates them;
+    # `serves_requests` still gates the balancer, which fronts any app tier.
+    has_rds = _store_for(requirement).has_rds
+    replicas = DB_READ_REPLICAS[requirement.traffic_scale] if has_rds else 0
     # A balancer only where something is being balanced. The base shape
     # already gates this on the workload serving requests; setting it True
     # here regardless put an Elastic Load Balancing box in front of a
     # nightly batch job that nothing calls.
-    reliable_delta: dict = {"database_multi_az": True}
+    reliable_delta: dict = {}
+    if has_rds:
+        reliable_delta["database_multi_az"] = True
     if requirement.serves_requests:
         reliable_delta["load_balancer"] = True
-    reliable_rationale = (
-        "Survives an availability-zone failure: extra capacity and a "
-        "standby database."
-    )
-    reliable_tradeoffs = [
-        "The standby database roughly doubles the largest line on the bill",
-        "Still one region — a regional outage is not covered",
-    ]
+    if has_rds:
+        reliable_rationale = (
+            "Survives an availability-zone failure: extra capacity and a "
+            "standby database."
+        )
+        reliable_tradeoffs = [
+            "The standby database roughly doubles the largest line on the bill",
+            "Still one region — a regional outage is not covered",
+        ]
+    else:
+        # No RDS to stand by: the reliability the tier buys is a balancer and
+        # a multi-instance app tier in front of a store (DynamoDB, OpenSearch,
+        # S3/CloudFront) that is already multi-AZ by design.
+        reliable_rationale = (
+            "Survives an availability-zone failure: a load-balanced, "
+            "multi-instance app tier in front of a store that is already "
+            "replicated across zones."
+        )
+        reliable_tradeoffs = [
+            "More running instances than the cheapest tier",
+            "Still one region — a regional outage is not covered",
+        ]
     if replicas:
         reliable_delta["database_read_replicas"] = replicas
         reliable_rationale += (
@@ -1094,7 +1411,7 @@ def _shape_variants(
     optimized_delta: dict = dict(reliable_delta)
     optimized_tradeoffs = list(reliable_tradeoffs)
 
-    if requirement.needs_database:
+    if has_rds:
         optimized_delta["database_read_replicas"] = max(2, replicas)
         # The cache tracks the database it fronts rather than jumping to a
         # flat size. Pinned at 4 vCPU it cost $179/mo on a workload doing
@@ -1148,12 +1465,21 @@ def _shape_variants(
     return [
         (
             "Cheapest",
-            "Smallest footprint that still runs the workload. Accepts a single "
-            "instance and no standby database.",
+            "Smallest footprint that still runs the workload. One instance, no "
+            "cache, no standby database — it talks to the primary store "
+            "directly and accepts a single point of failure to skip the spend.",
             {
                 "compute_count": 1,
                 "database_multi_az": False,
                 "load_balancer": False,
+                # No cache: the cheapest tier hits the primary store directly.
+                # The managed cache is a Most-reliable/Most-optimized service,
+                # not a smaller version of one -- holding it out here is part
+                # of what makes the tiers three different shapes, not three
+                # sizes. Harmless where the store never had a cache anyway
+                # (DynamoDB/OpenSearch/object), a real saving where it did.
+                "cache_vcpu": None,
+                "cache_memory_gb": None,
                 # One zone, so one gateway -- paying for a second in a zone
                 # nothing runs in would be waste, not resilience.
                 "nat_gateway_count": 1,
@@ -1161,6 +1487,7 @@ def _shape_variants(
             (
                 "Single instance — a restart or crash is downtime",
                 "No load balancer, so no room to scale out under load",
+                "No cache — every read hits the primary store",
                 "Single-zone database — a zone failure takes you offline",
                 "One NAT gateway — losing its zone cuts outbound traffic",
             ),
@@ -1278,12 +1605,19 @@ def recommend(
     )
     event_driven = getattr(requirement, "event_driven", False)
     serverless = getattr(requirement, "serverless", False)
+    # A batch/ETL run is its own shape too: an object lake, reclaimable
+    # workers and a query engine, with no edge, LB, cache or relational OLTP.
+    # Lower priority than event_driven (a streaming pipeline that also happens
+    # to be labelled batch is still event-driven), higher than the web shape.
+    batch = (not event_driven) and requirement.workload_type == "batch"
     if event_driven:
         variants = _event_driven_variants(requirement)
     elif ai:
         variants = _ai_variants(requirement)
     elif serverless:
         variants = _serverless_variants(requirement)
+    elif batch:
+        variants = _batch_etl_variants(requirement)
     else:
         variants = _shape_variants(requirement)
 
@@ -1294,6 +1628,8 @@ def recommend(
             spec = ai_spec(requirement, label)
         elif serverless:
             spec = serverless_spec(requirement, label)
+        elif batch:
+            spec = batch_etl_spec(requirement, label)
         else:
             spec = base_spec(requirement, label)
         if delta:
@@ -1305,7 +1641,7 @@ def recommend(
         # Server shapes only: serverless, AI and event-driven shapes have no
         # fixed instance count to floor, and forcing one would manufacture a
         # phantom EC2 fleet (or, for event_driven, override its Spot workers).
-        server_shape = not serverless and not ai and not event_driven
+        server_shape = not serverless and not ai and not event_driven and not batch
         if server_shape and label == "Most reliable":
             spec = replace(spec, compute_count=max(2, spec.compute_count))
         elif server_shape and label == "Most optimized":
