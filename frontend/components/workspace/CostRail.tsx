@@ -40,6 +40,11 @@ const BUCKETS: { key: string; label: string; kinds: string[] }[] = [
      put $631/mo, more than the database, behind a label that says nothing
      about what is being paid for. */
   {
+    key: "ai",
+    label: "AI / ML",
+    kinds: ["rekognition", "comprehend"],
+  },
+  {
     key: "analytics",
     label: "Analytics & search",
     kinds: ["warehouse", "search", "streaming", "kafka"],

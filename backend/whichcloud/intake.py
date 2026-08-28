@@ -29,6 +29,7 @@ Both providers fill `RequirementDraft`; only the transport differs.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 from dataclasses import dataclass
@@ -38,6 +39,14 @@ from pydantic import BaseModel, Field
 
 from .pricing.models import REGIONS
 from .requirements import Requirement
+
+#: Wall-clock budget per provider call. A provider slow to respond is one the
+#: chain should give up on and try the next of, not wait on indefinitely: a
+#: hung Gemini call with no timeout blocked the whole of /describe for
+#: minutes while healthy keys sat unused behind it. Generous enough that a
+#: merely-slow provider still answers; short enough that a hung one fails
+#: over while the user is still watching.
+EXTRACT_TIMEOUT_S = 25.0
 
 Provider = Literal["gemini", "groq", "anthropic", "openai"]
 
@@ -123,6 +132,14 @@ an explicit ask for Lambda/serverless. It is FALSE for a steady always-on \
 application, anything that states it needs a relational/SQL database, or a \
 system that must not go down during business hours (that implies always-on \
 servers). Be conservative — when unsure, false.
+- ai is true when the app's CORE value is a machine-learning capability — \
+image recognition, object/face detection, content moderation, sentiment or \
+NLP analysis. It is FALSE for an ordinary app that merely stores data or \
+serves pages. Then set the specific capability: ai_vision for anything about \
+images or video (recognition, detection, moderation, faces, "analyse \
+photos/uploads"); ai_language for anything about text (sentiment, NLP, \
+entities, key phrases, "analyse reviews/comments"). Set both if both are \
+described. When ai is false, both ai_vision and ai_language are false.
 - daily_transactions: the stated number of orders/transactions/payments per \
 day. Convert other periods (per month / 30, per year / 365). Use 0 when the \
 description gives no number — never estimate one from company size.
@@ -172,6 +189,9 @@ class RequirementDraft(BaseModel):
     needs_queue: bool = Field(description="Background jobs or async work decoupled from the request path?")
     needs_notifications: bool = Field(description="Push notifications or SMS alerts, separate from email?")
     serverless: bool = Field(description="Genuine serverless fit — spiky/event-driven/scale-to-zero, no always-on servers or relational DB needed?")
+    ai: bool = Field(description="Is the app's core value a managed AI/ML capability (image recognition, NLP/sentiment)?")
+    ai_vision: bool = Field(description="Analyses images/video — recognition, detection, moderation, faces?")
+    ai_language: bool = Field(description="Analyses text — sentiment, NLP, entities, key phrases?")
     daily_transactions: int = Field(description="Transactions/orders per day if stated, else 0")
     latency_target_ms: int = Field(
         description="Stated or implied response-time bound in ms; 0 if none implied"
@@ -220,6 +240,9 @@ class RequirementDraft(BaseModel):
             needs_queue=self.needs_queue,
             needs_notifications=self.needs_notifications,
             serverless=self.serverless,
+            ai=self.ai,
+            ai_vision=self.ai_vision,
+            ai_language=self.ai_language,
             daily_transactions=self.daily_transactions or None,
             latency_target_ms=self.latency_target_ms or None,
             provider_preference=(
@@ -442,7 +465,8 @@ _GROQ_SHAPE = """Reply with JSON in exactly this form, filled in from the text:
 "interruptible":false,"high_availability":true,"arm_compatible":true,
 "needs_waf":false,"needs_event_streaming":false,"needs_analytics":false,
 "needs_search":false,"needs_email":false,"needs_queue":false,
-"needs_notifications":false,"serverless":false,"daily_transactions":8000,
+"needs_notifications":false,"serverless":false,"ai":false,"ai_vision":false,
+"ai_language":false,"daily_transactions":8000,
 "latency_target_ms":0,"provider_preference":"none","compliance":[],
 "assumed":["storage_gb"],"clarifying_question":"How much data do you store?"}
 
@@ -460,6 +484,8 @@ needs_queue: background jobs or async work off the request path.
 needs_notifications: push/SMS/app alerts, not email.
 serverless: spiky/event-driven/scale-to-zero, pay-per-use, no always-on \
 servers or SQL database. False for steady always-on apps. Be conservative.
+ai: core value is an ML capability (image recognition, sentiment/NLP). \
+ai_vision: images/video. ai_language: text/sentiment. All false if ai false.
 daily_transactions: stated transactions per day; 0 if not stated.
 latency_target_ms: a stated or implied response-time bound; 0 if none.
 assumed: names of fields you had to guess. clarifying_question: "" if none."""
@@ -541,15 +567,48 @@ def _draft_with_failover(description: str, provider: Provider, client=None):
         return _EXTRACTORS[provider](description, client)
 
     failures: list[tuple[str, Exception]] = []
-    for candidate in chain:
-        try:
-            return _EXTRACTORS[candidate.provider](description, None, candidate.key)
-        except Exception as exc:
-            failures.append((candidate.label, exc))
+    # One executor for the whole chain. Each call runs on a worker thread so a
+    # hung provider can be ABANDONED after EXTRACT_TIMEOUT_S -- the SDKs differ
+    # in how (and whether) they honour a timeout argument, so a wall-clock budget
+    # around the call is the one mechanism that works for all of them. A
+    # leaked worker on a genuinely hung call is acceptable: the process
+    # carries on and the next provider answers.
+    stalled: set[str] = set()  # providers whose endpoint is hung, not a key
+    # One worker per candidate, and NOT a `with` block: a genuinely hung call
+    # leaves its thread running, and `with`-exit (shutdown(wait=True)) would
+    # block the whole request on that leaked thread -- reintroducing the hang
+    # this timeout exists to remove. shutdown(wait=False) at the end lets the
+    # request return while the orphan finishes and is discarded.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(chain)))
+    try:
+        for candidate in chain:
+            # A timeout is an endpoint problem, not a key one: the other keys
+            # of a stalled provider hit the same slow endpoint, so trying them
+            # only burns another EXTRACT_TIMEOUT_S each. Skip straight to the
+            # next provider. (A quota error, by contrast, IS key-specific --
+            # those still walk every key.)
+            if candidate.provider in stalled:
+                continue
+            future = pool.submit(
+                _EXTRACTORS[candidate.provider], description, None, candidate.key
+            )
+            try:
+                return future.result(timeout=EXTRACT_TIMEOUT_S)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                stalled.add(candidate.provider)
+                failures.append((
+                    candidate.label,
+                    TimeoutError(f"no response in {EXTRACT_TIMEOUT_S:.0f}s (overloaded)"),
+                ))
+            except Exception as exc:
+                failures.append((candidate.label, exc))
+    finally:
+        pool.shutdown(wait=False)
 
     if all(is_exhausted(exc) for _, exc in failures):
         raise IntakeError(
-            "Every configured model is out of capacity right now ("
+            "Every configured model is out of capacity or too slow right now ("
             + ", ".join(label for label, _ in failures)
             + "). Add another key as GEMINI_API_KEY_2 or GROQ_API_KEY."
         )

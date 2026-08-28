@@ -76,6 +76,8 @@ _KIND_BY_PREFIX = {
     "DynamoDB reads": "dynamodb",
     "DynamoDB writes": "dynamodb",
     "DynamoDB storage": "dynamodb",
+    "Rekognition images": "rekognition",
+    "Comprehend sentiment": "comprehend",
     # Was falling through to the "compute" default -- harmless-looking on a
     # server diagram (its $0.40 quietly summed onto the compute box) but on a
     # serverless one it MANUFACTURED an EC2 box, and an EC2 box in a subnet
@@ -188,6 +190,8 @@ _LABELS = {
     "apigateway": "API Gateway",
     "dynamodb": "DynamoDB",
     "secrets": "Secrets Manager",
+    "rekognition": "Amazon Rekognition",
+    "comprehend": "Amazon Comprehend",
     "waf": "AWS WAF",
     "audit": "Audit logging",
     "kms": "KMS keys",
@@ -239,6 +243,8 @@ _MISSING_PHRASES: tuple[tuple[str, str], ...] = (
     ("api gateway", "apigateway"),
     ("lambda", "lambda"),
     ("dynamodb", "dynamodb"),
+    ("rekognition", "rekognition"),
+    ("comprehend", "comprehend"),
 )
 
 
@@ -342,7 +348,8 @@ def build(
     # produce a line for must have an entry here.
     for kind in ("waf", "network", "apigateway", "loadbalancer",
                  "compute", "compute_fargate", "lambda", "cache",
-                 "database", "database_replica", "dynamodb", "storage",
+                 "database", "database_replica", "dynamodb", "rekognition",
+                 "comprehend", "storage",
                  "monitoring", "audit", "kms", "secrets", "nat", "tls", "dns", "auth",
                  "backup", "email", "queue", "notification",
                  "streaming", "kafka", "search", "warehouse",

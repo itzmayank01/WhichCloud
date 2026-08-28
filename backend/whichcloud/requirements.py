@@ -67,6 +67,12 @@ class Requirement:
     #: bigger or smaller server one. Deliberately conservative: a steady app
     #: with a real RDBMS is not serverless.
     serverless: bool = False
+    #: The app's core value is a managed AI/ML capability. Selects an AI
+    #: architecture that calls AWS's managed AI services rather than running
+    #: generic servers. The specific capabilities set which services appear.
+    ai: bool = False
+    ai_vision: bool = False       # image recognition / detection -> Rekognition
+    ai_language: bool = False     # sentiment / NLP on text -> Comprehend
 
     #: Transactions per day, when the description states one. Drives stream
     #: shard count, which is arithmetic rather than a tier lookup.

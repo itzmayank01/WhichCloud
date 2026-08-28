@@ -107,6 +107,7 @@ def test_the_mapping_covers_every_category_the_catalog_prices():
         "threat", "tracing", "posture", "flowlogs",
         "email", "queue", "notification",
         "lambda", "apigateway", "dynamodb", "secrets",
+        "rekognition", "comprehend",
     }
 
 

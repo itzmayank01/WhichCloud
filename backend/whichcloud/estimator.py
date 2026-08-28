@@ -205,6 +205,14 @@ class ArchitectureSpec:
     dynamodb_write_units_per_month: float = 0.0
     dynamodb_storage_gb: float = 0.0
 
+    # ── managed AI ──
+    # All default 0, so no non-AI shape acquires them. Priced per call
+    # against the real Rekognition/Comprehend meters -- an AI app's core cost
+    # is the inference volume, not a server.
+    rekognition_images_per_month: float = 0.0
+    #: Comprehend units of text (1 unit = 100 characters).
+    comprehend_units_per_month: float = 0.0
+
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
     use_spot: bool = False
@@ -304,6 +312,8 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "dynamodb-reads", "request-units"): "dynamodb:read-request-units",
     ("aws", "dynamodb-writes", "request-units"): "dynamodb:write-request-units",
     ("aws", "dynamodb-storage", "gb-month"): "dynamodb:storage",
+    ("aws", "rekognition", "images"): "rekognition:images",
+    ("aws", "comprehend", "units"): "comprehend:sentiment",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
     ("aws", "governance", "object-lock"): "s3:object-lock",
@@ -684,6 +694,26 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
         else:
             result.missing.append("dynamodb")
+
+    # ---- managed AI: Rekognition (images) ----
+    if spec.rekognition_images_per_month:
+        point = _by_role(provider, region, "rekognition", "images", dsn)
+        if point:
+            result.items.append(
+                _tiered_line("Rekognition images", point, spec.rekognition_images_per_month)
+            )
+        else:
+            result.missing.append("rekognition")
+
+    # ---- managed AI: Comprehend (sentiment) ----
+    if spec.comprehend_units_per_month:
+        point = _by_role(provider, region, "comprehend", "units", dsn)
+        if point:
+            result.items.append(
+                _tiered_line("Comprehend sentiment", point, spec.comprehend_units_per_month)
+            )
+        else:
+            result.missing.append("comprehend")
 
     # ---- cross-region backup copy ----
     if spec.backup_copy_gb:

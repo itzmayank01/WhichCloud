@@ -82,6 +82,10 @@ AWS_SERVICE: dict[str, tuple[str, str, str, str]] = {
     # service reached over the network, and pinning it inside a subnet was
     # forcing a VPC around a serverless architecture that has none.
     "secrets": ("AWS Secrets Manager", "security", "Stores database and API credentials", "edge"),
+    # Managed AI. Regional services called over the network -- no VPC, placed
+    # "edge" like the other managed services, tier "ml".
+    "rekognition": ("Amazon Rekognition", "ml", "Image recognition and moderation", "edge"),
+    "comprehend": ("Amazon Comprehend", "ml", "Sentiment and language analysis", "edge"),
 }
 
 #: The request path, in order. Only pairs where both ends exist are drawn, so
@@ -118,6 +122,9 @@ FLOW_ORDER: tuple[tuple[str, str], ...] = (
     ("dns", "apigateway"),
     ("apigateway", "lambda"),
     ("lambda", "dynamodb"),
+    # The function calls the managed AI service, then stores the result.
+    ("lambda", "rekognition"),
+    ("lambda", "comprehend"),
     ("lambda", "storage"),
     ("lambda", "auth"),
     ("lambda", "queue"),

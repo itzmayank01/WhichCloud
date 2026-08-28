@@ -63,6 +63,11 @@ BULK_SERVICES = {
     "lambda": "AWSLambda",
     "apigateway": "AmazonApiGateway",
     "dynamodb": "AmazonDynamoDB",
+    # Managed AI. Same credential-free bulk API: Rekognition per image
+    # analysed, Comprehend per unit of text (100 characters). Comprehend's
+    # offer code is lowercase, unlike every other service here.
+    "rekognition": "AmazonRekognition",
+    "comprehend": "comprehend",
 }
 
 #: CloudFront bills by the VIEWER's edge location group, not the origin
@@ -1835,6 +1840,61 @@ def load_dynamodb_prices(region_key: str) -> list[PricePoint]:
     return points
 
 
+def load_rekognition_prices(region_key: str) -> list[PricePoint]:
+    """Amazon Rekognition image analysis, per image processed.
+
+    The Group1 image-analysis meter (label detection, moderation, face
+    detection) -- the everyday image-recognition call. Video, custom-model
+    and face-storage meters are separate products and are not ingested.
+    Graduated bands are kept so a high-volume workload gets the real
+    volume rate rather than the entry price on every image.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["rekognition"], region_key)
+
+    wanted = f"{prefix}Group1-ImagesProcessed"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category="rekognition", sku="rekognition:images",
+            name="Rekognition images", region=region, unit=unit or "image",
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
+def load_comprehend_prices(region_key: str) -> list[PricePoint]:
+    """Amazon Comprehend sentiment analysis, per unit of text.
+
+    One unit is 100 characters (Comprehend rounds each request up to a
+    minimum of 3 units). The sentiment meter specifically -- entities, key
+    phrases, PII and the rest are separate meters and are not ingested,
+    because this shape prices the sentiment call it is built to draw.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["comprehend"], region_key)
+
+    wanted = f"{prefix}DetectSentiment"
+    for sku, product in doc.get("products", {}).items():
+        if product.get("attributes", {}).get("usagetype") != wanted:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category="comprehend", sku="comprehend:sentiment",
+            name="Comprehend sentiment", region=region, unit=unit or "unit",
+            price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
 def load_cognito_prices(region_key: str) -> list[PricePoint]:
     """Cognito user pools, priced per monthly active user with a free band.
 
@@ -2240,6 +2300,8 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_lambda_prices,
         load_apigateway_prices,
         load_dynamodb_prices,
+        load_rekognition_prices,
+        load_comprehend_prices,
     ):
         try:
             points.extend(loader(region_key))

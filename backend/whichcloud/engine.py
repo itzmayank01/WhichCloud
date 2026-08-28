@@ -753,6 +753,60 @@ def _serverless_variants(
     ]
 
 
+# ── managed-AI sizing ──
+# HEURISTIC. Each stated prediction is one inference call. A text prediction
+# analyses a short document -- 5 Comprehend units (500 characters) is a
+# conventional social-post / review length; a real workload restates it.
+AI_UNITS_PER_TEXT_PREDICTION = 5.0
+
+
+def ai_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
+    """An AI app: the serverless backend, plus the managed AI services it calls.
+
+    Built ON the serverless core -- an AI feature is reached through an API,
+    orchestrated by a function, and its results are stored -- with the
+    inference volume priced against the real Rekognition / Comprehend meters.
+    The AI call, not a server, is where an AI app's money goes, which is the
+    whole reason the generic-compute shape was the wrong answer for it.
+    """
+    spec = serverless_spec(requirement, label)
+    calls = _monthly_invocations(requirement)  # one inference per request
+
+    return replace(
+        spec,
+        rekognition_images_per_month=calls if requirement.ai_vision else 0.0,
+        comprehend_units_per_month=(
+            calls * AI_UNITS_PER_TEXT_PREDICTION if requirement.ai_language else 0.0
+        ),
+    )
+
+
+def _ai_variants(
+    requirement: Requirement,
+) -> list[tuple[str, str, dict, tuple[str, ...]]]:
+    """The three AI options. Same serverless levers -- the managed AI services
+    are pay-per-call and identical across tiers, so what varies is the backend
+    that fronts them (warm capacity, protection), exactly as for serverless."""
+    variants = _serverless_variants(requirement)
+    # Reword the headline so it reads as an AI architecture, keeping the same
+    # deltas (the backend is what the tiers tune; the AI calls are fixed).
+    caps = []
+    if requirement.ai_vision:
+        caps.append("image recognition")
+    if requirement.ai_language:
+        caps.append("sentiment analysis")
+    what = " and ".join(caps) or "AI inference"
+    relabelled = []
+    for label, rationale, delta, tradeoffs in variants:
+        if label == "Cheapest":
+            rationale = (
+                f"Managed AI for {what}, pay-per-call, on a serverless backend "
+                "that scales to zero between requests."
+            )
+        relabelled.append((label, rationale, delta, tradeoffs))
+    return relabelled
+
+
 def apply_effects(spec: ArchitectureSpec, matched: list[Match]) -> ArchitectureSpec:
     """Fold every priceable technique into the architecture."""
     updates: dict[str, object] = {}
@@ -991,21 +1045,38 @@ def recommend(
     # one, so it is built from its own spec and its own three variants. The
     # instance-count floors below are meaningless here (there are no
     # instances) and are skipped.
+    # An AI app is a serverless backend plus the managed AI services it calls,
+    # so it takes priority over the plain serverless shape when both are set.
+    ai = getattr(requirement, "ai", False) and (
+        requirement.ai_vision or requirement.ai_language
+    )
     serverless = getattr(requirement, "serverless", False)
-    variants = _serverless_variants(requirement) if serverless else _shape_variants(requirement)
+    if ai:
+        variants = _ai_variants(requirement)
+    elif serverless:
+        variants = _serverless_variants(requirement)
+    else:
+        variants = _shape_variants(requirement)
 
     for label, rationale, delta, tradeoffs in variants:
-        spec = serverless_spec(requirement, label) if serverless else base_spec(requirement, label)
+        if ai:
+            spec = ai_spec(requirement, label)
+        elif serverless:
+            spec = serverless_spec(requirement, label)
+        else:
+            spec = base_spec(requirement, label)
         if delta:
             spec = replace(spec, **delta)
         # A tier cannot be less available than the one below it. This floor
         # was applied to "Most reliable" alone, so on a small workload the
         # top tier came out with ONE instance where the middle tier had two
         # -- spanning three availability zones with nothing in two of them.
-        # Server shapes only: serverless has no instance count to floor.
-        if not serverless and label == "Most reliable":
+        # Server shapes only: serverless and AI shapes have no instance count
+        # to floor, and forcing one would manufacture a phantom EC2 fleet.
+        server_shape = not serverless and not ai
+        if server_shape and label == "Most reliable":
             spec = replace(spec, compute_count=max(2, spec.compute_count))
-        elif not serverless and label == "Most optimized":
+        elif server_shape and label == "Most optimized":
             # One per zone, since this tier pays for three of them.
             spec = replace(spec, compute_count=max(3, spec.compute_count))
 
