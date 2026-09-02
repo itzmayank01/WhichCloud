@@ -920,7 +920,7 @@ def fetch_lcu_prices(region_key: str) -> list[PricePoint]:
 #: Zone 2, India = Zone 5. We map each region we serve to its Front Door zone
 #: and take that zone's "Standard Data Transfer Out" first-tier rate.
 _AZURE_FRONTDOOR_ZONE = {
-    "india": "Zone 5", "singapore": "Zone 2",
+    "india": "Zone 5", "india-south": "Zone 5", "singapore": "Zone 2",
     "us-east": "Zone 1", "eu-west": "Zone 1",
 }
 

@@ -443,7 +443,7 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
 #: region the origin sits in. India and Singapore serve Asia; the US and EU
 #: regions serve their own continent. All these meters live under 'global'.
 _GCP_CDN_CONTINENT = {
-    "india": "to asia", "singapore": "to asia",
+    "india": "to asia", "india-south": "to asia", "singapore": "to asia",
     "us-east": "to north america", "eu-west": "to europe",
 }
 
