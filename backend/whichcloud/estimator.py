@@ -44,6 +44,12 @@ class ArchitectureSpec:
 
     storage_gb: float = 0.0
     egress_gb: float = 0.0
+    #: Application data crossing an AZ boundary in a Multi-AZ deployment
+    #: (app<->database, app<->cache). Billed at ~$0.01/GB per direction --
+    #: the line most estimates forget. Volume is a HEURISTIC proxy on
+    #: egress, so an internal-only app (no egress) understates rather than
+    #: invents. Zero in single-AZ tiers, where no boundary is crossed.
+    inter_az_gb: float = 0.0
     load_balancer: bool = False
     #: CloudFront in front of the origin. None means "not requested" --
     #: priced on top of egress rather than netted against it, since this
@@ -568,6 +574,23 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.items.append(_metered_line("Egress", point, spec.egress_gb))
         else:
             result.missing.append("egress")
+
+    # ---- cross-AZ (intra-region) data transfer ----
+    # Only AWS publishes this meter in our catalog today; other providers
+    # simply have no row and the line is omitted (not marked missing -- it is
+    # an optional refinement, not a component the architecture depends on).
+    if spec.inter_az_gb > 0:
+        point = store.get_price(
+            provider, region, "network", "transfer:intra-region-az", dsn=dsn
+        )
+        if point:
+            # Billed on BOTH sides of the boundary (egress from one AZ, ingress
+            # to the other), so the charged volume is twice the app-level GB.
+            result.items.append(
+                _metered_line(
+                    "Cross-AZ data transfer (in+out)", point, spec.inter_az_gb * 2
+                )
+            )
 
     # ---- cache ----
     if spec.cache_vcpu:

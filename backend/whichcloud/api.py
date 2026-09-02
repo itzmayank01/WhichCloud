@@ -160,6 +160,9 @@ class OptionOut(BaseModel):
     #: budget -- extra budget buys no more useful capacity. Lets the UI explain
     #: why a higher budget stops changing the number.
     budget_saturated: bool
+    #: Steady-state monthly cost for spiky workloads (same architecture, spike
+    #: headroom removed). None when traffic is not spiky or has no headroom.
+    steady_monthly_usd: float | None
     shape: str
     items: list[LineItemOut]
     missing: list[str]
@@ -373,6 +376,9 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         complete=option.estimate.is_complete,
         within_budget=option.within_budget,
         budget_saturated=option.budget_saturated,
+        steady_monthly_usd=(
+            float(option.steady_monthly) if option.steady_monthly is not None else None
+        ),
         shape=shape,
         items=[
             LineItemOut(

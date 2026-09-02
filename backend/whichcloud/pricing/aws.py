@@ -1680,17 +1680,22 @@ def load_intraregion_transfer_prices(region_key: str) -> list[PricePoint]:
     the same AWS feed as the others; never a typed-in rate.
     """
     region = provider_region(region_key, "aws")
-    prefix = _regional_prefix(region).rstrip("-")
-    if not prefix:
-        return []
 
+    # The meter's region prefix is not the EC2 prefix (eu-west-1 uses "EU-",
+    # ap-south-2 uses "APS5-", us-east-1 omits it entirely), so matching an
+    # exact name per region is brittle. The bulk doc is already region-scoped,
+    # so instead accept ANY intra-region "...DataTransfer-Regional-Bytes"
+    # meter -- except the "Global-" one, which is a cross-region rate that
+    # carries no price in this feed.
     doc = _load_bulk(BULK_SERVICES["network"], region_key)
-    wanted = f"{prefix}-DataTransfer-Regional-Bytes"
     for sku, product in doc.get("products", {}).items():
         attrs = product.get("attributes", {})
-        if attrs.get("usagetype") != wanted:
-            continue
+        usage = attrs.get("usagetype", "")
         if attrs.get("transferType") != "IntraRegion":
+            continue
+        if not usage.endswith("DataTransfer-Regional-Bytes"):
+            continue
+        if usage.startswith("Global-"):
             continue
         found = _cheapest_dimension(doc, sku)
         if not found:

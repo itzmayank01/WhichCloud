@@ -298,6 +298,11 @@ class Option:
         return None if budget is None else self.monthly <= Decimal(str(budget))
 
     spec_budget: float | None = None
+    #: For spiky workloads, the monthly cost of the SAME architecture with the
+    #: spike-headroom compute removed -- i.e. steady-state traffic. The headline
+    #: `monthly` provisions the peak (conservative); this is the floor the
+    #: autoscaler drops to between spikes. None when traffic is not spiky.
+    steady_monthly: "Decimal | None" = None
     #: True when the workload hit its capacity caps before consuming its share
     #: of the budget -- extra budget buys nothing more. Lets the interface say
     #: "sized to your workload; more budget adds no useful capacity" instead of
@@ -335,6 +340,20 @@ def size_for(requirement: Requirement) -> tuple[int, int, float]:
         count = max(1, count // 2)
 
     return count, vcpu, memory
+
+
+def _spike_headroom_instances(requirement: Requirement) -> int:
+    """How many compute instances exist ONLY to absorb the traffic spike.
+
+    The difference between this workload sized as spiky and the same workload
+    sized as steady -- exactly the instances SPIKE_INSTANCE_MULTIPLIER added.
+    Zero when the workload is not spiky (nothing to show a band for).
+    """
+    if requirement.traffic_pattern != "spiky":
+        return 0
+    spiky = size_for(requirement)[0]
+    steady = size_for(replace(requirement, traffic_pattern="steady"))[0]
+    return max(0, spiky - steady)
 
 
 def db_size_for(requirement: Requirement) -> tuple[int, float]:
@@ -1657,6 +1676,19 @@ _BUDGET_TARGET_FILL: dict[str, float] = {
 #: distinct postures even at a budget large enough to saturate both -- without
 #: this they converge on the same maxed-out stack and the tier choice becomes
 #: meaningless.
+#: The budget-driven total is also capped at a MULTIPLE of the tier's own
+#: natural (workload-sized) cost. This is what keeps the plateau defensible:
+#: a $50k budget on a workload that naturally costs $1k lands near 2-2.5x
+#: that, not at some fixed five-figure ceiling that happens to be where the
+#: capacity caps bite. Anchored on the observation that no architect -- human
+#: or LLM -- sizes a 50k-user store past a few thousand dollars a month. The
+#: fixed capacity caps below still apply as a secondary backstop for genuinely
+#: large workloads, where even 2.5x the floor is a lot of money.
+_BUDGET_CEILING_MULTIPLE: dict[str, float] = {
+    "Most reliable": 1.8,
+    "Most optimized": 2.5,
+}
+
 _BUDGET_CAPS: dict[str, dict[str, int]] = {
     # Reliability is about surviving a zone failure, not peak throughput:
     # a couple of standbys and a modest cache, not a maxed-out fleet.
@@ -1685,18 +1717,28 @@ def _scale_to_budget(
     if not budget or budget <= 0 or fill is None:
         return spec, False
 
-    target = Decimal(str(budget)) * Decimal(str(fill))
+    budget_target = Decimal(str(budget)) * Decimal(str(fill))
     has_rds = _store_for(requirement).has_rds
     caps = _BUDGET_CAPS[label]
 
     def priced(candidate: "ArchitectureSpec") -> Decimal:
         return estimate(candidate, provider, dsn=dsn).total_monthly
 
-    # If the floor spec already meets or exceeds its target share, the
-    # workload is already bigger than the budget invites -- leave it (the
-    # within_budget flag reports the overshoot).
-    if priced(spec) >= target:
-        return spec, False
+    # The effective target is the SMALLER of the budget's share and a multiple
+    # of the workload's own natural cost. The cost ceiling is what makes the
+    # plateau scale with the workload instead of ballooning to wherever the
+    # fixed capacity caps happen to sit.
+    floor_cost = priced(spec)
+    ceiling = floor_cost * Decimal(str(_BUDGET_CEILING_MULTIPLE[label]))
+    target = min(budget_target, ceiling)
+    # Budget wants to pay for more than this workload can usefully absorb: the
+    # ceiling (or caps) will bind, so a higher budget changes nothing -- which
+    # is what `saturated` tells the interface to say.
+    budget_exceeds_ceiling = budget_target > ceiling
+
+    # Already at or above the effective target: nothing to grow.
+    if floor_cost >= target:
+        return spec, budget_exceeds_ceiling
 
     def upgrades(sp: "ArchitectureSpec"):
         """The next capacity buy for each knob, cheapest-value first, or None
@@ -1730,10 +1772,14 @@ def _scale_to_budget(
         affordable = [(priced(m), m) for m in moves]
         affordable = [(c, m) for c, m in affordable if c <= target]
         if not affordable:
-            return spec, False  # budget bound: cannot buy more without overshooting
+            # Nothing more fits under the effective target. If the budget
+            # itself was the binding constraint, that's not saturation -- a
+            # bigger budget WOULD buy more. If the workload's cost ceiling
+            # bound us first, it is: extra budget is inert.
+            return spec, budget_exceeds_ceiling
         affordable.sort(key=lambda cm: cm[0])
         spec = affordable[0][1]
-    return spec, False
+    return spec, budget_exceeds_ceiling
 
 
 def recommend(
@@ -1800,6 +1846,13 @@ def recommend(
             # One per zone, since this tier pays for three of them.
             spec = replace(spec, compute_count=max(3, spec.compute_count))
 
+        # Cross-AZ data transfer exists only once the deployment spans more
+        # than one zone -- a Multi-AZ database or a load-balanced multi-instance
+        # app tier. Single-AZ tiers (Cheapest) cross no boundary and stay at
+        # zero. Volume is proxied on egress; see the spec field's note.
+        if server_shape and (spec.database_multi_az or spec.compute_count > 1):
+            spec = replace(spec, inter_az_gb=requirement.egress_gb)
+
         # Budget as an active lever: grow the upper tiers into the stated
         # budget, bounded by hard caps so it never pads into absurdity. The
         # workload floor above still binds; Cheapest is deliberately excluded
@@ -1836,6 +1889,21 @@ def recommend(
 
         final = estimate(current, provider, dsn=dsn) if applied else baseline
 
+        # Steady/peak band for spiky traffic. The compute count already carries
+        # the spike headroom (SPIKE_INSTANCE_MULTIPLIER, applied in size_for);
+        # the "steady" figure prices the identical architecture with exactly
+        # those extra instances removed, so a reader can see the peak they
+        # provision for versus the floor they sit at the rest of the time.
+        steady_monthly = None
+        if server_shape and _spike_headroom_instances(requirement) > 0:
+            final_spec = current if applied else spec
+            floor = {"Cheapest": 1, "Most reliable": 2, "Most optimized": 3}.get(label, 1)
+            steady_count = max(floor, final_spec.compute_count - _spike_headroom_instances(requirement))
+            if steady_count < final_spec.compute_count:
+                steady_monthly = estimate(
+                    replace(final_spec, compute_count=steady_count), provider, dsn=dsn
+                ).total_monthly
+
         # Named needs with no adapter yet. Never invented, never silently
         # dropped either -- reported the same way an unpriceable compute
         # shape is: as a real gap in `missing`, which is what makes the
@@ -1853,6 +1921,7 @@ def recommend(
                 baseline_monthly=baseline.total_monthly,
                 tradeoffs=tradeoffs,
                 spec_budget=requirement.budget_monthly_usd,
+                steady_monthly=steady_monthly,
                 budget_saturated=budget_saturated,
             )
         )

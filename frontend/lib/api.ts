@@ -103,6 +103,11 @@ export type Option = {
       budget — a higher budget buys no more useful capacity. Use it to explain
       why raising the budget stops moving the number. */
   budget_saturated: boolean;
+  /** Steady-state monthly cost for spiky workloads — the same architecture
+      with the spike-headroom compute removed. The headline `monthly_usd`
+      provisions the peak; this is the floor between spikes. Null when the
+      workload isn't spiky (or has no headroom above the availability floor). */
+  steady_monthly_usd: number | null;
   shape: string;
   items: LineItem[];
   missing: string[];
