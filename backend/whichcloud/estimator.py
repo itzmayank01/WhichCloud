@@ -296,8 +296,14 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "waf", "rule"): "waf:rule",
     ("aws", "waf", "request"): "waf:request",
     ("azure", "waf", "acl"): "appgw-waf-v2:gateway-hour",
+    ("gcp", "waf", "acl"): "cloudarmor:policy",
+    ("gcp", "waf", "rule"): "cloudarmor:rule",
+    ("gcp", "waf", "request"): "cloudarmor:request",
     ("aws", "lcu", "hour"): "alb:lcu-hour",
     ("azure", "lcu", "hour"): "appgw:capacity-unit-hour",
+    # GCP has no LCU; the traffic-proportional LB charge is data processing
+    # per GB, priced in the estimator's LB block on the GCP branch.
+    ("gcp", "lb_data", "gb"): "lb:data-processing",
     ("aws", "db_storage", "gp3"): "rds:gp3-storage",
     ("aws", "db_storage", "gp3-multi-az"): "rds:gp3-storage-multi-az",
     ("azure", "db_storage", "gp3"): "postgres-flex:storage",
@@ -311,6 +317,8 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "s3_requests", "get"): "s3:get-requests",
     ("azure", "s3_requests", "put"): "blob:put-requests",
     ("azure", "s3_requests", "get"): "blob:get-requests",
+    ("gcp", "s3_requests", "put"): "gcs:put-requests",
+    ("gcp", "s3_requests", "get"): "gcs:get-requests",
 
     ("aws", "backup_copy", "warm"): "backup:cross-region-warm",
     ("aws", "network", "inter-region"): "transfer:inter-region",
@@ -1165,6 +1173,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     # ---- ALB capacity units ----
     if spec.alb_lcu and spec.load_balancer:
         point = _by_role(provider, region, "lcu", "hour", dsn)
+        data_pt = _by_role(provider, region, "lb_data", "gb", dsn)
         if point:
             result.items.append(
                 LineItem(
@@ -1176,6 +1185,15 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     monthly_usd=point.price_usd * HOURS_PER_MONTH * Decimal(str(spec.alb_lcu)),
                 )
             )
+        elif data_pt:
+            # GCP: no LCU-hour meter. The traffic-proportional LB charge is
+            # data processing per GB, approximated on egress (the bytes the LB
+            # forwards outward) -- HEURISTIC volume, like NAT and cross-AZ.
+            gb = spec.egress_gb
+            if gb:
+                result.items.append(
+                    _metered_line("Load balancer data processing", data_pt, gb)
+                )
         else:
             result.missing.append("load balancer LCUs")
 

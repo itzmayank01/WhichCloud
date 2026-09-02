@@ -503,6 +503,76 @@ def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
     return points
 
 
+def fetch_waf_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Armor: a security policy, its rules, and per-request inspection.
+
+    The same three-part shape as AWS WAF (policy ~= Web ACL, rule, request),
+    so it maps onto the estimator's existing waf acl/rule/request roles.
+    """
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Networking")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    out: list[PricePoint] = []
+    for terms, sku, name, unit in (
+        (("cloud armor policy",), "cloudarmor:policy", "Cloud Armor policy", "month"),
+        (("cloud armor rule",), "cloudarmor:rule", "Cloud Armor rule", "month"),
+        (("cloud armor requests",), "cloudarmor:request", "Cloud Armor request inspection", "request"),
+    ):
+        matches = select_skus(skus, region, must_contain=terms,
+                              must_not_contain=("enterprise", "media", "regional"))
+        price = min((sku_price(m) for m in matches), default=None)
+        if price is not None:
+            out.append(PricePoint(provider="gcp", category="waf", sku=sku,
+                                  name=name, region=region, unit=unit, price_usd=price))
+    return out
+
+
+def fetch_object_request_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Storage operations -- Class A (writes) and Class B (reads),
+    GCS's equivalent of S3 PUT/GET request charges."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Storage")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    excl = ("autoclass", "hns", "tagging", "dual", "multi-region",
+            "durable", "nearline", "coldline", "archive", "trial")
+    out: list[PricePoint] = []
+    for cls, sku, name in (("class a operations", "gcs:put-requests", "GCS Class A operations (writes)"),
+                           ("class b operations", "gcs:get-requests", "GCS Class B operations (reads)")):
+        matches = select_skus(skus, region,
+                              must_contain=("regional", "standard", cls),
+                              must_not_contain=excl)
+        price = min((sku_price(m) for m in matches), default=None)
+        if price is not None:
+            out.append(PricePoint(provider="gcp", category="s3_requests", sku=sku,
+                                  name=name, region=region, unit="request", price_usd=price))
+    return out
+
+
+def fetch_lb_data_prices(region_key: str) -> list[PricePoint]:
+    """External Application Load Balancer data processing, per GB. GCP's
+    analogue of ALB capacity units -- the traffic-proportional LB charge on
+    top of the flat forwarding rule."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Networking")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    matches = select_skus(
+        skus, region,
+        must_contain=("external application load balancer", "outbound data processing"),
+    )
+    price = min((sku_price(m) for m in matches), default=None)
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="lb_data", sku="lb:data-processing",
+                       name="Load balancer data processing", region=region,
+                       unit="GB", price_usd=price)]
+
+
 def fetch_cache_prices(region_key: str) -> list[PricePoint]:
     """Memorystore for Redis, priced per GB of capacity."""
     region = provider_region(region_key, "gcp")
@@ -923,6 +993,9 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_database_prices,
         fetch_db_storage_prices,
         fetch_cdn_prices,
+        fetch_waf_prices,
+        fetch_object_request_prices,
+        fetch_lb_data_prices,
         fetch_cache_prices,
         fetch_loadbalancer_prices,
         fetch_monitoring_prices,
