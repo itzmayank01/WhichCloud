@@ -156,6 +156,10 @@ class OptionOut(BaseModel):
     monthly_usd: float
     complete: bool
     within_budget: bool | None
+    #: True when the workload saturated its capacity caps before spending the
+    #: budget -- extra budget buys no more useful capacity. Lets the UI explain
+    #: why a higher budget stops changing the number.
+    budget_saturated: bool
     shape: str
     items: list[LineItemOut]
     missing: list[str]
@@ -368,6 +372,7 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         monthly_usd=float(option.monthly),
         complete=option.estimate.is_complete,
         within_budget=option.within_budget,
+        budget_saturated=option.budget_saturated,
         shape=shape,
         items=[
             LineItemOut(

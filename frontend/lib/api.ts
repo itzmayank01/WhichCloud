@@ -99,6 +99,10 @@ export type Option = {
   monthly_usd: number;
   complete: boolean;
   within_budget: boolean | null;
+  /** True when the workload saturated its capacity caps before spending the
+      budget — a higher budget buys no more useful capacity. Use it to explain
+      why raising the budget stops moving the number. */
+  budget_saturated: boolean;
   shape: string;
   items: LineItem[];
   missing: string[];

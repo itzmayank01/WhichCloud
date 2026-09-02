@@ -1669,6 +1669,42 @@ def load_interregion_transfer_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+def load_intraregion_transfer_prices(region_key: str) -> list[PricePoint]:
+    """Cross-AZ (intra-region) data transfer, at $0.01/GB per direction.
+
+    The line people forget: in a Multi-AZ deployment the app tier in one
+    zone talks to a database, cache or peer in another, and AWS bills that
+    traffic at the `<prefix>-DataTransfer-Regional-Bytes` meter -- distinct
+    from internet egress and from inter-region transfer, and previously
+    absent, so a Multi-AZ bill under-counted by exactly this. Sourced from
+    the same AWS feed as the others; never a typed-in rate.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region).rstrip("-")
+    if not prefix:
+        return []
+
+    doc = _load_bulk(BULK_SERVICES["network"], region_key)
+    wanted = f"{prefix}-DataTransfer-Regional-Bytes"
+    for sku, product in doc.get("products", {}).items():
+        attrs = product.get("attributes", {})
+        if attrs.get("usagetype") != wanted:
+            continue
+        if attrs.get("transferType") != "IntraRegion":
+            continue
+        found = _cheapest_dimension(doc, sku)
+        if not found:
+            continue
+        price, unit = found
+        return [PricePoint(
+            provider="aws", category="network", sku="transfer:intra-region-az",
+            name="Cross-AZ data transfer", region=region,
+            unit=_UNITS.get(unit, unit), price_usd=price,
+            attributes={"transfer_type": "intra-region", "per_direction": True},
+        )]
+    return []
+
+
 def load_email_prices(region_key: str) -> list[PricePoint]:
     """SES outbound email, per message.
 
@@ -2379,6 +2415,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_secrets_prices,
         load_cdn_prices,
         load_interregion_transfer_prices,
+        load_intraregion_transfer_prices,
         load_email_prices,
         load_queue_prices,
         load_notification_prices,

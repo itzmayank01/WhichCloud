@@ -7,7 +7,7 @@ import {
   type Option,
   type Recommendation,
 } from "@/lib/api";
-import { ArchitectureCanvas } from "@/components/architecture/ArchitectureCanvas";
+import { ArchitectureGraph } from "@/components/architecture/ArchitectureGraph";
 import { CostRail } from "@/components/workspace/CostRail";
 
 /**
@@ -227,17 +227,18 @@ export function WorkspaceView({ name }: { name: string | null }) {
 
         {/* canvas — the stage */}
         <main className="relative min-h-0 flex-1 bg-sunk">
-          {shown?.drawn ? (
+          {shown?.topology?.nodes?.length ? (
             <>
               <div className="h-full overflow-hidden">
                 {/* Keyed on option + replay counter so switching tiers or
-                    pressing replay rebuilds the diagram from scratch rather
-                    than silently swapping node positions under a finished
-                    animation. */}
-                <ArchitectureCanvas
+                    pressing replay rebuilds the diagram (and its ELK layout)
+                    from scratch rather than silently swapping node positions
+                    under a finished animation. */}
+                <ArchitectureGraph
                   key={`${shown.label}-${replay}`}
-                  view={shown.drawn}
-                  isPlaying
+                  nodes={shown.topology.nodes}
+                  edges={shown.topology.edges}
+                  playing
                 />
               </div>
 
@@ -259,7 +260,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                   <DownloadTerraformButton description={asked} option={shown.label} />
                   <span className="h-4 w-px bg-line" aria-hidden />
                   <span className="px-1 font-mono text-[11.5px] text-ink-3">
-                    {shown.drawn.nodes.length} services · {shown.region}
+                    {shown.topology.nodes.length} services · {shown.region}
                   </span>
                 </div>
               </div>

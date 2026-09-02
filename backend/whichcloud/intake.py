@@ -580,6 +580,14 @@ def _extract_groq(
             model=GROQ_MODEL,
             temperature=0,
             max_tokens=1500,
+            # gpt-oss is a reasoning model. At the default effort it spends
+            # the whole 1500-token budget thinking, returns empty content,
+            # and Groq rejects that with a 400 whose `failed_generation` is
+            # an empty string -- which reads like a schema problem and is
+            # not one. llm_extract._groq already learned this; intake did
+            # not, so every Groq key in the failover chain failed the same
+            # way and /describe 400'd whenever Gemini was overloaded.
+            reasoning_effort="low",
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": SYSTEM},

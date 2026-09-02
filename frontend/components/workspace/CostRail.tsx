@@ -222,6 +222,12 @@ export function CostRail({
             {because && (
               <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink-2">{because}</p>
             )}
+            {option.budget_saturated && (
+              <p className="mt-2.5 rounded-lg bg-caution-wash px-2.5 py-2 text-[12px] leading-relaxed text-caution">
+                Sized to the ceiling this workload can use. A higher budget
+                won't add useful capacity — the extra is headroom.
+              </p>
+            )}
             {!option.complete && (
               <p className="mt-2.5 rounded-lg bg-caution-wash px-2.5 py-2 text-[12px] leading-relaxed text-caution">
                 {option.missing.length} component

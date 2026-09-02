@@ -1,0 +1,5088 @@
+{
+ "fixtures": {
+  "web-ecommerce": {
+   "goal": "online store",
+   "workload_type": "web",
+   "profile": [
+    false,
+    false,
+    false,
+    "web",
+    "relational",
+    "synchronous",
+    "requests"
+   ],
+   "tier_spread": [
+    3,
+    1
+   ],
+   "tiers": [
+    {
+     "label": "Cheapest",
+     "monthly_usd": 1961.8648,
+     "fingerprint": [
+      "audit",
+      "auth",
+      "backup",
+      "compute",
+      "database",
+      "dns",
+      "flowlogs",
+      "kms",
+      "monitoring",
+      "nat",
+      "network",
+      "posture",
+      "secrets",
+      "storage",
+      "threat",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 43.72,
+       "share": 0.022284919939437212,
+       "sku": "egress:internet",
+       "detail": "400 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 39.2448,
+       "share": 0.02000382493227872,
+       "sku": "t4g.xlarge",
+       "detail": "t4g.xlarge \u00d7 1 @ 60%",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute",
+        "scale-to-zero-offpeak"
+       ]
+      },
+      {
+       "id": "database",
+       "label": "Database",
+       "kind": "database",
+       "monthly_usd": 256.92,
+       "share": 0.130957036387013,
+       "sku": "db.t4g.xlarge",
+       "detail": "db.t4g.xlarge",
+       "priced": true,
+       "optimized_by": [
+        "arm-managed-database"
+       ]
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 18.5,
+       "share": 0.009429803725516661,
+       "sku": "s3:general-purpose",
+       "detail": "200 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.004587472082683781,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0005097191202981979,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.00020388764811927917,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 63.28,
+       "share": 0.03225502593246996,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.020643624372077014,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 920.0,
+       "share": 0.4689415906743421,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 11.0,
+       "share": 0.0056069103232801775,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 12.0,
+       "share": 0.006116629443578375,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.05071705246967069,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.21408203052524313,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 26.8,
+       "share": 0.013660472423991704,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "compute",
+       "target": "database",
+       "label": ""
+      },
+      {
+       "source": "kms",
+       "target": "database",
+       "label": "encrypts"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      },
+      {
+       "source": "compute",
+       "target": "auth",
+       "label": "sign-in"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    },
+    {
+     "label": "Most reliable",
+     "monthly_usd": 3084.079,
+     "fingerprint": [
+      "audit",
+      "auth",
+      "backup",
+      "cache",
+      "compute",
+      "database",
+      "database_replica",
+      "dns",
+      "flowlogs",
+      "kms",
+      "loadbalancer",
+      "monitoring",
+      "nat",
+      "network",
+      "posture",
+      "secrets",
+      "storage",
+      "threat",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 43.72,
+       "share": 0.01417603115873491,
+       "sku": "egress:internet",
+       "detail": "400 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "loadbalancer",
+       "label": "Load balancer",
+       "kind": "loadbalancer",
+       "monthly_usd": 23.287,
+       "share": 0.007550714492073647,
+       "sku": "alb",
+       "detail": "alb",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 261.632,
+       "share": 0.08483310576674592,
+       "sku": "t4g.xlarge",
+       "detail": "t4g.xlarge \u00d7 4",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute"
+       ]
+      },
+      {
+       "id": "cache",
+       "label": "Cache",
+       "kind": "cache",
+       "monthly_usd": 59.13,
+       "share": 0.019172660622506752,
+       "sku": "cache.t4g.medium",
+       "detail": "cache.t4g.medium",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "database",
+       "label": "Database",
+       "kind": "database",
+       "monthly_usd": 514.57,
+       "share": 0.1668472175972146,
+       "sku": "db.t4g.xlarge:multi-az",
+       "detail": "db.t4g.xlarge:multi-az",
+       "priced": true,
+       "optimized_by": [
+        "arm-managed-database"
+       ]
+      },
+      {
+       "id": "database_replica",
+       "label": "Database read replica",
+       "kind": "database_replica",
+       "monthly_usd": 487.64,
+       "share": 0.15811527525721616,
+       "sku": "db.t4g.xlarge",
+       "detail": "db.t4g.xlarge",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 18.5,
+       "share": 0.005998549323801368,
+       "sku": "s3:general-purpose",
+       "detail": "200 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.002918213184552017,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.00032424590939466853,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.00012969836375786742,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 104.16,
+       "share": 0.03377345392254868,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.013131959330484076,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 920.0,
+       "share": 0.2983062366430951,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 11.0,
+       "share": 0.003566705003341354,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 43.24,
+       "share": 0.014020393122225468,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.03226246798476952,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.1361832819457608,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 26.8,
+       "share": 0.008689790371777117,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "loadbalancer",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "loadbalancer",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "compute",
+       "target": "cache",
+       "label": ""
+      },
+      {
+       "source": "compute",
+       "target": "database",
+       "label": ""
+      },
+      {
+       "source": "database",
+       "target": "database_replica",
+       "label": "replicates"
+      },
+      {
+       "source": "kms",
+       "target": "database",
+       "label": "encrypts"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      },
+      {
+       "source": "compute",
+       "target": "auth",
+       "label": "sign-in"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    },
+    {
+     "label": "Most optimized",
+     "monthly_usd": 3222.224,
+     "fingerprint": [
+      "audit",
+      "auth",
+      "backup",
+      "cache",
+      "compute",
+      "database",
+      "database_replica",
+      "dns",
+      "flowlogs",
+      "kms",
+      "loadbalancer",
+      "monitoring",
+      "nat",
+      "network",
+      "posture",
+      "secrets",
+      "storage",
+      "threat",
+      "tls",
+      "tracing",
+      "waf"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "waf",
+       "label": "WAF Web ACL",
+       "kind": "waf",
+       "monthly_usd": 75.0,
+       "share": 0.023275849227117666,
+       "sku": "waf:webacl",
+       "detail": "10 rules, 100,000,000 req/mo",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 43.72,
+       "share": 0.013568268376127792,
+       "sku": "egress:internet",
+       "detail": "400 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "loadbalancer",
+       "label": "Load balancer",
+       "kind": "loadbalancer",
+       "monthly_usd": 23.287,
+       "share": 0.007226996012691855,
+       "sku": "alb",
+       "detail": "alb",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 261.632,
+       "share": 0.08119609313319,
+       "sku": "t4g.xlarge",
+       "detail": "t4g.xlarge \u00d7 4",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute"
+       ]
+      },
+      {
+       "id": "cache",
+       "label": "Cache",
+       "kind": "cache",
+       "monthly_usd": 81.395,
+       "share": 0.0252605033045499,
+       "sku": "cache.m8g.large",
+       "detail": "cache.m8g.large",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "database",
+       "label": "Database",
+       "kind": "database",
+       "monthly_usd": 514.57,
+       "share": 0.1596940498239725,
+       "sku": "db.t4g.xlarge:multi-az",
+       "detail": "db.t4g.xlarge:multi-az",
+       "priced": true,
+       "optimized_by": [
+        "arm-managed-database"
+       ]
+      },
+      {
+       "id": "database_replica",
+       "label": "Database read replica",
+       "kind": "database_replica",
+       "monthly_usd": 487.64,
+       "share": 0.15133646822815547,
+       "sku": "db.t4g.xlarge",
+       "detail": "db.t4g.xlarge",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 18.5,
+       "share": 0.005741376142689025,
+       "sku": "s3:general-purpose",
+       "detail": "200 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.00279310190725412,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0003103446563615689,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.00012413786254462757,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 145.04,
+       "share": 0.045012388958681954,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.012568958582643541,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 920.0,
+       "share": 0.2855170838526434,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 11.0,
+       "share": 0.003413791219977258,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 43.24,
+       "share": 0.013419302941074239,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.030879293307976105,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.13034475567185894,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 26.8,
+       "share": 0.008317236790490047,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "waf",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "loadbalancer",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "loadbalancer",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "compute",
+       "target": "cache",
+       "label": ""
+      },
+      {
+       "source": "compute",
+       "target": "database",
+       "label": ""
+      },
+      {
+       "source": "database",
+       "target": "database_replica",
+       "label": "replicates"
+      },
+      {
+       "source": "kms",
+       "target": "database",
+       "label": "encrypts"
+      },
+      {
+       "source": "dns",
+       "target": "waf",
+       "label": "resolves"
+      },
+      {
+       "source": "compute",
+       "target": "auth",
+       "label": "sign-in"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    }
+   ]
+  },
+  "web-internal-tool": {
+   "goal": "internal admin tool",
+   "workload_type": "web",
+   "profile": [
+    false,
+    false,
+    false,
+    "web",
+    "relational",
+    "synchronous",
+    "requests"
+   ],
+   "tier_spread": [
+    1,
+    3
+   ],
+   "tiers": [
+    {
+     "label": "Cheapest",
+     "monthly_usd": 212.1872,
+     "fingerprint": [
+      "audit",
+      "auth",
+      "backup",
+      "compute",
+      "database",
+      "dns",
+      "flowlogs",
+      "kms",
+      "monitoring",
+      "nat",
+      "network",
+      "secrets",
+      "storage",
+      "threat",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 2.186,
+       "share": 0.010302223696811118,
+       "sku": "egress:internet",
+       "detail": "20 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 9.8112,
+       "share": 0.046238415889365614,
+       "sku": "t4g.medium",
+       "detail": "t4g.medium \u00d7 1 @ 60%",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute",
+        "scale-to-zero-offpeak"
+       ]
+      },
+      {
+       "id": "database",
+       "label": "Database",
+       "kind": "database",
+       "monthly_usd": 135.01,
+       "share": 0.6362777773588605,
+       "sku": "db.t4g.large",
+       "detail": "db.t4g.large",
+       "priced": true,
+       "optimized_by": [
+        "arm-managed-database"
+       ]
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1.79,
+       "share": 0.00843594712593408,
+       "sku": "s3:general-purpose",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.04241537661084175,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0047128196234268605,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.0018851278493707444,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 42.0,
+       "share": 0.19793842418392815,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 0.9,
+       "share": 0.0042415376610841745,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 2.75,
+       "share": 0.012960253964423867,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 6.0,
+       "share": 0.028276917740561167,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 1.34,
+       "share": 0.006315178295391993,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "compute",
+       "target": "database",
+       "label": ""
+      },
+      {
+       "source": "kms",
+       "target": "database",
+       "label": "encrypts"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      },
+      {
+       "source": "compute",
+       "target": "auth",
+       "label": "sign-in"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    },
+    {
+     "label": "Most reliable",
+     "monthly_usd": 437.877,
+     "fingerprint": [
+      "audit",
+      "auth",
+      "backup",
+      "compute",
+      "database",
+      "dns",
+      "flowlogs",
+      "kms",
+      "loadbalancer",
+      "monitoring",
+      "nat",
+      "network",
+      "secrets",
+      "storage",
+      "threat",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 2.186,
+       "share": 0.004992269518609107,
+       "sku": "egress:internet",
+       "detail": "20 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "loadbalancer",
+       "label": "Load balancer",
+       "kind": "loadbalancer",
+       "monthly_usd": 23.287,
+       "share": 0.05318160122591504,
+       "sku": "alb",
+       "detail": "alb",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 32.704,
+       "share": 0.0746876405931346,
+       "sku": "t4g.medium",
+       "detail": "t4g.medium \u00d7 2",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute"
+       ]
+      },
+      {
+       "id": "database",
+       "label": "Database",
+       "kind": "database",
+       "monthly_usd": 270.02,
+       "share": 0.6166571891193189,
+       "sku": "db.t4g.large:multi-az",
+       "detail": "db.t4g.large:multi-az",
+       "priced": true,
+       "optimized_by": [
+        "arm-managed-database"
+       ]
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1.79,
+       "share": 0.004087905964460339,
+       "sku": "s3:general-purpose",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.020553717139744722,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.002283746348860525,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.0009134985395442099,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 82.88,
+       "share": 0.1892768973935603,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 0.9,
+       "share": 0.0020553717139744723,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 2.75,
+       "share": 0.006280302459366443,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 9.62,
+       "share": 0.021969639876038248,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 1.34,
+       "share": 0.003060220107473103,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "loadbalancer",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "loadbalancer",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "compute",
+       "target": "database",
+       "label": ""
+      },
+      {
+       "source": "kms",
+       "target": "database",
+       "label": "encrypts"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      },
+      {
+       "source": "compute",
+       "target": "auth",
+       "label": "sign-in"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    },
+    {
+     "label": "Most optimized",
+     "monthly_usd": 844.304,
+     "fingerprint": [
+      "audit",
+      "auth",
+      "backup",
+      "cache",
+      "compute",
+      "database",
+      "database_replica",
+      "dns",
+      "flowlogs",
+      "kms",
+      "loadbalancer",
+      "monitoring",
+      "nat",
+      "network",
+      "secrets",
+      "storage",
+      "threat",
+      "tls",
+      "tracing",
+      "waf"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "waf",
+       "label": "WAF Web ACL",
+       "kind": "waf",
+       "monthly_usd": 15.6,
+       "share": 0.01847675718698478,
+       "sku": "waf:webacl",
+       "detail": "10 rules, 1,000,000 req/mo",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 2.186,
+       "share": 0.002589114821201842,
+       "sku": "egress:internet",
+       "detail": "20 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "loadbalancer",
+       "label": "Load balancer",
+       "kind": "loadbalancer",
+       "monthly_usd": 23.287,
+       "share": 0.027581297731622732,
+       "sku": "alb",
+       "detail": "alb",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 49.056,
+       "share": 0.058102294907995226,
+       "sku": "t4g.medium",
+       "detail": "t4g.medium \u00d7 3",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute"
+       ]
+      },
+      {
+       "id": "cache",
+       "label": "Cache",
+       "kind": "cache",
+       "monthly_usd": 81.395,
+       "share": 0.09640484943811707,
+       "sku": "cache.m8g.large",
+       "detail": "cache.m8g.large",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "database",
+       "label": "Database",
+       "kind": "database",
+       "monthly_usd": 270.02,
+       "share": 0.3198137163865148,
+       "sku": "db.t4g.large:multi-az",
+       "detail": "db.t4g.large:multi-az",
+       "priced": true,
+       "optimized_by": [
+        "arm-managed-database"
+       ]
+      },
+      {
+       "id": "database_replica",
+       "label": "Database read replica",
+       "kind": "database_replica",
+       "monthly_usd": 243.82,
+       "share": 0.2887822395724763,
+       "sku": "db.t4g.large",
+       "detail": "db.t4g.large",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1.79,
+       "share": 0.0021200894464553054,
+       "sku": "s3:general-purpose",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.010659667607875836,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.001184407511986204,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.00047376300479448164,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 123.76,
+       "share": 0.14658227368341262,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 0.9,
+       "share": 0.0010659667607875835,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 2.75,
+       "share": 0.003257120657962061,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 18.0,
+       "share": 0.021319335215751672,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 1.34,
+       "share": 0.0015871060660615135,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "waf",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "loadbalancer",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "loadbalancer",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "compute",
+       "target": "cache",
+       "label": ""
+      },
+      {
+       "source": "compute",
+       "target": "database",
+       "label": ""
+      },
+      {
+       "source": "database",
+       "target": "database_replica",
+       "label": "replicates"
+      },
+      {
+       "source": "kms",
+       "target": "database",
+       "label": "encrypts"
+      },
+      {
+       "source": "dns",
+       "target": "waf",
+       "label": "resolves"
+      },
+      {
+       "source": "compute",
+       "target": "auth",
+       "label": "sign-in"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    }
+   ]
+  },
+  "media-streaming": {
+   "goal": "video streaming",
+   "workload_type": "web",
+   "profile": [
+    false,
+    false,
+    false,
+    "web",
+    "object",
+    "synchronous",
+    "requests"
+   ],
+   "tier_spread": [
+    1,
+    1
+   ],
+   "tiers": [
+    {
+     "label": "Cheapest",
+     "monthly_usd": 48440.7648,
+     "fingerprint": [
+      "audit",
+      "backup",
+      "compute",
+      "dns",
+      "flowlogs",
+      "monitoring",
+      "nat",
+      "network",
+      "posture",
+      "storage",
+      "threat",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "CDN data transfer",
+       "kind": "network",
+       "monthly_usd": 21920.0,
+       "share": 0.45251143516214676,
+       "sku": "cloudfront:data-transfer-out",
+       "detail": "200000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 39.2448,
+       "share": 0.000810160619099061,
+       "sku": "t4g.xlarge",
+       "detail": "t4g.xlarge \u00d7 1 @ 60%",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute",
+        "scale-to-zero-offpeak"
+       ]
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1790.0,
+       "share": 0.03695234803559501,
+       "sku": "s3:general-purpose",
+       "detail": "50000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 3.0,
+       "share": 6.193130955686315e-05,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 11240.88,
+       "share": 0.23205413965718394,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.0008360726790176525,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 2750.0,
+       "share": 0.05677036709379122,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 7.24,
+       "share": 0.00014946089373056308,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.0020540551003026277,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.00867038333796084,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 10130.4,
+       "share": 0.20912964611161547,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    },
+    {
+     "label": "Most reliable",
+     "monthly_usd": 48764.82862962963,
+     "fingerprint": [
+      "audit",
+      "backup",
+      "compute",
+      "dns",
+      "flowlogs",
+      "loadbalancer",
+      "monitoring",
+      "nat",
+      "network",
+      "posture",
+      "storage",
+      "threat",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "CDN data transfer",
+       "kind": "network",
+       "monthly_usd": 21920.0,
+       "share": 0.44950429676443804,
+       "sku": "cloudfront:data-transfer-out",
+       "detail": "200000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "loadbalancer",
+       "label": "Load balancer",
+       "kind": "loadbalancer",
+       "monthly_usd": 39.07662962962963,
+       "share": 0.0008013281442331692,
+       "sku": "alb",
+       "detail": "alb",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 261.632,
+       "share": 0.005365178292475978,
+       "sku": "t4g.xlarge",
+       "detail": "t4g.xlarge \u00d7 4",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute"
+       ]
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1790.0,
+       "share": 0.03670678335804489,
+       "sku": "s3:general-purpose",
+       "detail": "50000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 3.0,
+       "share": 6.151974864476798e-05,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 11281.76,
+       "share": 0.2313503464901992,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.0008305166067043676,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 2750.0,
+       "share": 0.05639310292437064,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 28.96,
+       "share": 0.0005938706402508269,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.0020404049967181377,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.008612764810267516,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 10130.4,
+       "share": 0.2077398872236525,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "loadbalancer",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "loadbalancer",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    },
+    {
+     "label": "Most optimized",
+     "monthly_usd": 48880.70862962963,
+     "fingerprint": [
+      "audit",
+      "backup",
+      "compute",
+      "dns",
+      "flowlogs",
+      "loadbalancer",
+      "monitoring",
+      "nat",
+      "network",
+      "posture",
+      "storage",
+      "threat",
+      "tls",
+      "tracing",
+      "waf"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "waf",
+       "label": "WAF Web ACL",
+       "kind": "waf",
+       "monthly_usd": 75.0,
+       "share": 0.0015343476414852516,
+       "sku": "waf:webacl",
+       "detail": "10 rules, 100,000,000 req/mo",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "CDN data transfer",
+       "kind": "network",
+       "monthly_usd": 21920.0,
+       "share": 0.4484386706847562,
+       "sku": "cloudfront:data-transfer-out",
+       "detail": "200000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "loadbalancer",
+       "label": "Load balancer",
+       "kind": "loadbalancer",
+       "monthly_usd": 39.07662962962963,
+       "share": 0.0007994284601255322,
+       "sku": "alb",
+       "detail": "alb",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 261.632,
+       "share": 0.005352459228494258,
+       "sku": "t4g.xlarge",
+       "detail": "t4g.xlarge \u00d7 4",
+       "priced": true,
+       "optimized_by": [
+        "graviton-arm-compute"
+       ]
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1790.0,
+       "share": 0.03661976371011467,
+       "sku": "s3:general-purpose",
+       "detail": "50000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 3.0,
+       "share": 6.137390565941005e-05,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "nat",
+       "label": "NAT gateway",
+       "kind": "nat",
+       "monthly_usd": 11322.64,
+       "share": 0.23163821305848756,
+       "sku": "nat:gateway-hour",
+       "detail": "nat:gateway-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.0008285477264020358,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "backup",
+       "label": "Backup storage",
+       "kind": "backup",
+       "monthly_usd": 2750.0,
+       "share": 0.05625941352112589,
+       "sku": "backup:warm-storage",
+       "detail": "backup:warm-storage",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: compute",
+       "kind": "threat",
+       "monthly_usd": 28.96,
+       "share": 0.0005924627692988385,
+       "sku": "guardduty:ec2-vcpu",
+       "detail": "guardduty:ec2-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.0020355678710371004,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.008592346792317409,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 10130.4,
+       "share": 0.20724740463069588,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "waf",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "loadbalancer",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "loadbalancer",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "dns",
+       "target": "waf",
+       "label": "resolves"
+      },
+      {
+       "source": "storage",
+       "target": "backup",
+       "label": "backs up"
+      },
+      {
+       "source": "compute",
+       "target": "nat",
+       "label": "outbound"
+      }
+     ]
+    }
+   ]
+  },
+  "batch-etl": {
+   "goal": "nightly ETL",
+   "workload_type": "batch",
+   "profile": [
+    false,
+    false,
+    false,
+    "batch",
+    "warehouse",
+    "batch",
+    "batches"
+   ],
+   "tier_spread": [
+    4,
+    3
+   ],
+   "tiers": [
+    {
+     "label": "Cheapest",
+     "monthly_usd": 492.3766,
+     "fingerprint": [
+      "athena",
+      "audit",
+      "compute",
+      "flowlogs",
+      "kms",
+      "monitoring",
+      "network",
+      "storage",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 5.465,
+       "share": 0.011099227704972169,
+       "sku": "egress:internet",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 32.0616,
+       "share": 0.06511601079336427,
+       "sku": "t3a.xlarge:spot",
+       "detail": "t3a.xlarge:spot \u00d7 2 @ 60%",
+       "priced": true,
+       "optimized_by": [
+        "scale-to-zero-offpeak",
+        "spot-interruptible-capacity"
+       ]
+      },
+      {
+       "id": "athena",
+       "label": "Athena data scanned",
+       "kind": "athena",
+       "monthly_usd": 25.0,
+       "share": 0.050774143206643044,
+       "sku": "athena:scanned",
+       "detail": "athena:scanned",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 320.0,
+       "share": 0.649909033045031,
+       "sku": "s3:general-purpose",
+       "detail": "2000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.01218579436959433,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0020309657282657216,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.20208108996243931,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 3.35,
+       "share": 0.006803735189690168,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      }
+     ]
+    },
+    {
+     "label": "Most reliable",
+     "monthly_usd": 572.348,
+     "fingerprint": [
+      "athena",
+      "audit",
+      "compute_fargate",
+      "flowlogs",
+      "glue",
+      "kms",
+      "monitoring",
+      "network",
+      "storage",
+      "threat",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 5.465,
+       "share": 0.009548386645886768,
+       "sku": "egress:internet",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute_fargate",
+       "label": "Fargate vCPU",
+       "kind": "compute_fargate",
+       "monthly_usd": 42.413,
+       "share": 0.07410351744043833,
+       "sku": "fargate:arm-vcpu-hour",
+       "detail": "2 task(s), 1 vCPU / 2 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "athena",
+       "label": "Athena data scanned",
+       "kind": "athena",
+       "monthly_usd": 25.0,
+       "share": 0.043679719331595465,
+       "sku": "athena:scanned",
+       "detail": "athena:scanned",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "glue",
+       "label": "Glue ETL",
+       "kind": "glue",
+       "monthly_usd": 66.0,
+       "share": 0.11531445903541203,
+       "sku": "glue:etl-dpu-hour",
+       "detail": "glue:etl-dpu-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 320.0,
+       "share": 0.5591004074444219,
+       "sku": "s3:general-purpose",
+       "detail": "2000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.010483132639582912,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0017471887732638184,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: Fargate",
+       "kind": "threat",
+       "monthly_usd": 3.62,
+       "share": 0.006324823359215023,
+       "sku": "guardduty:fargate-vcpu",
+       "detail": "guardduty:fargate-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.17384528293974993,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 3.35,
+       "share": 0.005853082390433792,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      }
+     ]
+    },
+    {
+     "label": "Most optimized",
+     "monthly_usd": 2253.5565,
+     "fingerprint": [
+      "audit",
+      "compute_fargate",
+      "flowlogs",
+      "glue",
+      "kms",
+      "monitoring",
+      "network",
+      "posture",
+      "storage",
+      "threat",
+      "tracing",
+      "warehouse"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 5.465,
+       "share": 0.002425055684204057,
+       "sku": "egress:internet",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute_fargate",
+       "label": "Fargate vCPU",
+       "kind": "compute_fargate",
+       "monthly_usd": 63.6195,
+       "share": 0.028230709991074108,
+       "sku": "fargate:arm-vcpu-hour",
+       "detail": "3 task(s), 1 vCPU / 2 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "glue",
+       "label": "Glue ETL",
+       "kind": "glue",
+       "monthly_usd": 66.0,
+       "share": 0.029287040284989525,
+       "sku": "glue:etl-dpu-hour",
+       "detail": "glue:etl-dpu-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 320.0,
+       "share": 0.1419977710787371,
+       "sku": "s3:general-purpose",
+       "detail": "2000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.0026624582077263204,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.00044374303462105344,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "warehouse",
+       "label": "Warehouse nodes",
+       "kind": "warehouse",
+       "monthly_usd": 1263.192,
+       "share": 0.5605326513890377,
+       "sku": "rg.large",
+       "detail": "rg.large",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: Fargate",
+       "kind": "threat",
+       "monthly_usd": 5.43,
+       "share": 0.00240952467799232,
+       "sku": "guardduty:fargate-vcpu",
+       "detail": "guardduty:fargate-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.04415243194479482,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.18637207454084245,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "flowlogs",
+       "label": "VPC flow logs",
+       "kind": "flowlogs",
+       "monthly_usd": 3.35,
+       "share": 0.001486539165980529,
+       "sku": "vpc:flow-logs",
+       "detail": "vpc:flow-logs",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      }
+     ]
+    }
+   ]
+  },
+  "event-iot": {
+   "goal": "IoT telemetry",
+   "workload_type": "mixed",
+   "profile": [
+    true,
+    false,
+    false,
+    "mixed",
+    "time-series",
+    "near-real-time",
+    "streams"
+   ],
+   "tier_spread": [
+    5,
+    8
+   ],
+   "tiers": [
+    {
+     "label": "Cheapest",
+     "monthly_usd": 1941.2166,
+     "fingerprint": [
+      "apigateway",
+      "athena",
+      "audit",
+      "compute",
+      "kms",
+      "monitoring",
+      "network",
+      "storage",
+      "streaming",
+      "timestream",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 54.65,
+       "share": 0.028152448315144223,
+       "sku": "egress:internet",
+       "detail": "500 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 157.5,
+       "share": 0.08113468636112013,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute",
+       "label": "Compute",
+       "kind": "compute",
+       "monthly_usd": 32.0616,
+       "share": 0.01651624038244882,
+       "sku": "t3a.xlarge:spot",
+       "detail": "t3a.xlarge:spot \u00d7 2 @ 60%",
+       "priced": true,
+       "optimized_by": [
+        "scale-to-zero-offpeak"
+       ]
+      },
+      {
+       "id": "timestream",
+       "label": "Timestream writes",
+       "kind": "timestream",
+       "monthly_usd": 146.73,
+       "share": 0.07558661923661687,
+       "sku": "timestream:ingest",
+       "detail": "timestream:ingest",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "athena",
+       "label": "Athena data scanned",
+       "kind": "athena",
+       "monthly_usd": 25.0,
+       "share": 0.012878521644622243,
+       "sku": "athena:scanned",
+       "detail": "athena:scanned",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1400.0,
+       "share": 0.7211972120988457,
+       "sku": "s3:general-purpose",
+       "detail": "2000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.004636267792064008,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0005151408657848897,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "streaming",
+       "label": "Event stream shards",
+       "kind": "streaming",
+       "monthly_usd": 15.775,
+       "share": 0.008126347157756635,
+       "sku": "kinesis:shard-hour",
+       "detail": "kinesis:shard-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.05125651614559653,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "compute",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "compute",
+       "target": "streaming",
+       "label": "events"
+      }
+     ]
+    },
+    {
+     "label": "Most reliable",
+     "monthly_usd": 2071.3045,
+     "fingerprint": [
+      "apigateway",
+      "athena",
+      "audit",
+      "compute_fargate",
+      "firehose",
+      "glue",
+      "kms",
+      "monitoring",
+      "network",
+      "storage",
+      "streaming",
+      "threat",
+      "timestream",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 54.65,
+       "share": 0.026384338951612376,
+       "sku": "egress:internet",
+       "detail": "500 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 157.5,
+       "share": 0.07603903723474748,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute_fargate",
+       "label": "Fargate vCPU",
+       "kind": "compute_fargate",
+       "monthly_usd": 63.6195,
+       "share": 0.030714701773688995,
+       "sku": "fargate:arm-vcpu-hour",
+       "detail": "3 task(s), 1 vCPU / 2 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "firehose",
+       "label": "Firehose delivery",
+       "kind": "firehose",
+       "monthly_usd": 5.1,
+       "share": 0.002462216443791823,
+       "sku": "firehose:ingest",
+       "detail": "firehose:ingest",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "timestream",
+       "label": "Timestream writes",
+       "kind": "timestream",
+       "monthly_usd": 146.73,
+       "share": 0.07083941545050475,
+       "sku": "timestream:ingest",
+       "detail": "timestream:ingest",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "athena",
+       "label": "Athena data scanned",
+       "kind": "athena",
+       "monthly_usd": 25.0,
+       "share": 0.012069688449959917,
+       "sku": "athena:scanned",
+       "detail": "athena:scanned",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "glue",
+       "label": "Glue ETL",
+       "kind": "glue",
+       "monthly_usd": 88.0,
+       "share": 0.04248530334385891,
+       "sku": "glue:etl-dpu-hour",
+       "detail": "glue:etl-dpu-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1400.0,
+       "share": 0.6759025531977553,
+       "sku": "s3:general-purpose",
+       "detail": "2000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.00434508784198557,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0004827875379983967,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "streaming",
+       "label": "Event stream shards",
+       "kind": "streaming",
+       "monthly_usd": 15.775,
+       "share": 0.007615973411924708,
+       "sku": "kinesis:shard-hour",
+       "detail": "kinesis:shard-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: Fargate",
+       "kind": "threat",
+       "monthly_usd": 5.43,
+       "share": 0.002621536331331294,
+       "sku": "guardduty:fargate-vcpu",
+       "detail": "guardduty:fargate-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.04803736003084047,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      }
+     ]
+    },
+    {
+     "label": "Most optimized",
+     "monthly_usd": 4647.5835,
+     "fingerprint": [
+      "apigateway",
+      "audit",
+      "compute_fargate",
+      "glue",
+      "iot",
+      "kafka",
+      "kms",
+      "monitoring",
+      "network",
+      "posture",
+      "search",
+      "storage",
+      "threat",
+      "timestream",
+      "tracing",
+      "warehouse"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 54.65,
+       "share": 0.011758798954338314,
+       "sku": "egress:internet",
+       "detail": "500 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 157.5,
+       "share": 0.03388857887114884,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "compute_fargate",
+       "label": "Fargate vCPU",
+       "kind": "compute_fargate",
+       "monthly_usd": 63.6195,
+       "share": 0.013688726625352724,
+       "sku": "fargate:arm-vcpu-hour",
+       "detail": "3 task(s), 1 vCPU / 2 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "iot",
+       "label": "IoT Core messages",
+       "kind": "iot",
+       "monthly_usd": 157.5,
+       "share": 0.03388857887114884,
+       "sku": "iot:messages",
+       "detail": "iot:messages",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "timestream",
+       "label": "Timestream writes",
+       "kind": "timestream",
+       "monthly_usd": 146.73,
+       "share": 0.03157124557310267,
+       "sku": "timestream:ingest",
+       "detail": "timestream:ingest",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "glue",
+       "label": "Glue ETL",
+       "kind": "glue",
+       "monthly_usd": 88.0,
+       "share": 0.018934571051816496,
+       "sku": "glue:etl-dpu-hour",
+       "detail": "glue:etl-dpu-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 1400.0,
+       "share": 0.3012318121879897,
+       "sku": "s3:general-purpose",
+       "detail": "2000 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 9.0,
+       "share": 0.0019364902212085054,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0002151655801342784,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kafka",
+       "label": "Kafka brokers",
+       "kind": "kafka",
+       "monthly_usd": 319.302,
+       "share": 0.06870280006803535,
+       "sku": "kafka.m7g.large",
+       "detail": "kafka.m7g.large",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "search",
+       "label": "Search nodes",
+       "kind": "search",
+       "monthly_usd": 462.16,
+       "share": 0.0994409245148581,
+       "sku": "m6g.large.search",
+       "detail": "m6g.large.search",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "warehouse",
+       "label": "Warehouse nodes",
+       "kind": "warehouse",
+       "monthly_usd": 1263.192,
+       "share": 0.2717954395009794,
+       "sku": "rg.large",
+       "detail": "rg.large",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "threat",
+       "label": "Threat detection: Fargate",
+       "kind": "threat",
+       "monthly_usd": 5.43,
+       "share": 0.0011683491001291317,
+       "sku": "guardduty:fargate-vcpu",
+       "detail": "guardduty:fargate-vcpu",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.021408975223360698,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "posture",
+       "label": "Security posture checks",
+       "kind": "posture",
+       "monthly_usd": 420.0,
+       "share": 0.09036954365639692,
+       "sku": "securityhub:compliance-check",
+       "detail": "securityhub:compliance-check",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "kafka",
+       "target": "search",
+       "label": "indexes"
+      },
+      {
+       "source": "kafka",
+       "target": "warehouse",
+       "label": "loads"
+      }
+     ]
+    }
+   ]
+  },
+  "serverless-api": {
+   "goal": "spiky webhook API",
+   "workload_type": "api",
+   "profile": [
+    false,
+    true,
+    false,
+    "api",
+    "key-value",
+    "near-real-time",
+    "events"
+   ],
+   "tier_spread": [
+    2,
+    3
+   ],
+   "tiers": [
+    {
+     "label": "Cheapest",
+     "monthly_usd": 77.867515,
+     "fingerprint": [
+      "apigateway",
+      "audit",
+      "auth",
+      "dns",
+      "dynamodb",
+      "kms",
+      "lambda",
+      "monitoring",
+      "network",
+      "secrets",
+      "storage",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 10.93,
+       "share": 0.14036662143385467,
+       "sku": "egress:internet",
+       "detail": "100 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 3.15,
+       "share": 0.04045332639676507,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "lambda",
+       "label": "Lambda requests",
+       "kind": "lambda",
+       "monthly_usd": 3.600015,
+       "share": 0.04623256565976197,
+       "sku": "lambda:requests",
+       "detail": "lambda:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dynamodb",
+       "label": "DynamoDB reads",
+       "kind": "dynamodb",
+       "monthly_usd": 10.5375,
+       "share": 0.13532600854155935,
+       "sku": "dynamodb:read-request-units",
+       "detail": "dynamodb:read-request-units",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 28.25,
+       "share": 0.3627957049868613,
+       "sku": "s3:general-purpose",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.07705395504145728,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.012842325840242879,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.0051369303360971515,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 4.5,
+       "share": 0.05779046628109295,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 9.5,
+       "share": 0.12200209548230735,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      }
+     ]
+    },
+    {
+     "label": "Most reliable",
+     "monthly_usd": 166.667953,
+     "fingerprint": [
+      "apigateway",
+      "audit",
+      "auth",
+      "dns",
+      "dynamodb",
+      "kms",
+      "lambda",
+      "monitoring",
+      "network",
+      "notification",
+      "queue",
+      "secrets",
+      "storage",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 10.93,
+       "share": 0.0655794938574664,
+       "sku": "egress:internet",
+       "detail": "100 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 3.15,
+       "share": 0.018899854130925816,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "lambda",
+       "label": "Lambda requests",
+       "kind": "lambda",
+       "monthly_usd": 91.200453,
+       "share": 0.5471984947220178,
+       "sku": "lambda:requests",
+       "detail": "lambda:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dynamodb",
+       "label": "DynamoDB reads",
+       "kind": "dynamodb",
+       "monthly_usd": 10.5375,
+       "share": 0.06322451203321612,
+       "sku": "dynamodb:read-request-units",
+       "detail": "dynamodb:read-request-units",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 28.25,
+       "share": 0.16949869180909663,
+       "sku": "s3:general-purpose",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.03599972215414442,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.005999953692357402,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.002399981476942961,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 4.5,
+       "share": 0.02699979161560831,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "queue",
+       "label": "Queue requests",
+       "kind": "queue",
+       "monthly_usd": 1.2,
+       "share": 0.007199944430828883,
+       "sku": "sqs:requests",
+       "detail": "sqs:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "notification",
+       "label": "Notifications",
+       "kind": "notification",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "sns:requests",
+       "detail": "sns:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 9.5,
+       "share": 0.056999560077395324,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      }
+     ]
+    },
+    {
+     "label": "Most optimized",
+     "monthly_usd": 310.268406,
+     "fingerprint": [
+      "apigateway",
+      "athena",
+      "audit",
+      "auth",
+      "dns",
+      "dynamodb",
+      "glue",
+      "kms",
+      "lambda",
+      "monitoring",
+      "network",
+      "notification",
+      "queue",
+      "secrets",
+      "storage",
+      "tls",
+      "tracing",
+      "waf"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "waf",
+       "label": "WAF Web ACL",
+       "kind": "waf",
+       "monthly_usd": 21.0,
+       "share": 0.06768333350705388,
+       "sku": "waf:webacl",
+       "detail": "10 rules, 10,000,000 req/mo",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 10.93,
+       "share": 0.03522756358248091,
+       "sku": "egress:internet",
+       "detail": "100 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 3.15,
+       "share": 0.010152500026058083,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "lambda",
+       "label": "Lambda requests",
+       "kind": "lambda",
+       "monthly_usd": 181.800906,
+       "share": 0.5859472072705978,
+       "sku": "lambda:requests",
+       "detail": "lambda:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dynamodb",
+       "label": "DynamoDB reads",
+       "kind": "dynamodb",
+       "monthly_usd": 10.5375,
+       "share": 0.03396252984907525,
+       "sku": "dynamodb:read-request-units",
+       "detail": "dynamodb:read-request-units",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "athena",
+       "label": "Athena data scanned",
+       "kind": "athena",
+       "monthly_usd": 10.0,
+       "share": 0.032230158812882805,
+       "sku": "athena:scanned",
+       "detail": "athena:scanned",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "glue",
+       "label": "Glue ETL",
+       "kind": "glue",
+       "monthly_usd": 22.0,
+       "share": 0.07090634938834217,
+       "sku": "glue:etl-dpu-hour",
+       "detail": "glue:etl-dpu-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 28.25,
+       "share": 0.09105019864639392,
+       "sku": "s3:general-purpose",
+       "detail": "50 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.019338095287729683,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 0.0032230158812882803,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 0.0012892063525153123,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 4.5,
+       "share": 0.014503571465797262,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "queue",
+       "label": "Queue requests",
+       "kind": "queue",
+       "monthly_usd": 1.2,
+       "share": 0.0038676190575459364,
+       "sku": "sqs:requests",
+       "detail": "sqs:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "notification",
+       "label": "Notifications",
+       "kind": "notification",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "sns:requests",
+       "detail": "sns:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 9.5,
+       "share": 0.030618650872238664,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "waf",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "dns",
+       "target": "waf",
+       "label": "resolves"
+      }
+     ]
+    }
+   ]
+  },
+  "ai-vision": {
+   "goal": "image recognition platform",
+   "workload_type": "api",
+   "profile": [
+    false,
+    false,
+    true,
+    "api",
+    "object",
+    "synchronous",
+    "files"
+   ],
+   "tier_spread": [
+    2,
+    3
+   ],
+   "tiers": [
+    {
+     "label": "Cheapest",
+     "monthly_usd": 14069.017575,
+     "fingerprint": [
+      "apigateway",
+      "audit",
+      "auth",
+      "dns",
+      "dynamodb",
+      "kms",
+      "lambda",
+      "monitoring",
+      "network",
+      "rekognition",
+      "secrets",
+      "storage",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 10.93,
+       "share": 0.0007768843802869441,
+       "sku": "egress:internet",
+       "detail": "100 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 15.75,
+       "share": 0.0011194811518315984,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "lambda",
+       "label": "Lambda requests",
+       "kind": "lambda",
+       "monthly_usd": 18.000075,
+       "share": 0.0012794123615273115,
+       "sku": "lambda:requests",
+       "detail": "lambda:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dynamodb",
+       "label": "DynamoDB reads",
+       "kind": "dynamodb",
+       "monthly_usd": 66.9375,
+       "share": 0.004757794895284293,
+       "sku": "dynamodb:read-request-units",
+       "detail": "dynamodb:read-request-units",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "rekognition",
+       "label": "Rekognition images",
+       "kind": "rekognition",
+       "monthly_usd": 12750.0,
+       "share": 0.9062466467208177,
+       "sku": "rekognition:images",
+       "detail": "rekognition:images",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 140.0,
+       "share": 0.00995094357183643,
+       "sku": "s3:general-purpose",
+       "detail": "200 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.00042646901022156124,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 7.107816837026021e-05,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 2.8431267348104083e-05,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.0028786658189955384,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 920.0,
+       "share": 0.06539191490063939,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.007072277752840891,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      }
+     ]
+    },
+    {
+     "label": "Most reliable",
+     "monthly_usd": 14162.618013,
+     "fingerprint": [
+      "apigateway",
+      "audit",
+      "auth",
+      "dns",
+      "dynamodb",
+      "kms",
+      "lambda",
+      "monitoring",
+      "network",
+      "notification",
+      "queue",
+      "rekognition",
+      "secrets",
+      "storage",
+      "tls",
+      "tracing"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 10.93,
+       "share": 0.0007717499681179885,
+       "sku": "egress:internet",
+       "detail": "100 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 15.75,
+       "share": 0.0011120825249641647,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "lambda",
+       "label": "Lambda requests",
+       "kind": "lambda",
+       "monthly_usd": 105.600513,
+       "share": 0.007456284770447688,
+       "sku": "lambda:requests",
+       "detail": "lambda:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dynamodb",
+       "label": "DynamoDB reads",
+       "kind": "dynamodb",
+       "monthly_usd": 66.9375,
+       "share": 0.0047263507310976996,
+       "sku": "dynamodb:read-request-units",
+       "detail": "dynamodb:read-request-units",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "rekognition",
+       "label": "Rekognition images",
+       "kind": "rekognition",
+       "monthly_usd": 12750.0,
+       "share": 0.9002572821138476,
+       "sku": "rekognition:images",
+       "detail": "rekognition:images",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 140.0,
+       "share": 0.009885177999681463,
+       "sku": "s3:general-purpose",
+       "detail": "200 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.00042365048570063414,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 7.060841428343903e-05,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 2.824336571337561e-05,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.0028596407784792803,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 920.0,
+       "share": 0.0649597411407639,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "queue",
+       "label": "Queue requests",
+       "kind": "queue",
+       "monthly_usd": 6.0,
+       "share": 0.00042365048570063414,
+       "sku": "sqs:requests",
+       "detail": "sqs:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "notification",
+       "label": "Notifications",
+       "kind": "notification",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "sns:requests",
+       "detail": "sns:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.0070255372212021825,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "dns",
+       "target": "network",
+       "label": "resolves"
+      }
+     ]
+    },
+    {
+     "label": "Most optimized",
+     "monthly_usd": 14372.218526,
+     "fingerprint": [
+      "apigateway",
+      "athena",
+      "audit",
+      "auth",
+      "dns",
+      "dynamodb",
+      "glue",
+      "kms",
+      "lambda",
+      "monitoring",
+      "network",
+      "notification",
+      "queue",
+      "rekognition",
+      "secrets",
+      "storage",
+      "tls",
+      "tracing",
+      "waf"
+     ],
+     "nodes": [
+      {
+       "id": "users",
+       "label": "Users",
+       "kind": "client",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "",
+       "detail": "",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "waf",
+       "label": "WAF Web ACL",
+       "kind": "waf",
+       "monthly_usd": 75.0,
+       "share": 0.005218401032820477,
+       "sku": "waf:webacl",
+       "detail": "10 rules, 100,000,000 req/mo",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "network",
+       "label": "Egress",
+       "kind": "network",
+       "monthly_usd": 10.93,
+       "share": 0.0007604949771830376,
+       "sku": "egress:internet",
+       "detail": "100 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "apigateway",
+       "label": "API Gateway requests",
+       "kind": "apigateway",
+       "monthly_usd": 15.75,
+       "share": 0.0010958642168923003,
+       "sku": "apigateway:http-requests",
+       "detail": "apigateway:http-requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "lambda",
+       "label": "Lambda requests",
+       "kind": "lambda",
+       "monthly_usd": 208.201026,
+       "share": 0.014486352654835775,
+       "sku": "lambda:requests",
+       "detail": "lambda:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dynamodb",
+       "label": "DynamoDB reads",
+       "kind": "dynamodb",
+       "monthly_usd": 66.9375,
+       "share": 0.004657422921792276,
+       "sku": "dynamodb:read-request-units",
+       "detail": "dynamodb:read-request-units",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "rekognition",
+       "label": "Rekognition images",
+       "kind": "rekognition",
+       "monthly_usd": 12750.0,
+       "share": 0.8871281755794812,
+       "sku": "rekognition:images",
+       "detail": "rekognition:images",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "athena",
+       "label": "Athena data scanned",
+       "kind": "athena",
+       "monthly_usd": 10.0,
+       "share": 0.0006957868043760637,
+       "sku": "athena:scanned",
+       "detail": "athena:scanned",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "glue",
+       "label": "Glue ETL",
+       "kind": "glue",
+       "monthly_usd": 22.0,
+       "share": 0.0015307309696273401,
+       "sku": "glue:etl-dpu-hour",
+       "detail": "glue:etl-dpu-hour",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "storage",
+       "label": "Object storage",
+       "kind": "storage",
+       "monthly_usd": 140.0,
+       "share": 0.00974101526126489,
+       "sku": "s3:general-purpose",
+       "detail": "200 GB",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "monitoring",
+       "label": "Monitoring",
+       "kind": "monitoring",
+       "monthly_usd": 6.0,
+       "share": 0.0004174720826256382,
+       "sku": "cloudwatch:metrics",
+       "detail": "cloudwatch:metrics",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "audit",
+       "label": "Audit logging",
+       "kind": "audit",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "cloudtrail:management-events",
+       "detail": "cloudtrail:management-events",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "kms",
+       "label": "KMS keys",
+       "kind": "kms",
+       "monthly_usd": 1.0,
+       "share": 6.957868043760637e-05,
+       "sku": "kms:key",
+       "detail": "kms:key",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "secrets",
+       "label": "Secrets",
+       "kind": "secrets",
+       "monthly_usd": 0.4,
+       "share": 2.7831472175042546e-05,
+       "sku": "secretsmanager:secret",
+       "detail": "secretsmanager:secret",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tls",
+       "label": "TLS certificate",
+       "kind": "tls",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "acm:public-certificate",
+       "detail": "acm:public-certificate",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "dns",
+       "label": "DNS hosted zone",
+       "kind": "dns",
+       "monthly_usd": 40.5,
+       "share": 0.002817936557723058,
+       "sku": "route53:hosted-zone",
+       "detail": "route53:hosted-zone",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "auth",
+       "label": "Authentication",
+       "kind": "auth",
+       "monthly_usd": 920.0,
+       "share": 0.06401238600259786,
+       "sku": "cognito:user-pool-mau",
+       "detail": "cognito:user-pool-mau",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "queue",
+       "label": "Queue requests",
+       "kind": "queue",
+       "monthly_usd": 6.0,
+       "share": 0.0004174720826256382,
+       "sku": "sqs:requests",
+       "detail": "sqs:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "notification",
+       "label": "Notifications",
+       "kind": "notification",
+       "monthly_usd": 0.0,
+       "share": 0.0,
+       "sku": "sns:requests",
+       "detail": "sns:requests",
+       "priced": true,
+       "optimized_by": []
+      },
+      {
+       "id": "tracing",
+       "label": "Distributed tracing",
+       "kind": "tracing",
+       "monthly_usd": 99.5,
+       "share": 0.006923078703541833,
+       "sku": "xray:traces-recorded",
+       "detail": "xray:traces-recorded",
+       "priced": true,
+       "optimized_by": []
+      }
+     ],
+     "edges": [
+      {
+       "source": "users",
+       "target": "dns",
+       "label": ""
+      },
+      {
+       "source": "waf",
+       "target": "network",
+       "label": ""
+      },
+      {
+       "source": "network",
+       "target": "storage",
+       "label": "assets"
+      },
+      {
+       "source": "dns",
+       "target": "waf",
+       "label": "resolves"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

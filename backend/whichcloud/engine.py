@@ -298,6 +298,11 @@ class Option:
         return None if budget is None else self.monthly <= Decimal(str(budget))
 
     spec_budget: float | None = None
+    #: True when the workload hit its capacity caps before consuming its share
+    #: of the budget -- extra budget buys nothing more. Lets the interface say
+    #: "sized to your workload; more budget adds no useful capacity" instead of
+    #: leaving an unchanged number looking like a bug.
+    budget_saturated: bool = False
 
 
 def size_for(requirement: Requirement) -> tuple[int, int, float]:
@@ -1610,6 +1615,127 @@ def _trades_availability(technique: Technique) -> bool:
     return bool(_AVAILABILITY_TRADING_EFFECTS & set(technique.effect))
 
 
+# ── budget-driven headroom ───────────────────────────────────────────────
+#
+# By default the engine sizes from the WORKLOAD and treats budget as a
+# pass/fail check (see the "does NOT spend to a budget" note in
+# _shape_variants). That is the honest default, but it makes the budget
+# field feel inert: raising it changes nothing a user can see.
+#
+# This function makes budget an active lever, on an explicit request, WITHOUT
+# padding into absurdity. The rules that keep it honest:
+#
+#   * The WORKLOAD sets the floor. Nothing here shrinks a tier below what the
+#     traffic needs to run, and Cheapest is left at that floor untouched --
+#     it stays the honest minimum, so a tight budget still has a real answer.
+#   * Budget only ever buys capacity a well-funded team would actually run:
+#     more app instances (burst + resilience), read replicas (read scaling
+#     and failover), a larger cache (lower latency), a bigger primary. Never
+#     idle quantity for its own sake.
+#   * HARD CAPS bound every knob, so a $50k budget on a small workload plateaus
+#     at that workload's useful maximum instead of inventing a grotesque
+#     fleet. Past the plateau, extra budget correctly changes nothing -- and
+#     Option carries `budget_saturated` so the interface can say why.
+#   * It never exceeds the budget: each upgrade is priced and kept only if the
+#     new total still fits the tier's target share of the budget.
+#
+# Server web shapes only. Serverless, AI, event-driven and batch shapes scale
+# by their own units (concurrency, shards, workers) and are left alone.
+
+#: The share of the stated budget each tier may grow into. Cheapest is absent
+#: -- it is never scaled. The upper tiers leave headroom below the budget so
+#: the result "fits with room to spare" rather than sitting exactly on it.
+_BUDGET_TARGET_FILL: dict[str, float] = {
+    "Most reliable": 0.45,
+    "Most optimized": 0.85,
+}
+
+#: Absolute ceilings on what budget can buy, per knob, PER TIER. These are
+#: what stop a large budget on a small workload from ballooning: once every
+#: knob is capped the tier is saturated and further budget is inert. The caps
+#: are lower for Most reliable than Most optimized so the two tiers stay
+#: distinct postures even at a budget large enough to saturate both -- without
+#: this they converge on the same maxed-out stack and the tier choice becomes
+#: meaningless.
+_BUDGET_CAPS: dict[str, dict[str, int]] = {
+    # Reliability is about surviving a zone failure, not peak throughput:
+    # a couple of standbys and a modest cache, not a maxed-out fleet.
+    "Most reliable": {"compute": 6, "replicas": 2, "cache_vcpu": 8, "db_vcpu": 16},
+    # The top tier is "everything this workload can use": the real ceilings.
+    "Most optimized": {"compute": 12, "replicas": 5, "cache_vcpu": 16, "db_vcpu": 32},
+}
+
+
+def _scale_to_budget(
+    spec: "ArchitectureSpec",
+    requirement: Requirement,
+    label: str,
+    provider: str,
+    dsn: str | None,
+) -> tuple["ArchitectureSpec", bool]:
+    """Grow an upper-tier spec into its share of the stated budget.
+
+    Returns (spec, saturated). `saturated` is True when every knob hit its
+    cap before the budget target was reached -- i.e. the workload cannot
+    usefully absorb the money on offer, which is a fact worth surfacing
+    rather than hiding behind an unchanged number.
+    """
+    budget = requirement.budget_monthly_usd
+    fill = _BUDGET_TARGET_FILL.get(label)
+    if not budget or budget <= 0 or fill is None:
+        return spec, False
+
+    target = Decimal(str(budget)) * Decimal(str(fill))
+    has_rds = _store_for(requirement).has_rds
+    caps = _BUDGET_CAPS[label]
+
+    def priced(candidate: "ArchitectureSpec") -> Decimal:
+        return estimate(candidate, provider, dsn=dsn).total_monthly
+
+    # If the floor spec already meets or exceeds its target share, the
+    # workload is already bigger than the budget invites -- leave it (the
+    # within_budget flag reports the overshoot).
+    if priced(spec) >= target:
+        return spec, False
+
+    def upgrades(sp: "ArchitectureSpec"):
+        """The next capacity buy for each knob, cheapest-value first, or None
+        when that knob is capped. A round-robin over these gives balanced
+        growth rather than pouring the whole budget into one dimension."""
+        moves = []
+        if sp.compute_count < caps["compute"]:
+            moves.append(replace(sp, compute_count=sp.compute_count + 1))
+        if has_rds and sp.database_read_replicas < caps["replicas"]:
+            moves.append(
+                replace(sp, database_read_replicas=sp.database_read_replicas + 1)
+            )
+        if has_rds and (sp.cache_vcpu or 0) < caps["cache_vcpu"]:
+            nxt = min(caps["cache_vcpu"], _snap_vcpu((sp.cache_vcpu or 2) + 1))
+            moves.append(replace(sp, cache_vcpu=nxt, cache_memory_gb=float(nxt) * 2.0))
+        if has_rds and (sp.database_vcpu or 0) < caps["db_vcpu"]:
+            nxt = min(caps["db_vcpu"], _snap_vcpu((sp.database_vcpu or 2) + 1))
+            moves.append(
+                replace(sp, database_vcpu=nxt, database_memory_gb=float(nxt) * 4.0)
+            )
+        return moves
+
+    # Greedy round-robin: at each step take the cheapest upgrade that still
+    # fits under target. Stop when nothing fits (budget bound) or nothing is
+    # left to buy (capacity bound -> saturated). Bounded step count so a
+    # pathological budget cannot spin the pricing loop indefinitely.
+    for _ in range(64):
+        moves = upgrades(spec)
+        if not moves:
+            return spec, True  # every knob capped: workload is saturated
+        affordable = [(priced(m), m) for m in moves]
+        affordable = [(c, m) for c, m in affordable if c <= target]
+        if not affordable:
+            return spec, False  # budget bound: cannot buy more without overshooting
+        affordable.sort(key=lambda cm: cm[0])
+        spec = affordable[0][1]
+    return spec, False
+
+
 def recommend(
     requirement: Requirement,
     provider: str = "aws",
@@ -1674,6 +1800,16 @@ def recommend(
             # One per zone, since this tier pays for three of them.
             spec = replace(spec, compute_count=max(3, spec.compute_count))
 
+        # Budget as an active lever: grow the upper tiers into the stated
+        # budget, bounded by hard caps so it never pads into absurdity. The
+        # workload floor above still binds; Cheapest is deliberately excluded
+        # so it stays the honest minimum. No-op when no budget was stated.
+        budget_saturated = False
+        if server_shape:
+            spec, budget_saturated = _scale_to_budget(
+                spec, requirement, label, provider, dsn
+            )
+
         baseline = estimate(spec, provider, dsn=dsn)
 
         matched = match_all(
@@ -1717,6 +1853,7 @@ def recommend(
                 baseline_monthly=baseline.total_monthly,
                 tradeoffs=tradeoffs,
                 spec_budget=requirement.budget_monthly_usd,
+                budget_saturated=budget_saturated,
             )
         )
 
