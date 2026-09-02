@@ -1819,6 +1819,13 @@ def recommend(
     else:
         variants = _shape_variants(requirement)
 
+    # Scaled specs kept by label so a dearer tier can be floored at the cheaper
+    # one's capacity -- the budget scaler optimises each tier independently and
+    # could otherwise hand "Most optimized" a smaller database than "Most
+    # reliable" (cheapest-upgrade-first spent its budget elsewhere), inverting
+    # the price order the labels promise.
+    _scaled_by_label: dict[str, ArchitectureSpec] = {}
+
     for label, rationale, delta, tradeoffs in variants:
         if event_driven:
             spec = event_driven_spec(requirement, label)
@@ -1862,6 +1869,22 @@ def recommend(
             spec, budget_saturated = _scale_to_budget(
                 spec, requirement, label, provider, dsn
             )
+            # A tier is never smaller than the one below it. Floor each scalable
+            # knob at the cheaper tier's value so "Most optimized" is always >=
+            # "Most reliable" componentwise, and therefore in price -- the
+            # monotonicity the three labels assert.
+            floor_from = _scaled_by_label.get("Most reliable")
+            if label == "Most optimized" and floor_from is not None:
+                spec = replace(
+                    spec,
+                    compute_count=max(spec.compute_count, floor_from.compute_count),
+                    database_vcpu=(max(spec.database_vcpu or 0, floor_from.database_vcpu or 0) or None),
+                    database_memory_gb=(max(spec.database_memory_gb or 0, floor_from.database_memory_gb or 0) or None),
+                    database_read_replicas=max(spec.database_read_replicas, floor_from.database_read_replicas),
+                    cache_vcpu=(max(spec.cache_vcpu or 0, floor_from.cache_vcpu or 0) or None),
+                    cache_memory_gb=(max(spec.cache_memory_gb or 0, floor_from.cache_memory_gb or 0) or None),
+                )
+            _scaled_by_label[label] = spec
 
         baseline = estimate(spec, provider, dsn=dsn)
 

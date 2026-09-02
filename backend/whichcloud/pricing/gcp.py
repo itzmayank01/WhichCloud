@@ -408,6 +408,98 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
                 },
             )
         )
+        # High-availability (regional) Cloud SQL runs a synchronous standby in
+        # a second zone, billed as a second instance -- so the HA rate is 2x
+        # the primary. This is DERIVED, not a distinct published meter (the
+        # same model used for Azure HA), and marked so on the point. Without
+        # it the engine's reliable/optimized tiers -- which ask for a
+        # ':multi-az' database -- find nothing on GCP and drop their single
+        # largest line, understating the bill and inverting the tier order.
+        points.append(
+            PricePoint(
+                provider="gcp",
+                category="database",
+                sku=f"db-custom-{vcpus}-{int(memory * 1024)}:multi-az",
+                name=f"Cloud SQL PostgreSQL {vcpus} vCPU / {memory:g} GB (HA / regional)",
+                region=region,
+                unit="hour",
+                price_usd=hourly * 2,
+                vcpu=vcpus,
+                memory_gb=memory,
+                attributes={
+                    "engine": "postgres",
+                    "composed": "true",
+                    "high_availability": "true",
+                    "ha_model": "derived: standby billed as a second instance (2x)",
+                    "vcpu_hour_usd": str(vcpu_hour),
+                    "ram_gb_hour_usd": str(ram_hour),
+                },
+            )
+        )
+    return points
+
+
+#: Cloud CDN cache egress is billed by DESTINATION continent, not by the
+#: region the origin sits in. India and Singapore serve Asia; the US and EU
+#: regions serve their own continent. All these meters live under 'global'.
+_GCP_CDN_CONTINENT = {
+    "india": "to asia", "singapore": "to asia",
+    "us-east": "to north america", "eu-west": "to europe",
+}
+
+
+def fetch_cdn_prices(region_key: str) -> list[PricePoint]:
+    """Cloud CDN cache egress, per GB, to the region's own continent."""
+    region = provider_region(region_key, "gcp")
+    continent = _GCP_CDN_CONTINENT.get(region_key)
+    if not continent:
+        return []
+    sku = _one(
+        "Networking", region,
+        ("cloud cdn traffic cache data transfer", continent),
+    )
+    if not sku:
+        return []
+    price = sku_price(sku)
+    if price is None:
+        return []
+    return [PricePoint(
+        provider="gcp", category="cdn", sku="cloudcdn:cache-egress",
+        name="Cloud CDN cache egress", region=region, unit="GB",
+        price_usd=price, attributes={"destination": continent},
+    )]
+
+
+def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
+    """Cloud SQL storage, per GB-month. Zonal is single-AZ; Regional is the
+    HA variant (a synchronous copy in a second zone, ~2x), matched to the
+    ':multi-az' database the reliable/optimized tiers ask for."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud SQL")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    common_excl = ("trial", "low cost", "enterprise", "hyperdisk",
+                   "iops", "throughput", "cache", "backup")
+    points: list[PricePoint] = []
+    for tier_word, sku_name in (("zonal", "cloudsql:ssd-storage"),
+                                ("regional", "cloudsql:ssd-storage:multi-az")):
+        matches = select_skus(
+            skus, region,
+            must_contain=(tier_word, "standard storage"),
+            must_not_contain=common_excl + (
+                ("regional",) if tier_word == "zonal" else ("zonal",)
+            ),
+        )
+        price = min((sku_price(m) for m in matches), default=None)
+        if price is None:
+            continue
+        points.append(PricePoint(
+            provider="gcp", category="db_storage", sku=sku_name,
+            name="Database storage" + (" (HA / regional)" if tier_word == "regional" else ""),
+            region=region, unit="GB-month", price_usd=price,
+            attributes={"tier": tier_word},
+        ))
     return points
 
 
@@ -829,6 +921,8 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_storage_prices,
         fetch_egress_prices,
         fetch_database_prices,
+        fetch_db_storage_prices,
+        fetch_cdn_prices,
         fetch_cache_prices,
         fetch_loadbalancer_prices,
         fetch_monitoring_prices,

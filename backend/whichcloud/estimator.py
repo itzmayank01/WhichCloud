@@ -304,6 +304,9 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     # Azure bills storage the same either way; the standby's copy is part
     # of the Flexible Server high-availability charge, not a second rate.
     ("azure", "db_storage", "gp3-multi-az"): "postgres-flex:storage",
+    # GCP Cloud SQL: zonal storage single-AZ, regional (HA) for multi-AZ.
+    ("gcp", "db_storage", "gp3"): "cloudsql:ssd-storage",
+    ("gcp", "db_storage", "gp3-multi-az"): "cloudsql:ssd-storage:multi-az",
     ("aws", "s3_requests", "put"): "s3:put-requests",
     ("aws", "s3_requests", "get"): "s3:get-requests",
     ("azure", "s3_requests", "put"): "blob:put-requests",
@@ -338,6 +341,8 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "glue", "dpu-hour"): "glue:etl-dpu-hour",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
+    ("azure", "cdn", "data-transfer"): "frontdoor:data-transfer-out",
+    ("gcp", "cdn", "data-transfer"): "cloudcdn:cache-egress",
     ("aws", "governance", "object-lock"): "s3:object-lock",
     ("aws", "governance", "region-deny"): "organizations:scp",
 
@@ -784,14 +789,14 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         if point:
             result.items.append(_tiered_line("Athena data scanned", point, spec.athena_tb_scanned_per_month))
         else:
-            result.missing.append("athena")
+            result.missing.append("query engine")
 
     if spec.glue_dpu_hours_per_month:
         point = _by_role(provider, region, "glue", "dpu-hour", dsn)
         if point:
             result.items.append(_tiered_line("Glue ETL", point, spec.glue_dpu_hours_per_month))
         else:
-            result.missing.append("glue")
+            result.missing.append("managed ETL")
 
     # ---- cross-region backup copy ----
     if spec.backup_copy_gb:
@@ -1144,7 +1149,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
         else:
-            result.missing.append("Fargate capacity")
+            result.missing.append("container compute")
 
     # ---- database storage ----
     if spec.db_storage_gb and spec.database_vcpu:
@@ -1183,7 +1188,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         if get and spec.s3_get_requests:
             result.items.append(_metered_line("S3 read requests", get, spec.s3_get_requests))
         if not put or not get:
-            result.missing.append("S3 requests")
+            result.missing.append("object storage requests")
 
     # ---- secrets ----
     if spec.secret_count:

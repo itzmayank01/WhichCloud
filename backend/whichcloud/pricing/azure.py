@@ -915,6 +915,45 @@ def fetch_lcu_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+#: Azure Front Door bills egress by client ZONE, not by the origin region.
+#: Microsoft's documented zones: North America/Europe = Zone 1, Asia-Pacific =
+#: Zone 2, India = Zone 5. We map each region we serve to its Front Door zone
+#: and take that zone's "Standard Data Transfer Out" first-tier rate.
+_AZURE_FRONTDOOR_ZONE = {
+    "india": "Zone 5", "singapore": "Zone 2",
+    "us-east": "Zone 1", "eu-west": "Zone 1",
+}
+
+
+def fetch_cdn_prices(region_key: str) -> list[PricePoint]:
+    """Azure Front Door Standard data transfer out, per GB, for the region's
+    zone. The modern CDN equivalent of CloudFront/Cloud CDN egress."""
+    region = provider_region(region_key, "azure")
+    zone = _AZURE_FRONTDOOR_ZONE.get(region_key)
+    if not zone:
+        return []
+    query = (
+        "serviceName eq 'Azure Front Door Service' and priceType eq 'Consumption' "
+        f"and armRegionName eq '{zone}' "
+        "and meterName eq 'Standard Data Transfer Out'"
+    )
+    best: tuple[float, Decimal] | None = None
+    for item in _paged(query, max_pages=4):
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        tier = float(item.get("tierMinimumUnits") or 0)
+        if best is None or tier < best[0]:
+            best = (tier, price)
+    if best is None:
+        return []
+    return [PricePoint(
+        provider="azure", category="cdn", sku="frontdoor:data-transfer-out",
+        name="Front Door data transfer out", region=region, unit="GB",
+        price_usd=best[1], attributes={"zone": zone},
+    )]
+
+
 def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
     """Storage attached to the managed database, per GB-month.
 
@@ -928,11 +967,16 @@ def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
     ):
         if item.get("armRegionName") not in (region, "Global", ""):
             continue
-        # The Flexible Server product, not HorizonDB -- a different engine
-        # at more than twice the rate.
+        # The Flexible Server storage product, not HorizonDB (a different
+        # engine at more than twice the rate) and not Single Server (retired).
+        # The published product name is "Flex Server Storage", not the older
+        # "Flexible" spelling the earlier filter looked for -- which matched
+        # nothing, so db storage silently vanished from every Azure estimate.
         product = item.get("productName") or ""
-        if "Flexible" not in product:
+        if "Flex Server Storage" not in product:
             continue
+        # Exact match excludes the "Storage Data Stored - Free" $0 tier and the
+        # IOPS/throughput provisioning meters that share the product.
         if item.get("meterName") != "Storage Data Stored":
             continue
         price = _decimal(item.get("retailPrice"))
@@ -1028,6 +1072,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_database_prices,
         fetch_storage_prices,
         fetch_egress_prices,
+        fetch_cdn_prices,
         fetch_cache_prices,
         fetch_monitoring_prices,
         fetch_loadbalancer_prices,
