@@ -346,6 +346,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const x = ox + (elkNode.x ?? 0);
     const y = oy + (elkNode.y ?? 0);
     abs.set(elkNode.id, { x, y });
+    box.set(elkNode.id, { x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0 });
     box.set(elkNode.id, {
       x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0,
     });
@@ -413,6 +414,41 @@ export async function layout(model: GraphModel): Promise<Layout> {
           pts.push({ x: base.x + bp.x, y: base.y + bp.y });
         }
         pts.push({ x: base.x + sec.endPoint.x, y: base.y + sec.endPoint.y });
+      }
+      // CORRECT THE ORIGIN, DO NOT DISCARD THE ROUTE.
+      // ELK gives an edge's sections in the coordinate space of whichever node
+      // holds the edge. Under INCLUDE_CHILDREN a cross-container edge can be
+      // stored against a different ancestor than the offset we add for it, and
+      // the whole polyline lands somewhere it does not belong -- arrows in open
+      // canvas, and (once those were filtered out) missing arrows between the
+      // numbered spine steps.
+      //
+      // The route SHAPE is right; only its origin is wrong. So measure how far
+      // both ends have drifted from their own boxes and translate the polyline
+      // back by that amount. Averaging the two ends makes the correction robust
+      // when one end is legitimately on a box border. Snapping endpoints
+      // individually was tried first and was worse -- it bent the orthogonal
+      // routes into long diagonals.
+      const sBox = src ? box.get(src) : undefined;
+      const tBox = tgt ? box.get(tgt) : undefined;
+      if (pts.length >= 2 && sBox && tBox) {
+        const near = (pt: { x: number; y: number }, b: typeof sBox) => {
+          const dx = Math.max(b!.x - pt.x, 0, pt.x - (b!.x + b!.w));
+          const dy = Math.max(b!.y - pt.y, 0, pt.y - (b!.y + b!.h));
+          return Math.hypot(dx, dy) <= 64;
+        };
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        if (!near(first, sBox) && !near(last, tBox)) {
+          const dx =
+            (sBox.x + sBox.w / 2 - first.x + (tBox.x + tBox.w / 2 - last.x)) / 2;
+          const dy =
+            (sBox.y + sBox.h / 2 - first.y + (tBox.y + tBox.h / 2 - last.y)) / 2;
+          for (const pt of pts) {
+            pt.x += dx;
+            pt.y += dy;
+          }
+        }
       }
       edges.push({
         id: e.id,

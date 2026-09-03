@@ -5,7 +5,6 @@ import {
   ReactFlowProvider,
   Background,
   Controls,
-  MiniMap,
   Handle,
   Position,
   BaseEdge,
@@ -227,7 +226,7 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
       i === 0 ? 0 : sum + Math.hypot(pt.x - d.points[i - 1].x, pt.y - d.points[i - 1].y),
     0
   );
-  const showLabel = Boolean(d.label) && routeLength < 420;
+  const showLabel = Boolean(d.label) && routeLength < 900;
 
   // A branch edge that has to cross the whole canvas costs more than it tells
   // you. These are real relationships -- the CDN reaching object storage, the
@@ -243,7 +242,11 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
   // spine (numbered, always drawn) carries the architecture, and the dotted
   // control attachments still tie KMS and Secrets to what they protect;
   // everything a branch edge would have said is in the cost table beside it.
-  if (!d.onPath && !d.attach && routeLength > 240) return null;
+  // No length cap any more. The stray arrows had two real causes -- the
+  // tier-ordering chain reaching the renderer, and edge geometry reported in
+  // the wrong origin -- and both are fixed at source now. Capping length as
+  // well threw away the connections that let a reader follow the architecture,
+  // which is the whole point of drawing edges.
   const animate = d.onPath && d.playing && !d.reduced;
   return (
     <>
@@ -363,19 +366,6 @@ function Inner({
     };
     const rfEdges: RFEdge[] = laid.edges
       .filter((e) => drawable.has(e.source) && drawable.has(e.target))
-      // ELK reports an edge's sections relative to whichever container holds
-      // the edge, and with INCLUDE_CHILDREN a cross-container edge can come
-      // back in a different origin than the one we add the container offset
-      // for. The result is geometry that touches neither box -- the stray blue
-      // arrows floating above the edge cluster. Moving the points instead
-      // (snapping them to node centres) just traded them for long diagonals,
-      // so an edge whose route does not reach either of its own boxes is not
-      // drawn at all.
-      .filter(
-        (e) =>
-          touches(e.points[0], e.source) ||
-          touches(e.points[e.points.length - 1], e.target)
-      )
       .map((e) => ({
       id: e.id,
       source: e.source,
@@ -420,24 +410,10 @@ function Inner({
       nodesConnectable={false}
       elementsSelectable
       proOptions={{ hideAttribution: true }}
-      className="bg-sunk"
+      className="bg-white"
     >
-      <Background gap={22} size={1} color="var(--line, #e5e7eb)" />
+      <Background gap={24} size={1} color="#EEF1F5" />
       <Controls showInteractive={false} />
-      <MiniMap
-        pannable
-        zoomable
-        nodeStrokeWidth={2}
-        nodeColor={(n) =>
-          n.type === "container"
-            ? "#E2E8F0"
-            : (n.data as any)?.seq != null
-            ? "#2563EB"
-            : "#94A3B8"
-        }
-        maskColor="rgba(148,163,184,0.18)"
-        className="!bg-surface"
-      />
     </ReactFlow>
   );
 }
