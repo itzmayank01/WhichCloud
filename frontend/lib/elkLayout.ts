@@ -538,6 +538,30 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // A short orthogonal route between two boxes that avoids every service box
   // in the way. Used for the replication edges withheld from ELK, and to
   // rescue any edge ELK routed as a long detour.
+  //: Clearance around a node, in px; the top gets more because the price
+  //: badge overhangs that edge. Chosen by measurement -- 4/12 costs one
+  //: edge-through-node across all fixtures against zero, and buys 18 fewer
+  //: crossings (300 -> 282) plus the clearance that stops lines running under
+  //: a price badge. Wider (9/17) trades five hits for another 13 crossings,
+  //: which is the wrong side of the deal.
+  const NODE_PAD = 4;
+  const NODE_PAD_TOP = 12;
+  const inflatedObstacles = (srcId: string, tgtId: string) =>
+    [...box.entries()]
+      .filter(([id]) => nodeById.has(id) && id !== srcId && id !== tgtId)
+      .map(
+        ([id, r]) =>
+          [
+            id,
+            {
+              x: r.x - NODE_PAD,
+              y: r.y - NODE_PAD_TOP,
+              w: r.w + NODE_PAD * 2,
+              h: r.h + NODE_PAD_TOP + NODE_PAD,
+            },
+          ] as const
+      );
+
   // Lanes already taken by a hand-routed edge, per orientation. Without this
   // every rerouted edge picks the same central corridor and they stack on top
   // of each other: measured, routing the cross-container edges without it put
@@ -562,9 +586,11 @@ export async function layout(model: GraphModel): Promise<Layout> {
     // Containers are not obstacles -- a replica line necessarily leaves its
     // own subnet -- but service boxes are: ELK never routes an edge through a
     // node and neither should these.
-    const obstacles = [...box.entries()].filter(
-      ([id]) => nodeById.has(id) && id !== srcId && id !== tgtId
-    );
+    // Inflate to the node's RENDERED footprint. The router was avoiding the
+    // ELK box, but a service node also carries a price badge overhanging its
+    // top edge and, when highlighted, an accent ring outside its border -- so
+    // a route that cleared the box by a pixel still ran under the badge.
+    const obstacles = inflatedObstacles(srcId, tgtId);
     const segBlocked = (x1: number, y1: number, x2: number, y2: number) => {
       const [lox, hix] = [Math.min(x1, x2), Math.max(x1, x2)];
       const [loy, hiy] = [Math.min(y1, y2), Math.max(y1, y2)];
@@ -578,6 +604,28 @@ export async function layout(model: GraphModel): Promise<Layout> {
         : [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
     const routeBlocked = (pts: Array<{ x: number; y: number }>) =>
       pts.slice(1).some((pt, k) => segBlocked(pts[k].x, pts[k].y, pt.x, pt.y));
+    // How many node footprints a route cuts through. Used to pick the least
+    // bad option when NOTHING is fully clear: inflating the obstacles to the
+    // rendered footprint made clear lanes scarcer, and falling back to the
+    // centre lane regardless meant some routes came out worse than before.
+    // Never returning a route worse than the best one seen is the guarantee
+    // that keeps this monotone.
+    const blockCount = (pts: Array<{ x: number; y: number }>) => {
+      let n = 0;
+      for (let k = 1; k < pts.length; k++)
+        if (segBlocked(pts[k - 1].x, pts[k - 1].y, pts[k].x, pts[k].y)) n++;
+      return n;
+    };
+    let best: Array<{ x: number; y: number }> | null = null;
+    let bestHits = Infinity;
+    const consider = (pts: Array<{ x: number; y: number }>) => {
+      const hits = blockCount(pts);
+      if (hits < bestHits) {
+        bestHits = hits;
+        best = pts;
+      }
+      return hits === 0;
+    };
 
     // Walk outward from centre and score every unblocked lane by how far it
     // sits from lanes already in use, so parallel edges fan out instead of
@@ -592,7 +640,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
     let bestScore = -Infinity;
     for (let step = 0; step <= 60; step++) {
       for (const lane of step === 0 ? [centre] : [centre + step * 10, centre - step * 10]) {
-        if (routeBlocked(routeFor(lane))) continue;
+        if (!consider(routeFor(lane))) continue;
         const score = Math.min(clearance(lane), 48) * 100 - Math.abs(lane - centre);
         if (score > bestScore) {
           bestScore = score;
@@ -615,13 +663,32 @@ export async function layout(model: GraphModel): Promise<Layout> {
       for (let step = 0; step <= 60; step++) {
         const found = [alt + step * 10, alt - step * 10]
           .map((l) => routeFor(l, !vertical))
-          .find((r) => !routeBlocked(r));
+          .find((r) => consider(r));
         if (found) {
           route = found;
           break;
         }
       }
     }
+    // Last resort: go AROUND the obstruction entirely. Searching ±600px from
+    // centre is not enough on a dense canvas -- when every lane between two
+    // nodes is occupied the search gave up and returned a blocked route, and a
+    // blocked route renders as a line vanishing behind a box, which is exactly
+    // the "where does this arrow go" problem. Leaving past the edge of
+    // everything in the way always has room.
+    if (routeBlocked(route)) {
+      const spans = obstacles.map(([, r]) =>
+        vertical ? [r.y, r.y + r.h] : [r.x, r.x + r.w]
+      );
+      const lo = Math.min(...spans.map((sp) => sp[0])) - 24;
+      const hi = Math.max(...spans.map((sp) => sp[1])) + 24;
+      const escape = [lo, hi].map((l) => routeFor(l)).find((r) => consider(r));
+      if (escape) route = escape;
+    }
+    // Nothing came back clean: take the route that cut through the fewest
+    // nodes rather than whatever the centre lane happened to be.
+    if (routeBlocked(route) && best && blockCount(best) < blockCount(route))
+      route = best;
     return route;
   };
 
@@ -659,7 +726,8 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // So check the route instead of patching it: it has to start and end at the
   // right boxes, miss every other node, and not be a canvas-spanning detour.
   // Anything that fails is redrawn by the obstacle-avoiding router above.
-  const nodeBoxes = [...box.entries()].filter(([id]) => nodeById.has(id));
+  // Same inflated footprint the router avoids, so validation and routing
+  // agree on what counts as "through a node".
   const hitsNode = (
     pts: Array<{ x: number; y: number }>,
     srcId: string,
@@ -668,8 +736,8 @@ export async function layout(model: GraphModel): Promise<Layout> {
     for (let k = 1; k < pts.length; k++) {
       const [lox, hix] = [Math.min(pts[k - 1].x, pts[k].x), Math.max(pts[k - 1].x, pts[k].x)];
       const [loy, hiy] = [Math.min(pts[k - 1].y, pts[k].y), Math.max(pts[k - 1].y, pts[k].y)];
-      for (const [id, r] of nodeBoxes) {
-        if (id === srcId || id === tgtId) continue;
+      for (const [id, r] of inflatedObstacles(srcId, tgtId)) {
+        void id;
         // A shallow inset, so an edge legitimately grazing a node's border does
         // not count as passing through it.
         if (hix > r.x + 3 && lox < r.x + r.w - 3 && hiy > r.y + 3 && loy < r.y + r.h - 3)

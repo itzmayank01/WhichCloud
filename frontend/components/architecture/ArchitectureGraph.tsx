@@ -455,6 +455,18 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
   const animate = d.onPath && d.playing && !d.reduced;
   return (
     <>
+      {/* A white casing under every line. Where two edges cross, or a line
+          passes close to a box border, the casing breaks the one behind so the
+          two still read as separate paths -- the standard trick on transit
+          maps and AWS reference diagrams alike. Without it, crossings fuse
+          into a single ambiguous mark. */}
+      <path
+        d={path}
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth={EDGE_STYLE(d).strokeWidth + 3.5}
+        strokeLinecap="round"
+      />
       <BaseEdge
         id={id}
         path={path}
