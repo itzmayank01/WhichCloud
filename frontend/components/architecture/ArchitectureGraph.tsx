@@ -228,6 +228,22 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
     0
   );
   const showLabel = Boolean(d.label) && routeLength < 420;
+
+  // A branch edge that has to cross the whole canvas costs more than it tells
+  // you. These are real relationships -- the CDN reaching object storage, the
+  // app reaching the cache in another tier -- but ELK routes them around every
+  // container in the way, and half a dozen produce the sweeping arcs that made
+  // the picture unreadable. The request spine is always drawn (it IS the
+  // architecture), and so are the short dotted control attachments; only the
+  // long-haul branches are dropped.
+  // Threshold was 520, which still let two branches through that ELK had
+  // routed into open canvas above the edge cluster -- arrows starting and
+  // ending in empty space. Branch edges only earn their ink when they stay
+  // local, so the bar is now short-and-local or not drawn at all. The request
+  // spine (numbered, always drawn) carries the architecture, and the dotted
+  // control attachments still tie KMS and Secrets to what they protect;
+  // everything a branch edge would have said is in the cost table beside it.
+  if (!d.onPath && !d.attach && routeLength > 240) return null;
   const animate = d.onPath && d.playing && !d.reduced;
   return (
     <>
@@ -382,8 +398,13 @@ function Inner({
         zoomable
         nodeStrokeWidth={2}
         nodeColor={(n) =>
-          n.type === "container" ? "transparent" : (n.data as any)?.seq != null ? "#2563EB" : "#94A3B8"
+          n.type === "container"
+            ? "#E2E8F0"
+            : (n.data as any)?.seq != null
+            ? "#2563EB"
+            : "#94A3B8"
         }
+        maskColor="rgba(148,163,184,0.18)"
         className="!bg-surface"
       />
     </ReactFlow>
