@@ -216,12 +216,10 @@ export async function layout(model: GraphModel): Promise<Layout> {
         layoutOptions: {
           "elk.padding": "[top=34,left=16,bottom=16,right=16]",
 
-          // Tiers run ACROSS inside a zone (public | app | data), and the two
-          // zones stack. Side-by-side zones each three subnets wide is what
-          // made the graph 3.4:1 -- half the canvas height went unused. This
-          // orientation is also what the AWS reference grid uses: subnet rows
-          // reading left to right, zones stacked so they compare directly.
-          "elk.direction": "RIGHT",
+          // Tiers STACK inside a zone -- public over app over data -- the way
+          // both AWS reference diagrams draw a VPC. Three subnet widths become
+          // one, which is what stops the diagram running away horizontally.
+          "elk.direction": "DOWN",
         },
         labels: [{ text: CONTAINER_LABEL[`az-${z}`] }],
         children: subnets,
@@ -242,7 +240,10 @@ export async function layout(model: GraphModel): Promise<Layout> {
         id: "vpc",
         layoutOptions: {
           "elk.padding": "[top=34,left=18,bottom=18,right=18]",
-          "elk.direction": "DOWN",
+          // Zones side by side, tiers stacked within them -- the reference
+          // grid. With the subnets stacked, stacking the zones as well made
+          // the whole diagram one tall column.
+          "elk.direction": "RIGHT",
         },
         labels: [{ text: CONTAINER_LABEL["vpc"] }],
         children: azs,
@@ -296,11 +297,15 @@ export async function layout(model: GraphModel): Promise<Layout> {
       // fold's own edge -- end of one row to the start of the next -- is
       // redrawn after layout rather than left as the canvas-spanning detour
       // that made this worth turning off the first time round.
-      "elk.layered.wrapping.strategy": "MULTI_EDGE",
-      "elk.layered.wrapping.additionalEdgeSpacing": "40",
+      "elk.layered.wrapping.strategy": "OFF",
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
-      "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+      // SEPARATE_CHILDREN, so each container lays out with its OWN direction.
+      // Under INCLUDE_CHILDREN the whole tree collapses into one layered pass
+      // along the root direction and every elk.direction below is inert --
+      // which is why the subnets ran left to right as successive layers (the
+      // request really does flow public -> app -> data).
+      "elk.hierarchyHandling": "SEPARATE_CHILDREN",
       // BRANDES_KOEPF centres each rank instead of top-aligning it. With
       // NETWORK_SIMPLEX the edge cluster sank to the bottom of its column and
       // left a tall empty band above it, with long edges climbing back up into
@@ -491,41 +496,6 @@ export async function layout(model: GraphModel): Promise<Layout> {
         }
         pts.push({ x: base.x + sec.endPoint.x, y: base.y + sec.endPoint.y });
       }
-      // CORRECT THE ORIGIN, DO NOT DISCARD THE ROUTE.
-      // ELK gives an edge's sections in the coordinate space of whichever node
-      // holds the edge. Under INCLUDE_CHILDREN a cross-container edge can be
-      // stored against a different ancestor than the offset we add for it, and
-      // the whole polyline lands somewhere it does not belong -- arrows in open
-      // canvas, and (once those were filtered out) missing arrows between the
-      // numbered spine steps.
-      //
-      // The route SHAPE is right; only its origin is wrong. So measure how far
-      // both ends have drifted from their own boxes and translate the polyline
-      // back by that amount. Averaging the two ends makes the correction robust
-      // when one end is legitimately on a box border. Snapping endpoints
-      // individually was tried first and was worse -- it bent the orthogonal
-      // routes into long diagonals.
-      const sBox = src ? box.get(src) : undefined;
-      const tBox = tgt ? box.get(tgt) : undefined;
-      if (pts.length >= 2 && sBox && tBox) {
-        const near = (pt: { x: number; y: number }, b: typeof sBox) => {
-          const dx = Math.max(b!.x - pt.x, 0, pt.x - (b!.x + b!.w));
-          const dy = Math.max(b!.y - pt.y, 0, pt.y - (b!.y + b!.h));
-          return Math.hypot(dx, dy) <= 64;
-        };
-        const first = pts[0];
-        const last = pts[pts.length - 1];
-        if (!near(first, sBox) && !near(last, tBox)) {
-          const dx =
-            (sBox.x + sBox.w / 2 - first.x + (tBox.x + tBox.w / 2 - last.x)) / 2;
-          const dy =
-            (sBox.y + sBox.h / 2 - first.y + (tBox.y + tBox.h / 2 - last.y)) / 2;
-          for (const pt of pts) {
-            pt.x += dx;
-            pt.y += dy;
-          }
-        }
-      }
       edges.push({
         id: e.id,
         source: src,
@@ -545,6 +515,11 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // A short orthogonal route between two boxes that avoids every service box
   // in the way. Used for the replication edges withheld from ELK, and to
   // rescue any edge ELK routed as a long detour.
+  // Lanes already taken by a hand-routed edge, per orientation. Without this
+  // every rerouted edge picks the same central corridor and they stack on top
+  // of each other: measured, routing the cross-container edges without it put
+  // total crossings at 465 against 325 with it.
+  const usedLanes = { h: [] as number[], v: [] as number[] };
   const routeBetween = (
     srcId: string,
     tgtId: string
@@ -581,15 +556,33 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const routeBlocked = (pts: Array<{ x: number; y: number }>) =>
       pts.slice(1).some((pt, k) => segBlocked(pts[k].x, pts[k].y, pt.x, pt.y));
 
-    // Step the connecting run away from centre until all three segments miss
-    // every service box, and take the first lane that is clear.
+    // Walk outward from centre and score every unblocked lane by how far it
+    // sits from lanes already in use, so parallel edges fan out instead of
+    // stacking on one corridor. Nearest-to-centre breaks ties, which keeps
+    // routes short when the canvas is empty.
+    const taken = vertical ? usedLanes.h : usedLanes.v;
     const centre = vertical ? (start.y + end.y) / 2 : (start.x + end.x) / 2;
+    const clearance = (lane: number) =>
+      taken.length ? Math.min(...taken.map((l) => Math.abs(l - lane))) : Infinity;
     let route = routeFor(centre);
-    for (let step = 1; step <= 60 && routeBlocked(route); step++) {
-      const clear = [centre + step * 10, centre - step * 10]
-        .map((l) => routeFor(l))
-        .find((r) => !routeBlocked(r));
-      if (clear) route = clear;
+    let bestLane: number | null = null;
+    let bestScore = -Infinity;
+    for (let step = 0; step <= 60; step++) {
+      for (const lane of step === 0 ? [centre] : [centre + step * 10, centre - step * 10]) {
+        if (routeBlocked(routeFor(lane))) continue;
+        const score = Math.min(clearance(lane), 48) * 100 - Math.abs(lane - centre);
+        if (score > bestScore) {
+          bestScore = score;
+          bestLane = lane;
+        }
+      }
+      // 48px of clearance is enough to read as a separate line; stop looking
+      // once a lane achieves that rather than scanning the whole canvas.
+      if (bestLane !== null && clearance(bestLane) >= 48) break;
+    }
+    if (bestLane !== null) {
+      route = routeFor(bestLane);
+      taken.push(bestLane);
     }
     // Still blocked: the corridor between these two is full, so turn the
     // dog-leg the other way round. A vertical pair whose horizontal lanes are
@@ -629,14 +622,46 @@ export async function layout(model: GraphModel): Promise<Layout> {
     });
   }
 
-  // RESCUE THE DETOURS. Wrapping folds an over-wide graph into rows, which is
-  // what makes it fill a landscape pane instead of sitting in a band across the
-  // middle of it -- but the fold is drawn. The edge joining the end of one row
-  // to the start of the next ran the full width of the canvas, turned, and came
-  // back, which reads as an empty container rather than as the request path it
-  // actually is. Rather than give up the wrap, measure every routed edge
-  // against the straight-line distance it had to cover and redraw the ones ELK
-  // sent the long way round.
+  // VALIDATE EVERY ROUTE, AND REDRAW THE ONES THAT DO NOT HOLD UP.
+  //
+  // ELK routes cross-container edges to container PORTS, so under
+  // SEPARATE_CHILDREN a polyline often stops at a boundary instead of at the
+  // node it belongs to. There used to be a correction here that measured how
+  // far both ends had drifted and translated the whole line back; it was
+  // written for INCLUDE_CHILDREN, where the shape was right and only the
+  // origin was wrong. Against port-routed edges it drags the line toward the
+  // node centres and straight through whatever stands between -- 117 label
+  // overlaps and 34 edges through nodes came from exactly that.
+  //
+  // So check the route instead of patching it: it has to start and end at the
+  // right boxes, miss every other node, and not be a canvas-spanning detour.
+  // Anything that fails is redrawn by the obstacle-avoiding router above.
+  const nodeBoxes = [...box.entries()].filter(([id]) => nodeById.has(id));
+  const hitsNode = (
+    pts: Array<{ x: number; y: number }>,
+    srcId: string,
+    tgtId: string
+  ) => {
+    for (let k = 1; k < pts.length; k++) {
+      const [lox, hix] = [Math.min(pts[k - 1].x, pts[k].x), Math.max(pts[k - 1].x, pts[k].x)];
+      const [loy, hiy] = [Math.min(pts[k - 1].y, pts[k].y), Math.max(pts[k - 1].y, pts[k].y)];
+      for (const [id, r] of nodeBoxes) {
+        if (id === srcId || id === tgtId) continue;
+        // A shallow inset, so an edge legitimately grazing a node's border does
+        // not count as passing through it.
+        if (hix > r.x + 3 && lox < r.x + r.w - 3 && hiy > r.y + 3 && loy < r.y + r.h - 3)
+          return true;
+      }
+    }
+    return false;
+  };
+  const endsAt = (pt: { x: number; y: number }, id: string) => {
+    const b = box.get(id);
+    if (!b) return false;
+    const dx = Math.max(b.x - pt.x, 0, pt.x - (b.x + b.w));
+    const dy = Math.max(b.y - pt.y, 0, pt.y - (b.y + b.h));
+    return Math.hypot(dx, dy) <= 24;
+  };
   const pathLength = (pts: Array<{ x: number; y: number }>) =>
     pts.reduce(
       (sum, pt, k) =>
@@ -647,16 +672,22 @@ export async function layout(model: GraphModel): Promise<Layout> {
     if (edge.kind === "replication") continue;
     const a = box.get(edge.source);
     const b = box.get(edge.target);
-    if (!a || !b || edge.points.length < 2) continue;
+    if (!a || !b) continue;
+    const pts = edge.points;
     const direct =
       Math.abs(b.x + b.w / 2 - (a.x + a.w / 2)) +
       Math.abs(b.y + b.h / 2 - (a.y + a.h / 2));
-    // Generous threshold: orthogonal routing around containers is legitimately
-    // longer than the straight line, and only the genuine canvas-spanning
-    // detours should be redrawn.
-    if (pathLength(edge.points) < Math.max(direct * 2.5, direct + 420)) continue;
+    const ok =
+      pts.length >= 2 &&
+      endsAt(pts[0], edge.source) &&
+      endsAt(pts[pts.length - 1], edge.target) &&
+      !hitsNode(pts, edge.source, edge.target) &&
+      // Generous: orthogonal routing around containers is legitimately longer
+      // than the straight line, and only real detours should go.
+      pathLength(pts) < Math.max(direct * 2.5, direct + 420);
+    if (ok) continue;
     const route = routeBetween(edge.source, edge.target);
-    if (route && pathLength(route) < pathLength(edge.points)) edge.points = route;
+    if (route) edge.points = route;
   }
 
   let width = res.width ?? 0;
