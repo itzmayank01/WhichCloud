@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // Run standalone with tsx (npm run diagram:check), not built with the app.
+    // tsx resolves its ".ts" imports; the app's compiler rejects them, so
+    // type-checking it as app code broke `next build` outright.
+    "harness"
+  ]
 }

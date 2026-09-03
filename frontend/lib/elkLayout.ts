@@ -420,9 +420,6 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const y = oy + (elkNode.y ?? 0);
     abs.set(elkNode.id, { x, y });
     box.set(elkNode.id, { x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0 });
-    box.set(elkNode.id, {
-      x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0,
-    });
     const isContainer = Array.isArray(elkNode.children) && elkNode.children.length > 0
       && !nodeById.has(elkNode.id);
     // Subnet ids carry a zone suffix (subnet-app-a, subnet-data-b) but the
@@ -561,9 +558,57 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const end = vertical
       ? { x: bx, y: b.y > a.y ? b.y : b.y + b.h }
       : { x: b.x > a.x ? b.x : b.x + b.w, y: b.y + b.h / 2 };
-    const mid = vertical
-      ? [{ x: start.x, y: (start.y + end.y) / 2 }, { x: end.x, y: (start.y + end.y) / 2 }]
-      : [{ x: (start.x + end.x) / 2, y: start.y }, { x: (start.x + end.x) / 2, y: end.y }];
+    // Pick a lane that is actually CLEAR. The direct three-segment route is
+    // the shortest, but it knows nothing about what stands between the two
+    // nodes, and drawn blind it cuts straight through the boxes in between.
+    // ELK never routes an edge through a node and neither should these. Step
+    // the connecting run away from centre until all three segments miss every
+    // service box, and take the first lane that is clear.
+    const obstacles = [...box.entries()].filter(
+      ([id]) => nodeById.has(id) && id !== e.source && id !== e.target
+    );
+    // Does an axis-aligned segment pass through any service box? Containers
+    // are not obstacles -- a replica line necessarily leaves its own subnet.
+    const segBlocked = (x1: number, y1: number, x2: number, y2: number) => {
+      const [lox, hix] = [Math.min(x1, x2), Math.max(x1, x2)];
+      const [loy, hiy] = [Math.min(y1, y2), Math.max(y1, y2)];
+      return obstacles.some(
+        ([, r]) =>
+          hix > r.x && lox < r.x + r.w && hiy > r.y && loy < r.y + r.h
+      );
+    };
+    const routeFor = (lane: number, vert = vertical) =>
+      vert
+        ? [start, { x: start.x, y: lane }, { x: end.x, y: lane }, end]
+        : [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
+    const routeBlocked = (pts: Array<{ x: number; y: number }>) =>
+      pts.slice(1).some((pt, k) => segBlocked(pts[k].x, pts[k].y, pt.x, pt.y));
+
+    const centre = vertical ? (start.y + end.y) / 2 : (start.x + end.x) / 2;
+    let route = routeFor(centre);
+    for (let step = 1; step <= 60 && routeBlocked(route); step++) {
+      const candidates = [centre + step * 10, centre - step * 10]
+        .map((l) => routeFor(l))
+        .filter((r) => !routeBlocked(r));
+      if (candidates.length) route = candidates[0];
+    }
+    // Still blocked: the corridor between these two nodes is full, so turn the
+    // dog-leg the other way round and search again. A vertical pair whose
+    // horizontal lanes are all occupied often has a clear vertical one, and
+    // vice versa.
+    if (routeBlocked(route)) {
+      const alt = vertical ? (start.x + end.x) / 2 : (start.y + end.y) / 2;
+      for (let step = 0; step <= 60; step++) {
+        const found = [alt + step * 10, alt - step * 10]
+          .map((l) => routeFor(l, !vertical))
+          .find((r) => !routeBlocked(r));
+        if (found) {
+          route = found;
+          break;
+        }
+      }
+    }
+
     edges.push({
       id: `e${i}`,
       source: e.source,
@@ -573,7 +618,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
       seq: null,
       attach: false,
       kind: "replication",
-      points: [start, ...mid, end],
+      points: route,
     });
   }
 
