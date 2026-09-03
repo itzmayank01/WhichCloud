@@ -200,13 +200,17 @@ def test_compare_prices_every_cloud(client):
 
 @needs_db
 def test_incomplete_estimates_are_flagged_not_hidden(client):
-    """GCP prices compute but not storage or egress. Those options must come
-    back marked incomplete so the interface never presents a partial total as
-    the cheaper answer."""
+    """A shape a cloud cannot fully price must come back marked incomplete, so
+    the interface never presents a partial total as the cheaper answer.
+
+    Web/relational and web/media now price COMPLETE on all three clouds, so the
+    example here needs a search cluster: GCP (and Azure) have no managed
+    OpenSearch-equivalent mapped yet, so a search workload's options are still
+    incomplete -- exactly what this flag must surface."""
     body = client.post(
         "/compare",
-        json={"goal": "shop", "workload_type": "web", "storage_gb": 200,
-              "egress_gb": 500},
+        json={"goal": "catalog", "workload_type": "web", "needs_search": True,
+              "daily_transactions": 500000, "storage_gb": 200, "egress_gb": 500},
     ).json()
 
     gcp = body["clouds"]["gcp"]

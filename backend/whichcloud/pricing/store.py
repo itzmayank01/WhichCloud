@@ -180,6 +180,7 @@ def cheapest_database(
     min_memory_gb: float = 0.0,
     multi_az: bool = False,
     arch: str | None = None,
+    commitment: bool = False,
     dsn: str | None = None,
 ) -> PricePoint | None:
     """Cheapest managed database meeting the spec.
@@ -188,7 +189,18 @@ def cheapest_database(
     multiplier, so the reliable option gets a real published price.
     """
     # A Single-AZ request must never match a Multi-AZ SKU, and vice versa.
-    match = "sku LIKE '%%:multi-az'" if multi_az else "sku NOT LIKE '%%:multi-az'"
+    # A reserved SKU carries the ':commit1yr' suffix AFTER any ':multi-az'
+    # one, so the deployment match has to allow the suffix rather than anchor
+    # on the end of the string.
+    if multi_az:
+        match = "sku LIKE '%%:multi-az' OR sku LIKE '%%:multi-az:%%'"
+    else:
+        match = "sku NOT LIKE '%%:multi-az%%'"
+    match = f"({match})"
+    match += (
+        " AND sku LIKE '%%:commit1yr'" if commitment
+        else " AND sku NOT LIKE '%%:commit1yr'"
+    )
     arch_clause = "AND arch = %(arch)s" if arch else ""
     sql = f"""
         SELECT * FROM price_points

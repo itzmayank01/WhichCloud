@@ -55,10 +55,14 @@ _KIND_BY_PREFIX = {
     "VPC flow logs": "flowlogs",
     "Fargate vCPU": "compute_fargate",
     "Fargate memory": "compute_fargate",
+    "Container Instances vCPU": "compute_fargate",
+    "Container Instances memory": "compute_fargate",
+    "Cloud Run vCPU": "compute_fargate",
+    "Cloud Run memory": "compute_fargate",
     "Database storage": "database",
     "Load balancer LCUs": "loadbalancer",
-    "S3 write requests": "storage",
-    "S3 read requests": "storage",
+    "Object storage write requests": "storage",
+    "Object storage read requests": "storage",
     # Previously unmapped -- fell through to "compute" by default (see
     # _kind_for below), which folded their cost into the compute box and
     # meant these services never appeared on the diagram at all.
@@ -76,6 +80,13 @@ _KIND_BY_PREFIX = {
     "DynamoDB reads": "dynamodb",
     "DynamoDB writes": "dynamodb",
     "DynamoDB storage": "dynamodb",
+    # Same node kind, the other clouds' product names for it.
+    "Cosmos DB reads": "dynamodb",
+    "Cosmos DB writes": "dynamodb",
+    "Cosmos DB storage": "dynamodb",
+    "Firestore reads": "dynamodb",
+    "Firestore writes": "dynamodb",
+    "Firestore storage": "dynamodb",
     "Rekognition images": "rekognition",
     "Comprehend sentiment": "comprehend",
     "IoT Core messages": "iot",
@@ -83,7 +94,11 @@ _KIND_BY_PREFIX = {
     "Timestream storage": "timestream",
     "Firehose delivery": "firehose",
     "Athena data scanned": "athena",
+    "Synapse serverless SQL data scanned": "athena",
+    "BigQuery data scanned": "athena",
     "Glue ETL": "glue",
+    "Data Factory": "glue",
+    "Dataflow": "glue",
     # Was falling through to the "compute" default -- harmless-looking on a
     # server diagram (its $0.40 quietly summed onto the compute box) but on a
     # serverless one it MANUFACTURED an EC2 box, and an EC2 box in a subnet

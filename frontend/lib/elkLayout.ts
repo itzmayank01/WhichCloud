@@ -21,8 +21,13 @@ import type { GraphModel, PlanedNode, ContainerId } from "@/lib/graphModel";
 
 const elk = new ELK();
 
-export const NODE_W = 200;
-export const NODE_H = 88;
+// AWS reference service-box proportions. Was 200x92, which at 21 services
+// made the canvas wide enough that the fitted view shrank every label below
+// reading size. The reference boxes are smaller because they carry an icon
+// and a name and nothing else; ours also carry a price, which is moved to a
+// corner badge rather than given a column of its own.
+export const NODE_W = 168;
+export const NODE_H = 64;
 const CONTROL_W = 150;
 const CONTROL_H = 58;
 const ACCOUNT_H = 64;
@@ -67,6 +72,9 @@ export type LaidEdge = {
   seq: number | null;
   /** a dotted control-plane attachment (KMS → database), not a flow edge */
   attach: boolean;
+  /** request / branch / replication, from the model; governance edges are
+   *  the ones flagged `attach`. Decides stroke colour, weight and dash. */
+  kind: "request" | "branch" | "replication";
   /** absolute polyline points from ELK's orthogonal routing */
   points: Array<{ x: number; y: number }>;
 };
@@ -81,12 +89,21 @@ export type Layout = {
 };
 
 const CONTAINER_LABEL: Record<string, string> = {
+  // Sentence case throughout. The AWS reference diagrams never shout their
+  // boundary labels, and ALL-CAPS at this size costs legibility for nothing.
   cloud: "AWS Cloud",
-  region: "Region",
-  vpc: "VPC",
+  edge: "Edge / Global services",
+  region: "Region: ap-south-1 (Mumbai)",
+  regional: "Regional services",
+  vpc: "VPC 10.0.0.0/16",
+  "routetable-public": "Public route table",
+  "routetable-private": "Private route table",
   az: "Availability Zone",
+  "az-a": "Availability Zone ap-south-1a",
+  "az-b": "Availability Zone ap-south-1b",
   "subnet-public": "Public subnet",
-  "subnet-private": "Private subnet",
+  "subnet-app": "Private app subnet",
+  "subnet-data": "Private data subnet",
 };
 
 type ElkChild = {
@@ -102,9 +119,16 @@ type ElkChild = {
  *  Non-VPC nodes hang directly under the region; VPC-resident ones nest into
  *  the public or private subnet inside the single AZ. */
 function parentOf(node: PlanedNode, hasVpc: boolean): string {
+  if (node.container === "outside") return "outside";
+  if (node.container === "edge") return "edge";
+  // Managed services outside the VPC get their own strip rather than floating
+  // loose in the region -- see REGIONAL_SERVICE in graphModel.
+  if (node.container === "regional") return "regional";
   if (!hasVpc || node.container === "region") return "region";
-  if (node.container === "subnet-public") return "subnet-public";
-  return "subnet-private";
+  const z = node.zone === "b" ? "-b" : "-a";
+  if (node.container === "subnet-public") return `subnet-public${z}`;
+  if (node.container === "subnet-app") return `subnet-app${z}`;
+  return `subnet-data${z}`;
 }
 
 export async function layout(model: GraphModel): Promise<Layout> {
@@ -140,55 +164,180 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // (an AZ or subnet with nothing in it must not be drawn).
   const regionChildren: ElkChild[] = (byParent.get("region") ?? []).map(serviceChild);
 
+  const outsideNodes = byParent.get("outside") ?? [];
+  const edgeNodes = byParent.get("edge") ?? [];
+  const regionalNodes = byParent.get("regional") ?? [];
+  if (regionalNodes.length) {
+    regionChildren.push({
+      id: "regional",
+      layoutOptions: {
+        "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+        // Lay this strip out as a ROW. Left to itself ELK stacks it along the
+        // parent's DOWN axis, which turned six managed services into a tall
+        // column beside a wide VPC and doubled the canvas height.
+        "elk.direction": "RIGHT",
+        "elk.spacing.nodeNode": "34",
+      },
+      labels: [{ text: CONTAINER_LABEL["regional"] }],
+      children: regionalNodes.map(serviceChild),
+    });
+  }
+
   if (hasVpc) {
-    const publicNodes = byParent.get("subnet-public") ?? [];
-    const privateNodes = byParent.get("subnet-private") ?? [];
-    const subnets: ElkChild[] = [];
-    if (publicNodes.length) {
-      subnets.push({
-        id: "subnet-public",
-        layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-        labels: [{ text: CONTAINER_LABEL["subnet-public"] }],
-        children: publicNodes.map(serviceChild),
-      });
-    }
-    if (privateNodes.length) {
-      subnets.push({
-        id: "subnet-private",
-        layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-        labels: [{ text: CONTAINER_LABEL["subnet-private"] }],
-        children: privateNodes.map(serviceChild),
-      });
-    }
-    if (subnets.length) {
+    // One AZ block per zone, each with the SAME internal order (private app +
+    // data, then public) so the two render as mirrors. Zone b only exists when
+    // the bill paid for a standby -- see the Multi-AZ detection in graphModel.
+    const azBlock = (z: "a" | "b"): ElkChild | null => {
+      // Rows in tier order: public at the top, then app, then data -- the way
+      // both AWS reference diagrams stack them, so the rows read as tiers and
+      // line up across the two zones.
+      const rows: Array<[string, string]> = [
+        [`subnet-public-${z}`, "subnet-public"],
+        [`subnet-app-${z}`, "subnet-app"],
+        [`subnet-data-${z}`, "subnet-data"],
+      ];
+      const subnets: ElkChild[] = [];
+      for (const [id, labelKey] of rows) {
+        const members = byParent.get(id) ?? [];
+        if (!members.length) continue;
+        subnets.push({
+          id,
+          layoutOptions: {
+            "elk.padding": "[top=34,left=16,bottom=16,right=16]",
+            // Members of a tier sit side by side, not stacked.
+            "elk.direction": "RIGHT",
+            "elk.spacing.nodeNode": "28",
+          },
+          labels: [{ text: CONTAINER_LABEL[labelKey] }],
+          children: members.map(serviceChild),
+        });
+      }
+      if (!subnets.length) return null;
+      return {
+        id: `az-${z}`,
+        layoutOptions: {
+          "elk.padding": "[top=34,left=16,bottom=16,right=16]",
+
+          // Tiers STACK inside a zone -- public over app over data -- the way
+          // both AWS reference diagrams draw a VPC. Three subnet widths become
+          // one, which is what stops the diagram running away horizontally.
+          "elk.direction": "DOWN",
+        },
+        labels: [{ text: CONTAINER_LABEL[`az-${z}`] }],
+        children: subnets,
+      };
+    };
+    // KNOWN COSMETIC DEFECT: zone b renders ABOVE zone a. Vertical order
+    // inside a layer is decided by BRANDES_KOEPF, which aligns each zone with
+    // the edge feeding it; zone a is fed by the balancer, which sits low, so
+    // zone a lands low. elk.position, considerModelOrder/forceNodeModelOrder,
+    // and swapping declaration order were all tried and are all no-ops against
+    // that alignment. Both zones are drawn, labelled and connected correctly --
+    // only the top-to-bottom order reads wrong. Fixing it properly means
+    // either nodePlacement SIMPLE (which costs the alignment everywhere else)
+    // or placing the AZ blocks by hand after layout.
+    const azs = [azBlock("a"), azBlock("b")].filter(Boolean) as ElkChild[];
+    if (azs.length) {
+      // Route tables, the way the AWS reference draws them: inside the VPC,
+      // outside the zones, one per subnet tier. They are structural rather
+      // than billed -- a route table costs nothing -- so they carry no price
+      // and no edges; which subnets they govern is shown by placement, the
+      // same convention the governance strip already uses.
+      const routeTables: ElkChild[] = [];
+      const hasPublic = (["a", "b"] as const).some(
+        (z) => (byParent.get(`subnet-public-${z}`) ?? []).length
+      );
+      const hasPrivate = (["a", "b"] as const).some(
+        (z) =>
+          (byParent.get(`subnet-app-${z}`) ?? []).length ||
+          (byParent.get(`subnet-data-${z}`) ?? []).length
+      );
+      if (hasPublic)
+        routeTables.push({ id: "routetable-public", width: 168, height: 74, children: [] });
+      if (hasPrivate)
+        routeTables.push({ id: "routetable-private", width: 168, height: 74, children: [] });
+
       regionChildren.push({
         id: "vpc",
-        layoutOptions: { "elk.padding": "[top=34,left=18,bottom=18,right=18]" },
+        layoutOptions: {
+          "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+          // Zones side by side, tiers stacked within them -- the reference
+          // grid. With the subnets stacked, stacking the zones as well made
+          // the whole diagram one tall column.
+          "elk.direction": "RIGHT",
+        },
         labels: [{ text: CONTAINER_LABEL["vpc"] }],
-        children: [
-          {
-            id: "az",
-            layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-            labels: [{ text: CONTAINER_LABEL["az"] }],
-            children: subnets,
-          },
-        ],
+        children: [...azs, ...routeTables],
       });
     }
+  }
+
+  // SAFETY NET. Every data node must land in exactly one ELK container. A node
+  // whose parent group is never built -- a zone that has no app tier, a
+  // container added to the model but not to the tree -- is silently left out of
+  // the layout, yet its EDGES are still emitted. ELK routes those from the
+  // graph origin, which is what drew blue arrows starting and ending in open
+  // canvas above the edge cluster with no box at either end. Anything not
+  // already placed is put in the region rather than dropped.
+  const placedIds = new Set<string>();
+  const collectPlaced = (children: ElkChild[]) => {
+    for (const c of children) {
+      placedIds.add(c.id);
+      if (c.children) collectPlaced(c.children);
+    }
+  };
+  collectPlaced(regionChildren);
+  collectPlaced(edgeNodes.map(serviceChild));
+  collectPlaced(outsideNodes.map(serviceChild));
+  for (const n of [...model.data, ...model.control]) {
+    if (!placedIds.has(n.id)) regionChildren.push(serviceChild(n));
   }
 
   const graph = {
     id: "cloud",
     layoutOptions: {
       "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
+      // Shaped like a viewport, not a ribbon. Without this ELK happily
+      // returns a 6:1 band, and fitting that to a 16:9 canvas shrinks it to
+      // an illegible strip with dead margins above and below -- which is the
+      // whole "empty canvas" complaint.
+      // Measured, not reasoned: this moves the serverless and AI shapes from
+      // about 1.0 to about 1.9, much closer to the pane. It does NOT move the
+      // VPC shapes at all -- their width is set by what is inside the VPC, and
+      // wrapping cannot cut into a subtree -- so they sit at 2.0-2.5 whatever
+      // this says.
+      "elk.aspectRatio": "0.9",
+      // A request path is a CHAIN, and a chain laid out in one direction is a
+      // ribbon however much spacing you give it -- 4.7:1 here, so fitting to
+      // width left the diagram a third of the canvas tall. Wrapping lets the
+      // layered algorithm break that chain across rows and use the height,
+      // which is the only lever that changes the SHAPE rather than the scale.
+      // Wrapping folds an over-wide graph into rows. Without it the diagram
+      // came out around 3:1 against a pane nearer 1.65:1, so fitting it left
+      // it as a band across the middle with most of the height unused. The
+      // fold's own edge -- end of one row to the start of the next -- is
+      // redrawn after layout rather than left as the canvas-spanning detour
+      // that made this worth turning off the first time round.
+      "elk.layered.wrapping.strategy": "OFF",
+      "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
-      "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "92",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "40",
-      "elk.spacing.nodeNode": "60",
-      "elk.spacing.edgeNode": "40",
+      // SEPARATE_CHILDREN, so each container lays out with its OWN direction.
+      // Under INCLUDE_CHILDREN the whole tree collapses into one layered pass
+      // along the root direction and every elk.direction below is inert --
+      // which is why the subnets ran left to right as successive layers (the
+      // request really does flow public -> app -> data).
+      "elk.hierarchyHandling": "SEPARATE_CHILDREN",
+      // BRANDES_KOEPF centres each rank instead of top-aligning it. With
+      // NETWORK_SIMPLEX the edge cluster sank to the bottom of its column and
+      // left a tall empty band above it, with long edges climbing back up into
+      // the VPC.
+      "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.alignment": "CENTER",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "28",
+      "elk.spacing.nodeNode": "40",
+      "elk.spacing.edgeNode": "28",
       "elk.spacing.edgeEdge": "22",
       "elk.padding": "[top=40,left=24,bottom=24,right=24]",
       // Keep skip-layer edges (e.g. CDN → S3 past the app tier) clear of the
@@ -200,6 +349,21 @@ export async function layout(model: GraphModel): Promise<Layout> {
     },
     labels: [{ text: CONTAINER_LABEL["cloud"] }],
     children: [
+      // The caller, at graph root and first in declaration order so the request
+      // path reads left to right: users -> edge -> region.
+      ...outsideNodes.map(serviceChild),
+      ...(edgeNodes.length
+        ? [{
+            id: "edge",
+            layoutOptions: {
+              "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+              "elk.direction": "RIGHT",
+              "elk.spacing.nodeNode": "34",
+            },
+            labels: [{ text: CONTAINER_LABEL["edge"] }],
+            children: edgeNodes.map(serviceChild),
+          }]
+        : []),
       {
         id: "region",
         layoutOptions: { "elk.padding": "[top=34,left=18,bottom=18,right=18]" },
@@ -208,11 +372,39 @@ export async function layout(model: GraphModel): Promise<Layout> {
       },
     ],
     edges: [
-      ...model.dataEdges.map((e, i) => ({
-        id: `e${i}`,
-        sources: [e.source],
-        targets: [e.target],
-      })),
+      // TIER ORDER. ELK ranks a container's children by the edges between them,
+      // and the priced estimate has no edge that says "public sits above app".
+      // Left to itself it ordered the rows differently in each zone -- 1b came
+      // out data/public/app while 1a came out public/data/app, so the two zones
+      // did not read as mirrors. One invisible chain per zone pins the order to
+      // public -> app -> data, the way both reference diagrams stack them.
+      ...(["a", "b"] as const).flatMap((z) => {
+        const chain = [`subnet-public-${z}`, `subnet-app-${z}`, `subnet-data-${z}`]
+          .filter((id) => (byParent.get(id) ?? []).length);
+        return chain.slice(1).map((target, i) => ({
+          id: `tier-${z}-${i}`,
+          sources: [chain[i]],
+          targets: [target],
+        }));
+      }),
+      // Replication edges are DRAWN but do not get a vote on layering -- the
+      // same trick as constraint="false" in the Graphviz reference. With
+      // INCLUDE_CHILDREN the whole hierarchy lays out in one pass along the
+      // root direction, so a database-a -> database-b edge puts zone b in a
+      // later layer, i.e. beside zone a rather than under it. Three such edges
+      // (db sync, cache replica, balancer -> compute b) were enough to lay the
+      // two zones out end to end and make the canvas 4:1, which fits to a band
+      // using 40% of the viewport height with every label too small to read.
+      // Dropped here and routed by hand below, the zones share a layer and
+      // stack, which is both the reference arrangement and half the width.
+      ...model.dataEdges
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.kind !== "replication")
+        .map(({ e, i }) => ({
+          id: `e${i}`,
+          sources: [e.source],
+          targets: [e.target],
+        })),
       // attachment edges: target(data) → control, so ELK places the control
       // node as a leaf beside its resource and routes the dotted line.
       ...model.attachments.map((a, i) => ({
@@ -223,7 +415,28 @@ export async function layout(model: GraphModel): Promise<Layout> {
     ],
   };
 
-  const res: any = await elk.layout(graph as any);
+  // Measure both directions rather than guessing. RIGHT suits wide, shallow
+  // graphs; DOWN suits deep ones. Whichever comes back closer to the target
+  // ratio is the one the reader gets.
+  const TARGET_RATIO = 1.6;
+  const attempt = async (direction: string) => {
+    const g = JSON.parse(JSON.stringify(graph));
+    g.layoutOptions["elk.direction"] = direction;
+    const out: any = await new ELK().layout(g);
+    const ratio = (out.width ?? 1) / (out.height ?? 1);
+    // Score by how much of the viewport the result will actually COVER once
+    // fitted, not by |ratio - target|. That difference is asymmetric and picks
+    // the wrong winner: a graph 2.5x too tall scores better than one 2x too
+    // wide, yet on a 16:9 canvas the tall one fits to a narrow column and
+    // wastes most of the width -- which is exactly what it did, filling about
+    // a fifth of the canvas. Coverage is the honest measure because fitting
+    // scales by whichever axis binds first.
+    const coverage =
+      Math.min(ratio, TARGET_RATIO) / Math.max(ratio, TARGET_RATIO);
+    return { out, ratio, coverage };
+  };
+  const [right, down] = await Promise.all([attempt("RIGHT"), attempt("DOWN")]);
+  const res: any = (right.coverage >= down.coverage ? right : down).out;
 
   // ── flatten ELK's relative coordinates to absolute canvas coordinates ──
   const containers: LaidContainer[] = [];
@@ -232,18 +445,30 @@ export async function layout(model: GraphModel): Promise<Layout> {
     [...model.data, ...model.control].map((n) => [n.id, n])
   );
   const abs = new Map<string, { x: number; y: number }>();
+  const box = new Map<string, { x: number; y: number; w: number; h: number }>();
 
   const walk = (elkNode: any, ox: number, oy: number, parentId?: string) => {
     const x = ox + (elkNode.x ?? 0);
     const y = oy + (elkNode.y ?? 0);
     abs.set(elkNode.id, { x, y });
-    const isContainer = Array.isArray(elkNode.children) && elkNode.children.length > 0
-      && !nodeById.has(elkNode.id);
-    if (isContainer && elkNode.id in CONTAINER_LABEL) {
+    box.set(elkNode.id, { x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0 });
+    const isContainer =
+      (elkNode.id.startsWith("routetable-") ||
+        (Array.isArray(elkNode.children) && elkNode.children.length > 0)) &&
+      !nodeById.has(elkNode.id);
+    // Subnet ids carry a zone suffix (subnet-app-a, subnet-data-b) but the
+    // label table is keyed unsuffixed -- looked up raw, every subnet box failed
+    // the lookup and was silently dropped from the render, which is why the
+    // tier rows never appeared even though ELK had laid them out.
+    const labelKey =
+      elkNode.id in CONTAINER_LABEL
+        ? elkNode.id
+        : elkNode.id.replace(/-[ab]$/, "");
+    if (isContainer && labelKey in CONTAINER_LABEL) {
       containers.push({
         id: elkNode.id,
         kind: elkNode.id as ContainerId,
-        label: CONTAINER_LABEL[elkNode.id],
+        label: CONTAINER_LABEL[labelKey],
         x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0,
         parentId,
       });
@@ -272,6 +497,14 @@ export async function layout(model: GraphModel): Promise<Layout> {
   const collectEdges = (elkNode: any, ox: number, oy: number) => {
     const base = abs.get(elkNode.id) ?? { x: ox, y: oy };
     for (const e of elkNode.edges ?? []) {
+      // The tier-ordering chain is a LAYOUT CONSTRAINT, not a relationship. It
+      // connects subnet CONTAINERS to pin public above app above data, and it
+      // must never reach the renderer -- collected like a real edge it drew as
+      // an arrow springing from one container boundary to another, which reads
+      // as an arrowhead floating in open canvas. It also counted as an
+      // attachment (no match in dataEdges), so it slipped past the filter that
+      // drops long branch edges.
+      if (typeof e.id === "string" && e.id.startsWith("tier-")) continue;
       const src = e.sources?.[0];
       const tgt = e.targets?.[0];
       const model_e = model.dataEdges.find(
@@ -294,12 +527,191 @@ export async function layout(model: GraphModel): Promise<Layout> {
         onPath: model_e?.onPath ?? false,
         seq: model_e?.seq ?? null,
         attach: isAttach,
+        kind: model_e?.kind ?? "branch",
         points: pts,
       });
     }
     for (const c of elkNode.children ?? []) collectEdges(c, base.x, base.y);
   };
   collectEdges(res, 0, 0);
+
+  // A short orthogonal route between two boxes that avoids every service box
+  // in the way. Used for the replication edges withheld from ELK, and to
+  // rescue any edge ELK routed as a long detour.
+  // Lanes already taken by a hand-routed edge, per orientation. Without this
+  // every rerouted edge picks the same central corridor and they stack on top
+  // of each other: measured, routing the cross-container edges without it put
+  // total crossings at 465 against 325 with it.
+  const usedLanes = { h: [] as number[], v: [] as number[] };
+  const routeBetween = (
+    srcId: string,
+    tgtId: string
+  ): Array<{ x: number; y: number }> | null => {
+    const a = box.get(srcId);
+    const b = box.get(tgtId);
+    if (!a || !b) return null;
+    // Leave from whichever face points at the target, so the line does not
+    // cut back across the node it starts from.
+    const vertical = Math.abs(b.y - a.y) >= Math.abs(b.x - a.x);
+    const start = vertical
+      ? { x: a.x + a.w / 2, y: b.y > a.y ? a.y + a.h : a.y }
+      : { x: b.x > a.x ? a.x + a.w : a.x, y: a.y + a.h / 2 };
+    const end = vertical
+      ? { x: b.x + b.w / 2, y: b.y > a.y ? b.y : b.y + b.h }
+      : { x: b.x > a.x ? b.x : b.x + b.w, y: b.y + b.h / 2 };
+    // Containers are not obstacles -- a replica line necessarily leaves its
+    // own subnet -- but service boxes are: ELK never routes an edge through a
+    // node and neither should these.
+    const obstacles = [...box.entries()].filter(
+      ([id]) => nodeById.has(id) && id !== srcId && id !== tgtId
+    );
+    const segBlocked = (x1: number, y1: number, x2: number, y2: number) => {
+      const [lox, hix] = [Math.min(x1, x2), Math.max(x1, x2)];
+      const [loy, hiy] = [Math.min(y1, y2), Math.max(y1, y2)];
+      return obstacles.some(
+        ([, r]) => hix > r.x && lox < r.x + r.w && hiy > r.y && loy < r.y + r.h
+      );
+    };
+    const routeFor = (lane: number, vert = vertical) =>
+      vert
+        ? [start, { x: start.x, y: lane }, { x: end.x, y: lane }, end]
+        : [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
+    const routeBlocked = (pts: Array<{ x: number; y: number }>) =>
+      pts.slice(1).some((pt, k) => segBlocked(pts[k].x, pts[k].y, pt.x, pt.y));
+
+    // Walk outward from centre and score every unblocked lane by how far it
+    // sits from lanes already in use, so parallel edges fan out instead of
+    // stacking on one corridor. Nearest-to-centre breaks ties, which keeps
+    // routes short when the canvas is empty.
+    const taken = vertical ? usedLanes.h : usedLanes.v;
+    const centre = vertical ? (start.y + end.y) / 2 : (start.x + end.x) / 2;
+    const clearance = (lane: number) =>
+      taken.length ? Math.min(...taken.map((l) => Math.abs(l - lane))) : Infinity;
+    let route = routeFor(centre);
+    let bestLane: number | null = null;
+    let bestScore = -Infinity;
+    for (let step = 0; step <= 60; step++) {
+      for (const lane of step === 0 ? [centre] : [centre + step * 10, centre - step * 10]) {
+        if (routeBlocked(routeFor(lane))) continue;
+        const score = Math.min(clearance(lane), 48) * 100 - Math.abs(lane - centre);
+        if (score > bestScore) {
+          bestScore = score;
+          bestLane = lane;
+        }
+      }
+      // 48px of clearance is enough to read as a separate line; stop looking
+      // once a lane achieves that rather than scanning the whole canvas.
+      if (bestLane !== null && clearance(bestLane) >= 48) break;
+    }
+    if (bestLane !== null) {
+      route = routeFor(bestLane);
+      taken.push(bestLane);
+    }
+    // Still blocked: the corridor between these two is full, so turn the
+    // dog-leg the other way round. A vertical pair whose horizontal lanes are
+    // all occupied often has a clear vertical one, and vice versa.
+    if (routeBlocked(route)) {
+      const alt = vertical ? (start.x + end.x) / 2 : (start.y + end.y) / 2;
+      for (let step = 0; step <= 60; step++) {
+        const found = [alt + step * 10, alt - step * 10]
+          .map((l) => routeFor(l, !vertical))
+          .find((r) => !routeBlocked(r));
+        if (found) {
+          route = found;
+          break;
+        }
+      }
+    }
+    return route;
+  };
+
+  // Draw the replication edges withheld from ELK. They were excluded so they
+  // could not distort layering, but they still have to be DRAWN -- a standby
+  // database with no line to its primary reads as a second unrelated database.
+  for (const [i, e] of model.dataEdges.entries()) {
+    if (e.kind !== "replication") continue;
+    const route = routeBetween(e.source, e.target);
+    if (!route) continue;
+    edges.push({
+      id: `e${i}`,
+      source: e.source,
+      target: e.target,
+      label: e.label,
+      onPath: false,
+      seq: null,
+      attach: false,
+      kind: "replication",
+      points: route,
+    });
+  }
+
+  // VALIDATE EVERY ROUTE, AND REDRAW THE ONES THAT DO NOT HOLD UP.
+  //
+  // ELK routes cross-container edges to container PORTS, so under
+  // SEPARATE_CHILDREN a polyline often stops at a boundary instead of at the
+  // node it belongs to. There used to be a correction here that measured how
+  // far both ends had drifted and translated the whole line back; it was
+  // written for INCLUDE_CHILDREN, where the shape was right and only the
+  // origin was wrong. Against port-routed edges it drags the line toward the
+  // node centres and straight through whatever stands between -- 117 label
+  // overlaps and 34 edges through nodes came from exactly that.
+  //
+  // So check the route instead of patching it: it has to start and end at the
+  // right boxes, miss every other node, and not be a canvas-spanning detour.
+  // Anything that fails is redrawn by the obstacle-avoiding router above.
+  const nodeBoxes = [...box.entries()].filter(([id]) => nodeById.has(id));
+  const hitsNode = (
+    pts: Array<{ x: number; y: number }>,
+    srcId: string,
+    tgtId: string
+  ) => {
+    for (let k = 1; k < pts.length; k++) {
+      const [lox, hix] = [Math.min(pts[k - 1].x, pts[k].x), Math.max(pts[k - 1].x, pts[k].x)];
+      const [loy, hiy] = [Math.min(pts[k - 1].y, pts[k].y), Math.max(pts[k - 1].y, pts[k].y)];
+      for (const [id, r] of nodeBoxes) {
+        if (id === srcId || id === tgtId) continue;
+        // A shallow inset, so an edge legitimately grazing a node's border does
+        // not count as passing through it.
+        if (hix > r.x + 3 && lox < r.x + r.w - 3 && hiy > r.y + 3 && loy < r.y + r.h - 3)
+          return true;
+      }
+    }
+    return false;
+  };
+  const endsAt = (pt: { x: number; y: number }, id: string) => {
+    const b = box.get(id);
+    if (!b) return false;
+    const dx = Math.max(b.x - pt.x, 0, pt.x - (b.x + b.w));
+    const dy = Math.max(b.y - pt.y, 0, pt.y - (b.y + b.h));
+    return Math.hypot(dx, dy) <= 24;
+  };
+  const pathLength = (pts: Array<{ x: number; y: number }>) =>
+    pts.reduce(
+      (sum, pt, k) =>
+        k === 0 ? 0 : sum + Math.abs(pt.x - pts[k - 1].x) + Math.abs(pt.y - pts[k - 1].y),
+      0
+    );
+  for (const edge of edges) {
+    if (edge.kind === "replication") continue;
+    const a = box.get(edge.source);
+    const b = box.get(edge.target);
+    if (!a || !b) continue;
+    const pts = edge.points;
+    const direct =
+      Math.abs(b.x + b.w / 2 - (a.x + a.w / 2)) +
+      Math.abs(b.y + b.h / 2 - (a.y + a.h / 2));
+    const ok =
+      pts.length >= 2 &&
+      endsAt(pts[0], edge.source) &&
+      endsAt(pts[pts.length - 1], edge.target) &&
+      !hitsNode(pts, edge.source, edge.target) &&
+      // Generous: orthogonal routing around containers is legitimately longer
+      // than the straight line, and only real detours should go.
+      pathLength(pts) < Math.max(direct * 2.5, direct + 420);
+    if (ok) continue;
+    const route = routeBetween(edge.source, edge.target);
+    if (route) edge.points = route;
+  }
 
   let width = res.width ?? 0;
   let height = res.height ?? 0;

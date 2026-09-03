@@ -408,7 +408,552 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
                 },
             )
         )
+        # High-availability (regional) Cloud SQL runs a synchronous standby in
+        # a second zone, billed as a second instance -- so the HA rate is 2x
+        # the primary. This is DERIVED, not a distinct published meter (the
+        # same model used for Azure HA), and marked so on the point. Without
+        # it the engine's reliable/optimized tiers -- which ask for a
+        # ':multi-az' database -- find nothing on GCP and drop their single
+        # largest line, understating the bill and inverting the tier order.
+        points.append(
+            PricePoint(
+                provider="gcp",
+                category="database",
+                sku=f"db-custom-{vcpus}-{int(memory * 1024)}:multi-az",
+                name=f"Cloud SQL PostgreSQL {vcpus} vCPU / {memory:g} GB (HA / regional)",
+                region=region,
+                unit="hour",
+                price_usd=hourly * 2,
+                vcpu=vcpus,
+                memory_gb=memory,
+                attributes={
+                    "engine": "postgres",
+                    "composed": "true",
+                    "high_availability": "true",
+                    "ha_model": "derived: standby billed as a second instance (2x)",
+                    "vcpu_hour_usd": str(vcpu_hour),
+                    "ram_gb_hour_usd": str(ram_hour),
+                },
+            )
+        )
     return points
+
+
+#: Cloud CDN cache egress is billed by DESTINATION continent, not by the
+#: region the origin sits in. India and Singapore serve Asia; the US and EU
+#: regions serve their own continent. All these meters live under 'global'.
+_GCP_CDN_CONTINENT = {
+    "india": "to asia", "india-south": "to asia", "singapore": "to asia",
+    "us-east": "to north america", "eu-west": "to europe",
+}
+
+
+def fetch_cdn_prices(region_key: str) -> list[PricePoint]:
+    """Cloud CDN cache egress, per GB, to the region's own continent."""
+    region = provider_region(region_key, "gcp")
+    continent = _GCP_CDN_CONTINENT.get(region_key)
+    if not continent:
+        return []
+    sku = _one(
+        "Networking", region,
+        ("cloud cdn traffic cache data transfer", continent),
+    )
+    if not sku:
+        return []
+    price = sku_price(sku)
+    if price is None:
+        return []
+    return [PricePoint(
+        provider="gcp", category="cdn", sku="cloudcdn:cache-egress",
+        name="Cloud CDN cache egress", region=region, unit="GB",
+        price_usd=price, attributes={"destination": continent},
+    )]
+
+
+def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
+    """Cloud SQL storage, per GB-month. Zonal is single-AZ; Regional is the
+    HA variant (a synchronous copy in a second zone, ~2x), matched to the
+    ':multi-az' database the reliable/optimized tiers ask for."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud SQL")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    common_excl = ("trial", "low cost", "enterprise", "hyperdisk",
+                   "iops", "throughput", "cache", "backup")
+    points: list[PricePoint] = []
+    for tier_word, sku_name in (("zonal", "cloudsql:ssd-storage"),
+                                ("regional", "cloudsql:ssd-storage:multi-az")):
+        matches = select_skus(
+            skus, region,
+            must_contain=(tier_word, "standard storage"),
+            must_not_contain=common_excl + (
+                ("regional",) if tier_word == "zonal" else ("zonal",)
+            ),
+        )
+        price = min((sku_price(m) for m in matches), default=None)
+        if price is None:
+            continue
+        points.append(PricePoint(
+            provider="gcp", category="db_storage", sku=sku_name,
+            name="Database storage" + (" (HA / regional)" if tier_word == "regional" else ""),
+            region=region, unit="GB-month", price_usd=price,
+            attributes={"tier": tier_word},
+        ))
+    return points
+
+
+#: Firestore SKUs are named by LOCATION rather than region code, and their
+#: serviceRegions are inconsistent (some "global", some the real region), so
+#: they are matched on the location word in the description.
+_GCP_FIRESTORE_LOCATION = {
+    "india": "mumbai", "india-south": "delhi",
+    "singapore": "singapore", "us-east": "south carolina", "eu-west": "belgium",
+}
+
+
+def fetch_keyvalue_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Firestore -- GCP's serverless document/key-value store, and the
+    closest analogue to DynamoDB's per-request + per-GB billing.
+
+    Mapped onto the estimator's dynamodb read/write/storage roles: Firestore
+    bills "Read Ops", "Entity Writes" and "Storage" the same way DynamoDB bills
+    read units, write units and GB-month, so no model is invented here.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key)
+    sid = find_service_id("Cloud Firestore")
+    if not sid or not place:
+        return []
+    skus = fetch_skus(sid)
+
+    def rate(*words: str) -> "Decimal | None":
+        best = None
+        for sku in skus:
+            text = str(sku.get("description", "")).lower()
+            if place not in text or "enterprise" in text:
+                continue
+            if not all(w in text for w in words):
+                continue
+            price = sku_price(sku)
+            if price is not None and (best is None or price < best):
+                best = price
+        return best
+
+    reads = rate("read ops")
+    writes = rate("entity writes")
+    # "storage" alone would also match backup/recovery/clone storage meters.
+    stored = rate("firestore storage")
+
+    out: list[PricePoint] = []
+    if reads is not None:
+        out.append(PricePoint(provider="gcp", category="dynamodb-reads",
+                              sku="firestore:read-ops", name="Firestore read operations",
+                              region=region, unit="request", price_usd=reads))
+    if writes is not None:
+        out.append(PricePoint(provider="gcp", category="dynamodb-writes",
+                              sku="firestore:write-ops", name="Firestore write operations",
+                              region=region, unit="request", price_usd=writes))
+    if stored is not None:
+        out.append(PricePoint(provider="gcp", category="dynamodb-storage",
+                              sku="firestore:storage", name="Firestore storage",
+                              region=region, unit="GB-month", price_usd=stored))
+    return out
+
+
+#: Pub/Sub bills THROUGHPUT ($/TiB), not messages. Google's documented
+#: minimum billable message size is 1 KB, so a per-message rate is derived at
+#: that floor -- the same "state the model, don't invent a number" approach
+#: used for Cosmos RUs. Messages larger than 1 KB cost proportionally more, so
+#: this is a floor, and it is labelled as derived on the point.
+_PUBSUB_MIN_BILLABLE_BYTES = 1024
+_BYTES_PER_TIB = 1024 ** 4
+
+
+def _loc_rate(skus, region, place, *words, exclude=()):
+    """Cheapest matching SKU, preferring one priced FOR THIS REGION.
+
+    Google publishes some meters per region (named by location, e.g. "Analysis
+    (asia-south1)") and others once as "global". Taking the cheapest across
+    both picked the global list price over the real regional one -- BigQuery
+    analysis came out at $6.25/TiB instead of asia-south1's $7.50. So regional
+    matches win outright, and global is only a fallback for meters that have
+    no regional variant at all (Cloud Run functions invocations, for one).
+    """
+    regional = None
+    globalish = None
+    for sku in skus:
+        text = str(sku.get("description", "")).lower()
+        regs = sku.get("serviceRegions") or []
+        if not all(w in text for w in words):
+            continue
+        if any(x in text for x in exclude):
+            continue
+        price = sku_price(sku)
+        if price is None:
+            continue
+        is_regional = (place and place in text) or region in regs
+        if is_regional:
+            if regional is None or price < regional:
+                regional = price
+        elif "global" in regs:
+            if globalish is None or price < globalish:
+                globalish = price
+    return regional if regional is not None else globalish
+
+
+def fetch_functions_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Run functions: invocations, plus CPU and memory time.
+
+    Lambda bills requests + GB-seconds. Cloud Run functions bills invocations +
+    vCPU-seconds + GiB-seconds separately, so the duration role is filled with
+    the MEMORY (GiB-second) rate -- the same unit Lambda's GB-second is -- and
+    the vCPU rate is recorded on the point rather than silently folded in.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Cloud Run Functions")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    out: list[PricePoint] = []
+    inv = _loc_rate(skus, region, place, "invocations", exclude=("1st gen",))
+    mem = _loc_rate(skus, region, place, "memory", exclude=("min-instance", "min instance", "1st gen"))
+    cpu = _loc_rate(skus, region, place, "cpu", exclude=("min-instance", "min instance", "1st gen"))
+    if inv is not None:
+        out.append(PricePoint(provider="gcp", category="lambda-requests",
+            sku="cloudrunfunctions:invocations", name="Cloud Run functions invocations",
+            region=region, unit="request", price_usd=inv))
+    if mem is not None:
+        out.append(PricePoint(provider="gcp", category="lambda-duration",
+            sku="cloudrunfunctions:memory-time", name="Cloud Run functions memory time",
+            region=region, unit="GB-second", price_usd=mem,
+            attributes={"vcpu_second_usd": str(cpu) if cpu is not None else ""}))
+    return out
+
+
+def fetch_warehouse_prices(region_key: str) -> list[PricePoint]:
+    """BigQuery has no warehouse NODES to provision, at a genuine $0.
+
+    Redshift and Synapse sell provisioned capacity; BigQuery is serverless --
+    the same queries are billed per TiB scanned, which this bill already
+    carries as "BigQuery on-demand analysis". Publishing the node line at a
+    real $0 with that reason states where the cost went, instead of reporting
+    the warehouse missing and marking an otherwise complete estimate
+    incomplete. (Slot reservations exist under BigQuery Editions, but their
+    meters are not published in the Cloud Billing Catalog.)
+    """
+    region = provider_region(region_key, "gcp")
+    return [PricePoint(
+        provider="gcp", category="warehouse_unit", sku="bigquery:serverless",
+        name="BigQuery serverless (no provisioned nodes)", region=region,
+        unit="hour", price_usd=Decimal(0),
+        attributes={"billed_as": "per-TiB scanned, see BigQuery analysis line"},
+    )]
+
+
+def fetch_apigateway_prices(region_key: str) -> list[PricePoint]:
+    """The HTTPS entry point for a GCP serverless backend, at a genuine $0.
+
+    Not an omission and not a guess. Cloud Run and Cloud Run functions each
+    serve a managed HTTPS endpoint themselves -- TLS, routing and autoscaling
+    included -- so a GCP serverless architecture has no separate per-call
+    gateway charge the way API Gateway or API Management is billed on AWS and
+    Azure. The requests are already billed as invocations.
+
+    Priced explicitly rather than left missing, the same way CloudTrail's free
+    trail is priced at a real $0: a component that genuinely costs nothing
+    should read as $0, not as a gap that makes the estimate incomplete.
+    (Google's standalone API Gateway product does exist at $3/M calls, but it
+    is optional in front of Cloud Run and its meter is not published in the
+    Cloud Billing Catalog, so it is not quoted here.)
+    """
+    region = provider_region(region_key, "gcp")
+    return [PricePoint(
+        provider="gcp", category="apigateway", sku="cloudrun:https-endpoint",
+        name="Cloud Run HTTPS endpoint (included)", region=region,
+        unit="request", price_usd=Decimal(0),
+        attributes={"included_in": "Cloud Run / Cloud Run functions invocations"},
+    )]
+
+
+def fetch_vision_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Vision API label detection, per image -- the Rekognition role."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Vision API")
+    if not sid:
+        return []
+    price = _loc_rate(fetch_skus(sid), region, "", "label detection operations",
+                      exclude=("automl", "domain"))
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="rekognition", sku="cloudvision:images",
+        name="Cloud Vision label detection", region=region, unit="image",
+        price_usd=price)]
+
+
+def fetch_container_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Run services -- GCP's Fargate-equivalent serverless container tier.
+
+    Cloud Run bills per vCPU-SECOND and GiB-second; the estimator's container
+    block bills per hour, so both rates are converted to an hourly rate here
+    (x3600) rather than the caller having to know which cloud it is talking to.
+    Instance-based billing is the like-for-like with a Fargate task that stays
+    up, so it is preferred over request-based.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Cloud Run")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    excl = ("min-instance", "min instance", "jobs", "worker pools", "committed", "gpu")
+    out: list[PricePoint] = []
+    for words, sku, name in (
+        (("services cpu", "instance-based"), "fargate:vcpu-hour", "Cloud Run vCPU"),
+        (("services memory", "instance-based"), "fargate:gb-hour", "Cloud Run memory"),
+    ):
+        per_second = _loc_rate(skus, region, place, *words, exclude=excl)
+        if per_second is None:
+            per_second = _loc_rate(skus, region, place, words[0], exclude=excl)
+        if per_second is not None:
+            out.append(PricePoint(provider="gcp", category="fargate", sku=sku,
+                name=name, region=region, unit="hour",
+                price_usd=per_second * Decimal(3600),
+                attributes={"published_per_second": str(per_second)}))
+    return out
+
+
+def fetch_pubsub_prices(region_key: str) -> list[PricePoint]:
+    """Pub/Sub, filling BOTH the queue and notification roles.
+
+    One service does what SQS and SNS do separately on AWS, so the same rate
+    answers both. See _PUBSUB_MIN_BILLABLE_BYTES for the per-message derivation.
+    """
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Pub/Sub")
+    if not sid:
+        return []
+    per_tib = _loc_rate(fetch_skus(sid), region, "", "message delivery basic")
+    if per_tib is None:
+        return []
+    per_msg = per_tib * Decimal(_PUBSUB_MIN_BILLABLE_BYTES) / Decimal(_BYTES_PER_TIB)
+    attrs = {"derived": "per-message at Google's 1 KB minimum billable size",
+             "rate_per_tib": str(per_tib)}
+    return [
+        # Pub/Sub is also GCP's event-stream ingest (the Kinesis role). It is
+        # serverless -- there are no shards to provision -- so only the
+        # per-message ingest meter is published; the estimator's streaming
+        # branch prices that and adds no capacity line.
+        PricePoint(provider="gcp", category="streaming",
+                   sku="pubsub:stream-ingest", name="Pub/Sub stream ingest",
+                   region=region, unit="request", price_usd=per_msg,
+                   attributes=dict(attrs, serverless="no provisioned shards")),
+        PricePoint(provider="gcp", category="queue", sku="pubsub:messages",
+                   name="Pub/Sub messages", region=region, unit="request",
+                   price_usd=per_msg, attributes=attrs),
+        PricePoint(provider="gcp", category="notification", sku="pubsub:notifications",
+                   name="Pub/Sub notifications", region=region, unit="request",
+                   price_usd=per_msg, attributes=attrs),
+    ]
+
+
+def fetch_query_engine_prices(region_key: str) -> list[PricePoint]:
+    """BigQuery on-demand analysis, per TiB scanned -- Athena's model."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("BigQuery")
+    if not sid:
+        return []
+    price = _loc_rate(fetch_skus(sid), region, "", "analysis", exclude=("slots", "attribution"))
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="athena", sku="bigquery:analysis",
+        name="BigQuery on-demand analysis", region=region, unit="TB", price_usd=price)]
+
+
+def fetch_etl_prices(region_key: str) -> list[PricePoint]:
+    """Dataflow batch vCPU time -- Glue's DPU-hour analogue."""
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Cloud Dataflow")
+    if not sid:
+        return []
+    price = _loc_rate(fetch_skus(sid), region, place, "vcpu time", "batch",
+                      exclude=("flexrs", "arm", "streaming"))
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="glue", sku="dataflow:vcpu-hour",
+        name="Dataflow batch vCPU time", region=region, unit="DPU-hour", price_usd=price)]
+
+
+def fetch_storage_tier_prices(region_key: str) -> list[PricePoint]:
+    """Nearline and Archive object storage -- lifecycle policy targets."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Storage")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    # GCS names these by LOCATION ("Nearline Storage Mumbai"), with no
+    # "regional" word to match on, so the location map does the work. The
+    # excludes matter: Dual-region and Autoclass are dearer variants, and
+    # "Early Delete" is a penalty rate three orders of magnitude below the
+    # real one -- picking it would have priced cold storage at ~$0.0005/GB.
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    excl = ("autoclass", "hns", "tagging", "dual-region", "multi-region",
+            "durable", "operations", "retrieval", "early delete")
+    out: list[PricePoint] = []
+    for term, sku, name, role in (
+        ("nearline storage", "gcs:nearline", "Nearline storage", "infrequent"),
+        ("archive storage", "gcs:archive", "Archive storage", "archive"),
+    ):
+        price = _loc_rate(skus, region, place, term, exclude=excl)
+        if price is None:
+            continue
+        out.append(PricePoint(provider="gcp", category="storage_lifecycle",
+            sku=sku, name=name, region=region, unit="GB-month",
+            price_usd=price, attributes={"role": role}))
+    return out
+
+
+def fetch_commitment_prices(region_key: str) -> list[PricePoint]:
+    """One-year committed-use discounts for Compute Engine.
+
+    Google does not sell a committed machine; it sells committed vCPU-hours
+    and RAM GB-hours per family ("Commitment v1: N2D AMD Cpu in Mumbai for 1
+    Year"). So the committed price of a machine is composed from its two
+    parts, exactly the way Cloud SQL instances already are -- and both
+    component rates are recorded on the point so the total can be taken apart.
+
+    Only families that actually appear in the on-demand catalog get a
+    committed row; a commitment rate for a family we never quote would be a
+    price nothing can select.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Compute Engine")
+    if not sid:
+        return []
+
+    # family -> {"cpu": rate, "ram": rate}
+    rates: dict[str, dict[str, Decimal]] = {}
+    for sku in fetch_skus(sid):
+        text = str(sku.get("description", "")).lower()
+        if "commitment v1:" not in text or "for 1 year" not in text:
+            continue
+        if place and place not in text:
+            continue
+        if any(x in text for x in ("local ssd", "gpu", "sole tenancy")):
+            continue
+        price = sku_price(sku)
+        if price is None:
+            continue
+        # "commitment v1: n2d amd cpu in mumbai for 1 year" -> family "n2d"
+        after = text.split("commitment v1:", 1)[1].strip()
+        family = after.split()[0] if after.split() else ""
+        kind = "cpu" if " cpu " in f" {after} " else "ram" if " ram " in f" {after} " else ""
+        if not family or not kind:
+            continue
+        slot = rates.setdefault(family, {})
+        if kind not in slot or price < slot[kind]:
+            slot[kind] = price
+
+    points: list[PricePoint] = []
+    for base in load_compute_prices(region_key):
+        # On-demand rows only. Committing spot capacity is not a thing, and
+        # composing off a spot row produced ":spot:commit1yr" SKUs priced
+        # ABOVE the spot rate they claimed to discount.
+        if base.attributes.get("purchase") != "ondemand":
+            continue
+        family = base.sku.split("-", 1)[0].lower()
+        pair = rates.get(family)
+        if not pair or "cpu" not in pair or "ram" not in pair:
+            continue
+        if base.vcpu is None or base.memory_gb is None:
+            continue
+        hourly = (pair["cpu"] * Decimal(base.vcpu)
+                  + pair["ram"] * Decimal(str(base.memory_gb)))
+        points.append(PricePoint(
+            provider="gcp", category="compute", sku=f"{base.sku}:commit1yr",
+            name=f"{base.sku} (1-yr committed use)", region=region, unit="hour",
+            price_usd=hourly, vcpu=base.vcpu, memory_gb=base.memory_gb,
+            arch=base.arch,
+            attributes={"purchase": "commit1yr",
+                        "term": "1-year committed use discount",
+                        "composed": "true",
+                        "vcpu_hour_usd": str(pair["cpu"]),
+                        "ram_gb_hour_usd": str(pair["ram"])},
+        ))
+    return points
+
+
+def fetch_waf_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Armor: a security policy, its rules, and per-request inspection.
+
+    The same three-part shape as AWS WAF (policy ~= Web ACL, rule, request),
+    so it maps onto the estimator's existing waf acl/rule/request roles.
+    """
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Networking")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    out: list[PricePoint] = []
+    for terms, sku, name, unit in (
+        (("cloud armor policy",), "cloudarmor:policy", "Cloud Armor policy", "month"),
+        (("cloud armor rule",), "cloudarmor:rule", "Cloud Armor rule", "month"),
+        (("cloud armor requests",), "cloudarmor:request", "Cloud Armor request inspection", "request"),
+    ):
+        matches = select_skus(skus, region, must_contain=terms,
+                              must_not_contain=("enterprise", "media", "regional"))
+        price = min((sku_price(m) for m in matches), default=None)
+        if price is not None:
+            out.append(PricePoint(provider="gcp", category="waf", sku=sku,
+                                  name=name, region=region, unit=unit, price_usd=price))
+    return out
+
+
+def fetch_object_request_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Storage operations -- Class A (writes) and Class B (reads),
+    GCS's equivalent of S3 PUT/GET request charges."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Storage")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    excl = ("autoclass", "hns", "tagging", "dual", "multi-region",
+            "durable", "nearline", "coldline", "archive", "trial")
+    out: list[PricePoint] = []
+    for cls, sku, name in (("class a operations", "gcs:put-requests", "GCS Class A operations (writes)"),
+                           ("class b operations", "gcs:get-requests", "GCS Class B operations (reads)")):
+        matches = select_skus(skus, region,
+                              must_contain=("regional", "standard", cls),
+                              must_not_contain=excl)
+        price = min((sku_price(m) for m in matches), default=None)
+        if price is not None:
+            out.append(PricePoint(provider="gcp", category="s3_requests", sku=sku,
+                                  name=name, region=region, unit="request", price_usd=price))
+    return out
+
+
+def fetch_lb_data_prices(region_key: str) -> list[PricePoint]:
+    """External Application Load Balancer data processing, per GB. GCP's
+    analogue of ALB capacity units -- the traffic-proportional LB charge on
+    top of the flat forwarding rule."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Networking")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    matches = select_skus(
+        skus, region,
+        must_contain=("external application load balancer", "outbound data processing"),
+    )
+    price = min((sku_price(m) for m in matches), default=None)
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="lb_data", sku="lb:data-processing",
+                       name="Load balancer data processing", region=region,
+                       unit="GB", price_usd=price)]
 
 
 def fetch_cache_prices(region_key: str) -> list[PricePoint]:
@@ -829,6 +1374,22 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_storage_prices,
         fetch_egress_prices,
         fetch_database_prices,
+        fetch_db_storage_prices,
+        fetch_cdn_prices,
+        fetch_storage_tier_prices,
+        fetch_commitment_prices,
+        fetch_waf_prices,
+        fetch_keyvalue_prices,
+        fetch_functions_prices,
+        fetch_pubsub_prices,
+        fetch_container_prices,
+        fetch_vision_prices,
+        fetch_apigateway_prices,
+        fetch_warehouse_prices,
+        fetch_query_engine_prices,
+        fetch_etl_prices,
+        fetch_object_request_prices,
+        fetch_lb_data_prices,
         fetch_cache_prices,
         fetch_loadbalancer_prices,
         fetch_monitoring_prices,

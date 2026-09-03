@@ -130,6 +130,11 @@ const CONTROL_TARGETS: Record<string, string[]> = {
 };
 
 export type PlanedNode = TopoNode & {
+  /** Which availability zone this box sits in, when the tier is zone-redundant.
+   *  "b" boxes are the STANDBY half of a Multi-AZ pair -- real infrastructure,
+   *  already covered by the primary's Multi-AZ line item, so they carry no cost
+   *  of their own and must never be summed. */
+  zone?: "a" | "b";
   plane: Plane;
   /** Request-path step number, 1-based; null for branch/unsequenced data nodes
    *  and for every control/account node. */
@@ -142,11 +147,15 @@ export type PlanedNode = TopoNode & {
 
 export type ContainerId =
   | "cloud"
+  | "outside"
+  | "edge"
   | "region"
+  | "regional"
   | "vpc"
   | "az"
   | "subnet-public"
-  | "subnet-private"
+  | "subnet-app"
+  | "subnet-data"
   | null;
 
 export type DataEdge = {
@@ -156,6 +165,12 @@ export type DataEdge = {
   /** On the sequenced request spine (gets a badge + animates) vs a branch. */
   onPath: boolean;
   seq: number | null;
+  /** What the edge MEANS, which is what decides how it is drawn. A live
+   *  request reads dark and solid; a replica is a background copy and reads
+   *  muted and dashed; a branch is a real call but not the main story. AWS
+   *  reference diagrams lean on exactly this distinction -- one weight for
+   *  everything is what made the earlier version read as a wiring mess. */
+  kind: "request" | "branch" | "replication";
 };
 
 export type GraphModel = {
@@ -189,10 +204,89 @@ const VPC_RESIDENT = new Set([
 /** Public-subnet kinds face the internet; the rest sit private. */
 const PUBLIC_SUBNET = new Set(["loadbalancer", "nat"]);
 
+/** The application tier. Everything else VPC-resident is data.
+ *
+ *  One "Private subnet" holding compute, database, cache, search, warehouse and
+ *  Kafka together is what made the canvas look scattered: with no tier
+ *  structure, ELK placed nine unlike boxes wherever the edges pulled them.
+ *  Reference AWS diagrams split it -- Web/App subnet then DB subnet -- so the
+ *  rows read as tiers and line up across zones. */
+const APP_SUBNET = new Set(["compute", "compute_fargate"]);
+
+/** Managed services that are real, addressable infrastructure but sit OUTSIDE
+ *  the VPC -- object storage, queues, managed AI, the data lake.
+ *
+ *  These used to fall through to the bare region, where ELK scattered them as
+ *  loose boxes around the VPC with long edges reaching back in. Grouping them
+ *  into one labelled strip is what the reference AWS diagrams do, and it is the
+ *  single biggest difference between this canvas and a hand-drawn one. */
+const REGIONAL_SERVICE = new Set([
+  "storage",
+  "dynamodb",
+  "queue",
+  "notification",
+  "email",
+  "auth",
+  "cdn",
+  "streaming",
+  "firehose",
+  "timeseries",
+  "ai",
+  "rekognition",
+  "comprehend",
+  "query",
+  "etl",
+  "backup",
+  "lambda",
+  "apigateway",
+]);
+
+/** Genuinely GLOBAL services. CloudFront, WAF, Route 53 and ACM are not
+ *  regional infrastructure, and drawing them inside the region box says they
+ *  are -- the reference AWS diagrams always put them outside it. Doing so also
+ *  removes the long edges that used to run from the top-right of the region all
+ *  the way down into the VPC. */
+const EDGE_SERVICE = new Set(["cdn", "network", "waf", "dns", "tls"]);
+
+/** The caller. Belongs OUTSIDE the cloud boundary entirely -- it is the one
+ *  node that is not infrastructure we bill for. Leaving it to fall through to
+ *  the region drew end users inside the AWS region box, and pushed the whole
+ *  request path out of reading order. */
+const OUTSIDE_CLOUD = new Set(["client"]);
+
+/** Tiers that genuinely run a copy in a second zone under Multi-AZ. The RDS
+ *  standby, the cache replica, a search replica, one NAT per zone and compute
+ *  spread across zones -- every one of these is paid for by a line item the
+ *  bill already carries (the ":multi-az" SKU, or a count > 1), so mirroring
+ *  them adds no cost, it just stops the picture claiming a single-zone
+ *  deployment when the bill paid for two. */
+const ZONE_REDUNDANT = new Set([
+  "compute",
+  "compute_fargate",
+  "database",
+  "cache",
+  "search",
+  "nat",
+]);
+
+/** Suffix for the standby half, so the label reads like the architecture. */
+const STANDBY_LABEL: Record<string, string> = {
+  database: "standby",
+  cache: "replica",
+  search: "replica",
+  compute: "zone b",
+  compute_fargate: "zone b",
+  nat: "zone b",
+};
+
 function containerFor(kind: string, hasVpc: boolean): ContainerId {
+  if (OUTSIDE_CLOUD.has(kind)) return "outside";
+  if (EDGE_SERVICE.has(kind)) return "edge";
+  if (REGIONAL_SERVICE.has(kind)) return "regional";
   if (!hasVpc) return "region";
   if (!VPC_RESIDENT.has(kind)) return "region";
-  return PUBLIC_SUBNET.has(kind) ? "subnet-public" : "subnet-private";
+  if (PUBLIC_SUBNET.has(kind)) return "subnet-public";
+  return APP_SUBNET.has(kind) ? "subnet-app" : "subnet-data";
 }
 
 /**
@@ -226,6 +320,36 @@ export function buildGraphModel(
     }
   }
 
+  // ── the second availability zone ──
+  // The bill says Multi-AZ; the picture used to say one zone. Detected from the
+  // database line the estimator labels "(Multi-AZ)" -- the same string the bill
+  // shows -- so the two can never disagree about whether a standby was paid for.
+  // Detected from the SKU, not the label. The estimator names the line
+  // "Database (Multi-AZ)" on the bill, but topology.py shortens the node label
+  // to "Database" -- so matching on the label found nothing and the second zone
+  // never appeared. The sku keeps the ":multi-az" suffix the catalog priced.
+  const mirrorOf = new Map<string, string>(); // zone-b id -> its primary
+  const multiAz = nodes.some((n) => /:multi-az/i.test(n.sku ?? ""));
+  if (multiAz && hasVpc) {
+    for (const n of [...data]) {
+      if (!ZONE_REDUNDANT.has(n.kind)) continue;
+      if (n.container !== "subnet-app" && n.container !== "subnet-data" && n.container !== "subnet-public") continue;
+      n.zone = "a";
+      mirrorOf.set(`${n.id}__b`, n.id);
+      data.push({
+        ...n,
+        id: `${n.id}__b`,
+        label: `${n.label.replace(/\s*\(Multi-AZ\)/i, "")} ${STANDBY_LABEL[n.kind] ?? "zone b"}`,
+        // No cost: the primary's line already paid for this half.
+        monthly_usd: 0,
+        share: 0,
+        priced: false,
+        seq: null,
+        zone: "b",
+      });
+    }
+  }
+
   // ── the request spine: sequence the data nodes that lie on it ──
   const dataIds = new Set(data.map((n) => n.id));
   const spine = FLOW_SPINE.filter((k) => dataIds.has(k));
@@ -239,7 +363,13 @@ export function buildGraphModel(
   // ── data-plane edges ──
   const dataEdges: DataEdge[] = [];
   const seen = new Set<string>();
-  const addEdge = (s: string, t: string, label: string, onPath: boolean) => {
+  const addEdge = (
+    s: string,
+    t: string,
+    label: string,
+    onPath: boolean,
+    kind: DataEdge["kind"] = onPath ? "request" : "branch"
+  ) => {
     if (!dataIds.has(s) || !dataIds.has(t)) return;
     const key = `${s}->${t}`;
     if (seen.has(key)) return;
@@ -250,6 +380,7 @@ export function buildGraphModel(
       label,
       onPath,
       seq: onPath ? seqOf.get(t) ?? null : null,
+      kind,
     });
   };
   // spine edges, sequenced
@@ -259,6 +390,27 @@ export function buildGraphModel(
   // branch edges, from the model's own table plus any labelled edge the
   // backend already emitted that we have not covered
   for (const [s, t, label] of BRANCH_EDGES) addEdge(s, t, label, false);
+
+  // CROSS-ZONE EDGES. Zone b was drawn as boxes with nothing joining them to
+  // anything -- a standby that appears to stand alone. Every AWS reference
+  // diagram draws these: the synchronous database sync, the cache replica, and
+  // the balancer feeding both zones. They are what makes the second zone read
+  // as part of the architecture rather than a copy parked beside it.
+  const ZONE_EDGE_LABEL: Record<string, string> = {
+    database: "sync",
+    cache: "replica",
+    search: "replica",
+  };
+  for (const [mirror, primary] of mirrorOf) {
+    const kind = data.find((n) => n.id === mirror)?.kind ?? "";
+    if (kind === "compute" || kind === "compute_fargate") {
+      // The balancer spreads traffic across zones; that is the whole point of
+      // running compute in two of them.
+      addEdge("loadbalancer", mirror, "", false, "replication");
+    } else {
+      addEdge(primary, mirror, ZONE_EDGE_LABEL[kind] ?? "replica", false, "replication");
+    }
+  }
   for (const e of edges) {
     if (dataIds.has(e.source) && dataIds.has(e.target)) {
       addEdge(e.source, e.target, e.label, false);

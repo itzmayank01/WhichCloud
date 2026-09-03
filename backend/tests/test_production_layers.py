@@ -125,14 +125,31 @@ def test_audit_logging_is_present_and_genuinely_free():
 
 
 @needs_db
-def test_kms_key_only_where_there_is_a_database_to_encrypt():
+def test_kms_key_only_where_there_is_data_at_rest_to_encrypt():
+    """KMS follows data at rest, not a database specifically. A relational
+    shop keeps a database; a batch job keeps an S3 + Athena data lake -- both
+    hold application data that must be encrypted, so both get a key. Only a
+    workload with nothing at rest (a media site whose S3 is a CDN origin it
+    serves from, not a store) goes without one.
+
+    (Was `..._where_there_is_a_database_to_encrypt`, which asserted batch gets
+    NO key -- true only while batch had no store of its own. The data-lake
+    rework gave it one, so the rule is data-at-rest, not database.)"""
     with_db = reliable(Requirement(goal="shop", workload_type="web"))
     kms = [i for i in with_db.estimate.items if "KMS" in i.label]
     assert len(kms) == 1
     assert kms[0].monthly_usd > 0
 
-    without_db = reliable(Requirement(goal="job", workload_type="batch"))
-    assert not any("KMS" in i.label for i in without_db.estimate.items)
+    # A batch data lake is data at rest too, and is encrypted.
+    batch_lake = reliable(Requirement(goal="job", workload_type="batch"))
+    assert any("KMS" in i.label for i in batch_lake.estimate.items)
+
+    # A media/object workload serves its S3 through a CDN and keeps no
+    # relational store -- nothing at rest in the sense KMS guards, so no key.
+    no_data_at_rest = reliable(
+        Requirement(goal="video site", workload_type="web", data_shape="object")
+    )
+    assert not any("KMS" in i.label for i in no_data_at_rest.estimate.items)
 
 
 # ── networking ──────────────────────────────────────────────────────────

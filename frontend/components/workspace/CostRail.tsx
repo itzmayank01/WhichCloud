@@ -214,6 +214,13 @@ export function CostRail({
             <p className="mt-1 font-mono text-[11.5px] text-ink-3">
               {option.label} · {option.shape}
             </p>
+            {option.steady_monthly_usd != null &&
+              option.steady_monthly_usd < option.monthly_usd && (
+                <p className="mt-1 font-mono text-[11.5px] text-ink-3">
+                  spiky traffic · steady {money(option.steady_monthly_usd)} –
+                  peak {money(option.monthly_usd)}/mo
+                </p>
+              )}
             {option.measured_saving_usd > 0 && (
               <p className="mt-1.5 font-mono text-[11.5px] font-medium text-save">
                 −{money(option.measured_saving_usd)}/mo after optimizations

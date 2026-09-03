@@ -1,0 +1,55 @@
+id: storage-lifecycle-tiering
+name: Move cold objects to an infrequent-access class
+category: storage
+summary: >
+  Most of what a bucket holds is never read again after its first few weeks.
+  A lifecycle policy moves those objects to an infrequent-access class at
+  roughly half the price, automatically, with no application change.
+
+applies_when:
+  workload_type: [web, api, batch, ml, storage, mixed]
+  min_monthly_spend_usd: 25
+  requires:
+    - Object storage holds data that is written once and rarely re-read
+    - Occasional retrieval latency and a per-GB read fee are acceptable
+
+savings:
+  typical_pct: 20
+  confidence: medium
+  basis: >
+    MEASURED against the same catalogs the standard class comes from.
+    ap-south-1: S3 Standard-IA $0.0138/GB vs Standard $0.025 (45% cheaper).
+    centralindia: Blob Cool $0.011 vs Hot $0.030 (63%). asia-south1: GCS
+    Nearline $0.016 vs Standard $0.023 (30%). The engine prices the
+    architecture with and without the policy and reports the difference.
+
+    The COLD FRACTION is the heuristic here, not the rates: this assumes 60%
+    of stored bytes are older than the lifecycle threshold, which is typical
+    for logs, backups, media originals and user uploads, and wrong for a
+    working set that is read continuously. It is stated as one number in
+    ArchitectureSpec.cold_storage_fraction so it can be argued with.
+
+tradeoffs:
+  - Retrieval carries a per-GB fee, so data read often costs MORE on this class
+  - Minimum storage duration (30 days IA / 90 days archive) — deleting early
+    is billed as though the object had stayed
+  - First-byte latency rises on archive classes, from milliseconds to minutes
+  - Objects under 128 KB are not worth transitioning; the per-object overhead
+    outweighs the per-GB saving
+
+implemented_by:
+  - name: S3 Lifecycle configuration
+    url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html
+    type: guide
+  - name: Azure Blob lifecycle management
+    url: https://learn.microsoft.com/azure/storage/blobs/lifecycle-management-overview
+    type: guide
+
+effect:
+  cold_storage_fraction: 0.6
+
+counterfactual:
+  cold_storage_fraction: 0.0
+
+providers: [aws, azure, gcp]
+obviousness: medium

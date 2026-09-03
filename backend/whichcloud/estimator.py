@@ -43,7 +43,18 @@ class ArchitectureSpec:
     database_read_replicas: int = 0
 
     storage_gb: float = 0.0
+    #: Fraction of object storage moved to an infrequent-access class by a
+    #: lifecycle policy. 0.0 = everything stays on the standard class.
+    #: HEURISTIC like the sizing table: most buckets have a cold tail, but how
+    #: cold depends on the workload, so it is one number stated in one place.
+    cold_storage_fraction: float = 0.0
     egress_gb: float = 0.0
+    #: Application data crossing an AZ boundary in a Multi-AZ deployment
+    #: (app<->database, app<->cache). Billed at ~$0.01/GB per direction --
+    #: the line most estimates forget. Volume is a HEURISTIC proxy on
+    #: egress, so an internal-only app (no egress) understates rather than
+    #: invents. Zero in single-AZ tiers, where no boundary is crossed.
+    inter_az_gb: float = 0.0
     load_balancer: bool = False
     #: CloudFront in front of the origin. None means "not requested" --
     #: priced on top of egress rather than netted against it, since this
@@ -226,6 +237,10 @@ class ArchitectureSpec:
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
     use_spot: bool = False
+    #: Price compute against a 1-year commitment (AWS Compute Savings Plan)
+    #: instead of on-demand. The largest single lever on a real bill, and the
+    #: one the planner previously could only mention as an advisory range.
+    use_commitment: bool = False
 
     # Fraction of the month compute actually runs. 1.0 = always on. Scale-to-
     # zero lowers this. The hourly RATE stays real; only the hours change.
@@ -290,23 +305,38 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "waf", "rule"): "waf:rule",
     ("aws", "waf", "request"): "waf:request",
     ("azure", "waf", "acl"): "appgw-waf-v2:gateway-hour",
+    ("gcp", "waf", "acl"): "cloudarmor:policy",
+    ("gcp", "waf", "rule"): "cloudarmor:rule",
+    ("gcp", "waf", "request"): "cloudarmor:request",
     ("aws", "lcu", "hour"): "alb:lcu-hour",
     ("azure", "lcu", "hour"): "appgw:capacity-unit-hour",
+    # GCP has no LCU; the traffic-proportional LB charge is data processing
+    # per GB, priced in the estimator's LB block on the GCP branch.
+    ("gcp", "lb_data", "gb"): "lb:data-processing",
     ("aws", "db_storage", "gp3"): "rds:gp3-storage",
     ("aws", "db_storage", "gp3-multi-az"): "rds:gp3-storage-multi-az",
     ("azure", "db_storage", "gp3"): "postgres-flex:storage",
     # Azure bills storage the same either way; the standby's copy is part
     # of the Flexible Server high-availability charge, not a second rate.
     ("azure", "db_storage", "gp3-multi-az"): "postgres-flex:storage",
+    # GCP Cloud SQL: zonal storage single-AZ, regional (HA) for multi-AZ.
+    ("gcp", "db_storage", "gp3"): "cloudsql:ssd-storage",
+    ("gcp", "db_storage", "gp3-multi-az"): "cloudsql:ssd-storage:multi-az",
     ("aws", "s3_requests", "put"): "s3:put-requests",
     ("aws", "s3_requests", "get"): "s3:get-requests",
     ("azure", "s3_requests", "put"): "blob:put-requests",
     ("azure", "s3_requests", "get"): "blob:get-requests",
+    ("gcp", "s3_requests", "put"): "gcs:put-requests",
+    ("gcp", "s3_requests", "get"): "gcs:get-requests",
 
     ("aws", "backup_copy", "warm"): "backup:cross-region-warm",
     ("aws", "network", "inter-region"): "transfer:inter-region",
     ("aws", "storage_lifecycle", "archive-instant"): "s3:glacier-instant",
     ("aws", "storage_lifecycle", "infrequent"): "s3:standard-ia",
+    ("azure", "storage_lifecycle", "infrequent"): "blob:cool-lrs",
+    ("azure", "storage_lifecycle", "archive-instant"): "blob:archive-lrs",
+    ("gcp", "storage_lifecycle", "infrequent"): "gcs:nearline",
+    ("gcp", "storage_lifecycle", "archive-instant"): "gcs:archive",
     ("aws", "endpoint", "interface-hour"): "vpce:interface-hour",
     ("aws", "endpoint", "gb-processed"): "vpce:gb-processed",
     ("aws", "endpoint", "gateway"): "vpce:gateway",
@@ -322,6 +352,14 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "dynamodb-reads", "request-units"): "dynamodb:read-request-units",
     ("aws", "dynamodb-writes", "request-units"): "dynamodb:write-request-units",
     ("aws", "dynamodb-storage", "gb-month"): "dynamodb:storage",
+    # Key-value equivalents. Azure Cosmos DB serverless and GCP Firestore both
+    # bill per request + per GB, the same shape DynamoDB does.
+    ("azure", "dynamodb-reads", "request-units"): "cosmos:read-request-units",
+    ("azure", "dynamodb-writes", "request-units"): "cosmos:write-request-units",
+    ("azure", "dynamodb-storage", "gb-month"): "cosmos:storage",
+    ("gcp", "dynamodb-reads", "request-units"): "firestore:read-ops",
+    ("gcp", "dynamodb-writes", "request-units"): "firestore:write-ops",
+    ("gcp", "dynamodb-storage", "gb-month"): "firestore:storage",
     ("aws", "rekognition", "images"): "rekognition:images",
     ("aws", "comprehend", "units"): "comprehend:sentiment",
     ("aws", "iot", "messages"): "iot:messages",
@@ -330,8 +368,27 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "firehose", "gb"): "firehose:ingest",
     ("aws", "athena", "tb"): "athena:scanned",
     ("aws", "glue", "dpu-hour"): "glue:etl-dpu-hour",
+    # ---- Azure / GCP equivalents for the serverless + analytics roles ----
+    ("azure", "lambda-requests", "requests"): "functions:executions",
+    ("azure", "lambda-duration", "gb-second"): "functions:duration",
+    ("azure", "apigateway", "requests"): "apim:consumption-calls",
+    ("azure", "queue", "requests"): "servicebus:operations",
+    ("azure", "notification", "requests"): "notificationhubs:pushes",
+    ("azure", "athena", "tb"): "synapse:serverless-scanned",
+    ("azure", "glue", "dpu-hour"): "datafactory:data-movement",
+    ("gcp", "lambda-requests", "requests"): "cloudrunfunctions:invocations",
+    ("gcp", "lambda-duration", "gb-second"): "cloudrunfunctions:memory-time",
+    ("gcp", "queue", "requests"): "pubsub:messages",
+    ("gcp", "notification", "requests"): "pubsub:notifications",
+    ("gcp", "athena", "tb"): "bigquery:analysis",
+    ("gcp", "glue", "dpu-hour"): "dataflow:vcpu-hour",
+    ("azure", "rekognition", "images"): "aivision:transactions",
+    ("gcp", "rekognition", "images"): "cloudvision:images",
+    ("gcp", "apigateway", "requests"): "cloudrun:https-endpoint",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
+    ("azure", "cdn", "data-transfer"): "frontdoor:data-transfer-out",
+    ("gcp", "cdn", "data-transfer"): "cloudcdn:cache-egress",
     ("aws", "governance", "object-lock"): "s3:object-lock",
     ("aws", "governance", "region-deny"): "organizations:scp",
 
@@ -384,6 +441,14 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     # posture line would charge the same subscription a second time.
     ("gcp", "posture", "checks"): None,
 }
+
+#: The unit-priced warehouse SKU per cloud, for providers that do not sell
+#: sized warehouse nodes the way Redshift does.
+_WAREHOUSE_UNIT_SKU: dict[str, str] = {
+    "azure": "synapse:dw100c-hour",
+    "gcp": "bigquery:serverless",
+}
+
 
 
 def _sku(provider: str, category: str, role: str) -> str | None:
@@ -480,7 +545,13 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             region=spec.region,
             arch=spec.arch,
         )
-        purchase = "spot" if spec.use_spot else "ondemand"
+        # Spot wins over a commitment when both are set: you cannot buy a
+        # Savings Plan for capacity you are already getting at spot rates.
+        purchase = (
+            "spot" if spec.use_spot
+            else "commit1yr" if spec.use_commitment
+            else "ondemand"
+        )
         point = store.cheapest_compute(
             query, provider=provider, purchase=purchase, dsn=dsn
         )
@@ -488,6 +559,8 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             label = f"Compute × {spec.compute_count}"
             if spec.use_spot:
                 label += " (spot)"
+            elif spec.use_commitment:
+                label += " (1-yr commitment)"
             result.items.append(
                 _hourly_line(
                     label, point, spec.compute_count, spec.compute_duty_cycle
@@ -509,10 +582,23 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.database_memory_gb or 0.0,
             multi_az=spec.database_multi_az,
             arch=spec.database_arch,
+            commitment=spec.use_commitment,
             dsn=dsn,
         )
+        # A committed rate only exists for some families; fall back to
+        # on-demand rather than reporting the database missing.
+        if not point and spec.use_commitment:
+            point = store.cheapest_database(
+                provider=provider, region=region,
+                min_vcpu=spec.database_vcpu,
+                min_memory_gb=spec.database_memory_gb or 0.0,
+                multi_az=spec.database_multi_az, arch=spec.database_arch,
+                commitment=False, dsn=dsn,
+            )
         if point:
             label = "Database" + (" (Multi-AZ)" if spec.database_multi_az else "")
+            if spec.use_commitment and point.sku.endswith(":commit1yr"):
+                label += " (1-yr reserved)"
             result.items.append(_hourly_line(label, point, 1))
         else:
             result.missing.append(
@@ -539,9 +625,22 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     min_memory_gb=spec.database_memory_gb or 0.0,
                     multi_az=False,
                     arch=spec.database_arch,
+                    commitment=spec.use_commitment,
                     dsn=dsn,
                 )
             )
+            # Replicas run around the clock exactly as the primary does, so a
+            # commitment covers them too. Leaving them on-demand priced a
+            # reserved primary beside a full-price replica -- the replica line
+            # came out DEARER than the database it copies.
+            if not replica_point and spec.use_commitment:
+                replica_point = store.cheapest_database(
+                    provider=provider, region=region,
+                    min_vcpu=spec.database_vcpu,
+                    min_memory_gb=spec.database_memory_gb or 0.0,
+                    multi_az=False, arch=spec.database_arch,
+                    commitment=False, dsn=dsn,
+                )
             if replica_point:
                 label = f"Database read replica × {spec.database_read_replicas}"
                 result.items.append(
@@ -557,7 +656,24 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     if spec.storage_gb > 0:
         point = _preferred(provider, region, "storage", dsn)
         if point:
-            result.items.append(_metered_line("Object storage", point, spec.storage_gb))
+            cold_gb = spec.storage_gb * min(max(spec.cold_storage_fraction, 0.0), 1.0)
+            cold_point = (
+                _by_role(provider, region, "storage_lifecycle", "infrequent", dsn)
+                if cold_gb else None
+            )
+            if cold_point:
+                result.items.append(
+                    _metered_line("Object storage (standard)", point,
+                                  spec.storage_gb - cold_gb)
+                )
+                result.items.append(
+                    _metered_line("Object storage (infrequent access)",
+                                  cold_point, cold_gb)
+                )
+            else:
+                result.items.append(
+                    _metered_line("Object storage", point, spec.storage_gb)
+                )
         else:
             result.missing.append("object storage")
 
@@ -568,6 +684,23 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.items.append(_metered_line("Egress", point, spec.egress_gb))
         else:
             result.missing.append("egress")
+
+    # ---- cross-AZ (intra-region) data transfer ----
+    # Only AWS publishes this meter in our catalog today; other providers
+    # simply have no row and the line is omitted (not marked missing -- it is
+    # an optional refinement, not a component the architecture depends on).
+    if spec.inter_az_gb > 0:
+        point = store.get_price(
+            provider, region, "network", "transfer:intra-region-az", dsn=dsn
+        )
+        if point:
+            # Billed on BOTH sides of the boundary (egress from one AZ, ingress
+            # to the other), so the charged volume is twice the app-level GB.
+            result.items.append(
+                _metered_line(
+                    "Cross-AZ data transfer (in+out)", point, spec.inter_az_gb * 2
+                )
+            )
 
     # ---- cache ----
     if spec.cache_vcpu:
@@ -692,21 +825,26 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- DynamoDB (on-demand) ----
     if spec.dynamodb_read_units_per_month or spec.dynamodb_write_units_per_month:
+        # The store's real product name per cloud -- an Azure bill showing
+        # "DynamoDB reads" beside a cosmos: SKU reads as a mistake.
+        _kv_name = {"aws": "DynamoDB", "azure": "Cosmos DB", "gcp": "Firestore"}.get(
+            provider, "Key-value store"
+        )
         reads = _by_role(provider, region, "dynamodb-reads", "request-units", dsn)
         writes = _by_role(provider, region, "dynamodb-writes", "request-units", dsn)
         store_pt = _by_role(provider, region, "dynamodb-storage", "gb-month", dsn)
         if reads and writes:
             if spec.dynamodb_read_units_per_month:
                 result.items.append(
-                    _tiered_line("DynamoDB reads", reads, spec.dynamodb_read_units_per_month)
+                    _tiered_line(f"{_kv_name} reads", reads, spec.dynamodb_read_units_per_month)
                 )
             if spec.dynamodb_write_units_per_month:
                 result.items.append(
-                    _tiered_line("DynamoDB writes", writes, spec.dynamodb_write_units_per_month)
+                    _tiered_line(f"{_kv_name} writes", writes, spec.dynamodb_write_units_per_month)
                 )
             if store_pt and spec.dynamodb_storage_gb:
                 result.items.append(
-                    _tiered_line("DynamoDB storage", store_pt, spec.dynamodb_storage_gb)
+                    _tiered_line(f"{_kv_name} storage", store_pt, spec.dynamodb_storage_gb)
                 )
         else:
             result.missing.append("dynamodb")
@@ -754,21 +892,34 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         if point:
             result.items.append(_tiered_line("Firehose delivery", point, spec.firehose_gb_per_month))
         else:
-            result.missing.append("firehose")
+            cap = store.get_price(provider, region, "capture_hour",
+                                  "eventhubs:capture-hour", dsn=dsn)
+            if cap:
+                result.items.append(_hourly_line("Event Hubs Capture", cap, 1))
+            else:
+                result.missing.append("stream delivery to storage")
 
     if spec.athena_tb_scanned_per_month:
         point = _by_role(provider, region, "athena", "tb", dsn)
         if point:
-            result.items.append(_tiered_line("Athena data scanned", point, spec.athena_tb_scanned_per_month))
+            _q = {"aws": "Athena", "azure": "Synapse serverless SQL",
+                  "gcp": "BigQuery"}.get(provider, "Query engine")
+            result.items.append(
+                _tiered_line(f"{_q} data scanned", point, spec.athena_tb_scanned_per_month)
+            )
         else:
-            result.missing.append("athena")
+            result.missing.append("query engine")
 
     if spec.glue_dpu_hours_per_month:
         point = _by_role(provider, region, "glue", "dpu-hour", dsn)
         if point:
-            result.items.append(_tiered_line("Glue ETL", point, spec.glue_dpu_hours_per_month))
+            _e = {"aws": "Glue ETL", "azure": "Data Factory",
+                  "gcp": "Dataflow"}.get(provider, "Managed ETL")
+            result.items.append(
+                _tiered_line(_e, point, spec.glue_dpu_hours_per_month)
+            )
         else:
-            result.missing.append("glue")
+            result.missing.append("managed ETL")
 
     # ---- cross-region backup copy ----
     if spec.backup_copy_gb:
@@ -985,10 +1136,24 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- event streaming (Kinesis) ----
     if spec.stream_shards:
+        priced_serverless = False
         shard = store.get_price(provider, region, "streaming", "kinesis:shard-hour", dsn=dsn)
         puts = store.get_price(
             provider, region, "streaming", "kinesis:put-payload-units", dsn=dsn
         )
+        if not shard:
+            # Pub/Sub has no provisioned shards -- it is serverless, billed on
+            # ingest alone. Price the ingest and add no capacity line rather
+            # than reporting the stream missing.
+            serverless_ingest = store.get_price(
+                provider, region, "streaming", "pubsub:stream-ingest", dsn=dsn
+            )
+            if serverless_ingest and spec.stream_put_units:
+                result.items.append(
+                    _metered_line("Pub/Sub stream ingest", serverless_ingest,
+                                  spec.stream_put_units)
+                )
+                priced_serverless = True
         if shard:
             result.items.append(
                 _hourly_line(f"Event stream shards \u00d7 {spec.stream_shards}", shard, spec.stream_shards)
@@ -997,7 +1162,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 result.items.append(
                     _metered_line("Event stream PUT units", puts, spec.stream_put_units)
                 )
-        else:
+        elif not priced_serverless:
             result.missing.append("event streaming")
 
     # ---- managed Kafka (MSK) ----
@@ -1017,7 +1182,15 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
         else:
-            result.missing.append("managed Kafka broker")
+            endpoint = store.get_price(provider, region, "kafka_endpoint",
+                                       "eventhubs:kafka-endpoint", dsn=dsn)
+            if endpoint:
+                result.items.append(
+                    _hourly_line(f"Kafka endpoint \u00d7 {spec.kafka_broker_count}",
+                                 endpoint, spec.kafka_broker_count)
+                )
+            else:
+                result.missing.append("managed Kafka broker")
 
     # ---- search / analytics (OpenSearch) ----
     if spec.search_node_count:
@@ -1029,14 +1202,31 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.search_node_memory_gb or 0.0,
             dsn=dsn,
         )
+        # Azure AI Search sells capacity UNITS at fixed tiers, with no vCPU or
+        # RAM published per unit, so the node-spec lookup above finds nothing.
+        # Price one search unit per requested node instead -- the closest
+        # like-for-like the two models allow, and a real published rate.
+        unit = (
+            None if point
+            else store.get_price(provider, region, "search_unit", "aisearch:s1-unit", dsn=dsn)
+        )
         if point:
             result.items.append(
                 _hourly_line(
                     f"Search nodes \u00d7 {spec.search_node_count}", point, spec.search_node_count
                 )
             )
+        elif unit:
+            result.items.append(
+                _hourly_line(
+                    f"Search units \u00d7 {spec.search_node_count}", unit, spec.search_node_count
+                )
+            )
         else:
-            result.missing.append("search node")
+            # Names the capability, not a product: GCP sells no first-party
+            # managed search cluster (Elastic on GCP is a marketplace product),
+            # so this is a real absence rather than an unmapped SKU.
+            result.missing.append("managed search cluster")
 
         if spec.search_storage_gb:
             volume = store.get_price(
@@ -1046,8 +1236,12 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 result.items.append(
                     _metered_line("Search storage", volume, spec.search_storage_gb)
                 )
+            elif unit:
+                # An AI Search unit includes its own storage allowance; there is
+                # no separate per-GB meter to add, so this is not a gap.
+                pass
             else:
-                result.missing.append("search storage")
+                result.missing.append("managed search storage")
 
     # ---- data warehouse (Redshift) ----
     if spec.warehouse_node_count:
@@ -1059,6 +1253,15 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.warehouse_node_memory_gb or 0.0,
             dsn=dsn,
         )
+        # Only Redshift sells sized warehouse NODES. Synapse sells DW100c
+        # units, and BigQuery sells nothing at all (it is serverless, billed
+        # per TiB scanned on the analysis line). Both are published in
+        # `warehouse_unit` and priced one unit per requested node.
+        unit = (
+            None if point
+            else store.get_price(provider, region, "warehouse_unit",
+                                 _WAREHOUSE_UNIT_SKU.get(provider, ""), dsn=dsn)
+        )
         if point:
             result.items.append(
                 _hourly_line(
@@ -1067,6 +1270,11 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     spec.warehouse_node_count,
                 )
             )
+        elif unit:
+            result.items.append(
+                _hourly_line(f"{unit.name} \u00d7 {spec.warehouse_node_count}",
+                             unit, spec.warehouse_node_count)
+            )
         else:
             result.missing.append("data warehouse node")
 
@@ -1074,10 +1282,25 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     # Priced instead of EC2, not alongside it: a task is the compute tier.
     if spec.fargate_task_count:
         prefix = "fargate:arm-" if spec.fargate_arm else "fargate:"
+        # The serverless-container product per cloud, so an Azure bill does not
+        # read "Fargate vCPU" beside an ACI rate.
+        _ctr = {"aws": "Fargate", "azure": "Container Instances",
+                "gcp": "Cloud Run"}.get(provider, "Container")
         vcpu_point = store.get_price(
             provider, region, "fargate", f"{prefix}vcpu-hour", dsn=dsn
         )
         gb_point = store.get_price(provider, region, "fargate", f"{prefix}gb-hour", dsn=dsn)
+        # Only AWS prices Arm containers as a separate, cheaper SKU (Graviton
+        # Fargate). Azure Container Instances and Cloud Run publish ONE rate
+        # whatever the architecture, so an Arm request there falls back to the
+        # standard rate rather than reporting the whole container tier missing.
+        if prefix.endswith("arm-") and not (vcpu_point and gb_point):
+            vcpu_point = vcpu_point or store.get_price(
+                provider, region, "fargate", "fargate:vcpu-hour", dsn=dsn
+            )
+            gb_point = gb_point or store.get_price(
+                provider, region, "fargate", "fargate:gb-hour", dsn=dsn
+            )
         if vcpu_point and gb_point:
             hours = HOURS_PER_MONTH * Decimal(spec.fargate_task_count)
             vcpu_qty = hours * Decimal(str(spec.fargate_task_vcpu))
@@ -1095,11 +1318,11 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 vcpu_qty += burst * Decimal(str(spec.fargate_task_vcpu))
                 gb_qty += burst * Decimal(str(spec.fargate_task_memory_gb))
                 label = (
-                    f"Fargate vCPU × {spec.fargate_task_count}"
+                    f"{_ctr} vCPU × {spec.fargate_task_count}"
                     f"–{spec.fargate_peak_tasks} tasks"
                 )
             else:
-                label = f"Fargate vCPU × {spec.fargate_task_count} tasks"
+                label = f"{_ctr} vCPU × {spec.fargate_task_count} tasks"
             result.items.append(
                 LineItem(
                     label=label,
@@ -1112,7 +1335,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
             result.items.append(
                 LineItem(
-                    label=label.replace("Fargate vCPU", "Fargate memory"),
+                    label=label.replace(f"{_ctr} vCPU", f"{_ctr} memory"),
                     sku=gb_point.sku,
                     unit="GB-hour",
                     unit_price=gb_point.price_usd,
@@ -1121,7 +1344,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
         else:
-            result.missing.append("Fargate capacity")
+            result.missing.append("container compute")
 
     # ---- database storage ----
     if spec.db_storage_gb and spec.database_vcpu:
@@ -1137,6 +1360,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     # ---- ALB capacity units ----
     if spec.alb_lcu and spec.load_balancer:
         point = _by_role(provider, region, "lcu", "hour", dsn)
+        data_pt = _by_role(provider, region, "lb_data", "gb", dsn)
         if point:
             result.items.append(
                 LineItem(
@@ -1148,6 +1372,15 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     monthly_usd=point.price_usd * HOURS_PER_MONTH * Decimal(str(spec.alb_lcu)),
                 )
             )
+        elif data_pt:
+            # GCP: no LCU-hour meter. The traffic-proportional LB charge is
+            # data processing per GB, approximated on egress (the bytes the LB
+            # forwards outward) -- HEURISTIC volume, like NAT and cross-AZ.
+            gb = spec.egress_gb
+            if gb:
+                result.items.append(
+                    _metered_line("Load balancer data processing", data_pt, gb)
+                )
         else:
             result.missing.append("load balancer LCUs")
 
@@ -1156,11 +1389,15 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         put = _by_role(provider, region, "s3_requests", "put", dsn)
         get = _by_role(provider, region, "s3_requests", "get", dsn)
         if put and spec.s3_put_requests:
-            result.items.append(_metered_line("S3 write requests", put, spec.s3_put_requests))
+            result.items.append(
+                _metered_line("Object storage write requests", put, spec.s3_put_requests)
+            )
         if get and spec.s3_get_requests:
-            result.items.append(_metered_line("S3 read requests", get, spec.s3_get_requests))
+            result.items.append(
+                _metered_line("Object storage read requests", get, spec.s3_get_requests)
+            )
         if not put or not get:
-            result.missing.append("S3 requests")
+            result.missing.append("object storage requests")
 
     # ---- secrets ----
     if spec.secret_count:

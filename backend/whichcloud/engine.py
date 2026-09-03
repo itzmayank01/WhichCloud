@@ -298,6 +298,11 @@ class Option:
         return None if budget is None else self.monthly <= Decimal(str(budget))
 
     spec_budget: float | None = None
+    #: For spiky workloads, the monthly cost of the SAME architecture with the
+    #: spike-headroom compute removed -- i.e. steady-state traffic. The headline
+    #: `monthly` provisions the peak (conservative); this is the floor the
+    #: autoscaler drops to between spikes. None when traffic is not spiky.
+    steady_monthly: "Decimal | None" = None
     #: True when the workload hit its capacity caps before consuming its share
     #: of the budget -- extra budget buys nothing more. Lets the interface say
     #: "sized to your workload; more budget adds no useful capacity" instead of
@@ -335,6 +340,20 @@ def size_for(requirement: Requirement) -> tuple[int, int, float]:
         count = max(1, count // 2)
 
     return count, vcpu, memory
+
+
+def _spike_headroom_instances(requirement: Requirement) -> int:
+    """How many compute instances exist ONLY to absorb the traffic spike.
+
+    The difference between this workload sized as spiky and the same workload
+    sized as steady -- exactly the instances SPIKE_INSTANCE_MULTIPLIER added.
+    Zero when the workload is not spiky (nothing to show a band for).
+    """
+    if requirement.traffic_pattern != "spiky":
+        return 0
+    spiky = size_for(requirement)[0]
+    steady = size_for(replace(requirement, traffic_pattern="steady"))[0]
+    return max(0, spiky - steady)
 
 
 def db_size_for(requirement: Requirement) -> tuple[int, float]:
@@ -1013,7 +1032,10 @@ def ai_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
     whole reason the generic-compute shape was the wrong answer for it.
     """
     spec = serverless_spec(requirement, label)
-    calls = _monthly_invocations(requirement)  # one inference per request
+    # Volume comes from _ai_inference_volume, not the raw request count: for a
+    # pure AI service every call IS an inference (so they are equal), but the
+    # same helper serves the overlay path where they are not.
+    calls = _ai_inference_volume(requirement)
 
     return replace(
         spec,
@@ -1657,6 +1679,19 @@ _BUDGET_TARGET_FILL: dict[str, float] = {
 #: distinct postures even at a budget large enough to saturate both -- without
 #: this they converge on the same maxed-out stack and the tier choice becomes
 #: meaningless.
+#: The budget-driven total is also capped at a MULTIPLE of the tier's own
+#: natural (workload-sized) cost. This is what keeps the plateau defensible:
+#: a $50k budget on a workload that naturally costs $1k lands near 2-2.5x
+#: that, not at some fixed five-figure ceiling that happens to be where the
+#: capacity caps bite. Anchored on the observation that no architect -- human
+#: or LLM -- sizes a 50k-user store past a few thousand dollars a month. The
+#: fixed capacity caps below still apply as a secondary backstop for genuinely
+#: large workloads, where even 2.5x the floor is a lot of money.
+_BUDGET_CEILING_MULTIPLE: dict[str, float] = {
+    "Most reliable": 1.8,
+    "Most optimized": 2.5,
+}
+
 _BUDGET_CAPS: dict[str, dict[str, int]] = {
     # Reliability is about surviving a zone failure, not peak throughput:
     # a couple of standbys and a modest cache, not a maxed-out fleet.
@@ -1672,6 +1707,8 @@ def _scale_to_budget(
     label: str,
     provider: str,
     dsn: str | None,
+    *,
+    growable: bool = True,
 ) -> tuple["ArchitectureSpec", bool]:
     """Grow an upper-tier spec into its share of the stated budget.
 
@@ -1679,30 +1716,57 @@ def _scale_to_budget(
     cap before the budget target was reached -- i.e. the workload cannot
     usefully absorb the money on offer, which is a fact worth surfacing
     rather than hiding behind an unchanged number.
+
+    `growable` is False for shapes with no capacity to buy. A serverless or
+    event-driven architecture is billed on volume -- invocations, inferences,
+    stored bytes -- and scales itself; there is no bigger instance to purchase.
+    Such a shape is saturated the moment the budget exceeds its cost, and
+    saying so is the honest answer. It used to skip this function altogether
+    and report `saturated=False`, so a $14k serverless estimate against a $60k
+    budget claimed it "fits with room to spare" as though more money would buy
+    something.
     """
     budget = requirement.budget_monthly_usd
     fill = _BUDGET_TARGET_FILL.get(label)
     if not budget or budget <= 0 or fill is None:
         return spec, False
 
-    target = Decimal(str(budget)) * Decimal(str(fill))
+    budget_target = Decimal(str(budget)) * Decimal(str(fill))
     has_rds = _store_for(requirement).has_rds
     caps = _BUDGET_CAPS[label]
 
     def priced(candidate: "ArchitectureSpec") -> Decimal:
         return estimate(candidate, provider, dsn=dsn).total_monthly
 
-    # If the floor spec already meets or exceeds its target share, the
-    # workload is already bigger than the budget invites -- leave it (the
-    # within_budget flag reports the overshoot).
-    if priced(spec) >= target:
-        return spec, False
+    # The effective target is the SMALLER of the budget's share and a multiple
+    # of the workload's own natural cost. The cost ceiling is what makes the
+    # plateau scale with the workload instead of ballooning to wherever the
+    # fixed capacity caps happen to sit.
+    floor_cost = priced(spec)
+    # With nothing to buy, the shape's own cost IS its ceiling: the early
+    # return below then reports saturation exactly when the budget exceeds it.
+    ceiling = (
+        floor_cost
+        if not growable
+        else floor_cost * Decimal(str(_BUDGET_CEILING_MULTIPLE[label]))
+    )
+    target = min(budget_target, ceiling)
+    # Budget wants to pay for more than this workload can usefully absorb: the
+    # ceiling (or caps) will bind, so a higher budget changes nothing -- which
+    # is what `saturated` tells the interface to say.
+    budget_exceeds_ceiling = budget_target > ceiling
+
+    # Already at or above the effective target: nothing to grow.
+    if floor_cost >= target:
+        return spec, budget_exceeds_ceiling
 
     def upgrades(sp: "ArchitectureSpec"):
         """The next capacity buy for each knob, cheapest-value first, or None
         when that knob is capped. A round-robin over these gives balanced
         growth rather than pouring the whole budget into one dimension."""
-        moves = []
+        moves: list["ArchitectureSpec"] = []
+        if not growable:
+            return moves
         if sp.compute_count < caps["compute"]:
             moves.append(replace(sp, compute_count=sp.compute_count + 1))
         if has_rds and sp.database_read_replicas < caps["replicas"]:
@@ -1730,10 +1794,101 @@ def _scale_to_budget(
         affordable = [(priced(m), m) for m in moves]
         affordable = [(c, m) for c, m in affordable if c <= target]
         if not affordable:
-            return spec, False  # budget bound: cannot buy more without overshooting
+            # Nothing more fits under the effective target. If the budget
+            # itself was the binding constraint, that's not saturation -- a
+            # bigger budget WOULD buy more. If the workload's cost ceiling
+            # bound us first, it is: extra budget is inert.
+            return spec, budget_exceeds_ceiling
         affordable.sort(key=lambda cm: cm[0])
         spec = affordable[0][1]
-    return spec, False
+    return spec, budget_exceeds_ceiling
+
+
+#: Fraction of AI inference volume that is driven by USER UPLOADS rather than
+#: by every request. Image moderation runs on a seller's photo upload, not on
+#: each of a marketplace's four million daily orders -- billing it per request
+#: put $70,250/mo of Rekognition on a bill whose whole compute tier was $568.
+#: HEURISTIC, stated in one place so it can be argued with, like BASE_SIZING.
+AI_UPLOADS_PER_TRANSACTION = 0.02
+
+
+def _ai_inference_volume(requirement: Requirement) -> float:
+    """Monthly AI inferences.
+
+    Driven by content submitted for analysis, not by request count. A pure AI
+    service (serverless, every call IS an inference) still gets one per
+    invocation; a web app that happens to moderate uploads gets the upload
+    share instead.
+    """
+    calls = _monthly_invocations(requirement)
+    if requirement.serverless or not requirement.serves_requests:
+        return calls
+    return max(LAMBDA_INVOCATIONS_FLOOR, calls * AI_UPLOADS_PER_TRANSACTION)
+
+
+#: Capabilities that only a full application has. An "AI image platform" is an
+#: AI service and nothing else; a marketplace that moderates seller photos
+#: declares a search index, analytics, queues and an availability promise as
+#: well -- so AI is a FEATURE of it, not its shape. This is the discriminator
+#: between "AI/events IS the workload" and "the workload HAS AI/events", and it
+#: is a HEURISTIC stated in one place so it can be argued with.
+def _has_application_tier(requirement: Requirement) -> bool:
+    """Does this workload run an application of its own, beyond the capability?
+
+    True when it declares things only a full app needs. The AI and event
+    archetypes then become overlays on that app rather than replacing it --
+    which is what stopped a marketplace losing its compute, database, load
+    balancer and cache the moment image moderation was mentioned.
+    """
+    # Deliberately NOT needs_analytics: an IoT telemetry pipeline wants
+    # analytics because analysing the telemetry is the whole job, so it says
+    # nothing about whether an application tier exists.
+    return bool(
+        requirement.needs_search
+        or requirement.needs_queue
+        or requirement.needs_notifications
+        or requirement.needs_email
+        or requirement.high_availability
+    )
+
+
+def _with_capabilities(
+    spec: ArchitectureSpec, requirement: Requirement
+) -> ArchitectureSpec:
+    """Layer capability services ONTO whatever base shape was chosen.
+
+    THE BUG THIS FIXES: the shape router used to be exclusive --
+    `if event_driven / elif ai / elif serverless / elif batch / else web` --
+    so one shape won and the rest were silently discarded. Adding AI moderation
+    and order-streaming to a marketplace therefore REMOVED its compute,
+    database, load balancer and cache: 39 priced services collapsed to 29, of
+    which one Rekognition line was half the bill.
+
+    A marketplace that moderates images is a web app that also calls
+    Rekognition, not a serverless AI app with no database. So capabilities are
+    additive here, and only the PRIMARY shape is chosen exclusively.
+
+    Only fills fields the base shape left empty, so a shape that already sizes
+    its own streaming or inference (the event and AI archetypes) is untouched.
+    """
+    updates: dict = {}
+
+    if getattr(requirement, "ai", False):
+        volume = _ai_inference_volume(requirement)
+        if requirement.ai_vision and not spec.rekognition_images_per_month:
+            updates["rekognition_images_per_month"] = volume
+        if requirement.ai_language and not spec.comprehend_units_per_month:
+            updates["comprehend_units_per_month"] = (
+                volume * AI_UNITS_PER_TEXT_PREDICTION
+            )
+
+    # A web app with an event feed gets a stream alongside its database, not
+    # instead of it.
+    if requirement.needs_event_streaming and not spec.stream_shards:
+        updates["stream_shards"] = stream_shards_for(requirement) or 1
+        updates["stream_put_units"] = _monthly_invocations(requirement)
+
+    return replace(spec, **updates) if updates else spec
 
 
 def recommend(
@@ -1762,9 +1917,20 @@ def recommend(
     # Lower priority than event_driven (a streaming pipeline that also happens
     # to be labelled batch is still event-driven), higher than the web shape.
     batch = (not event_driven) and requirement.workload_type == "batch"
-    if event_driven:
+
+    # PRIMARY SHAPE ONLY. `ai` and `event_driven` describe capabilities a
+    # workload HAS, not necessarily the shape it IS -- so they select the
+    # primary shape only when nothing is being served over the web. A
+    # request-serving app keeps its web (or serverless) shape and picks the AI
+    # and streaming services up as overlays in _with_capabilities().
+    web_first = (
+        requirement.serves_requests
+        and not serverless
+        and _has_application_tier(requirement)
+    )
+    if event_driven and not web_first:
         variants = _event_driven_variants(requirement)
-    elif ai:
+    elif ai and not web_first:
         variants = _ai_variants(requirement)
     elif serverless:
         variants = _serverless_variants(requirement)
@@ -1773,10 +1939,21 @@ def recommend(
     else:
         variants = _shape_variants(requirement)
 
+    # Scaled specs kept by label so a dearer tier can be floored at the cheaper
+    # one's capacity -- the budget scaler optimises each tier independently and
+    # could otherwise hand "Most optimized" a smaller database than "Most
+    # reliable" (cheapest-upgrade-first spent its budget elsewhere), inverting
+    # the price order the labels promise.
+    _scaled_by_label: dict[str, ArchitectureSpec] = {}
+
     for label, rationale, delta, tradeoffs in variants:
-        if event_driven:
+        # Mirrors the variant routing above -- the two chains MUST agree, or the
+        # tiers describe one shape while the spec prices another. They diverged
+        # once: variants said web, spec still said event-driven, and the bill
+        # came back with a load balancer beside DynamoDB and API Gateway.
+        if event_driven and not web_first:
             spec = event_driven_spec(requirement, label)
-        elif ai:
+        elif ai and not web_first:
             spec = ai_spec(requirement, label)
         elif serverless:
             spec = serverless_spec(requirement, label)
@@ -1786,6 +1963,8 @@ def recommend(
             spec = base_spec(requirement, label)
         if delta:
             spec = replace(spec, **delta)
+        # Capabilities layer ON TOP of the primary shape (see _with_capabilities).
+        spec = _with_capabilities(spec, requirement)
         # A tier cannot be less available than the one below it. This floor
         # was applied to "Most reliable" alone, so on a small workload the
         # top tier came out with ONE instance where the middle tier had two
@@ -1793,22 +1972,58 @@ def recommend(
         # Server shapes only: serverless, AI and event-driven shapes have no
         # fixed instance count to floor, and forcing one would manufacture a
         # phantom EC2 fleet (or, for event_driven, override its Spot workers).
-        server_shape = not serverless and not ai and not event_driven and not batch
+        # THIRD place the shape decision is made, and it has to agree with the
+        # other two. Keying it off the raw ai/event_driven FLAGS rather than the
+        # chosen shape meant a web app that merely *had* those capabilities was
+        # treated as not-a-server: it silently lost its compute floors, its
+        # cross-AZ transfer line and budget scaling entirely, and adding a
+        # capability made the bill go DOWN by $19k.
+        server_shape = (
+            not serverless
+            and not batch
+            and (web_first or not (ai or event_driven))
+        )
         if server_shape and label == "Most reliable":
             spec = replace(spec, compute_count=max(2, spec.compute_count))
         elif server_shape and label == "Most optimized":
             # One per zone, since this tier pays for three of them.
             spec = replace(spec, compute_count=max(3, spec.compute_count))
 
+        # Cross-AZ data transfer exists only once the deployment spans more
+        # than one zone -- a Multi-AZ database or a load-balanced multi-instance
+        # app tier. Single-AZ tiers (Cheapest) cross no boundary and stay at
+        # zero. Volume is proxied on egress; see the spec field's note.
+        if server_shape and (spec.database_multi_az or spec.compute_count > 1):
+            spec = replace(spec, inter_az_gb=requirement.egress_gb)
+
         # Budget as an active lever: grow the upper tiers into the stated
         # budget, bounded by hard caps so it never pads into absurdity. The
         # workload floor above still binds; Cheapest is deliberately excluded
         # so it stays the honest minimum. No-op when no budget was stated.
-        budget_saturated = False
+        # Called for EVERY shape now. A serverless or event-driven
+        # architecture has no capacity knob to turn, but that is a reason to
+        # report it as saturated -- extra budget genuinely buys nothing -- not
+        # a reason to skip the question and imply the money is still in play.
+        spec, budget_saturated = _scale_to_budget(
+            spec, requirement, label, provider, dsn, growable=server_shape
+        )
         if server_shape:
-            spec, budget_saturated = _scale_to_budget(
-                spec, requirement, label, provider, dsn
-            )
+            # A tier is never smaller than the one below it. Floor each scalable
+            # knob at the cheaper tier's value so "Most optimized" is always >=
+            # "Most reliable" componentwise, and therefore in price -- the
+            # monotonicity the three labels assert.
+            floor_from = _scaled_by_label.get("Most reliable")
+            if label == "Most optimized" and floor_from is not None:
+                spec = replace(
+                    spec,
+                    compute_count=max(spec.compute_count, floor_from.compute_count),
+                    database_vcpu=(max(spec.database_vcpu or 0, floor_from.database_vcpu or 0) or None),
+                    database_memory_gb=(max(spec.database_memory_gb or 0, floor_from.database_memory_gb or 0) or None),
+                    database_read_replicas=max(spec.database_read_replicas, floor_from.database_read_replicas),
+                    cache_vcpu=(max(spec.cache_vcpu or 0, floor_from.cache_vcpu or 0) or None),
+                    cache_memory_gb=(max(spec.cache_memory_gb or 0, floor_from.cache_memory_gb or 0) or None),
+                )
+            _scaled_by_label[label] = spec
 
         baseline = estimate(spec, provider, dsn=dsn)
 
@@ -1836,6 +2051,21 @@ def recommend(
 
         final = estimate(current, provider, dsn=dsn) if applied else baseline
 
+        # Steady/peak band for spiky traffic. The compute count already carries
+        # the spike headroom (SPIKE_INSTANCE_MULTIPLIER, applied in size_for);
+        # the "steady" figure prices the identical architecture with exactly
+        # those extra instances removed, so a reader can see the peak they
+        # provision for versus the floor they sit at the rest of the time.
+        steady_monthly = None
+        if server_shape and _spike_headroom_instances(requirement) > 0:
+            final_spec = current if applied else spec
+            floor = {"Cheapest": 1, "Most reliable": 2, "Most optimized": 3}.get(label, 1)
+            steady_count = max(floor, final_spec.compute_count - _spike_headroom_instances(requirement))
+            if steady_count < final_spec.compute_count:
+                steady_monthly = estimate(
+                    replace(final_spec, compute_count=steady_count), provider, dsn=dsn
+                ).total_monthly
+
         # Named needs with no adapter yet. Never invented, never silently
         # dropped either -- reported the same way an unpriceable compute
         # shape is: as a real gap in `missing`, which is what makes the
@@ -1853,6 +2083,7 @@ def recommend(
                 baseline_monthly=baseline.total_monthly,
                 tradeoffs=tradeoffs,
                 spec_budget=requirement.budget_monthly_usd,
+                steady_monthly=steady_monthly,
                 budget_saturated=budget_saturated,
             )
         )

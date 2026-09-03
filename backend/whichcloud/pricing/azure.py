@@ -915,6 +915,453 @@ def fetch_lcu_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+#: Azure Front Door bills egress by client ZONE, not by the origin region.
+#: Microsoft's documented zones: North America/Europe = Zone 1, Asia-Pacific =
+#: Zone 2, India = Zone 5. We map each region we serve to its Front Door zone
+#: and take that zone's "Standard Data Transfer Out" first-tier rate.
+_AZURE_FRONTDOOR_ZONE = {
+    "india": "Zone 5", "india-south": "Zone 5", "singapore": "Zone 2",
+    "us-east": "Zone 1", "eu-west": "Zone 1",
+}
+
+
+#: Cosmos DB bills ONE request-unit rate; the read/write asymmetry is in how
+#: many RUs an operation consumes, not in the price. Microsoft's documented
+#: model for a 1 KB item: a point read costs 1 RU, a write costs ~5 RU. The
+#: engine passes read and write REQUEST COUNTS (the DynamoDB model, where the
+#: asymmetry is priced instead), so the write rate is scaled by this factor to
+#: keep both providers answering the same question. Derived, and labelled so.
+_COSMOS_RU_PER_WRITE = 5
+
+
+def _first_paid(items, match) -> "Decimal | None":
+    """Lowest non-zero rate among rows `match` accepts.
+
+    Azure publishes consumption meters as graduated bands with a free grant at
+    tierMinimumUnits 0. `_decimal` already returns None for a zero price, so
+    this picks the first band a real workload actually pays.
+    """
+    best = None
+    for item in items:
+        if not match(item):
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        if best is None or price < best:
+            best = price
+    return best
+
+
+def _consumption(service: str, region: str, pages: int = 6) -> list[dict]:
+    return [
+        it for it in _paged(
+            f"serviceName eq '{service}' and priceType eq 'Consumption' "
+            f"and armRegionName eq '{region}'", max_pages=pages
+        )
+    ]
+
+
+def fetch_streaming_prices(region_key: str) -> list[PricePoint]:
+    """Event Hubs -- the Kinesis-equivalent event stream.
+
+    A Standard throughput unit is the capacity unit a Kinesis shard is, and
+    ingress events are billed per million the way Kinesis put payload units
+    are, so both map onto the streaming role's existing sku names.
+    """
+    region = provider_region(region_key, "azure")
+    items = _consumption("Event Hubs", region)
+    def meter(name):
+        return _first_paid(items, lambda i: (i.get("meterName") or "") == name)
+    tu, ingress = meter("Standard Throughput Unit"), meter("Standard Ingress Events")
+    capture, kafka = meter("Standard Capture"), meter("Standard Kafka Endpoint")
+    out: list[PricePoint] = []
+    if capture is not None:
+        # Firehose bills delivery per GB; Event Hubs Capture bills per hour of
+        # the capture feature. Different meters for the same capability, so it
+        # is published in its own category and the estimator prices it hourly
+        # rather than multiplying an hourly rate by a GB figure.
+        out.append(PricePoint(provider="azure", category="capture_hour",
+            sku="eventhubs:capture-hour", name="Event Hubs Capture",
+            region=region, unit="hour", price_usd=capture))
+    if kafka is not None:
+        # MSK sells sized broker NODES; Event Hubs exposes a Kafka endpoint on
+        # the namespace at an hourly rate, with capacity coming from throughput
+        # units. Published as an endpoint, priced per broker requested.
+        out.append(PricePoint(provider="azure", category="kafka_endpoint",
+            sku="eventhubs:kafka-endpoint", name="Event Hubs Kafka endpoint",
+            region=region, unit="hour", price_usd=kafka))
+    if tu is not None:
+        out.append(PricePoint(provider="azure", category="streaming",
+            sku="kinesis:shard-hour", name="Event Hubs throughput unit",
+            region=region, unit="hour", price_usd=tu))
+    if ingress is not None:
+        out.append(PricePoint(provider="azure", category="streaming",
+            sku="kinesis:put-payload-units", name="Event Hubs ingress events",
+            region=region, unit="request",
+            price_usd=ingress / Decimal(1_000_000)))   # published per 1M
+    return out
+
+
+def fetch_warehouse_prices(region_key: str) -> list[PricePoint]:
+    """Synapse dedicated SQL pool, priced per DW100c unit-hour.
+
+    Redshift sells sized NODES; Synapse sells data-warehouse units. DW100c --
+    100 DWUs, the smallest dedicated pool you can provision -- is the closest
+    like-for-like to one node, so it is published in its own category and the
+    estimator prices one unit per requested node.
+    """
+    region = provider_region(region_key, "azure")
+    price = _first_paid(
+        _consumption("Azure Synapse Analytics", region),
+        lambda i: "DWU" in (i.get("meterName") or "")
+        and "Provisioned" in (i.get("productName") or ""),
+    )
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="warehouse_unit",
+        sku="synapse:dw100c-hour", name="Synapse dedicated SQL (DW100c)",
+        region=region, unit="hour", price_usd=price,
+        attributes={"dwu": "100"})]
+
+
+def fetch_vision_prices(region_key: str) -> list[PricePoint]:
+    """Azure Vision image analysis, per transaction -- the Rekognition role.
+
+    Published under serviceName "Foundry Tools" since the Azure AI Foundry
+    rebrand (the older "Cognitive Services" name returns nothing), and priced
+    per 1K transactions. Commitment-tier and disconnected-container meters are
+    excluded: those are annual capacity purchases, not pay-as-you-go.
+    """
+    region = provider_region(region_key, "azure")
+    best = None
+    for item in _paged(
+        "serviceName eq 'Foundry Tools' and priceType eq 'Consumption'", max_pages=8
+    ):
+        product = item.get("productName") or ""
+        meter = item.get("meterName") or ""
+        if "Vision" not in product or "Disconnected" in product:
+            continue
+        # ALLOW-LIST the image-analysis meter specifically. "Vision" +
+        # "Transactions" alone also matches Image Retrieval ingestion ($0.03/1K
+        # -- a vector-index feature, not analysis), and taking the cheapest
+        # priced image recognition 33x under AWS and GCP. Commitment-tier and
+        # overage bands are excluded: those price a prepaid capacity purchase.
+        if "Image Analysis" not in meter or "Transactions" not in meter:
+            continue
+        if "Commitment" in meter or "Overage" in meter or "Free" in meter:
+            continue
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is not None and (best is None or price < best):
+            best = price
+    if best is None:
+        return []
+    return [PricePoint(provider="azure", category="rekognition", sku="aivision:transactions",
+        name="Azure Vision image analysis", region=region, unit="image",
+        price_usd=best / Decimal(1000))]   # published per 1K transactions
+
+
+#: Hours in the one-year reservation term Azure quotes a total price for.
+_RESERVATION_HOURS_1YR = 365 * 24
+
+
+def fetch_vm_reservation_prices(region_key: str) -> list[PricePoint]:
+    """One-year Reserved VM Instances, converted to an hourly rate.
+
+    Azure publishes reservations as the TOTAL cost of the term (a 1-Year row
+    reads e.g. $10,842) even though unitOfMeasure says "1 Hour" -- so the
+    figure has to be divided by the hours in the term to compare with the
+    on-demand rate. Quoting it as published would overstate compute by four
+    orders of magnitude.
+
+    Matched to the same armSkuName the on-demand VM rows use, so the estimator
+    finds the committed variant of the machine it already chose.
+    """
+    region = provider_region(region_key, "azure")
+    best: dict[str, Decimal] = {}
+    for item in _paged(
+        f"serviceName eq 'Virtual Machines' and armRegionName eq '{region}' "
+        "and priceType eq 'Reservation'", max_pages=12
+    ):
+        if item.get("reservationTerm") != "1 Year":
+            continue
+        sku = item.get("armSkuName") or ""
+        # Same allow-list the on-demand loader uses: Linux only, no Windows /
+        # sovereign-cloud / low-priority variants riding the same sku name.
+        blob = _blob(item, "skuName", "meterName", "productName")
+        if not sku or any(term in blob for term in _EXCLUDE_VM):
+            continue
+        if not _is_commercial(item):
+            continue
+        total = _decimal(item.get("retailPrice"))
+        if total is None:
+            continue
+        hourly = total / Decimal(_RESERVATION_HOURS_1YR)
+        if sku not in best or hourly < best[sku]:
+            best[sku] = hourly
+
+    # Carry the machine's SPECS across from the on-demand rows. The reservation
+    # feed publishes no vCPU/memory/arch, and cheapest_compute selects on
+    # exactly those columns -- so without this the committed rates load fine
+    # and are then invisible to every lookup that could use them.
+    specs = {
+        pt.sku: pt
+        for pt in fetch_vm_prices(region_key)
+        if pt.attributes.get("purchase") == "ondemand"
+    }
+    points: list[PricePoint] = []
+    for sku, hourly in best.items():
+        base = specs.get(sku)
+        if base is None:
+            continue      # a machine we do not otherwise quote
+        points.append(PricePoint(
+            provider="azure", category="compute", sku=f"{sku}:commit1yr",
+            name=f"{sku} (1-yr reserved)", region=region, unit="hour",
+            price_usd=hourly,
+            vcpu=base.vcpu, memory_gb=base.memory_gb, arch=base.arch,
+            attributes={"purchase": "commit1yr",
+                        "term": "1-year Reserved VM Instance"},
+        ))
+    return points
+
+
+def fetch_container_prices(region_key: str) -> list[PricePoint]:
+    """Azure Container Instances -- the Fargate-equivalent serverless container
+    tier, billed per vCPU-hour and per GB-hour exactly as Fargate is.
+
+    Published under the sku names the estimator's container block looks up, so
+    the same code path prices all three clouds.
+    """
+    region = provider_region(region_key, "azure")
+    items = _consumption("Container Instances", region)
+    def std(word):
+        return _first_paid(items, lambda i: (i.get("productName") or "") == "Container Instances"
+                           and (i.get("meterName") or "") == f"Standard {word} Duration")
+    vcpu, mem = std("vCPU"), std("Memory")
+    out: list[PricePoint] = []
+    if vcpu is not None:
+        out.append(PricePoint(provider="azure", category="fargate", sku="fargate:vcpu-hour",
+            name="Container Instances vCPU", region=region, unit="hour", price_usd=vcpu))
+    if mem is not None:
+        out.append(PricePoint(provider="azure", category="fargate", sku="fargate:gb-hour",
+            name="Container Instances memory", region=region, unit="hour", price_usd=mem))
+    return out
+
+
+def fetch_functions_prices(region_key: str) -> list[PricePoint]:
+    """Azure Functions consumption: executions and GB-second duration --
+    the same two meters AWS Lambda bills, so they map onto the same roles."""
+    region = provider_region(region_key, "azure")
+    items = _consumption("Functions", region)
+    out: list[PricePoint] = []
+    execs = _first_paid(items, lambda i: "Total Executions" in (i.get("meterName") or ""))
+    dur = _first_paid(items, lambda i: "Execution Time" in (i.get("meterName") or ""))
+    if execs is not None:
+        # Published per 10 executions; the estimator bills per execution.
+        out.append(PricePoint(provider="azure", category="lambda-requests",
+            sku="functions:executions", name="Functions executions", region=region,
+            unit="request", price_usd=execs / Decimal(10)))
+    if dur is not None:
+        out.append(PricePoint(provider="azure", category="lambda-duration",
+            sku="functions:duration", name="Functions execution time", region=region,
+            unit="GB-second", price_usd=dur))
+    return out
+
+
+def fetch_apigateway_prices(region_key: str) -> list[PricePoint]:
+    """API Management consumption tier, billed per call."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("API Management", region),
+                        lambda i: (i.get("meterName") or "") == "Consumption Calls")
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="apigateway",
+        sku="apim:consumption-calls", name="API Management calls", region=region,
+        unit="request", price_usd=price / Decimal(10_000))]   # published per 10K
+
+
+def fetch_queue_prices(region_key: str) -> list[PricePoint]:
+    """Service Bus messaging operations -- the SQS-equivalent queue meter."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("Service Bus", region),
+                        lambda i: "Messaging Operations" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="queue",
+        sku="servicebus:operations", name="Service Bus operations", region=region,
+        unit="request", price_usd=price / Decimal(1_000_000))]  # published per 1M
+
+
+def fetch_notification_prices(region_key: str) -> list[PricePoint]:
+    """Notification Hubs pushes -- the SNS-equivalent notification meter."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("Notification Hubs", region),
+                        lambda i: "Pushes" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="notification",
+        sku="notificationhubs:pushes", name="Notification Hubs pushes", region=region,
+        unit="request", price_usd=price / Decimal(1_000_000))]
+
+
+def fetch_query_engine_prices(region_key: str) -> list[PricePoint]:
+    """Synapse serverless SQL, billed per TB scanned -- Athena's model."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("Azure Synapse Analytics", region),
+        lambda i: "Serverless SQL Pool" in (i.get("productName") or "")
+                  and "Data Processed" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="athena",
+        sku="synapse:serverless-scanned", name="Synapse serverless SQL data processed",
+        region=region, unit="TB", price_usd=price)]
+
+
+def fetch_etl_prices(region_key: str) -> list[PricePoint]:
+    """Data Factory cloud data movement, per DIU-hour -- Glue's DPU-hour analogue."""
+    region = provider_region(region_key, "azure")
+    items = _consumption("Azure Data Factory", region)
+    price = _first_paid(items, lambda i: "Data Movement" in (i.get("meterName") or "")
+                                          and "On Premises" not in (i.get("meterName") or ""))
+    if price is None:
+        price = _first_paid(items, lambda i: "Data Movement" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="glue",
+        sku="datafactory:data-movement", name="Data Factory data movement",
+        region=region, unit="DIU-hour", price_usd=price)]
+
+
+def fetch_search_prices(region_key: str) -> list[PricePoint]:
+    """Azure AI Search, billed per SEARCH UNIT-hour rather than per sized node.
+
+    OpenSearch sells vCPU/RAM nodes; Azure AI Search sells capacity units at
+    fixed tiers, and the feed publishes no vCPU or RAM per unit. Rather than
+    invent specs so the node-spec lookup matches, this is published in its own
+    category and the estimator prices units against the requested node count.
+    Standard S1 is the honest production default -- Basic caps at low storage
+    and small index counts, the way DEFAULT_SKUS names a sensible default
+    rather than the cheapest row.
+    """
+    region = provider_region(region_key, "azure")
+    # The product was renamed to "Azure AI Search" but the retail feed still
+    # publishes its unit meters under the legacy "Azure Cognitive Search"
+    # serviceName in most regions, so both are queried.
+    items = []
+    for service in ("Azure Cognitive Search", "Azure AI Search"):
+        items = list(_paged(
+            f"serviceName eq '{service}' and priceType eq 'Consumption' "
+            f"and armRegionName eq '{region}'", max_pages=6
+        ))
+        if items:
+            break
+    for item in items:
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        # Exactly the S1 unit meter -- not "S1 CC Unit" (confidential compute,
+        # ~45% dearer) and not the semantic-ranker / image-extraction add-ons.
+        if item.get("meterName") != "Standard S1 Unit":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [PricePoint(
+            provider="azure", category="search_unit", sku="aisearch:s1-unit",
+            name="Azure AI Search unit (Standard S1)", region=region,
+            unit="hour", price_usd=price, attributes={"tier": "standard-s1"},
+        )]
+    return []
+
+
+def fetch_keyvalue_prices(region_key: str) -> list[PricePoint]:
+    """Azure Cosmos DB serverless -- the DynamoDB-equivalent key-value store.
+
+    Serverless (per-RU) rather than provisioned throughput, because that is the
+    mode that bills per request the way DynamoDB on-demand does.
+    """
+    region = provider_region(region_key, "azure")
+    ru_price = None
+    storage = None
+    for item in _paged(
+        "serviceName eq 'Azure Cosmos DB' and priceType eq 'Consumption'", max_pages=8
+    ):
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        product = item.get("productName") or ""
+        meter = item.get("meterName") or ""
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        if product == "Azure Cosmos DB serverless" and meter == "1M RUs":
+            if ru_price is None or price < ru_price:
+                ru_price = price
+        elif product == "Azure Cosmos DB" and meter == "Data Stored":
+            # ALLOW-LIST, not min(). One product/meter pair carries several
+            # skuNames at very different rates: the RU-based account's
+            # transactional storage (RUs/RUm/mRUs, ~$0.25/GB) alongside
+            # "Data Capacity"/"Managed RUs" at $0.008 -- a different product
+            # entirely. Taking the cheapest silently priced Cosmos storage 30x
+            # too low, which is the "plausible and wrong" failure this catalog
+            # exists to avoid.
+            if item.get("skuName") not in ("RUs", "RUm", "mRUs"):
+                continue
+            if storage is None or price < storage:
+                storage = price
+
+    out: list[PricePoint] = []
+    if ru_price is not None:
+        per_ru = ru_price / Decimal(1_000_000)   # published per 1M RUs
+        out.append(PricePoint(
+            provider="azure", category="dynamodb-reads", sku="cosmos:read-request-units",
+            name="Cosmos DB read requests (1 RU each)", region=region,
+            unit="request", price_usd=per_ru,
+            attributes={"ru_per_op": "1", "rate_per_1m_ru": str(ru_price)}))
+        out.append(PricePoint(
+            provider="azure", category="dynamodb-writes", sku="cosmos:write-request-units",
+            name=f"Cosmos DB write requests (~{_COSMOS_RU_PER_WRITE} RU each)",
+            region=region, unit="request",
+            price_usd=per_ru * Decimal(_COSMOS_RU_PER_WRITE),
+            attributes={"ru_per_op": str(_COSMOS_RU_PER_WRITE),
+                        "derived": "write billed at documented ~5 RU per 1KB item",
+                        "rate_per_1m_ru": str(ru_price)}))
+    if storage is not None:
+        out.append(PricePoint(
+            provider="azure", category="dynamodb-storage", sku="cosmos:storage",
+            name="Cosmos DB storage", region=region, unit="GB-month", price_usd=storage))
+    return out
+
+
+def fetch_cdn_prices(region_key: str) -> list[PricePoint]:
+    """Azure Front Door Standard data transfer out, per GB, for the region's
+    zone. The modern CDN equivalent of CloudFront/Cloud CDN egress."""
+    region = provider_region(region_key, "azure")
+    zone = _AZURE_FRONTDOOR_ZONE.get(region_key)
+    if not zone:
+        return []
+    query = (
+        "serviceName eq 'Azure Front Door Service' and priceType eq 'Consumption' "
+        f"and armRegionName eq '{zone}' "
+        "and meterName eq 'Standard Data Transfer Out'"
+    )
+    best: tuple[float, Decimal] | None = None
+    for item in _paged(query, max_pages=4):
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        tier = float(item.get("tierMinimumUnits") or 0)
+        if best is None or tier < best[0]:
+            best = (tier, price)
+    if best is None:
+        return []
+    return [PricePoint(
+        provider="azure", category="cdn", sku="frontdoor:data-transfer-out",
+        name="Front Door data transfer out", region=region, unit="GB",
+        price_usd=best[1], attributes={"zone": zone},
+    )]
+
+
 def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
     """Storage attached to the managed database, per GB-month.
 
@@ -928,11 +1375,16 @@ def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
     ):
         if item.get("armRegionName") not in (region, "Global", ""):
             continue
-        # The Flexible Server product, not HorizonDB -- a different engine
-        # at more than twice the rate.
+        # The Flexible Server storage product, not HorizonDB (a different
+        # engine at more than twice the rate) and not Single Server (retired).
+        # The published product name is "Flex Server Storage", not the older
+        # "Flexible" spelling the earlier filter looked for -- which matched
+        # nothing, so db storage silently vanished from every Azure estimate.
         product = item.get("productName") or ""
-        if "Flexible" not in product:
+        if "Flex Server Storage" not in product:
             continue
+        # Exact match excludes the "Storage Data Stored - Free" $0 tier and the
+        # IOPS/throughput provisioning meters that share the product.
         if item.get("meterName") != "Storage Data Stored":
             continue
         price = _decimal(item.get("retailPrice"))
@@ -951,6 +1403,45 @@ def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
             )
         ]
     return []
+
+
+def fetch_storage_tier_prices(region_key: str) -> list[PricePoint]:
+    """Blob cool and archive tiers -- the targets a lifecycle policy moves to.
+
+    Without these the catalog held only the hot tier, so "move cold data to a
+    cheaper class" could be priced on AWS and nowhere else -- the same
+    single-cloud bias the technique catalog already had.
+    """
+    region = provider_region(region_key, "azure")
+    query = (
+        "serviceName eq 'Storage' "
+        f"and armRegionName eq '{region}' and priceType eq 'Consumption'"
+    )
+    wanted = {"cool": ("blob:cool-lrs", "Blob storage (cool, LRS)", "infrequent"),
+              "archive": ("blob:archive-lrs", "Blob storage (archive, LRS)", "archive")}
+    best: dict[str, tuple] = {}
+    for item in _paged(query, max_pages=12):
+        unit = (item.get("unitOfMeasure") or "").lower()
+        if "gb/month" not in unit and "gb-month" not in unit:
+            continue
+        blob = _blob(item, "skuName", "meterName", "productName")
+        if "lrs" not in blob or "premium" in blob:
+            continue
+        for tier in wanted:
+            if tier not in blob:
+                continue
+            price = _decimal(item.get("retailPrice"))
+            if price is None:
+                continue
+            if tier not in best or price < best[tier][0]:
+                best[tier] = (price, item)
+    out: list[PricePoint] = []
+    for tier, (price, _item) in best.items():
+        sku, name, role = wanted[tier]
+        out.append(PricePoint(provider="azure", category="storage_lifecycle",
+            sku=sku, name=name, region=region, unit="GB-month",
+            price_usd=price, attributes={"tier": tier, "role": role}))
+    return out
 
 
 def fetch_blob_request_prices(region_key: str) -> list[PricePoint]:
@@ -1028,6 +1519,20 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_database_prices,
         fetch_storage_prices,
         fetch_egress_prices,
+        fetch_cdn_prices,
+        fetch_keyvalue_prices,
+        fetch_search_prices,
+        fetch_functions_prices,
+        fetch_vm_reservation_prices,
+        fetch_container_prices,
+        fetch_vision_prices,
+        fetch_warehouse_prices,
+        fetch_streaming_prices,
+        fetch_apigateway_prices,
+        fetch_queue_prices,
+        fetch_notification_prices,
+        fetch_query_engine_prices,
+        fetch_etl_prices,
         fetch_cache_prices,
         fetch_monitoring_prices,
         fetch_loadbalancer_prices,
@@ -1043,6 +1548,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_waf_prices,
         fetch_lcu_prices,
         fetch_db_storage_prices,
+        fetch_storage_tier_prices,
         fetch_blob_request_prices,
     ):
         try:

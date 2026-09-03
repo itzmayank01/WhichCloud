@@ -157,6 +157,32 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const advice = result ? recommend(result.options) : null;
   const shown = result?.options.find((o) => o.label === selected) ?? null;
 
+  // Built once and rendered in both places -- floating over the pane, and
+  // again inside the full-page overlay. Going full page should not cost you
+  // the ability to replay the build or pull the Terraform for what you are
+  // looking at.
+  const actionBar = shown ? (
+    <div className="flex items-center gap-2 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-lg backdrop-blur">
+      <button
+        type="button"
+        onClick={() => setReplay((n) => n + 1)}
+        title="Replay the build animation"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-sunk"
+      >
+        <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
+          <path d="M6.5 4.5v11l9-5.5z" />
+        </svg>
+        Replay
+      </button>
+      <span className="h-4 w-px bg-line" aria-hidden />
+      <DownloadTerraformButton description={asked} option={shown.label} />
+      <span className="h-4 w-px bg-line" aria-hidden />
+      <span className="px-1 font-mono text-[11.5px] text-ink-3">
+        {shown.topology.nodes.length} services · {shown.region}
+      </span>
+    </div>
+  ) : null;
+
   return (
     /* The header is 64px and sticky; the workspace takes what is left, so the
        canvas is sized by the viewport rather than by its own content. */
@@ -235,34 +261,43 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     from scratch rather than silently swapping node positions
                     under a finished animation. */}
                 <ArchitectureGraph
-                  key={`${shown.label}-${replay}`}
+                  graphKey={`${shown.label}-${replay}`}
                   nodes={shown.topology.nodes}
                   edges={shown.topology.edges}
                   playing
+                  overlayFooter={actionBar}
+                  overlayHeader={
+                    result && result.options.length > 0 ? (
+                      /* Tier switcher travels into the overlay so the three
+                         options can be compared full-page without exiting. */
+                      <div className="flex items-center gap-1.5 rounded-xl border border-line bg-surface/95 p-1.5 shadow-lg backdrop-blur">
+                        {result.options.map((option) => (
+                          <button
+                            key={option.label}
+                            onClick={() => setSelected(option.label)}
+                            className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 transition-all ${
+                              option.label === selected
+                                ? "border-accent bg-accent-wash shadow-sm"
+                                : "border-line bg-canvas hover:border-line-strong hover:bg-sunk"
+                            }`}
+                          >
+                            <span className="text-[13px] font-semibold text-ink">
+                              {option.label}
+                            </span>
+                            <span className="tnum font-mono text-[13px] font-semibold text-ink">
+                              {money(option.monthly_usd)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null
+                  }
                 />
               </div>
 
               {/* action bar, floating over the canvas */}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
-                <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-lg backdrop-blur">
-                  <button
-                    type="button"
-                    onClick={() => setReplay((n) => n + 1)}
-                    title="Replay the build animation"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-sunk"
-                  >
-                    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
-                      <path d="M6.5 4.5v11l9-5.5z" />
-                    </svg>
-                    Replay
-                  </button>
-                  <span className="h-4 w-px bg-line" aria-hidden />
-                  <DownloadTerraformButton description={asked} option={shown.label} />
-                  <span className="h-4 w-px bg-line" aria-hidden />
-                  <span className="px-1 font-mono text-[11.5px] text-ink-3">
-                    {shown.topology.nodes.length} services · {shown.region}
-                  </span>
-                </div>
+                <div className="pointer-events-auto">{actionBar}</div>
               </div>
             </>
           ) : (
