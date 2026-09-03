@@ -165,6 +165,12 @@ export type DataEdge = {
   /** On the sequenced request spine (gets a badge + animates) vs a branch. */
   onPath: boolean;
   seq: number | null;
+  /** What the edge MEANS, which is what decides how it is drawn. A live
+   *  request reads dark and solid; a replica is a background copy and reads
+   *  muted and dashed; a branch is a real call but not the main story. AWS
+   *  reference diagrams lean on exactly this distinction -- one weight for
+   *  everything is what made the earlier version read as a wiring mess. */
+  kind: "request" | "branch" | "replication";
 };
 
 export type GraphModel = {
@@ -357,7 +363,13 @@ export function buildGraphModel(
   // ── data-plane edges ──
   const dataEdges: DataEdge[] = [];
   const seen = new Set<string>();
-  const addEdge = (s: string, t: string, label: string, onPath: boolean) => {
+  const addEdge = (
+    s: string,
+    t: string,
+    label: string,
+    onPath: boolean,
+    kind: DataEdge["kind"] = onPath ? "request" : "branch"
+  ) => {
     if (!dataIds.has(s) || !dataIds.has(t)) return;
     const key = `${s}->${t}`;
     if (seen.has(key)) return;
@@ -368,6 +380,7 @@ export function buildGraphModel(
       label,
       onPath,
       seq: onPath ? seqOf.get(t) ?? null : null,
+      kind,
     });
   };
   // spine edges, sequenced
@@ -393,9 +406,9 @@ export function buildGraphModel(
     if (kind === "compute" || kind === "compute_fargate") {
       // The balancer spreads traffic across zones; that is the whole point of
       // running compute in two of them.
-      addEdge("loadbalancer", mirror, "", false);
+      addEdge("loadbalancer", mirror, "", false, "replication");
     } else {
-      addEdge(primary, mirror, ZONE_EDGE_LABEL[kind] ?? "replica", false);
+      addEdge(primary, mirror, ZONE_EDGE_LABEL[kind] ?? "replica", false, "replication");
     }
   }
   for (const e of edges) {

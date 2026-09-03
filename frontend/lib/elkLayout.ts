@@ -21,8 +21,13 @@ import type { GraphModel, PlanedNode, ContainerId } from "@/lib/graphModel";
 
 const elk = new ELK();
 
-export const NODE_W = 200;
-export const NODE_H = 92;
+// AWS reference service-box proportions. Was 200x92, which at 21 services
+// made the canvas wide enough that the fitted view shrank every label below
+// reading size. The reference boxes are smaller because they carry an icon
+// and a name and nothing else; ours also carry a price, which is moved to a
+// corner badge rather than given a column of its own.
+export const NODE_W = 168;
+export const NODE_H = 64;
 const CONTROL_W = 150;
 const CONTROL_H = 58;
 const ACCOUNT_H = 64;
@@ -67,6 +72,9 @@ export type LaidEdge = {
   seq: number | null;
   /** a dotted control-plane attachment (KMS → database), not a flow edge */
   attach: boolean;
+  /** request / branch / replication, from the model; governance edges are
+   *  the ones flagged `attach`. Decides stroke colour, weight and dash. */
+  kind: "request" | "branch" | "replication";
   /** absolute polyline points from ELK's orthogonal routing */
   points: Array<{ x: number; y: number }>;
 };
@@ -495,6 +503,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
         onPath: model_e?.onPath ?? false,
         seq: model_e?.seq ?? null,
         attach: isAttach,
+        kind: model_e?.kind ?? "branch",
         points: pts,
       });
     }

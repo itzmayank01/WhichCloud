@@ -115,37 +115,62 @@ function ContainerNode({ data }: NodeProps) {
 function ServiceNode({ data }: NodeProps) {
   const d = data as unknown as LaidNode & { accent: boolean };
   const icon = serviceIconPath(d.kind);
+  // AWS reference styling: a hairline #D5DBDB box, 2px corners, NO shadow.
+  // The rounded-xl card with a drop shadow read as a web UI component rather
+  // than a diagram symbol -- twenty of them stacked looked like a dashboard,
+  // not an architecture. The reference diagrams keep the box nearly invisible
+  // so the icon and the name carry the meaning.
   return (
     <div
-      className={`group relative flex h-full w-full items-center gap-2.5 rounded-xl border bg-surface px-2.5 py-2 shadow-sm ${
-        d.accent ? "border-accent/70 ring-1 ring-accent/25" : "border-line-strong"
-      } ${!d.priced ? "border-dashed opacity-70" : ""}`}
+      className={`group relative flex h-full w-full items-center gap-2.5 border bg-white px-2.5 py-2 ${
+        !d.priced ? "border-dashed opacity-70" : ""
+      }`}
+      style={{
+        borderRadius: 2,
+        borderColor: d.accent ? "#0972D3" : "#D5DBDB",
+        boxShadow: d.accent ? "0 0 0 1px #0972D3" : "none",
+      }}
     >
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
-      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-sunk">
+      <div className="grid h-9 w-9 shrink-0 place-items-center">
         {icon ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={icon} alt="" className="h-9 w-9 object-contain" />
+          <img src={icon} alt="" className="h-8 w-8 object-contain" />
         ) : d.kind === "client" ? (
-          <Icon icon="mdi:account-group" className="h-7 w-7 text-ink-2" />
+          <Icon icon="mdi:account-group" className="h-6 w-6 text-ink-2" />
         ) : (
-          <Icon icon="mdi:cube-outline" className="h-7 w-7 text-ink-3" />
+          <Icon icon="mdi:cube-outline" className="h-6 w-6 text-ink-3" />
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[12px] font-semibold leading-tight text-ink" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        <div className="text-[11.5px] font-semibold leading-tight text-ink" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
           {d.label}
         </div>
-        <div className="truncate text-[10px] leading-tight text-ink-3" title={d.detail || roleFor(d.kind)}>
+        {/* Italic descriptor -- the reference diagrams set the role line in
+            italic so it reads as a gloss on the service name, not a second
+            name competing with it. */}
+        <div className="truncate text-[10px] italic leading-tight text-ink-3" title={d.detail || roleFor(d.kind)}>
           {roleFor(d.kind)}
         </div>
       </div>
-      <div className="shrink-0 self-start rounded-md bg-sunk px-1.5 py-0.5 font-mono text-[10.5px] font-semibold tabular-nums text-ink-2">
-        {money(d.monthly_usd)}
-      </div>
+      {/* The price sits ON the top-right corner rather than in a column of
+          its own. At 168px wide a price column left about sixty pixels for
+          the service name, which clamped "Application load balancer" into an
+          unreadable stack. */}
+      {d.priced && (
+        <div
+          className="absolute -top-2 right-1 rounded-[2px] border bg-white px-1 font-mono text-[10px] font-semibold tabular-nums text-ink-2"
+          style={{ borderColor: "#D5DBDB" }}
+        >
+          {money(d.monthly_usd)}
+        </div>
+      )}
       {d.seq != null && (
-        <div className="absolute -left-2.5 -top-2.5 grid h-5 w-5 place-items-center rounded-full bg-accent text-[10.5px] font-bold text-white shadow ring-2 ring-surface">
+        <div
+          className="absolute -left-2.5 -top-2.5 grid h-5 w-5 place-items-center rounded-full text-[10.5px] font-bold text-white"
+          style={{ background: "#232F3E", boxShadow: "0 0 0 2px #FFFFFF" }}
+        >
           {d.seq}
         </div>
       )}
@@ -193,6 +218,24 @@ function AccountNode({ data }: NodeProps) {
       </div>
     </div>
   );
+}
+
+/* Edge ink, by what the edge means. Four weights, straight off the AWS
+   reference diagrams: the live request path is the darkest and heaviest
+   because it IS the architecture; a branch call is the same grey but lighter;
+   replication is dashed because it happens continuously in the background;
+   and governance attachments are the palest thing on the canvas, present so
+   you can see what KMS protects without competing with the traffic. */
+function EDGE_STYLE(e: { attach: boolean; onPath: boolean; kind?: string }): {
+  stroke: string;
+  strokeWidth: number;
+  strokeDasharray?: string;
+} {
+  if (e.attach) return { stroke: "#C8CCCC", strokeWidth: 1, strokeDasharray: "3 4" };
+  if (e.kind === "replication")
+    return { stroke: "#879596", strokeWidth: 1.5, strokeDasharray: "6 4" };
+  if (e.onPath) return { stroke: "#545B64", strokeWidth: 2 };
+  return { stroke: "#879596", strokeWidth: 1.5 };
 }
 
 /* Build an orthogonal SVG path with softly rounded corners from ELK points. */
@@ -284,12 +327,7 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
         id={id}
         path={path}
         markerEnd={d.attach ? undefined : markerEnd}
-        style={{
-          stroke: d.attach ? "#94A3B8" : d.onPath ? "#2563EB" : "#8896A6",
-          strokeWidth: d.onPath ? 2 : 1.5,
-          strokeDasharray: d.attach ? "3 4" : undefined,
-          fill: "none",
-        }}
+        style={{ ...EDGE_STYLE(d), fill: "none" }}
       />
       {animate && (
         <path
@@ -407,7 +445,12 @@ function Inner({
       data: { points: e.points, label: e.label, onPath: e.onPath, attach: e.attach, playing, reduced },
       markerEnd: e.attach
         ? undefined
-        : { type: "arrowclosed" as any, color: e.onPath ? "#2563EB" : "#8896A6", width: 16, height: 16 },
+        : {
+            type: "arrowclosed" as any,
+            color: EDGE_STYLE(e).stroke,
+            width: 16,
+            height: 16,
+          },
       zIndex: e.attach ? 4 : 5,
     }));
     return { rfNodes, rfEdges };
