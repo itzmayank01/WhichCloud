@@ -322,12 +322,14 @@ export function buildGraphModel(
   // "Database (Multi-AZ)" on the bill, but topology.py shortens the node label
   // to "Database" -- so matching on the label found nothing and the second zone
   // never appeared. The sku keeps the ":multi-az" suffix the catalog priced.
+  const mirrorOf = new Map<string, string>(); // zone-b id -> its primary
   const multiAz = nodes.some((n) => /:multi-az/i.test(n.sku ?? ""));
   if (multiAz && hasVpc) {
     for (const n of [...data]) {
       if (!ZONE_REDUNDANT.has(n.kind)) continue;
       if (n.container !== "subnet-app" && n.container !== "subnet-data" && n.container !== "subnet-public") continue;
       n.zone = "a";
+      mirrorOf.set(`${n.id}__b`, n.id);
       data.push({
         ...n,
         id: `${n.id}__b`,
@@ -375,6 +377,27 @@ export function buildGraphModel(
   // branch edges, from the model's own table plus any labelled edge the
   // backend already emitted that we have not covered
   for (const [s, t, label] of BRANCH_EDGES) addEdge(s, t, label, false);
+
+  // CROSS-ZONE EDGES. Zone b was drawn as boxes with nothing joining them to
+  // anything -- a standby that appears to stand alone. Every AWS reference
+  // diagram draws these: the synchronous database sync, the cache replica, and
+  // the balancer feeding both zones. They are what makes the second zone read
+  // as part of the architecture rather than a copy parked beside it.
+  const ZONE_EDGE_LABEL: Record<string, string> = {
+    database: "sync",
+    cache: "replica",
+    search: "replica",
+  };
+  for (const [mirror, primary] of mirrorOf) {
+    const kind = data.find((n) => n.id === mirror)?.kind ?? "";
+    if (kind === "compute" || kind === "compute_fargate") {
+      // The balancer spreads traffic across zones; that is the whole point of
+      // running compute in two of them.
+      addEdge("loadbalancer", mirror, "", false);
+    } else {
+      addEdge(primary, mirror, ZONE_EDGE_LABEL[kind] ?? "replica", false);
+    }
+  }
   for (const e of edges) {
     if (dataIds.has(e.source) && dataIds.has(e.target)) {
       addEdge(e.source, e.target, e.label, false);
