@@ -388,11 +388,25 @@ function Inner({
     // Fit after the container/service nodes have measured. Two settles: the
     // first frames the graph, the second corrects once large container boxes
     // have reported their size so the whole height (account band included) fits.
-    const t1 = setTimeout(() => rf.fitView({ padding: 0.12, duration: 200 }), 160);
-    const t2 = setTimeout(() => rf.fitView({ padding: 0.12, duration: 200 }), 520);
+    const fit = () =>
+      rf.fitView({ padding: 0.12, duration: 400, maxZoom: 1.2, minZoom: 0.15 });
+    const t1 = setTimeout(fit, 160);
+    const t2 = setTimeout(fit, 520);
+    // Re-fit on container resize. Without this the diagram keeps the scale it
+    // was fitted at when the sidebar opened or the window changed, and drifts
+    // off the visible area.
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      window.clearTimeout(raf);
+      raf = window.setTimeout(fit, 150);
+    });
+    const host = document.querySelector(".react-flow");
+    if (host) ro.observe(host);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      window.clearTimeout(raf);
+      ro.disconnect();
     };
   }, [rfNodes, rf]);
 
@@ -404,8 +418,8 @@ function Inner({
       edgeTypes={edgeTypes}
       fitView
       fitViewOptions={{ padding: 0.12 }}
-      minZoom={0.2}
-      maxZoom={2}
+      minZoom={0.1}
+      maxZoom={2.5}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable

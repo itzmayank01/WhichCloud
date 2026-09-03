@@ -205,8 +205,12 @@ export async function layout(model: GraphModel): Promise<Layout> {
         id: `az-${z}`,
         layoutOptions: {
           "elk.padding": "[top=34,left=16,bottom=16,right=16]",
-          // Tiers stack DOWN inside a zone.
-          "elk.direction": "DOWN",
+          // Tiers run ACROSS inside a zone (public | app | data), and the two
+          // zones stack. Side-by-side zones each three subnets wide is what
+          // made the graph 3.4:1 -- half the canvas height went unused. This
+          // orientation is also what the AWS reference grid uses: subnet rows
+          // reading left to right, zones stacked so they compare directly.
+          "elk.direction": "RIGHT",
         },
         labels: [{ text: CONTAINER_LABEL[`az-${z}`] }],
         children: subnets,
@@ -218,9 +222,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
         id: "vpc",
         layoutOptions: {
           "elk.padding": "[top=34,left=18,bottom=18,right=18]",
-          // Zones sit SIDE BY SIDE as columns, tiers run as rows across them --
-          // the grid both reference diagrams use.
-          "elk.direction": "RIGHT",
+          "elk.direction": "DOWN",
         },
         labels: [{ text: CONTAINER_LABEL["vpc"] }],
         children: azs,
@@ -253,6 +255,18 @@ export async function layout(model: GraphModel): Promise<Layout> {
     id: "cloud",
     layoutOptions: {
       "elk.algorithm": "layered",
+      // Shaped like a viewport, not a ribbon. Without this ELK happily
+      // returns a 6:1 band, and fitting that to a 16:9 canvas shrinks it to
+      // an illegible strip with dead margins above and below -- which is the
+      // whole "empty canvas" complaint.
+      "elk.aspectRatio": "1.6",
+      // A request path is a CHAIN, and a chain laid out in one direction is a
+      // ribbon however much spacing you give it -- 4.7:1 here, so fitting to
+      // width left the diagram a third of the canvas tall. Wrapping lets the
+      // layered algorithm break that chain across rows and use the height,
+      // which is the only lever that changes the SHAPE rather than the scale.
+      "elk.layered.wrapping.strategy": "MULTI_EDGE",
+      "elk.layered.wrapping.additionalEdgeSpacing": "40",
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
@@ -331,7 +345,28 @@ export async function layout(model: GraphModel): Promise<Layout> {
     ],
   };
 
-  const res: any = await elk.layout(graph as any);
+  // Measure both directions rather than guessing. RIGHT suits wide, shallow
+  // graphs; DOWN suits deep ones. Whichever comes back closer to the target
+  // ratio is the one the reader gets.
+  const TARGET_RATIO = 1.6;
+  const attempt = async (direction: string) => {
+    const g = JSON.parse(JSON.stringify(graph));
+    g.layoutOptions["elk.direction"] = direction;
+    const out: any = await new ELK().layout(g);
+    const ratio = (out.width ?? 1) / (out.height ?? 1);
+    // Score by how much of the viewport the result will actually COVER once
+    // fitted, not by |ratio - target|. That difference is asymmetric and picks
+    // the wrong winner: a graph 2.5x too tall scores better than one 2x too
+    // wide, yet on a 16:9 canvas the tall one fits to a narrow column and
+    // wastes most of the width -- which is exactly what it did, filling about
+    // a fifth of the canvas. Coverage is the honest measure because fitting
+    // scales by whichever axis binds first.
+    const coverage =
+      Math.min(ratio, TARGET_RATIO) / Math.max(ratio, TARGET_RATIO);
+    return { out, ratio, coverage };
+  };
+  const [right, down] = await Promise.all([attempt("RIGHT"), attempt("DOWN")]);
+  const res: any = (right.coverage >= down.coverage ? right : down).out;
 
   // ── flatten ELK's relative coordinates to absolute canvas coordinates ──
   const containers: LaidContainer[] = [];
