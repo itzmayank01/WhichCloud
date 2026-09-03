@@ -632,6 +632,31 @@ def fetch_functions_prices(region_key: str) -> list[PricePoint]:
     return out
 
 
+def fetch_apigateway_prices(region_key: str) -> list[PricePoint]:
+    """The HTTPS entry point for a GCP serverless backend, at a genuine $0.
+
+    Not an omission and not a guess. Cloud Run and Cloud Run functions each
+    serve a managed HTTPS endpoint themselves -- TLS, routing and autoscaling
+    included -- so a GCP serverless architecture has no separate per-call
+    gateway charge the way API Gateway or API Management is billed on AWS and
+    Azure. The requests are already billed as invocations.
+
+    Priced explicitly rather than left missing, the same way CloudTrail's free
+    trail is priced at a real $0: a component that genuinely costs nothing
+    should read as $0, not as a gap that makes the estimate incomplete.
+    (Google's standalone API Gateway product does exist at $3/M calls, but it
+    is optional in front of Cloud Run and its meter is not published in the
+    Cloud Billing Catalog, so it is not quoted here.)
+    """
+    region = provider_region(region_key, "gcp")
+    return [PricePoint(
+        provider="gcp", category="apigateway", sku="cloudrun:https-endpoint",
+        name="Cloud Run HTTPS endpoint (included)", region=region,
+        unit="request", price_usd=Decimal(0),
+        attributes={"included_in": "Cloud Run / Cloud Run functions invocations"},
+    )]
+
+
 def fetch_vision_prices(region_key: str) -> list[PricePoint]:
     """Cloud Vision API label detection, per image -- the Rekognition role."""
     region = provider_region(region_key, "gcp")
@@ -1229,6 +1254,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_pubsub_prices,
         fetch_container_prices,
         fetch_vision_prices,
+        fetch_apigateway_prices,
         fetch_query_engine_prices,
         fetch_etl_prices,
         fetch_object_request_prices,

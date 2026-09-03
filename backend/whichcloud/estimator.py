@@ -371,6 +371,7 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("gcp", "glue", "dpu-hour"): "dataflow:vcpu-hour",
     ("azure", "rekognition", "images"): "aivision:transactions",
     ("gcp", "rekognition", "images"): "cloudvision:images",
+    ("gcp", "apigateway", "requests"): "cloudrun:https-endpoint",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
     ("azure", "cdn", "data-transfer"): "frontdoor:data-transfer-out",
