@@ -345,7 +345,38 @@ function Inner({
         style: { width: n.w, height: n.h },
       });
     }
-    const rfEdges: RFEdge[] = laid.edges.map((e) => ({
+    // An edge is only drawable if BOTH ends are boxes actually on the canvas.
+    // Anything else routes from wherever ELK last had a coordinate and renders
+    // as an arrow hanging in open space with nothing at either end -- which is
+    // exactly the stray blue arrows above the edge cluster. Rather than keep
+    // chasing which producer emits them, refuse to draw an edge that cannot
+    // point at two real nodes.
+    const drawable = new Set(laid.nodes.map((n) => n.id));
+    const boxOf = new Map(laid.nodes.map((n) => [n.id, n]));
+    /** Does this endpoint actually sit on the box it claims to come from? */
+    const touches = (pt: { x: number; y: number } | undefined, id: string) => {
+      const b = boxOf.get(id);
+      if (!pt || !b) return false;
+      const dx = Math.max(b.x - pt.x, 0, pt.x - (b.x + b.w));
+      const dy = Math.max(b.y - pt.y, 0, pt.y - (b.y + b.h));
+      return Math.hypot(dx, dy) <= 64;
+    };
+    const rfEdges: RFEdge[] = laid.edges
+      .filter((e) => drawable.has(e.source) && drawable.has(e.target))
+      // ELK reports an edge's sections relative to whichever container holds
+      // the edge, and with INCLUDE_CHILDREN a cross-container edge can come
+      // back in a different origin than the one we add the container offset
+      // for. The result is geometry that touches neither box -- the stray blue
+      // arrows floating above the edge cluster. Moving the points instead
+      // (snapping them to node centres) just traded them for long diagonals,
+      // so an edge whose route does not reach either of its own boxes is not
+      // drawn at all.
+      .filter(
+        (e) =>
+          touches(e.points[0], e.source) ||
+          touches(e.points[e.points.length - 1], e.target)
+      )
+      .map((e) => ({
       id: e.id,
       source: e.source,
       target: e.target,

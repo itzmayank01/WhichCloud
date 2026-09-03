@@ -228,6 +228,27 @@ export async function layout(model: GraphModel): Promise<Layout> {
     }
   }
 
+  // SAFETY NET. Every data node must land in exactly one ELK container. A node
+  // whose parent group is never built -- a zone that has no app tier, a
+  // container added to the model but not to the tree -- is silently left out of
+  // the layout, yet its EDGES are still emitted. ELK routes those from the
+  // graph origin, which is what drew blue arrows starting and ending in open
+  // canvas above the edge cluster with no box at either end. Anything not
+  // already placed is put in the region rather than dropped.
+  const placedIds = new Set<string>();
+  const collectPlaced = (children: ElkChild[]) => {
+    for (const c of children) {
+      placedIds.add(c.id);
+      if (c.children) collectPlaced(c.children);
+    }
+  };
+  collectPlaced(regionChildren);
+  collectPlaced(edgeNodes.map(serviceChild));
+  collectPlaced(outsideNodes.map(serviceChild));
+  for (const n of [...model.data, ...model.control]) {
+    if (!placedIds.has(n.id)) regionChildren.push(serviceChild(n));
+  }
+
   const graph = {
     id: "cloud",
     layoutOptions: {
@@ -319,11 +340,15 @@ export async function layout(model: GraphModel): Promise<Layout> {
     [...model.data, ...model.control].map((n) => [n.id, n])
   );
   const abs = new Map<string, { x: number; y: number }>();
+  const box = new Map<string, { x: number; y: number; w: number; h: number }>();
 
   const walk = (elkNode: any, ox: number, oy: number, parentId?: string) => {
     const x = ox + (elkNode.x ?? 0);
     const y = oy + (elkNode.y ?? 0);
     abs.set(elkNode.id, { x, y });
+    box.set(elkNode.id, {
+      x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0,
+    });
     const isContainer = Array.isArray(elkNode.children) && elkNode.children.length > 0
       && !nodeById.has(elkNode.id);
     // Subnet ids carry a zone suffix (subnet-app-a, subnet-data-b) but the
@@ -367,6 +392,14 @@ export async function layout(model: GraphModel): Promise<Layout> {
   const collectEdges = (elkNode: any, ox: number, oy: number) => {
     const base = abs.get(elkNode.id) ?? { x: ox, y: oy };
     for (const e of elkNode.edges ?? []) {
+      // The tier-ordering chain is a LAYOUT CONSTRAINT, not a relationship. It
+      // connects subnet CONTAINERS to pin public above app above data, and it
+      // must never reach the renderer -- collected like a real edge it drew as
+      // an arrow springing from one container boundary to another, which reads
+      // as an arrowhead floating in open canvas. It also counted as an
+      // attachment (no match in dataEdges), so it slipped past the filter that
+      // drops long branch edges.
+      if (typeof e.id === "string" && e.id.startsWith("tier-")) continue;
       const src = e.sources?.[0];
       const tgt = e.targets?.[0];
       const model_e = model.dataEdges.find(
