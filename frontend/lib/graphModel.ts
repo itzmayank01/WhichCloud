@@ -130,6 +130,11 @@ const CONTROL_TARGETS: Record<string, string[]> = {
 };
 
 export type PlanedNode = TopoNode & {
+  /** Which availability zone this box sits in, when the tier is zone-redundant.
+   *  "b" boxes are the STANDBY half of a Multi-AZ pair -- real infrastructure,
+   *  already covered by the primary's Multi-AZ line item, so they carry no cost
+   *  of their own and must never be summed. */
+  zone?: "a" | "b";
   plane: Plane;
   /** Request-path step number, 1-based; null for branch/unsequenced data nodes
    *  and for every control/account node. */
@@ -233,6 +238,31 @@ const EDGE_SERVICE = new Set(["cdn", "network", "waf", "dns", "tls"]);
  *  request path out of reading order. */
 const OUTSIDE_CLOUD = new Set(["client"]);
 
+/** Tiers that genuinely run a copy in a second zone under Multi-AZ. The RDS
+ *  standby, the cache replica, a search replica, one NAT per zone and compute
+ *  spread across zones -- every one of these is paid for by a line item the
+ *  bill already carries (the ":multi-az" SKU, or a count > 1), so mirroring
+ *  them adds no cost, it just stops the picture claiming a single-zone
+ *  deployment when the bill paid for two. */
+const ZONE_REDUNDANT = new Set([
+  "compute",
+  "compute_fargate",
+  "database",
+  "cache",
+  "search",
+  "nat",
+]);
+
+/** Suffix for the standby half, so the label reads like the architecture. */
+const STANDBY_LABEL: Record<string, string> = {
+  database: "standby",
+  cache: "replica",
+  search: "replica",
+  compute: "zone b",
+  compute_fargate: "zone b",
+  nat: "zone b",
+};
+
 function containerFor(kind: string, hasVpc: boolean): ContainerId {
   if (OUTSIDE_CLOUD.has(kind)) return "outside";
   if (EDGE_SERVICE.has(kind)) return "edge";
@@ -270,6 +300,34 @@ export function buildGraphModel(
     } else {
       pn.container = containerFor(n.kind, hasVpc);
       data.push(pn);
+    }
+  }
+
+  // ── the second availability zone ──
+  // The bill says Multi-AZ; the picture used to say one zone. Detected from the
+  // database line the estimator labels "(Multi-AZ)" -- the same string the bill
+  // shows -- so the two can never disagree about whether a standby was paid for.
+  // Detected from the SKU, not the label. The estimator names the line
+  // "Database (Multi-AZ)" on the bill, but topology.py shortens the node label
+  // to "Database" -- so matching on the label found nothing and the second zone
+  // never appeared. The sku keeps the ":multi-az" suffix the catalog priced.
+  const multiAz = nodes.some((n) => /:multi-az/i.test(n.sku ?? ""));
+  if (multiAz && hasVpc) {
+    for (const n of [...data]) {
+      if (!ZONE_REDUNDANT.has(n.kind)) continue;
+      if (n.container !== "subnet-private" && n.container !== "subnet-public") continue;
+      n.zone = "a";
+      data.push({
+        ...n,
+        id: `${n.id}__b`,
+        label: `${n.label.replace(/\s*\(Multi-AZ\)/i, "")} ${STANDBY_LABEL[n.kind] ?? "zone b"}`,
+        // No cost: the primary's line already paid for this half.
+        monthly_usd: 0,
+        share: 0,
+        priced: false,
+        seq: null,
+        zone: "b",
+      });
     }
   }
 

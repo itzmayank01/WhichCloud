@@ -37,9 +37,9 @@ function serviceIconPath(kind: string): string | null {
 function ContainerNode({ data }: NodeProps) {
   const d = data as { label: string; kind: string; w: number; h: number };
   const vpc = d.kind === "vpc";
-  const az = d.kind === "az";
-  const subnetPublic = d.kind === "subnet-public";
-  const subnetPrivate = d.kind === "subnet-private";
+  const az = d.kind === "az" || d.kind.startsWith("az-");
+  const subnetPublic = d.kind.startsWith("subnet-public");
+  const subnetPrivate = d.kind.startsWith("subnet-private");
   const regional = d.kind === "regional";
   const edge = d.kind === "edge";
   const border = vpc

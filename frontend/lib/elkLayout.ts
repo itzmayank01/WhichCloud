@@ -87,6 +87,8 @@ const CONTAINER_LABEL: Record<string, string> = {
   regional: "Regional services (outside the VPC)",
   vpc: "VPC",
   az: "Availability Zone",
+  "az-a": "Availability Zone ap-south-1a",
+  "az-b": "Availability Zone ap-south-1b",
   "subnet-public": "Public subnet",
   "subnet-private": "Private subnet",
 };
@@ -110,8 +112,9 @@ function parentOf(node: PlanedNode, hasVpc: boolean): string {
   // loose in the region -- see REGIONAL_SERVICE in graphModel.
   if (node.container === "regional") return "regional";
   if (!hasVpc || node.container === "region") return "region";
-  if (node.container === "subnet-public") return "subnet-public";
-  return "subnet-private";
+  const z = node.zone === "b" ? "-b" : "-a";
+  if (node.container === "subnet-public") return `subnet-public${z}`;
+  return `subnet-private${z}`;
 }
 
 export async function layout(model: GraphModel): Promise<Layout> {
@@ -167,38 +170,49 @@ export async function layout(model: GraphModel): Promise<Layout> {
   }
 
   if (hasVpc) {
-    const publicNodes = byParent.get("subnet-public") ?? [];
-    const privateNodes = byParent.get("subnet-private") ?? [];
-    const subnets: ElkChild[] = [];
-    if (publicNodes.length) {
-      subnets.push({
-        id: "subnet-public",
+    // One AZ block per zone, each with the SAME internal order (private app +
+    // data, then public) so the two render as mirrors. Zone b only exists when
+    // the bill paid for a standby -- see the Multi-AZ detection in graphModel.
+    const azBlock = (z: "a" | "b"): ElkChild | null => {
+      const pub = byParent.get(`subnet-public-${z}`) ?? [];
+      const priv = byParent.get(`subnet-private-${z}`) ?? [];
+      const subnets: ElkChild[] = [];
+      if (priv.length) {
+        subnets.push({
+          id: `subnet-private-${z}`,
+          layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
+          labels: [{ text: CONTAINER_LABEL["subnet-private"] }],
+          children: priv.map(serviceChild),
+        });
+      }
+      if (pub.length) {
+        subnets.push({
+          id: `subnet-public-${z}`,
+          layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
+          labels: [{ text: CONTAINER_LABEL["subnet-public"] }],
+          children: pub.map(serviceChild),
+        });
+      }
+      if (!subnets.length) return null;
+      return {
+        id: `az-${z}`,
         layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-        labels: [{ text: CONTAINER_LABEL["subnet-public"] }],
-        children: publicNodes.map(serviceChild),
-      });
-    }
-    if (privateNodes.length) {
-      subnets.push({
-        id: "subnet-private",
-        layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-        labels: [{ text: CONTAINER_LABEL["subnet-private"] }],
-        children: privateNodes.map(serviceChild),
-      });
-    }
-    if (subnets.length) {
+        labels: [{ text: CONTAINER_LABEL[`az-${z}`] }],
+        children: subnets,
+      };
+    };
+    const azs = [azBlock("a"), azBlock("b")].filter(Boolean) as ElkChild[];
+    if (azs.length) {
       regionChildren.push({
         id: "vpc",
-        layoutOptions: { "elk.padding": "[top=34,left=18,bottom=18,right=18]" },
+        layoutOptions: {
+          "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+          // Zones stack, they do not sit side by side -- the reference diagram
+          // reads down through ap-south-1a then 1b.
+          "elk.direction": "DOWN",
+        },
         labels: [{ text: CONTAINER_LABEL["vpc"] }],
-        children: [
-          {
-            id: "az",
-            layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-            labels: [{ text: CONTAINER_LABEL["az"] }],
-            children: subnets,
-          },
-        ],
+        children: azs,
       });
     }
   }
