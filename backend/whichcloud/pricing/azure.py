@@ -1405,6 +1405,45 @@ def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
     return []
 
 
+def fetch_storage_tier_prices(region_key: str) -> list[PricePoint]:
+    """Blob cool and archive tiers -- the targets a lifecycle policy moves to.
+
+    Without these the catalog held only the hot tier, so "move cold data to a
+    cheaper class" could be priced on AWS and nowhere else -- the same
+    single-cloud bias the technique catalog already had.
+    """
+    region = provider_region(region_key, "azure")
+    query = (
+        "serviceName eq 'Storage' "
+        f"and armRegionName eq '{region}' and priceType eq 'Consumption'"
+    )
+    wanted = {"cool": ("blob:cool-lrs", "Blob storage (cool, LRS)", "infrequent"),
+              "archive": ("blob:archive-lrs", "Blob storage (archive, LRS)", "archive")}
+    best: dict[str, tuple] = {}
+    for item in _paged(query, max_pages=12):
+        unit = (item.get("unitOfMeasure") or "").lower()
+        if "gb/month" not in unit and "gb-month" not in unit:
+            continue
+        blob = _blob(item, "skuName", "meterName", "productName")
+        if "lrs" not in blob or "premium" in blob:
+            continue
+        for tier in wanted:
+            if tier not in blob:
+                continue
+            price = _decimal(item.get("retailPrice"))
+            if price is None:
+                continue
+            if tier not in best or price < best[tier][0]:
+                best[tier] = (price, item)
+    out: list[PricePoint] = []
+    for tier, (price, _item) in best.items():
+        sku, name, role = wanted[tier]
+        out.append(PricePoint(provider="azure", category="storage_lifecycle",
+            sku=sku, name=name, region=region, unit="GB-month",
+            price_usd=price, attributes={"tier": tier, "role": role}))
+    return out
+
+
 def fetch_blob_request_prices(region_key: str) -> list[PricePoint]:
     """Blob read and write operations, Azure's answer to S3 requests.
 
@@ -1509,6 +1548,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_waf_prices,
         fetch_lcu_prices,
         fetch_db_storage_prices,
+        fetch_storage_tier_prices,
         fetch_blob_request_prices,
     ):
         try:

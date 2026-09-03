@@ -43,6 +43,11 @@ class ArchitectureSpec:
     database_read_replicas: int = 0
 
     storage_gb: float = 0.0
+    #: Fraction of object storage moved to an infrequent-access class by a
+    #: lifecycle policy. 0.0 = everything stays on the standard class.
+    #: HEURISTIC like the sizing table: most buckets have a cold tail, but how
+    #: cold depends on the workload, so it is one number stated in one place.
+    cold_storage_fraction: float = 0.0
     egress_gb: float = 0.0
     #: Application data crossing an AZ boundary in a Multi-AZ deployment
     #: (app<->database, app<->cache). Billed at ~$0.01/GB per direction --
@@ -328,6 +333,10 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "network", "inter-region"): "transfer:inter-region",
     ("aws", "storage_lifecycle", "archive-instant"): "s3:glacier-instant",
     ("aws", "storage_lifecycle", "infrequent"): "s3:standard-ia",
+    ("azure", "storage_lifecycle", "infrequent"): "blob:cool-lrs",
+    ("azure", "storage_lifecycle", "archive-instant"): "blob:archive-lrs",
+    ("gcp", "storage_lifecycle", "infrequent"): "gcs:nearline",
+    ("gcp", "storage_lifecycle", "archive-instant"): "gcs:archive",
     ("aws", "endpoint", "interface-hour"): "vpce:interface-hour",
     ("aws", "endpoint", "gb-processed"): "vpce:gb-processed",
     ("aws", "endpoint", "gateway"): "vpce:gateway",
@@ -647,7 +656,24 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     if spec.storage_gb > 0:
         point = _preferred(provider, region, "storage", dsn)
         if point:
-            result.items.append(_metered_line("Object storage", point, spec.storage_gb))
+            cold_gb = spec.storage_gb * min(max(spec.cold_storage_fraction, 0.0), 1.0)
+            cold_point = (
+                _by_role(provider, region, "storage_lifecycle", "infrequent", dsn)
+                if cold_gb else None
+            )
+            if cold_point:
+                result.items.append(
+                    _metered_line("Object storage (standard)", point,
+                                  spec.storage_gb - cold_gb)
+                )
+                result.items.append(
+                    _metered_line("Object storage (infrequent access)",
+                                  cold_point, cold_gb)
+                )
+            else:
+                result.items.append(
+                    _metered_line("Object storage", point, spec.storage_gb)
+                )
         else:
             result.missing.append("object storage")
 

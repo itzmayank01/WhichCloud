@@ -35,6 +35,7 @@ KNOWN_EFFECTS = {
     "arch",
     "use_spot",
     "use_commitment",
+    "cold_storage_fraction",
     "database_multi_az",
     "database_arch",
     "compute_duty_cycle",

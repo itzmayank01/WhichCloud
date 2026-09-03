@@ -786,6 +786,35 @@ def fetch_etl_prices(region_key: str) -> list[PricePoint]:
         name="Dataflow batch vCPU time", region=region, unit="DPU-hour", price_usd=price)]
 
 
+def fetch_storage_tier_prices(region_key: str) -> list[PricePoint]:
+    """Nearline and Archive object storage -- lifecycle policy targets."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Storage")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    # GCS names these by LOCATION ("Nearline Storage Mumbai"), with no
+    # "regional" word to match on, so the location map does the work. The
+    # excludes matter: Dual-region and Autoclass are dearer variants, and
+    # "Early Delete" is a penalty rate three orders of magnitude below the
+    # real one -- picking it would have priced cold storage at ~$0.0005/GB.
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    excl = ("autoclass", "hns", "tagging", "dual-region", "multi-region",
+            "durable", "operations", "retrieval", "early delete")
+    out: list[PricePoint] = []
+    for term, sku, name, role in (
+        ("nearline storage", "gcs:nearline", "Nearline storage", "infrequent"),
+        ("archive storage", "gcs:archive", "Archive storage", "archive"),
+    ):
+        price = _loc_rate(skus, region, place, term, exclude=excl)
+        if price is None:
+            continue
+        out.append(PricePoint(provider="gcp", category="storage_lifecycle",
+            sku=sku, name=name, region=region, unit="GB-month",
+            price_usd=price, attributes={"role": role}))
+    return out
+
+
 def fetch_commitment_prices(region_key: str) -> list[PricePoint]:
     """One-year committed-use discounts for Compute Engine.
 
@@ -1347,6 +1376,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_database_prices,
         fetch_db_storage_prices,
         fetch_cdn_prices,
+        fetch_storage_tier_prices,
         fetch_commitment_prices,
         fetch_waf_prices,
         fetch_keyvalue_prices,
