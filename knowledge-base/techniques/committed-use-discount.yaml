@@ -1,0 +1,53 @@
+id: committed-use-discount
+name: Commit to a year of usage (Savings Plan / Reserved / CUD)
+category: compute
+summary: >
+  Commit to a baseline level of compute for one year in exchange for a lower
+  hourly rate. The largest single discount available on a steady workload, and
+  the first thing any cost review applies.
+
+applies_when:
+  workload_type: [web, api, batch, ml, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 100
+  requires:
+    - Workload will still be running in twelve months
+    - Baseline capacity is predictable (commit to the floor, not the peak)
+
+savings:
+  typical_pct: 22
+  confidence: high
+  basis: >
+    MEASURED from the same credential-free feed the on-demand rates come from
+    (instances.vantage.sh), term yrTerm1Savings.noUpfront -- a 1-year Compute
+    Savings Plan with no upfront payment. ap-south-1 examples: t4g.large
+    $0.0324/hr vs $0.0448 on-demand (27.7% off), a1.large $0.0397 vs $0.051
+    (22.2% off). The engine prices the architecture with and against the
+    commitment and reports the measured difference, never this figure.
+
+    Deliberately the CONSERVATIVE term of the two dozen published. No upfront
+    means no cash outlay to model; one year is the commitment a team will
+    actually accept on a workload it has not run yet. Three-year and
+    all-upfront terms save materially more and are noted as further headroom.
+
+tradeoffs:
+  - Locks in twelve months of spend whether or not the workload survives
+  - Commit to the steady floor, not the peak — over-committing wastes more than
+    it saves, and the unused commitment is still billed
+  - Savings Plans keep instance-family freedom; Standard RIs are cheaper still
+    but pin you to a family
+  - Does not apply to spot capacity, which is already discounted further
+
+implemented_by:
+  - name: AWS Cost Explorer — Savings Plans recommendations
+    url: https://docs.aws.amazon.com/cost-management/latest/userguide/ce-sp-recommendations.html
+    type: guide
+
+effect:
+  use_commitment: true
+
+counterfactual:
+  use_commitment: false
+
+providers: [aws]
+obviousness: medium

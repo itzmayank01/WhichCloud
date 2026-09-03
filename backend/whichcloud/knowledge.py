@@ -34,6 +34,7 @@ DEFAULT_KB = Path(__file__).resolve().parents[2] / "knowledge-base" / "technique
 KNOWN_EFFECTS = {
     "arch",
     "use_spot",
+    "use_commitment",
     "database_multi_az",
     "database_arch",
     "compute_duty_cycle",
@@ -221,8 +222,19 @@ def matches(
     if technique.effect.get("arch") == "arm64" and not requirement.arm_compatible:
         return False, ("workload declares an x86-only dependency",)
 
+    if technique.effect.get("use_commitment") and requirement.interruptible:
+        return False, (
+            "work is interruptible, so spot capacity beats committing to a year "
+            "of on-demand baseline",
+        )
+
     if technique.effect.get("use_spot"):
         reasons.append("work is restartable, so reclaimed capacity is survivable")
+    if technique.effect.get("use_commitment"):
+        reasons.append(
+            "steady baseline that will still be running in a year, so a "
+            "one-year commitment is safe to take"
+        )
     if technique.effect.get("arch") == "arm64":
         reasons.append("no x86-only dependencies declared")
 

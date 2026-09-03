@@ -249,6 +249,38 @@ def load_compute_prices(region_key: str, path: Path | None = None) -> list[Price
                 )
             )
 
+        # A 1-year Compute Savings Plan, no upfront. Published in the same
+        # credential-free feed as on-demand, so this is a real rate, not the
+        # "~20-30%" range the planner used to quote as an advisory string.
+        #
+        # WHY THIS TERM, of the two dozen the feed carries: no-upfront means no
+        # cash outlay to model, and one year is the commitment a team will
+        # actually accept on a new workload -- three years buys more but
+        # assumes an architecture nobody has run yet. Standard RIs are cheaper
+        # still and lock you to an instance family; Savings Plans keep the
+        # freedom to resize, which is what this engine keeps recommending.
+        commit = _decimal((linux.get("reserved") or {}).get("yrTerm1Savings.noUpfront"))
+        if commit:
+            points.append(
+                PricePoint(
+                    provider="aws",
+                    category="compute",
+                    sku=f"{inst['instance_type']}:commit1yr",
+                    name=f"{inst['instance_type']} (1-yr Savings Plan)",
+                    region=region,
+                    unit="hour",
+                    price_usd=commit,
+                    vcpu=vcpu,
+                    memory_gb=mem,
+                    arch=arch,
+                    attributes={
+                        "processor": processor,
+                        "purchase": "commit1yr",
+                        "term": "1-year Compute Savings Plan, no upfront",
+                    },
+                )
+            )
+
     return points
 
 
@@ -431,6 +463,32 @@ def _tiers_for(doc: dict, sku: str) -> tuple[tuple[PriceTier, ...], str]:
     return tuple(tiers), unit
 
 
+def _reserved_hourly(doc: dict, sku: str) -> "Decimal | None":
+    """The 1-year, no-upfront, standard Reserved rate for this SKU, per hour.
+
+    Same term chosen as the compute Savings Plan: no cash outlay to model and
+    a commitment length a team will actually accept. AWS publishes the RDS
+    no-upfront reservation as an hourly dimension, so it is directly
+    comparable to the on-demand rate and needs no amortisation.
+    """
+    for offer in (doc.get("terms", {}).get("Reserved", {}).get(sku, {}) or {}).values():
+        attrs = offer.get("termAttributes", {})
+        if attrs.get("LeaseContractLength") != "1yr":
+            continue
+        if attrs.get("PurchaseOption") != "No Upfront":
+            continue
+        if attrs.get("OfferingClass") != "standard":
+            continue
+        for dim in (offer.get("priceDimensions", {}) or {}).values():
+            # Skip the $0 upfront-fee dimension that rides alongside the rate.
+            if dim.get("unit") not in ("Hrs", "Hours"):
+                continue
+            price = _decimal((dim.get("pricePerUnit") or {}).get("USD"))
+            if price:
+                return price
+    return None
+
+
 def load_database_prices(region_key: str) -> list[PricePoint]:
     """RDS PostgreSQL instances, both Single-AZ and Multi-AZ.
 
@@ -473,6 +531,32 @@ def load_database_prices(region_key: str) -> list[PricePoint]:
                 attributes={"engine": "postgresql", "deployment": deployment},
             )
         )
+
+        # The same instance on a 1-year reservation. The database is the
+        # largest line on most bills here, so this is where a commitment
+        # actually moves the number -- compute alone barely registers.
+        reserved = _reserved_hourly(doc, sku)
+        if reserved:
+            points.append(
+                PricePoint(
+                    provider="aws",
+                    category="database",
+                    sku=f"{instance}{suffix}:commit1yr",
+                    name=f"{instance} PostgreSQL {deployment} (1-yr reserved)",
+                    region=region,
+                    unit=_UNITS.get(unit, unit),
+                    price_usd=reserved,
+                    vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
+                    memory_gb=_memory_gb(attrs.get("memory")),
+                    arch=_arch_of(instance),
+                    attributes={
+                        "engine": "postgresql",
+                        "deployment": deployment,
+                        "purchase": "commit1yr",
+                        "term": "1-year Reserved Instance, no upfront, standard",
+                    },
+                )
+            )
     return points
 
 

@@ -232,6 +232,10 @@ class ArchitectureSpec:
     # Spot capacity can be reclaimed at short notice, so it is opt-in and only
     # ever appropriate for interruptible work.
     use_spot: bool = False
+    #: Price compute against a 1-year commitment (AWS Compute Savings Plan)
+    #: instead of on-demand. The largest single lever on a real bill, and the
+    #: one the planner previously could only mention as an advisory range.
+    use_commitment: bool = False
 
     # Fraction of the month compute actually runs. 1.0 = always on. Scale-to-
     # zero lowers this. The hourly RATE stays real; only the hours change.
@@ -532,7 +536,13 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             region=spec.region,
             arch=spec.arch,
         )
-        purchase = "spot" if spec.use_spot else "ondemand"
+        # Spot wins over a commitment when both are set: you cannot buy a
+        # Savings Plan for capacity you are already getting at spot rates.
+        purchase = (
+            "spot" if spec.use_spot
+            else "commit1yr" if spec.use_commitment
+            else "ondemand"
+        )
         point = store.cheapest_compute(
             query, provider=provider, purchase=purchase, dsn=dsn
         )
@@ -540,6 +550,8 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             label = f"Compute × {spec.compute_count}"
             if spec.use_spot:
                 label += " (spot)"
+            elif spec.use_commitment:
+                label += " (1-yr commitment)"
             result.items.append(
                 _hourly_line(
                     label, point, spec.compute_count, spec.compute_duty_cycle
@@ -561,10 +573,23 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.database_memory_gb or 0.0,
             multi_az=spec.database_multi_az,
             arch=spec.database_arch,
+            commitment=spec.use_commitment,
             dsn=dsn,
         )
+        # A committed rate only exists for some families; fall back to
+        # on-demand rather than reporting the database missing.
+        if not point and spec.use_commitment:
+            point = store.cheapest_database(
+                provider=provider, region=region,
+                min_vcpu=spec.database_vcpu,
+                min_memory_gb=spec.database_memory_gb or 0.0,
+                multi_az=spec.database_multi_az, arch=spec.database_arch,
+                commitment=False, dsn=dsn,
+            )
         if point:
             label = "Database" + (" (Multi-AZ)" if spec.database_multi_az else "")
+            if spec.use_commitment and point.sku.endswith(":commit1yr"):
+                label += " (1-yr reserved)"
             result.items.append(_hourly_line(label, point, 1))
         else:
             result.missing.append(
@@ -591,9 +616,22 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     min_memory_gb=spec.database_memory_gb or 0.0,
                     multi_az=False,
                     arch=spec.database_arch,
+                    commitment=spec.use_commitment,
                     dsn=dsn,
                 )
             )
+            # Replicas run around the clock exactly as the primary does, so a
+            # commitment covers them too. Leaving them on-demand priced a
+            # reserved primary beside a full-price replica -- the replica line
+            # came out DEARER than the database it copies.
+            if not replica_point and spec.use_commitment:
+                replica_point = store.cheapest_database(
+                    provider=provider, region=region,
+                    min_vcpu=spec.database_vcpu,
+                    min_memory_gb=spec.database_memory_gb or 0.0,
+                    multi_az=False, arch=spec.database_arch,
+                    commitment=False, dsn=dsn,
+                )
             if replica_point:
                 label = f"Database read replica × {spec.database_read_replicas}"
                 result.items.append(
