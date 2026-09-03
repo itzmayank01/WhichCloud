@@ -90,7 +90,8 @@ const CONTAINER_LABEL: Record<string, string> = {
   "az-a": "Availability Zone ap-south-1a",
   "az-b": "Availability Zone ap-south-1b",
   "subnet-public": "Public subnet",
-  "subnet-private": "Private subnet",
+  "subnet-app": "App subnet",
+  "subnet-data": "Data subnet",
 };
 
 type ElkChild = {
@@ -114,7 +115,8 @@ function parentOf(node: PlanedNode, hasVpc: boolean): string {
   if (!hasVpc || node.container === "region") return "region";
   const z = node.zone === "b" ? "-b" : "-a";
   if (node.container === "subnet-public") return `subnet-public${z}`;
-  return `subnet-private${z}`;
+  if (node.container === "subnet-app") return `subnet-app${z}`;
+  return `subnet-data${z}`;
 }
 
 export async function layout(model: GraphModel): Promise<Layout> {
@@ -174,29 +176,38 @@ export async function layout(model: GraphModel): Promise<Layout> {
     // data, then public) so the two render as mirrors. Zone b only exists when
     // the bill paid for a standby -- see the Multi-AZ detection in graphModel.
     const azBlock = (z: "a" | "b"): ElkChild | null => {
-      const pub = byParent.get(`subnet-public-${z}`) ?? [];
-      const priv = byParent.get(`subnet-private-${z}`) ?? [];
+      // Rows in tier order: public at the top, then app, then data -- the way
+      // both AWS reference diagrams stack them, so the rows read as tiers and
+      // line up across the two zones.
+      const rows: Array<[string, string]> = [
+        [`subnet-public-${z}`, "subnet-public"],
+        [`subnet-app-${z}`, "subnet-app"],
+        [`subnet-data-${z}`, "subnet-data"],
+      ];
       const subnets: ElkChild[] = [];
-      if (priv.length) {
+      for (const [id, labelKey] of rows) {
+        const members = byParent.get(id) ?? [];
+        if (!members.length) continue;
         subnets.push({
-          id: `subnet-private-${z}`,
-          layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-          labels: [{ text: CONTAINER_LABEL["subnet-private"] }],
-          children: priv.map(serviceChild),
-        });
-      }
-      if (pub.length) {
-        subnets.push({
-          id: `subnet-public-${z}`,
-          layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
-          labels: [{ text: CONTAINER_LABEL["subnet-public"] }],
-          children: pub.map(serviceChild),
+          id,
+          layoutOptions: {
+            "elk.padding": "[top=34,left=16,bottom=16,right=16]",
+            // Members of a tier sit side by side, not stacked.
+            "elk.direction": "RIGHT",
+            "elk.spacing.nodeNode": "28",
+          },
+          labels: [{ text: CONTAINER_LABEL[labelKey] }],
+          children: members.map(serviceChild),
         });
       }
       if (!subnets.length) return null;
       return {
         id: `az-${z}`,
-        layoutOptions: { "elk.padding": "[top=34,left=16,bottom=16,right=16]" },
+        layoutOptions: {
+          "elk.padding": "[top=34,left=16,bottom=16,right=16]",
+          // Tiers stack DOWN inside a zone.
+          "elk.direction": "DOWN",
+        },
         labels: [{ text: CONTAINER_LABEL[`az-${z}`] }],
         children: subnets,
       };
@@ -207,9 +218,9 @@ export async function layout(model: GraphModel): Promise<Layout> {
         id: "vpc",
         layoutOptions: {
           "elk.padding": "[top=34,left=18,bottom=18,right=18]",
-          // Zones stack, they do not sit side by side -- the reference diagram
-          // reads down through ap-south-1a then 1b.
-          "elk.direction": "DOWN",
+          // Zones sit SIDE BY SIDE as columns, tiers run as rows across them --
+          // the grid both reference diagrams use.
+          "elk.direction": "RIGHT",
         },
         labels: [{ text: CONTAINER_LABEL["vpc"] }],
         children: azs,
@@ -269,6 +280,21 @@ export async function layout(model: GraphModel): Promise<Layout> {
       },
     ],
     edges: [
+      // TIER ORDER. ELK ranks a container's children by the edges between them,
+      // and the priced estimate has no edge that says "public sits above app".
+      // Left to itself it ordered the rows differently in each zone -- 1b came
+      // out data/public/app while 1a came out public/data/app, so the two zones
+      // did not read as mirrors. One invisible chain per zone pins the order to
+      // public -> app -> data, the way both reference diagrams stack them.
+      ...(["a", "b"] as const).flatMap((z) => {
+        const chain = [`subnet-public-${z}`, `subnet-app-${z}`, `subnet-data-${z}`]
+          .filter((id) => (byParent.get(id) ?? []).length);
+        return chain.slice(1).map((target, i) => ({
+          id: `tier-${z}-${i}`,
+          sources: [chain[i]],
+          targets: [target],
+        }));
+      }),
       ...model.dataEdges.map((e, i) => ({
         id: `e${i}`,
         sources: [e.source],
@@ -300,11 +326,19 @@ export async function layout(model: GraphModel): Promise<Layout> {
     abs.set(elkNode.id, { x, y });
     const isContainer = Array.isArray(elkNode.children) && elkNode.children.length > 0
       && !nodeById.has(elkNode.id);
-    if (isContainer && elkNode.id in CONTAINER_LABEL) {
+    // Subnet ids carry a zone suffix (subnet-app-a, subnet-data-b) but the
+    // label table is keyed unsuffixed -- looked up raw, every subnet box failed
+    // the lookup and was silently dropped from the render, which is why the
+    // tier rows never appeared even though ELK had laid them out.
+    const labelKey =
+      elkNode.id in CONTAINER_LABEL
+        ? elkNode.id
+        : elkNode.id.replace(/-[ab]$/, "");
+    if (isContainer && labelKey in CONTAINER_LABEL) {
       containers.push({
         id: elkNode.id,
         kind: elkNode.id as ContainerId,
-        label: CONTAINER_LABEL[elkNode.id],
+        label: CONTAINER_LABEL[labelKey],
         x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0,
         parentId,
       });

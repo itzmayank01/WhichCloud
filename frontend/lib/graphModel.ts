@@ -154,7 +154,8 @@ export type ContainerId =
   | "vpc"
   | "az"
   | "subnet-public"
-  | "subnet-private"
+  | "subnet-app"
+  | "subnet-data"
   | null;
 
 export type DataEdge = {
@@ -196,6 +197,15 @@ const VPC_RESIDENT = new Set([
 
 /** Public-subnet kinds face the internet; the rest sit private. */
 const PUBLIC_SUBNET = new Set(["loadbalancer", "nat"]);
+
+/** The application tier. Everything else VPC-resident is data.
+ *
+ *  One "Private subnet" holding compute, database, cache, search, warehouse and
+ *  Kafka together is what made the canvas look scattered: with no tier
+ *  structure, ELK placed nine unlike boxes wherever the edges pulled them.
+ *  Reference AWS diagrams split it -- Web/App subnet then DB subnet -- so the
+ *  rows read as tiers and line up across zones. */
+const APP_SUBNET = new Set(["compute", "compute_fargate"]);
 
 /** Managed services that are real, addressable infrastructure but sit OUTSIDE
  *  the VPC -- object storage, queues, managed AI, the data lake.
@@ -269,7 +279,8 @@ function containerFor(kind: string, hasVpc: boolean): ContainerId {
   if (REGIONAL_SERVICE.has(kind)) return "regional";
   if (!hasVpc) return "region";
   if (!VPC_RESIDENT.has(kind)) return "region";
-  return PUBLIC_SUBNET.has(kind) ? "subnet-public" : "subnet-private";
+  if (PUBLIC_SUBNET.has(kind)) return "subnet-public";
+  return APP_SUBNET.has(kind) ? "subnet-app" : "subnet-data";
 }
 
 /**
@@ -315,7 +326,7 @@ export function buildGraphModel(
   if (multiAz && hasVpc) {
     for (const n of [...data]) {
       if (!ZONE_REDUNDANT.has(n.kind)) continue;
-      if (n.container !== "subnet-private" && n.container !== "subnet-public") continue;
+      if (n.container !== "subnet-app" && n.container !== "subnet-data" && n.container !== "subnet-public") continue;
       n.zone = "a";
       data.push({
         ...n,

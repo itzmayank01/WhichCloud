@@ -39,7 +39,7 @@ function ContainerNode({ data }: NodeProps) {
   const vpc = d.kind === "vpc";
   const az = d.kind === "az" || d.kind.startsWith("az-");
   const subnetPublic = d.kind.startsWith("subnet-public");
-  const subnetPrivate = d.kind.startsWith("subnet-private");
+  const subnetPrivate = d.kind.startsWith("subnet-app") || d.kind.startsWith("subnet-data");
   const regional = d.kind === "regional";
   const edge = d.kind === "edge";
   const border = vpc
