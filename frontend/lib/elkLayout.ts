@@ -22,7 +22,7 @@ import type { GraphModel, PlanedNode, ContainerId } from "@/lib/graphModel";
 const elk = new ELK();
 
 export const NODE_W = 200;
-export const NODE_H = 88;
+export const NODE_H = 92;
 const CONTROL_W = 150;
 const CONTROL_H = 58;
 const ACCOUNT_H = 64;

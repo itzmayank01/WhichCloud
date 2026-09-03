@@ -72,7 +72,7 @@ function ContainerNode({ data }: NodeProps) {
       style={{ width: d.w, height: d.h }}
     >
       <span
-        className={`absolute left-2 top-1 text-[10px] font-semibold uppercase tracking-wide ${
+        className={`absolute left-2 top-1.5 rounded bg-surface/85 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide shadow-sm ring-1 ring-black/5 ${
           vpc ? "text-emerald-600" : az ? "text-sky-600" : subnetPublic ? "text-teal-600" : subnetPrivate ? "text-indigo-500" : regional ? "text-violet-500" : edge ? "text-amber-600" : "text-ink-3"
         }`}
       >
@@ -94,14 +94,14 @@ function ServiceNode({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-sunk">
+      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-sunk">
         {icon ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={icon} alt="" className="h-7 w-7 object-contain" />
+          <img src={icon} alt="" className="h-9 w-9 object-contain" />
         ) : d.kind === "client" ? (
-          <Icon icon="mdi:account-group" className="h-6 w-6 text-ink-2" />
+          <Icon icon="mdi:account-group" className="h-7 w-7 text-ink-2" />
         ) : (
-          <Icon icon="mdi:cube-outline" className="h-6 w-6 text-ink-3" />
+          <Icon icon="mdi:cube-outline" className="h-7 w-7 text-ink-3" />
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -112,7 +112,7 @@ function ServiceNode({ data }: NodeProps) {
           {roleFor(d.kind)}
         </div>
       </div>
-      <div className="shrink-0 self-start font-mono text-[11px] font-semibold tabular-nums text-ink-2">
+      <div className="shrink-0 self-start rounded-md bg-sunk px-1.5 py-0.5 font-mono text-[10.5px] font-semibold tabular-nums text-ink-2">
         {money(d.monthly_usd)}
       </div>
       {d.seq != null && (
@@ -216,6 +216,18 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
   };
   const path = roundedPath(d.points, d.attach ? 0 : 8);
   const anchor = labelAnchor(d.points);
+  // A label only helps where it lands NEAR the things it describes. On a
+  // long-haul route -- CDN reaching object storage, the app reaching the
+  // stream -- ELK parks the midpoint out in open canvas, and a dozen of those
+  // become a band of stray words with nothing to attach them to. Measure the
+  // routed length and drop the label past the point where it stops being
+  // legible in context; the edge itself still draws.
+  const routeLength = d.points.reduce(
+    (sum, pt, i) =>
+      i === 0 ? 0 : sum + Math.hypot(pt.x - d.points[i - 1].x, pt.y - d.points[i - 1].y),
+    0
+  );
+  const showLabel = Boolean(d.label) && routeLength < 420;
   const animate = d.onPath && d.playing && !d.reduced;
   return (
     <>
@@ -241,7 +253,7 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
           style={{ animation: "wc-flow 2.2s linear infinite" }}
         />
       )}
-      {d.label && (
+      {showLabel && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded bg-surface/95 px-1.5 py-px text-[9.5px] font-medium text-ink-3 shadow-sm ring-1 ring-line"
