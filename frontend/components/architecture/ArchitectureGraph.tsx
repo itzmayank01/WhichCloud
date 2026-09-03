@@ -220,6 +220,14 @@ function AccountNode({ data }: NodeProps) {
   );
 }
 
+/* The ONLY fit options in this file. Every fit -- the one React Flow runs on
+   mount and the one the resize observer runs -- uses these, so no two fits can
+   land the diagram at different zooms. Padding is tight because the pane is
+   already a small share of the workspace and margin is the one thing it cannot
+   afford. No duration: an animated fit that gets superseded reads as the
+   diagram lurching about. */
+const FIT_OPTS = { padding: 0.06, maxZoom: 1.4, minZoom: 0.04 } as const;
+
 /* Edge ink, by what the edge means. Four weights, straight off the AWS
    reference diagrams: the live request path is the darkest and heaviest
    because it IS the architecture; a branch call is the same grey but lighter;
@@ -456,42 +464,47 @@ function Inner({
     return { rfNodes, rfEdges };
   }, [laid, playing, reduced]);
 
-  // Fit once the nodes are actually in the store and measured. Running this on
-  // rAF at mount fit an empty graph; a short settle after the node set changes
-  // frames the whole diagram reliably.
+  // ONE fit path, one set of options. There used to be six -- the fitView
+  // prop, two onInit timers, three settle timers and a ResizeObserver -- and
+  // they disagreed with each other: padding 0.1 against 0.12, minZoom 0.05
+  // against 0.15. Each settled at a different zoom, so opening the diagram set
+  // off a second or two of visible zooming in and out as they took turns
+  // overriding one another. They also each animated, which restarted the
+  // animation mid-flight.
   useEffect(() => {
     if (!rfNodes.length) return;
-    // Fit after the container/service nodes have measured. Two settles: the
-    // first frames the graph, the second corrects once large container boxes
-    // have reported their size so the whole height (account band included) fits.
-    const fit = () =>
-      rf.fitView({ padding: 0.12, duration: 400, maxZoom: 1.2, minZoom: 0.15 });
-    // Three settles, not two. The layout now runs ELK twice (once per
-    // direction) before nodes exist, and container boxes report their size a
-    // frame after that -- so a fit at 160ms framed an empty graph and a fit at
-    // 520ms framed a partly-measured one. The last settle is what the full-page
-    // overlay actually lands on, and it has to outlast both layouts.
-    const t1 = setTimeout(fit, 200);
-    const t2 = setTimeout(fit, 700);
-    const t3 = setTimeout(fit, 1400);
-    // Re-fit whenever THIS instance's container changes size -- which is how
-    // the full-page overlay gets fitted correctly. Two instances are mounted
-    // (collapsed pane and overlay), so a document-wide querySelector matched
-    // the collapsed one and the overlay fitted to a stale size, opening
-    // zoomed in with the diagram running off the edge. Scope it to our own
-    // element via a ref, and let the observer -- not a fixed timeout -- be
-    // what tells us the surface has finished resizing.
-    let raf = 0;
-    const ro = new ResizeObserver(() => {
-      window.clearTimeout(raf);
-      raf = window.setTimeout(fit, 150);
-    });
-    if (hostRef.current) ro.observe(hostRef.current);
+    const host = hostRef.current;
+    if (!host) return;
+
+    let lastSig = "";
+    let timer = 0;
+    const fit = () => {
+      const r = host.getBoundingClientRect();
+      // A hidden or not-yet-laid-out surface has no size to fit to; fitting
+      // against it is what framed an empty graph and forced the later
+      // corrective re-fits that the eye read as flicker.
+      if (r.width < 2 || r.height < 2) return;
+      // Re-fit only when something that CHANGES the fit changed. Firing on
+      // every observer callback let each fit's own animation resize the
+      // surface, notify the observer, and start the next one -- a loop that
+      // never settled.
+      const sig = `${Math.round(r.width)}x${Math.round(r.height)}:${rfNodes.length}`;
+      if (sig === lastSig) return;
+      lastSig = sig;
+      rf.fitView(FIT_OPTS);
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(fit, 120);
+    };
+    schedule();
+    // The observer is what fits the full-page overlay: its host goes from zero
+    // to full size on open, which is the only reliable signal that the surface
+    // is real and measured.
+    const ro = new ResizeObserver(schedule);
+    ro.observe(host);
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      window.clearTimeout(raf);
+      window.clearTimeout(timer);
       ro.disconnect();
     };
   }, [rfNodes, rf]);
@@ -504,28 +517,13 @@ function Inner({
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       fitView
-      fitViewOptions={{ padding: 0.12 }}
+      fitViewOptions={FIT_OPTS}
       minZoom={0.1}
       maxZoom={2.5}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable
       onPaneClick={onPaneClick}
-      // onInit fires once React Flow has measured its own container, which is
-      // the only moment we can be sure the surface has real dimensions. The
-      // timer-based settles were firing against a container React Flow had not
-      // measured yet, so the overlay opened at whatever zoom the instance
-      // started with instead of a fitted one.
-      onInit={(inst) => {
-        window.setTimeout(
-          () => inst.fitView({ padding: 0.1, maxZoom: 1.2, minZoom: 0.05 }),
-          400
-        );
-        window.setTimeout(
-          () => inst.fitView({ padding: 0.1, maxZoom: 1.2, minZoom: 0.05 }),
-          1200
-        );
-      }}
       proOptions={{ hideAttribution: true }}
       className="bg-white"
       style={{ cursor: onPaneClick ? "zoom-in" : undefined }}
@@ -544,6 +542,15 @@ export function ArchitectureGraph(props: {
   /** Rendered at the top of the overlay so tiers can be compared without
    *  leaving full-page view. */
   overlayHeader?: React.ReactNode;
+  /** Rendered at the bottom of the overlay: replay, Terraform, service count.
+   *  The same controls the pane has, so going full-page gives up nothing. */
+  overlayFooter?: React.ReactNode;
+  /** Remounts the DIAGRAM when it changes (switching tier, pressing replay) so
+   *  the build animation restarts from scratch. It deliberately does NOT key
+   *  this component: keying the whole thing tore down the expanded state with
+   *  it, so picking a different tier from inside the overlay closed the
+   *  overlay instead of redrawing in place. */
+  graphKey?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -559,7 +566,7 @@ export function ArchitectureGraph(props: {
   }, [expanded]);
 
   const graph = (inOverlay: boolean) => (
-    <ReactFlowProvider>
+    <ReactFlowProvider key={`${inOverlay ? "overlay" : "pane"}-${props.graphKey ?? ""}`}>
       <Inner
         nodes={props.nodes}
         edges={props.edges}
@@ -580,10 +587,18 @@ export function ArchitectureGraph(props: {
           the collapsed one also halves the ELK work when expanding. */}
       {!expanded && graph(false)}
 
+      {/* A hint that does nothing when clicked is a trap -- it reads as the
+          button for the thing it is describing. It IS that button now. */}
       {!expanded && (
-        <div className="pointer-events-none absolute bottom-3 right-3 rounded-md border border-line bg-surface/95 px-2 py-1 text-[11px] font-medium text-ink-3 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          title="Open the diagram full page"
+          className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-md border border-line bg-surface/95 px-2 py-1 text-[11px] font-medium text-ink-2 opacity-0 shadow-sm transition-opacity hover:bg-sunk focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group-hover:opacity-100"
+        >
+          <Icon icon="mdi:arrow-expand-all" className="h-3.5 w-3.5" />
           Click to expand
-        </div>
+        </button>
       )}
 
       {expanded && (
@@ -601,7 +616,12 @@ export function ArchitectureGraph(props: {
           >
             <Icon icon="mdi:close" className="h-5 w-5" />
           </button>
-          <div className="h-full w-full" key="overlay-graph">{graph(true)}</div>
+          <div className="h-full w-full">{graph(true)}</div>
+          {props.overlayFooter && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center p-4">
+              <div className="pointer-events-auto">{props.overlayFooter}</div>
+            </div>
+          )}
         </div>
       )}
     </div>
