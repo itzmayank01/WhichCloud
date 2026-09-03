@@ -934,6 +934,47 @@ _AZURE_FRONTDOOR_ZONE = {
 _COSMOS_RU_PER_WRITE = 5
 
 
+def fetch_search_prices(region_key: str) -> list[PricePoint]:
+    """Azure AI Search, billed per SEARCH UNIT-hour rather than per sized node.
+
+    OpenSearch sells vCPU/RAM nodes; Azure AI Search sells capacity units at
+    fixed tiers, and the feed publishes no vCPU or RAM per unit. Rather than
+    invent specs so the node-spec lookup matches, this is published in its own
+    category and the estimator prices units against the requested node count.
+    Standard S1 is the honest production default -- Basic caps at low storage
+    and small index counts, the way DEFAULT_SKUS names a sensible default
+    rather than the cheapest row.
+    """
+    region = provider_region(region_key, "azure")
+    # The product was renamed to "Azure AI Search" but the retail feed still
+    # publishes its unit meters under the legacy "Azure Cognitive Search"
+    # serviceName in most regions, so both are queried.
+    items = []
+    for service in ("Azure Cognitive Search", "Azure AI Search"):
+        items = list(_paged(
+            f"serviceName eq '{service}' and priceType eq 'Consumption' "
+            f"and armRegionName eq '{region}'", max_pages=6
+        ))
+        if items:
+            break
+    for item in items:
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        # Exactly the S1 unit meter -- not "S1 CC Unit" (confidential compute,
+        # ~45% dearer) and not the semantic-ranker / image-extraction add-ons.
+        if item.get("meterName") != "Standard S1 Unit":
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        return [PricePoint(
+            provider="azure", category="search_unit", sku="aisearch:s1-unit",
+            name="Azure AI Search unit (Standard S1)", region=region,
+            unit="hour", price_usd=price, attributes={"tier": "standard-s1"},
+        )]
+    return []
+
+
 def fetch_keyvalue_prices(region_key: str) -> list[PricePoint]:
     """Azure Cosmos DB serverless -- the DynamoDB-equivalent key-value store.
 
@@ -1141,6 +1182,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_egress_prices,
         fetch_cdn_prices,
         fetch_keyvalue_prices,
+        fetch_search_prices,
         fetch_cache_prices,
         fetch_monitoring_prices,
         fetch_loadbalancer_prices,

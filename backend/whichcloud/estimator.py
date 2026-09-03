@@ -1078,14 +1078,31 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.search_node_memory_gb or 0.0,
             dsn=dsn,
         )
+        # Azure AI Search sells capacity UNITS at fixed tiers, with no vCPU or
+        # RAM published per unit, so the node-spec lookup above finds nothing.
+        # Price one search unit per requested node instead -- the closest
+        # like-for-like the two models allow, and a real published rate.
+        unit = (
+            None if point
+            else store.get_price(provider, region, "search_unit", "aisearch:s1-unit", dsn=dsn)
+        )
         if point:
             result.items.append(
                 _hourly_line(
                     f"Search nodes \u00d7 {spec.search_node_count}", point, spec.search_node_count
                 )
             )
+        elif unit:
+            result.items.append(
+                _hourly_line(
+                    f"Search units \u00d7 {spec.search_node_count}", unit, spec.search_node_count
+                )
+            )
         else:
-            result.missing.append("search node")
+            # Names the capability, not a product: GCP sells no first-party
+            # managed search cluster (Elastic on GCP is a marketplace product),
+            # so this is a real absence rather than an unmapped SKU.
+            result.missing.append("managed search cluster")
 
         if spec.search_storage_gb:
             volume = store.get_price(
@@ -1095,8 +1112,12 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 result.items.append(
                     _metered_line("Search storage", volume, spec.search_storage_gb)
                 )
+            elif unit:
+                # An AI Search unit includes its own storage allowance; there is
+                # no separate per-GB meter to add, so this is not a gap.
+                pass
             else:
-                result.missing.append("search storage")
+                result.missing.append("managed search storage")
 
     # ---- data warehouse (Redshift) ----
     if spec.warehouse_node_count:
