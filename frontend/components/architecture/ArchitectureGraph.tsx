@@ -40,6 +40,8 @@ function ContainerNode({ data }: NodeProps) {
   const az = d.kind === "az";
   const subnetPublic = d.kind === "subnet-public";
   const subnetPrivate = d.kind === "subnet-private";
+  const regional = d.kind === "regional";
+  const edge = d.kind === "edge";
   const border = vpc
     ? "border-emerald-500/60"
     : az
@@ -48,11 +50,19 @@ function ContainerNode({ data }: NodeProps) {
     ? "border-teal-400/40 border-dashed"
     : subnetPrivate
     ? "border-indigo-400/40 border-dashed"
+    : regional
+    ? "border-violet-400/45 border-dashed"
+    : edge
+    ? "border-amber-400/50 border-dashed"
     : "border-line-strong";
   const tint = subnetPublic
     ? "bg-teal-400/[0.04]"
     : subnetPrivate
     ? "bg-indigo-400/[0.05]"
+    : regional
+    ? "bg-violet-400/[0.05]"
+    : edge
+    ? "bg-amber-400/[0.06]"
     : vpc
     ? "bg-emerald-500/[0.02]"
     : "bg-black/[0.02]";
@@ -63,7 +73,7 @@ function ContainerNode({ data }: NodeProps) {
     >
       <span
         className={`absolute left-2 top-1 text-[10px] font-semibold uppercase tracking-wide ${
-          vpc ? "text-emerald-600" : az ? "text-sky-600" : subnetPublic ? "text-teal-600" : subnetPrivate ? "text-indigo-500" : "text-ink-3"
+          vpc ? "text-emerald-600" : az ? "text-sky-600" : subnetPublic ? "text-teal-600" : subnetPrivate ? "text-indigo-500" : regional ? "text-violet-500" : edge ? "text-amber-600" : "text-ink-3"
         }`}
       >
         {d.label}

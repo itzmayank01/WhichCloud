@@ -82,7 +82,9 @@ export type Layout = {
 
 const CONTAINER_LABEL: Record<string, string> = {
   cloud: "AWS Cloud",
+  edge: "Edge / global services",
   region: "Region",
+  regional: "Regional services (outside the VPC)",
   vpc: "VPC",
   az: "Availability Zone",
   "subnet-public": "Public subnet",
@@ -102,6 +104,10 @@ type ElkChild = {
  *  Non-VPC nodes hang directly under the region; VPC-resident ones nest into
  *  the public or private subnet inside the single AZ. */
 function parentOf(node: PlanedNode, hasVpc: boolean): string {
+  if (node.container === "edge") return "edge";
+  // Managed services outside the VPC get their own strip rather than floating
+  // loose in the region -- see REGIONAL_SERVICE in graphModel.
+  if (node.container === "regional") return "regional";
   if (!hasVpc || node.container === "region") return "region";
   if (node.container === "subnet-public") return "subnet-public";
   return "subnet-private";
@@ -139,6 +145,24 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // Build the container hierarchy, omitting any container that would be empty
   // (an AZ or subnet with nothing in it must not be drawn).
   const regionChildren: ElkChild[] = (byParent.get("region") ?? []).map(serviceChild);
+
+  const edgeNodes = byParent.get("edge") ?? [];
+  const regionalNodes = byParent.get("regional") ?? [];
+  if (regionalNodes.length) {
+    regionChildren.push({
+      id: "regional",
+      layoutOptions: {
+        "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+        // Lay this strip out as a ROW. Left to itself ELK stacks it along the
+        // parent's DOWN axis, which turned six managed services into a tall
+        // column beside a wide VPC and doubled the canvas height.
+        "elk.direction": "RIGHT",
+        "elk.spacing.nodeNode": "34",
+      },
+      labels: [{ text: CONTAINER_LABEL["regional"] }],
+      children: regionalNodes.map(serviceChild),
+    });
+  }
 
   if (hasVpc) {
     const publicNodes = byParent.get("subnet-public") ?? [];
@@ -185,10 +209,10 @@ export async function layout(model: GraphModel): Promise<Layout> {
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "92",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "40",
-      "elk.spacing.nodeNode": "60",
-      "elk.spacing.edgeNode": "40",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "28",
+      "elk.spacing.nodeNode": "40",
+      "elk.spacing.edgeNode": "28",
       "elk.spacing.edgeEdge": "22",
       "elk.padding": "[top=40,left=24,bottom=24,right=24]",
       // Keep skip-layer edges (e.g. CDN → S3 past the app tier) clear of the
@@ -200,6 +224,18 @@ export async function layout(model: GraphModel): Promise<Layout> {
     },
     labels: [{ text: CONTAINER_LABEL["cloud"] }],
     children: [
+      ...(edgeNodes.length
+        ? [{
+            id: "edge",
+            layoutOptions: {
+              "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+              "elk.direction": "RIGHT",
+              "elk.spacing.nodeNode": "34",
+            },
+            labels: [{ text: CONTAINER_LABEL["edge"] }],
+            children: edgeNodes.map(serviceChild),
+          }]
+        : []),
       {
         id: "region",
         layoutOptions: { "elk.padding": "[top=34,left=18,bottom=18,right=18]" },

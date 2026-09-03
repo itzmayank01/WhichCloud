@@ -142,7 +142,9 @@ export type PlanedNode = TopoNode & {
 
 export type ContainerId =
   | "cloud"
+  | "edge"
   | "region"
+  | "regional"
   | "vpc"
   | "az"
   | "subnet-public"
@@ -189,7 +191,44 @@ const VPC_RESIDENT = new Set([
 /** Public-subnet kinds face the internet; the rest sit private. */
 const PUBLIC_SUBNET = new Set(["loadbalancer", "nat"]);
 
+/** Managed services that are real, addressable infrastructure but sit OUTSIDE
+ *  the VPC -- object storage, queues, managed AI, the data lake.
+ *
+ *  These used to fall through to the bare region, where ELK scattered them as
+ *  loose boxes around the VPC with long edges reaching back in. Grouping them
+ *  into one labelled strip is what the reference AWS diagrams do, and it is the
+ *  single biggest difference between this canvas and a hand-drawn one. */
+const REGIONAL_SERVICE = new Set([
+  "storage",
+  "dynamodb",
+  "queue",
+  "notification",
+  "email",
+  "auth",
+  "cdn",
+  "streaming",
+  "firehose",
+  "timeseries",
+  "ai",
+  "rekognition",
+  "comprehend",
+  "query",
+  "etl",
+  "backup",
+  "lambda",
+  "apigateway",
+]);
+
+/** Genuinely GLOBAL services. CloudFront, WAF, Route 53 and ACM are not
+ *  regional infrastructure, and drawing them inside the region box says they
+ *  are -- the reference AWS diagrams always put them outside it. Doing so also
+ *  removes the long edges that used to run from the top-right of the region all
+ *  the way down into the VPC. */
+const EDGE_SERVICE = new Set(["cdn", "waf", "dns", "tls"]);
+
 function containerFor(kind: string, hasVpc: boolean): ContainerId {
+  if (EDGE_SERVICE.has(kind)) return "edge";
+  if (REGIONAL_SERVICE.has(kind)) return "regional";
   if (!hasVpc) return "region";
   if (!VPC_RESIDENT.has(kind)) return "region";
   return PUBLIC_SUBNET.has(kind) ? "subnet-public" : "subnet-private";
