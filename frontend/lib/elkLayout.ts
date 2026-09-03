@@ -279,19 +279,25 @@ export async function layout(model: GraphModel): Promise<Layout> {
       // returns a 6:1 band, and fitting that to a 16:9 canvas shrinks it to
       // an illegible strip with dead margins above and below -- which is the
       // whole "empty canvas" complaint.
-      "elk.aspectRatio": "1.6",
+      // Measured, not reasoned: this moves the serverless and AI shapes from
+      // about 1.0 to about 1.9, much closer to the pane. It does NOT move the
+      // VPC shapes at all -- their width is set by what is inside the VPC, and
+      // wrapping cannot cut into a subtree -- so they sit at 2.0-2.5 whatever
+      // this says.
+      "elk.aspectRatio": "0.9",
       // A request path is a CHAIN, and a chain laid out in one direction is a
       // ribbon however much spacing you give it -- 4.7:1 here, so fitting to
       // width left the diagram a third of the canvas tall. Wrapping lets the
       // layered algorithm break that chain across rows and use the height,
       // which is the only lever that changes the SHAPE rather than the scale.
-      // Wrapping is OFF. It existed to fold an over-wide graph into two rows,
-      // but the fold itself is drawn: the edge from the end of row one to the
-      // start of row two ran the full width of the canvas, turned down, and
-      // came back -- the long empty rectangle above the region box, which read
-      // as a container rather than as the request path it actually was. Now
-      // that the two zones stack rather than sitting end to end the graph is
-      // about half as wide, and it fits without folding.
+      // Wrapping folds an over-wide graph into rows. Without it the diagram
+      // came out around 3:1 against a pane nearer 1.65:1, so fitting it left
+      // it as a band across the middle with most of the height unused. The
+      // fold's own edge -- end of one row to the start of the next -- is
+      // redrawn after layout rather than left as the canvas-spanning detour
+      // that made this worth turning off the first time round.
+      "elk.layered.wrapping.strategy": "MULTI_EDGE",
+      "elk.layered.wrapping.additionalEdgeSpacing": "40",
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
@@ -536,45 +542,36 @@ export async function layout(model: GraphModel): Promise<Layout> {
   };
   collectEdges(res, 0, 0);
 
-  // Route the replication edges we withheld from ELK. They were excluded so
-  // they could not distort layering, but they still have to be DRAWN -- a
-  // standby database with no line to its primary reads as a second unrelated
-  // database. Zone b sits directly under zone a now, so a three-segment
-  // orthogonal drop from the bottom of the primary to the top of the mirror is
-  // both the shortest route and the one the reference diagrams use.
-  for (const [i, e] of model.dataEdges.entries()) {
-    if (e.kind !== "replication") continue;
-    const a = box.get(e.source);
-    const b = box.get(e.target);
-    if (!a || !b) continue;
-    const ax = a.x + a.w / 2;
-    const bx = b.x + b.w / 2;
+  // A short orthogonal route between two boxes that avoids every service box
+  // in the way. Used for the replication edges withheld from ELK, and to
+  // rescue any edge ELK routed as a long detour.
+  const routeBetween = (
+    srcId: string,
+    tgtId: string
+  ): Array<{ x: number; y: number }> | null => {
+    const a = box.get(srcId);
+    const b = box.get(tgtId);
+    if (!a || !b) return null;
     // Leave from whichever face points at the target, so the line does not
     // cut back across the node it starts from.
     const vertical = Math.abs(b.y - a.y) >= Math.abs(b.x - a.x);
     const start = vertical
-      ? { x: ax, y: b.y > a.y ? a.y + a.h : a.y }
+      ? { x: a.x + a.w / 2, y: b.y > a.y ? a.y + a.h : a.y }
       : { x: b.x > a.x ? a.x + a.w : a.x, y: a.y + a.h / 2 };
     const end = vertical
-      ? { x: bx, y: b.y > a.y ? b.y : b.y + b.h }
+      ? { x: b.x + b.w / 2, y: b.y > a.y ? b.y : b.y + b.h }
       : { x: b.x > a.x ? b.x : b.x + b.w, y: b.y + b.h / 2 };
-    // Pick a lane that is actually CLEAR. The direct three-segment route is
-    // the shortest, but it knows nothing about what stands between the two
-    // nodes, and drawn blind it cuts straight through the boxes in between.
-    // ELK never routes an edge through a node and neither should these. Step
-    // the connecting run away from centre until all three segments miss every
-    // service box, and take the first lane that is clear.
+    // Containers are not obstacles -- a replica line necessarily leaves its
+    // own subnet -- but service boxes are: ELK never routes an edge through a
+    // node and neither should these.
     const obstacles = [...box.entries()].filter(
-      ([id]) => nodeById.has(id) && id !== e.source && id !== e.target
+      ([id]) => nodeById.has(id) && id !== srcId && id !== tgtId
     );
-    // Does an axis-aligned segment pass through any service box? Containers
-    // are not obstacles -- a replica line necessarily leaves its own subnet.
     const segBlocked = (x1: number, y1: number, x2: number, y2: number) => {
       const [lox, hix] = [Math.min(x1, x2), Math.max(x1, x2)];
       const [loy, hiy] = [Math.min(y1, y2), Math.max(y1, y2)];
       return obstacles.some(
-        ([, r]) =>
-          hix > r.x && lox < r.x + r.w && hiy > r.y && loy < r.y + r.h
+        ([, r]) => hix > r.x && lox < r.x + r.w && hiy > r.y && loy < r.y + r.h
       );
     };
     const routeFor = (lane: number, vert = vertical) =>
@@ -584,18 +581,19 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const routeBlocked = (pts: Array<{ x: number; y: number }>) =>
       pts.slice(1).some((pt, k) => segBlocked(pts[k].x, pts[k].y, pt.x, pt.y));
 
+    // Step the connecting run away from centre until all three segments miss
+    // every service box, and take the first lane that is clear.
     const centre = vertical ? (start.y + end.y) / 2 : (start.x + end.x) / 2;
     let route = routeFor(centre);
     for (let step = 1; step <= 60 && routeBlocked(route); step++) {
-      const candidates = [centre + step * 10, centre - step * 10]
+      const clear = [centre + step * 10, centre - step * 10]
         .map((l) => routeFor(l))
-        .filter((r) => !routeBlocked(r));
-      if (candidates.length) route = candidates[0];
+        .find((r) => !routeBlocked(r));
+      if (clear) route = clear;
     }
-    // Still blocked: the corridor between these two nodes is full, so turn the
-    // dog-leg the other way round and search again. A vertical pair whose
-    // horizontal lanes are all occupied often has a clear vertical one, and
-    // vice versa.
+    // Still blocked: the corridor between these two is full, so turn the
+    // dog-leg the other way round. A vertical pair whose horizontal lanes are
+    // all occupied often has a clear vertical one, and vice versa.
     if (routeBlocked(route)) {
       const alt = vertical ? (start.x + end.x) / 2 : (start.y + end.y) / 2;
       for (let step = 0; step <= 60; step++) {
@@ -608,7 +606,16 @@ export async function layout(model: GraphModel): Promise<Layout> {
         }
       }
     }
+    return route;
+  };
 
+  // Draw the replication edges withheld from ELK. They were excluded so they
+  // could not distort layering, but they still have to be DRAWN -- a standby
+  // database with no line to its primary reads as a second unrelated database.
+  for (const [i, e] of model.dataEdges.entries()) {
+    if (e.kind !== "replication") continue;
+    const route = routeBetween(e.source, e.target);
+    if (!route) continue;
     edges.push({
       id: `e${i}`,
       source: e.source,
@@ -620,6 +627,36 @@ export async function layout(model: GraphModel): Promise<Layout> {
       kind: "replication",
       points: route,
     });
+  }
+
+  // RESCUE THE DETOURS. Wrapping folds an over-wide graph into rows, which is
+  // what makes it fill a landscape pane instead of sitting in a band across the
+  // middle of it -- but the fold is drawn. The edge joining the end of one row
+  // to the start of the next ran the full width of the canvas, turned, and came
+  // back, which reads as an empty container rather than as the request path it
+  // actually is. Rather than give up the wrap, measure every routed edge
+  // against the straight-line distance it had to cover and redraw the ones ELK
+  // sent the long way round.
+  const pathLength = (pts: Array<{ x: number; y: number }>) =>
+    pts.reduce(
+      (sum, pt, k) =>
+        k === 0 ? 0 : sum + Math.abs(pt.x - pts[k - 1].x) + Math.abs(pt.y - pts[k - 1].y),
+      0
+    );
+  for (const edge of edges) {
+    if (edge.kind === "replication") continue;
+    const a = box.get(edge.source);
+    const b = box.get(edge.target);
+    if (!a || !b || edge.points.length < 2) continue;
+    const direct =
+      Math.abs(b.x + b.w / 2 - (a.x + a.w / 2)) +
+      Math.abs(b.y + b.h / 2 - (a.y + a.h / 2));
+    // Generous threshold: orthogonal routing around containers is legitimately
+    // longer than the straight line, and only the genuine canvas-spanning
+    // detours should be redrawn.
+    if (pathLength(edge.points) < Math.max(direct * 2.5, direct + 420)) continue;
+    const route = routeBetween(edge.source, edge.target);
+    if (route && pathLength(route) < pathLength(edge.points)) edge.points = route;
   }
 
   let width = res.width ?? 0;
