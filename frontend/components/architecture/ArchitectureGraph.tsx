@@ -32,49 +32,79 @@ function serviceIconPath(kind: string): string | null {
   return label ? iconFor(label) : null;
 }
 
-/* ── container background box ── */
+/* ── container background box ──
+ *
+ * AWS reference-architecture styling: every container fill is WHITE and the
+ * structure is carried entirely by border colour, weight and dash pattern.
+ * Stacked translucent tints were what muddied the previous version -- three
+ * washes over each other turn every boundary into another shade of grey.
+ *
+ * Border weight descends with depth so the nesting reads without labels:
+ *   VPC 2px solid > AWS Cloud 1.5px solid > AZ 1.5px dashed > subnet 1.5px
+ *   solid > node 1px solid.
+ * The subnet is the only level allowed a tint, and only at 4-6%.
+ */
+type ContainerStyle = {
+  border: string;
+  dash?: string;
+  width: number;
+  fill: string;
+  ink: string;
+};
+
+const CONTAINER_STYLE: Record<string, ContainerStyle> = {
+  cloud:    { border: "#232F3E", width: 1.5, fill: "#FFFFFF", ink: "#232F3E" },
+  // #00A4A6 fails 4.5:1 on white, so the darker #007F80 is used for the text
+  // while the border keeps the lighter teal.
+  region:   { border: "#00A4A6", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#007F80" },
+  vpc:      { border: "#248814", width: 2,   fill: "#FFFFFF", ink: "#248814" },
+  az:       { border: "#147EBA", width: 1.5, dash: "5 4", fill: "#FFFFFF", ink: "#147EBA" },
+  "subnet-public": { border: "#248814", width: 1.5, fill: "#F5FBF5", ink: "#248814" },
+  "subnet-app":    { border: "#147EBA", width: 1.5, fill: "#F6FAFD", ink: "#147EBA" },
+  "subnet-data":   { border: "#3B48CC", width: 1.5, fill: "#F7F8FD", ink: "#3B48CC" },
+  edge:     { border: "#8C4FFF", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#8C4FFF" },
+  regional: { border: "#232F3E", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#232F3E" },
+};
+
+function containerStyle(kind: string): ContainerStyle {
+  if (kind.startsWith("az-")) return CONTAINER_STYLE.az;
+  if (kind.startsWith("subnet-public")) return CONTAINER_STYLE["subnet-public"];
+  if (kind.startsWith("subnet-app")) return CONTAINER_STYLE["subnet-app"];
+  if (kind.startsWith("subnet-data")) return CONTAINER_STYLE["subnet-data"];
+  return CONTAINER_STYLE[kind] ?? CONTAINER_STYLE.cloud;
+}
+
 function ContainerNode({ data }: NodeProps) {
   const d = data as { label: string; kind: string; w: number; h: number };
-  const vpc = d.kind === "vpc";
-  const az = d.kind === "az" || d.kind.startsWith("az-");
-  const subnetPublic = d.kind.startsWith("subnet-public");
-  const subnetPrivate = d.kind.startsWith("subnet-app") || d.kind.startsWith("subnet-data");
-  const regional = d.kind === "regional";
-  const edge = d.kind === "edge";
-  const border = vpc
-    ? "border-emerald-500/60"
-    : az
-    ? "border-sky-400/50 border-dashed"
-    : subnetPublic
-    ? "border-teal-400/40 border-dashed"
-    : subnetPrivate
-    ? "border-indigo-400/40 border-dashed"
-    : regional
-    ? "border-violet-400/45 border-dashed"
-    : edge
-    ? "border-amber-400/50 border-dashed"
-    : "border-line-strong";
-  const tint = subnetPublic
-    ? "bg-teal-400/[0.04]"
-    : subnetPrivate
-    ? "bg-indigo-400/[0.05]"
-    : regional
-    ? "bg-violet-400/[0.05]"
-    : edge
-    ? "bg-amber-400/[0.06]"
-    : vpc
-    ? "bg-emerald-500/[0.02]"
-    : "bg-black/[0.02]";
+  const st = containerStyle(d.kind);
+  const locked = d.kind.startsWith("subnet-");
   return (
     <div
-      className={`rounded-lg border ${border} ${tint}`}
-      style={{ width: d.w, height: d.h }}
+      style={{
+        width: d.w,
+        height: d.h,
+        background: st.fill,
+        border: `${st.width}px ${st.dash ? "dashed" : "solid"} ${st.border}`,
+        borderRadius: 2,
+      }}
     >
+      {/* Label on a white chip so the container's own border never strikes
+          through its text. Sentence case, never centred, never all-caps. */}
       <span
-        className={`absolute left-2 top-1.5 rounded bg-surface/85 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide shadow-sm ring-1 ring-black/5 ${
-          vpc ? "text-emerald-600" : az ? "text-sky-600" : subnetPublic ? "text-teal-600" : subnetPrivate ? "text-indigo-500" : regional ? "text-violet-500" : edge ? "text-amber-600" : "text-ink-3"
-        }`}
+        className="absolute flex items-center gap-1 whitespace-nowrap rounded-[2px] px-1.5 text-[12px] font-semibold leading-[18px]"
+        style={{ left: 10, top: -10, background: "#FFFFFF", color: st.ink }}
       >
+        {locked && (
+          <svg width="9" height="11" viewBox="0 0 9 11" aria-hidden>
+            <path
+              d="M2 4V3a2.5 2.5 0 015 0v1"
+              fill="none"
+              stroke={st.ink}
+              strokeWidth="1.2"
+            />
+            <rect x="1" y="4" width="7" height="6" rx="1" fill={st.ink} />
+          </svg>
+        )}
         {d.label}
       </span>
     </div>
@@ -426,7 +456,7 @@ function Inner({
       proOptions={{ hideAttribution: true }}
       className="bg-white"
     >
-      <Background gap={24} size={1} color="#EEF1F5" />
+      <Background gap={20} size={1} color="#F3F4F6" />
       <Controls showInteractive={false} />
     </ReactFlow>
   );

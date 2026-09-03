@@ -81,17 +81,19 @@ export type Layout = {
 };
 
 const CONTAINER_LABEL: Record<string, string> = {
+  // Sentence case throughout. The AWS reference diagrams never shout their
+  // boundary labels, and ALL-CAPS at this size costs legibility for nothing.
   cloud: "AWS Cloud",
-  edge: "Edge / global services",
-  region: "Region",
-  regional: "Regional services (outside the VPC)",
-  vpc: "VPC",
+  edge: "Edge / Global services",
+  region: "Region: ap-south-1 (Mumbai)",
+  regional: "Regional services",
+  vpc: "VPC 10.0.0.0/16",
   az: "Availability Zone",
   "az-a": "Availability Zone ap-south-1a",
   "az-b": "Availability Zone ap-south-1b",
   "subnet-public": "Public subnet",
-  "subnet-app": "App subnet",
-  "subnet-data": "Data subnet",
+  "subnet-app": "Private app subnet",
+  "subnet-data": "Private data subnet",
 };
 
 type ElkChild = {
