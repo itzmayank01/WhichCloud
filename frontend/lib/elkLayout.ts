@@ -26,6 +26,12 @@ const elk = new ELK();
 // reading size. The reference boxes are smaller because they carry an icon
 // and a name and nothing else; ours also carry a price, which is moved to a
 // corner badge rather than given a column of its own.
+/** How many edges kept ELK's own routing versus how many we redrew. Exported
+ *  so the layout harness can assert on it: ELK minimises crossings across the
+ *  whole graph and our fallback router does not, so a low `elkKept` is itself
+ *  a defect. It read 0 of 22 once, and the diagram was spaghetti. */
+export const routeStats = { elkKept: 0, replaced: 0 };
+
 export const NODE_W = 168;
 export const NODE_H = 64;
 const CONTROL_W = 150;
@@ -326,7 +332,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
       // along the root direction and every elk.direction below is inert --
       // which is why the subnets ran left to right as successive layers (the
       // request really does flow public -> app -> data).
-      "elk.hierarchyHandling": "SEPARATE_CHILDREN",
+      "elk.hierarchyHandling": "INCLUDE_CHILDREN",
       // BRANDES_KOEPF centres each rank instead of top-aligning it. With
       // NETWORK_SIMPLEX the edge cluster sank to the bottom of its column and
       // left a tall empty band above it, with long edges climbing back up into
@@ -438,6 +444,9 @@ export async function layout(model: GraphModel): Promise<Layout> {
   const [right, down] = await Promise.all([attempt("RIGHT"), attempt("DOWN")]);
   const res: any = (right.coverage >= down.coverage ? right : down).out;
 
+  routeStats.elkKept = 0;
+  routeStats.replaced = 0;
+
   // ── flatten ELK's relative coordinates to absolute canvas coordinates ──
   const containers: LaidContainer[] = [];
   const nodes: LaidNode[] = [];
@@ -518,6 +527,27 @@ export async function layout(model: GraphModel): Promise<Layout> {
           pts.push({ x: base.x + bp.x, y: base.y + bp.y });
         }
         pts.push({ x: base.x + sec.endPoint.x, y: base.y + sec.endPoint.y });
+      }
+      // Under INCLUDE_CHILDREN a cross-container edge can be stored against a
+      // different ancestor than the offset we add for it, so the whole
+      // polyline lands somewhere it does not belong. The SHAPE is right; only
+      // the origin is wrong. Measure how far both ends have drifted from their
+      // own boxes and translate the polyline back by the average.
+      const sBox = src ? box.get(src) : undefined;
+      const tBox = tgt ? box.get(tgt) : undefined;
+      if (pts.length >= 2 && sBox && tBox) {
+        const near = (pt: { x: number; y: number }, bx: typeof sBox) => {
+          const ddx = Math.max(bx!.x - pt.x, 0, pt.x - (bx!.x + bx!.w));
+          const ddy = Math.max(bx!.y - pt.y, 0, pt.y - (bx!.y + bx!.h));
+          return Math.hypot(ddx, ddy) <= 64;
+        };
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        if (!near(first, sBox) && !near(last, tBox)) {
+          const ddx = (sBox.x + sBox.w / 2 - first.x + (tBox.x + tBox.w / 2 - last.x)) / 2;
+          const ddy = (sBox.y + sBox.h / 2 - first.y + (tBox.y + tBox.h / 2 - last.y)) / 2;
+          for (const pt of pts) { pt.x += ddx; pt.y += ddy; }
+        }
       }
       edges.push({
         id: e.id,
@@ -726,6 +756,29 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // So check the route instead of patching it: it has to start and end at the
   // right boxes, miss every other node, and not be a canvas-spanning detour.
   // Anything that fails is redrawn by the obstacle-avoiding router above.
+  // An orthogonal two-segment connector from a node box out to `to`, leaving
+  // through whichever face points at it. Used to join a node to where ELK's
+  // port-routed polyline actually begins.
+  const connectTo = (
+    b: { x: number; y: number; w: number; h: number },
+    to: { x: number; y: number }
+  ): Array<{ x: number; y: number }> => {
+    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+    const dx = to.x - (b.x + b.w / 2);
+    const dy = to.y - (b.y + b.h / 2);
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      const exit = { x: dx > 0 ? b.x + b.w : b.x, y: clamp(to.y, b.y + 8, b.y + b.h - 8) };
+      return [exit, { x: to.x, y: exit.y }];
+    }
+    const exit = { x: clamp(to.x, b.x + 8, b.x + b.w - 8), y: dy > 0 ? b.y + b.h : b.y };
+    return [exit, { x: exit.x, y: to.y }];
+  };
+  const dedupe = (pts: Array<{ x: number; y: number }>) =>
+    pts.filter(
+      (pt, k) =>
+        k === 0 || Math.abs(pt.x - pts[k - 1].x) > 0.5 || Math.abs(pt.y - pts[k - 1].y) > 0.5
+    );
+
   // Same inflated footprint the router avoids, so validation and routing
   // agree on what counts as "through a node".
   const hitsNode = (
@@ -768,15 +821,33 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const direct =
       Math.abs(b.x + b.w / 2 - (a.x + a.w / 2)) +
       Math.abs(b.y + b.h / 2 - (a.y + a.h / 2));
-    const ok =
+    // KEEP ELK'S ROUTE WHEREVER IT IS SOUND.
+    //
+    // ELK minimises crossings across the whole graph; our router only avoids
+    // nodes, one edge at a time. Measured, discarding ELK wholesale and
+    // redrawing every edge as a dog-leg is what produced the spaghetti: ELK
+    // routes kept 0 of 22, every edge exactly four points.
+    //
+    // The reason none survived was not that the routes were bad. Under
+    // SEPARATE_CHILDREN, ELK routes a cross-container edge to the CONTAINER's
+    // port, so the polyline legitimately stops at a boundary rather than at
+    // the node -- and the endpoint test threw the whole route away for it.
+    // A port-routed edge is incomplete, not wrong. Bridge the ends instead.
+    const usable =
       pts.length >= 2 &&
-      endsAt(pts[0], edge.source) &&
-      endsAt(pts[pts.length - 1], edge.target) &&
       !hitsNode(pts, edge.source, edge.target) &&
       // Generous: orthogonal routing around containers is legitimately longer
       // than the straight line, and only real detours should go.
       pathLength(pts) < Math.max(direct * 2.5, direct + 420);
-    if (ok) continue;
+    if (usable) {
+      if (!endsAt(pts[0], edge.source)) pts.unshift(...connectTo(a, pts[0]));
+      const tail = pts[pts.length - 1];
+      if (!endsAt(tail, edge.target)) pts.push(...connectTo(b, tail).reverse());
+      edge.points = dedupe(pts);
+      routeStats.elkKept++;
+      continue;
+    }
+    routeStats.replaced++;
     const route = routeBetween(edge.source, edge.target);
     if (route) edge.points = route;
   }

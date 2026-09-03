@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { buildGraphModel } from "../lib/graphModel.ts";
-import { layout, type LaidNode, type LaidEdge } from "../lib/elkLayout.ts";
+import { layout, routeStats, type LaidNode, type LaidEdge } from "../lib/elkLayout.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = JSON.parse(
@@ -85,6 +85,16 @@ type Metrics = {
   reachableFromUsers: string; // "n/a" for pipelines with no user entry
   aspect: number;
   services: number;
+  /** Total ink: sum of every routed edge's length. Lower is better -- it is
+   *  the single number that says "are these routes short and local". */
+  edgeLength: number;
+  /** The longest single edge. A route far above the median is one travelling
+   *  across the canvas, which is what reads as spaghetti. */
+  longestEdge: number;
+  /** ELK's own routing that survived, vs routes we replaced. 0 kept means the
+   *  layout engine's crossing minimisation is being discarded wholesale. */
+  elkKept: number;
+  elkReplaced: number;
 };
 
 async function measureTier(nodes: any[], edges: any[], label: string): Promise<Metrics> {
@@ -159,6 +169,11 @@ async function measureTier(nodes: any[], edges: any[], label: string): Promise<M
   }
 
   const aspect = laid.height ? laid.width / laid.height : 0;
+  const lengthOf = (pts: P[]) =>
+    pts.reduce((sum, p, i) => (i === 0 ? 0 : sum + Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y)), 0);
+  const lengths = laid.edges.map((e) => lengthOf(e.points as P[]));
+  const edgeLength = Math.round(lengths.reduce((a, b) => a + b, 0));
+  const longestEdge = Math.round(Math.max(0, ...lengths));
   const edgeCount = laid.edges.length;
   return {
     tier: label,
@@ -171,6 +186,10 @@ async function measureTier(nodes: any[], edges: any[], label: string): Promise<M
     components,
     reachableFromUsers,
     aspect: Math.round(aspect * 100) / 100,
+    edgeLength,
+    longestEdge,
+    elkKept: routeStats.elkKept,
+    elkReplaced: routeStats.replaced,
     services: dataIds.size,
   };
 }
@@ -208,9 +227,9 @@ async function main() {
   const lines: string[] = [];
   lines.push("# Diagram layout quality\n");
   lines.push(
-    "| fixture | tier | services | node ovl | edge→node | crossings (budget) | label ovl | orphans | components | reach(users) | aspect |"
+    "| fixture | tier | svc | nodeOvl | edge→node | crossings (budget) | labelOvl | orphans | comps | reach | aspect | edgeLen | longest | elk kept/repl |"
   );
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 
   for (const [name, fx] of Object.entries(fixtures)) {
     const sigs: string[] = [];
@@ -229,7 +248,7 @@ async function main() {
       if (hardFail) failures++;
       const flag = hardFail ? " ⚠️" : "";
       lines.push(
-        `| ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} |`
+        `| ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} | ${m.edgeLength} | ${m.longestEdge} | ${m.elkKept}/${m.elkReplaced} |`
       );
     }
     // three tiers must differ
