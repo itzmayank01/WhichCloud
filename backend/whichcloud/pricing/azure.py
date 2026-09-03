@@ -1102,16 +1102,29 @@ def fetch_vm_reservation_prices(region_key: str) -> list[PricePoint]:
         if sku not in best or hourly < best[sku]:
             best[sku] = hourly
 
-    return [
-        PricePoint(
+    # Carry the machine's SPECS across from the on-demand rows. The reservation
+    # feed publishes no vCPU/memory/arch, and cheapest_compute selects on
+    # exactly those columns -- so without this the committed rates load fine
+    # and are then invisible to every lookup that could use them.
+    specs = {
+        pt.sku: pt
+        for pt in fetch_vm_prices(region_key)
+        if pt.attributes.get("purchase") == "ondemand"
+    }
+    points: list[PricePoint] = []
+    for sku, hourly in best.items():
+        base = specs.get(sku)
+        if base is None:
+            continue      # a machine we do not otherwise quote
+        points.append(PricePoint(
             provider="azure", category="compute", sku=f"{sku}:commit1yr",
             name=f"{sku} (1-yr reserved)", region=region, unit="hour",
             price_usd=hourly,
+            vcpu=base.vcpu, memory_gb=base.memory_gb, arch=base.arch,
             attributes={"purchase": "commit1yr",
                         "term": "1-year Reserved VM Instance"},
-        )
-        for sku, hourly in best.items()
-    ]
+        ))
+    return points
 
 
 def fetch_container_prices(region_key: str) -> list[PricePoint]:
