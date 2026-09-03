@@ -351,15 +351,39 @@ def _drawn(option: Option, provider: str) -> dict | None:
     }
 
 
+def _compact(n: float) -> str:
+    """1_200_000 -> "1.2M". Sizing lines are read at a glance, and a raw count
+    with six digits in it is not."""
+    for cutoff, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "k")):
+        if n >= cutoff:
+            return f"{n / cutoff:.1f}".rstrip("0").rstrip(".") + suffix
+    return f"{n:.0f}"
+
+
 def _option_out(option: Option, provider: str) -> OptionOut:
     spec = option.spec
-    shape = f"{spec.compute_count}× {spec.compute_vcpu} vCPU / {spec.compute_memory_gb:g} GB"
-    if spec.arch:
-        shape += f" {spec.arch}"
-    if spec.use_spot:
-        shape += " spot"
-    if spec.compute_duty_cycle < 1.0:
-        shape += f" @{spec.compute_duty_cycle:.0%}"
+    # Describe the compute that IS there. A serverless shape has no instances,
+    # and leading with "0× 2 vCPU / 4 GB" described a fleet of nothing at the
+    # size it would have been -- the same class of mistake as the multi-AZ note
+    # below, which used to appear on architectures with no database.
+    if spec.compute_count:
+        shape = f"{spec.compute_count}× {spec.compute_vcpu} vCPU / {spec.compute_memory_gb:g} GB"
+        if spec.arch:
+            shape += f" {spec.arch}"
+        if spec.use_spot:
+            shape += " spot"
+        if spec.compute_duty_cycle < 1.0:
+            shape += f" @{spec.compute_duty_cycle:.0%}"
+    elif spec.fargate_task_count:
+        shape = f"{spec.fargate_task_count}× containers"
+        if spec.arch:
+            shape += f" {spec.arch}"
+    elif spec.lambda_invocations_per_month:
+        # Volume is the only sizing a function has: there is no instance count
+        # to state, and the invocation rate is what the bill turns on.
+        shape = f"serverless · {_compact(spec.lambda_invocations_per_month)} calls/mo"
+    else:
+        shape = "serverless"
     # Only when there IS a database. The flag is set by the reliability
     # tiers regardless, so a batch job with no database was described as
     # "multi-AZ db" while its architecture contained no database at all.

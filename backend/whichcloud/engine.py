@@ -1707,6 +1707,8 @@ def _scale_to_budget(
     label: str,
     provider: str,
     dsn: str | None,
+    *,
+    growable: bool = True,
 ) -> tuple["ArchitectureSpec", bool]:
     """Grow an upper-tier spec into its share of the stated budget.
 
@@ -1714,6 +1716,15 @@ def _scale_to_budget(
     cap before the budget target was reached -- i.e. the workload cannot
     usefully absorb the money on offer, which is a fact worth surfacing
     rather than hiding behind an unchanged number.
+
+    `growable` is False for shapes with no capacity to buy. A serverless or
+    event-driven architecture is billed on volume -- invocations, inferences,
+    stored bytes -- and scales itself; there is no bigger instance to purchase.
+    Such a shape is saturated the moment the budget exceeds its cost, and
+    saying so is the honest answer. It used to skip this function altogether
+    and report `saturated=False`, so a $14k serverless estimate against a $60k
+    budget claimed it "fits with room to spare" as though more money would buy
+    something.
     """
     budget = requirement.budget_monthly_usd
     fill = _BUDGET_TARGET_FILL.get(label)
@@ -1732,7 +1743,13 @@ def _scale_to_budget(
     # plateau scale with the workload instead of ballooning to wherever the
     # fixed capacity caps happen to sit.
     floor_cost = priced(spec)
-    ceiling = floor_cost * Decimal(str(_BUDGET_CEILING_MULTIPLE[label]))
+    # With nothing to buy, the shape's own cost IS its ceiling: the early
+    # return below then reports saturation exactly when the budget exceeds it.
+    ceiling = (
+        floor_cost
+        if not growable
+        else floor_cost * Decimal(str(_BUDGET_CEILING_MULTIPLE[label]))
+    )
     target = min(budget_target, ceiling)
     # Budget wants to pay for more than this workload can usefully absorb: the
     # ceiling (or caps) will bind, so a higher budget changes nothing -- which
@@ -1747,7 +1764,9 @@ def _scale_to_budget(
         """The next capacity buy for each knob, cheapest-value first, or None
         when that knob is capped. A round-robin over these gives balanced
         growth rather than pouring the whole budget into one dimension."""
-        moves = []
+        moves: list["ArchitectureSpec"] = []
+        if not growable:
+            return moves
         if sp.compute_count < caps["compute"]:
             moves.append(replace(sp, compute_count=sp.compute_count + 1))
         if has_rds and sp.database_read_replicas < caps["replicas"]:
@@ -1981,11 +2000,14 @@ def recommend(
         # budget, bounded by hard caps so it never pads into absurdity. The
         # workload floor above still binds; Cheapest is deliberately excluded
         # so it stays the honest minimum. No-op when no budget was stated.
-        budget_saturated = False
+        # Called for EVERY shape now. A serverless or event-driven
+        # architecture has no capacity knob to turn, but that is a reason to
+        # report it as saturated -- extra budget genuinely buys nothing -- not
+        # a reason to skip the question and imply the money is still in play.
+        spec, budget_saturated = _scale_to_budget(
+            spec, requirement, label, provider, dsn, growable=server_shape
+        )
         if server_shape:
-            spec, budget_saturated = _scale_to_budget(
-                spec, requirement, label, provider, dsn
-            )
             # A tier is never smaller than the one below it. Floor each scalable
             # knob at the cheaper tier's value so "Most optimized" is always >=
             # "Most reliable" componentwise, and therefore in price -- the
