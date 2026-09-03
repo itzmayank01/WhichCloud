@@ -95,6 +95,21 @@ type Metrics = {
    *  layout engine's crossing minimisation is being discarded wholesale. */
   elkKept: number;
   elkReplaced: number;
+  /** Directed cycles in the data plane. ELK's layered algorithm cannot lay a
+   *  cycle out; it reverses an edge to break it, and the reversed edge then
+   *  travels backwards across the diagram. */
+  cycles: number;
+  /** Highest outgoing-edge count on any single node. A hub with six edges
+   *  leaving one side is the main source of overlap. */
+  maxFanOut: number;
+  /** Pairs of edges sharing more than 20px of the same line. Two arrows drawn
+   *  on top of each other read as one. */
+  collinear: number;
+  /** Widest rank gap any edge spans, ranks being distinct node columns. An
+   *  edge crossing many ranks is one travelling the length of the canvas. */
+  maxRankSpan: number;
+  /** Nodes with no parent container. */
+  orphanNodes: number;
 };
 
 async function measureTier(nodes: any[], edges: any[], label: string): Promise<Metrics> {
@@ -169,6 +184,77 @@ async function measureTier(nodes: any[], edges: any[], label: string): Promise<M
   }
 
   const aspect = laid.height ? laid.width / laid.height : 0;
+  // ── directed cycles over the data plane ──
+  const adjOut = new Map<string, string[]>();
+  for (const e of laid.edges)
+    if (!e.attach) adjOut.set(e.source, [...(adjOut.get(e.source) ?? []), e.target]);
+  let cycles = 0;
+  {
+    const WHITE = 0, GREY = 1, BLACK = 2;
+    const colour = new Map<string, number>();
+    const visit = (id: string) => {
+      colour.set(id, GREY);
+      for (const nxt of adjOut.get(id) ?? []) {
+        const c = colour.get(nxt) ?? WHITE;
+        if (c === GREY) cycles++;          // back edge = one cycle
+        else if (c === WHITE) visit(nxt);
+      }
+      colour.set(id, BLACK);
+    };
+    for (const n of laid.nodes) if ((colour.get(n.id) ?? WHITE) === WHITE) visit(n.id);
+  }
+  const maxFanOut = Math.max(0, ...[...adjOut.values()].map((v) => v.length));
+  // Geometric, not parentId: ELK's root has no id, so its direct children
+  // report no parent while sitting plainly inside the drawn cloud box.
+  const orphanNodes = laid.nodes.filter(
+    (n) =>
+      !laid.containers.some(
+        (c) =>
+          n.x >= c.x - 1 && n.y >= c.y - 1 &&
+          n.x + n.w <= c.x + c.w + 1 && n.y + n.h <= c.y + c.h + 1
+      )
+  ).length;
+
+  // ── collinear overlap: two edges sharing >20px of the same axis line ──
+  type Seg = { a: P; b: P };
+  const colSegs: Seg[] = [];
+  for (const e of laid.edges)
+    for (let i = 1; i < e.points.length; i++)
+      colSegs.push({ a: e.points[i - 1] as P, b: e.points[i] as P });
+  let collinear = 0;
+  for (let i = 0; i < colSegs.length; i++)
+    for (let j = i + 1; j < colSegs.length; j++) {
+      const s1 = colSegs[i], s2 = colSegs[j];
+      const h1 = Math.abs(s1.a.y - s1.b.y) < 1, h2 = Math.abs(s2.a.y - s2.b.y) < 1;
+      const v1 = Math.abs(s1.a.x - s1.b.x) < 1, v2 = Math.abs(s2.a.x - s2.b.x) < 1;
+      if (h1 && h2 && Math.abs(s1.a.y - s2.a.y) < 2) {
+        const lo = Math.max(Math.min(s1.a.x, s1.b.x), Math.min(s2.a.x, s2.b.x));
+        const hi = Math.min(Math.max(s1.a.x, s1.b.x), Math.max(s2.a.x, s2.b.x));
+        if (hi - lo > 20) collinear++;
+      } else if (v1 && v2 && Math.abs(s1.a.x - s2.a.x) < 2) {
+        const lo = Math.max(Math.min(s1.a.y, s1.b.y), Math.min(s2.a.y, s2.b.y));
+        const hi = Math.min(Math.max(s1.a.y, s1.b.y), Math.max(s2.a.y, s2.b.y));
+        if (hi - lo > 20) collinear++;
+      }
+    }
+
+  // ── rank span: distinct node columns an edge crosses ──
+  const cols = [...new Set(laid.nodes.map((n) => Math.round(n.x / 40)))].sort((a, b) => a - b);
+  const rankOf = (x: number) => {
+    const k = Math.round(x / 40);
+    let best = 0;
+    for (let i = 0; i < cols.length; i++) if (Math.abs(cols[i] - k) < Math.abs(cols[best] - k)) best = i;
+    return best;
+  };
+  const byId = new Map(laid.nodes.map((n) => [n.id, n]));
+  const maxRankSpan = Math.max(
+    0,
+    ...laid.edges.map((e) => {
+      const a = byId.get(e.source), b = byId.get(e.target);
+      return a && b ? Math.abs(rankOf(a.x) - rankOf(b.x)) : 0;
+    })
+  );
+
   const lengthOf = (pts: P[]) =>
     pts.reduce((sum, p, i) => (i === 0 ? 0 : sum + Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y)), 0);
   const lengths = laid.edges.map((e) => lengthOf(e.points as P[]));
@@ -190,6 +276,11 @@ async function measureTier(nodes: any[], edges: any[], label: string): Promise<M
     longestEdge,
     elkKept: routeStats.elkKept,
     elkReplaced: routeStats.replaced,
+    cycles,
+    maxFanOut,
+    collinear,
+    maxRankSpan,
+    orphanNodes,
     services: dataIds.size,
   };
 }
@@ -227,9 +318,9 @@ async function main() {
   const lines: string[] = [];
   lines.push("# Diagram layout quality\n");
   lines.push(
-    "| fixture | tier | svc | nodeOvl | edge→node | crossings (budget) | labelOvl | orphans | comps | reach | aspect | edgeLen | longest | elk kept/repl |"
+    "| fixture | tier | svc | nodeOvl | edge→node | crossings (budget) | labelOvl | orphans | comps | reach | aspect | edgeLen | longest | elk kept/repl | cyc | fanOut | collin | rankSpan | orphan |"
   );
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 
   for (const [name, fx] of Object.entries(fixtures)) {
     const sigs: string[] = [];
@@ -248,7 +339,7 @@ async function main() {
       if (hardFail) failures++;
       const flag = hardFail ? " ⚠️" : "";
       lines.push(
-        `| ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} | ${m.edgeLength} | ${m.longestEdge} | ${m.elkKept}/${m.elkReplaced} |`
+        `| ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} | ${m.edgeLength} | ${m.longestEdge} | ${m.elkKept}/${m.elkReplaced} | ${m.cycles} | ${m.maxFanOut} | ${m.collinear} | ${m.maxRankSpan} | ${m.orphanNodes} |`
       );
     }
     // three tiers must differ

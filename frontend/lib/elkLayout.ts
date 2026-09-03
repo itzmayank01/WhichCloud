@@ -341,14 +341,23 @@ export async function layout(model: GraphModel): Promise<Layout> {
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
       "elk.alignment": "CENTER",
       "elk.layered.spacing.nodeNodeBetweenLayers": "64",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "28",
       "elk.spacing.nodeNode": "40",
       "elk.spacing.edgeNode": "28",
-      "elk.spacing.edgeEdge": "22",
+      "elk.spacing.edgeEdge": "18",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "22",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "32",
       "elk.padding": "[top=40,left=24,bottom=24,right=24]",
       // Keep skip-layer edges (e.g. CDN → S3 past the app tier) clear of the
       // boxes they route past, and cut crossings — the two things the layout
       // quality harness measures on the routed geometry.
+      // Break cycles at a predictable point. This graph really does contain
+      // them -- a serverless flow has Lambda -> SQS -> Lambda and
+      // Lambda -> S3 -> Rekognition -> Lambda -- and the layered algorithm
+      // cannot lay a cycle out, so it reverses an edge to break one. GREEDY
+      // picks a different edge as the graph changes; DEPTH_FIRST picks the
+      // same one, so the reversed edge stays put between renders.
+      "elk.layered.cycleBreaking.strategy": "DEPTH_FIRST",
+      "elk.randomSeed": "1",
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.crossingMinimization.semiInteractive": "true",
       "elk.layered.mergeEdges": "false",
