@@ -741,6 +741,14 @@ def fetch_pubsub_prices(region_key: str) -> list[PricePoint]:
     attrs = {"derived": "per-message at Google's 1 KB minimum billable size",
              "rate_per_tib": str(per_tib)}
     return [
+        # Pub/Sub is also GCP's event-stream ingest (the Kinesis role). It is
+        # serverless -- there are no shards to provision -- so only the
+        # per-message ingest meter is published; the estimator's streaming
+        # branch prices that and adds no capacity line.
+        PricePoint(provider="gcp", category="streaming",
+                   sku="pubsub:stream-ingest", name="Pub/Sub stream ingest",
+                   region=region, unit="request", price_usd=per_msg,
+                   attributes=dict(attrs, serverless="no provisioned shards")),
         PricePoint(provider="gcp", category="queue", sku="pubsub:messages",
                    name="Pub/Sub messages", region=region, unit="request",
                    price_usd=per_msg, attributes=attrs),

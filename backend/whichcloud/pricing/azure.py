@@ -962,6 +962,47 @@ def _consumption(service: str, region: str, pages: int = 6) -> list[dict]:
     ]
 
 
+def fetch_streaming_prices(region_key: str) -> list[PricePoint]:
+    """Event Hubs -- the Kinesis-equivalent event stream.
+
+    A Standard throughput unit is the capacity unit a Kinesis shard is, and
+    ingress events are billed per million the way Kinesis put payload units
+    are, so both map onto the streaming role's existing sku names.
+    """
+    region = provider_region(region_key, "azure")
+    items = _consumption("Event Hubs", region)
+    def meter(name):
+        return _first_paid(items, lambda i: (i.get("meterName") or "") == name)
+    tu, ingress = meter("Standard Throughput Unit"), meter("Standard Ingress Events")
+    capture, kafka = meter("Standard Capture"), meter("Standard Kafka Endpoint")
+    out: list[PricePoint] = []
+    if capture is not None:
+        # Firehose bills delivery per GB; Event Hubs Capture bills per hour of
+        # the capture feature. Different meters for the same capability, so it
+        # is published in its own category and the estimator prices it hourly
+        # rather than multiplying an hourly rate by a GB figure.
+        out.append(PricePoint(provider="azure", category="capture_hour",
+            sku="eventhubs:capture-hour", name="Event Hubs Capture",
+            region=region, unit="hour", price_usd=capture))
+    if kafka is not None:
+        # MSK sells sized broker NODES; Event Hubs exposes a Kafka endpoint on
+        # the namespace at an hourly rate, with capacity coming from throughput
+        # units. Published as an endpoint, priced per broker requested.
+        out.append(PricePoint(provider="azure", category="kafka_endpoint",
+            sku="eventhubs:kafka-endpoint", name="Event Hubs Kafka endpoint",
+            region=region, unit="hour", price_usd=kafka))
+    if tu is not None:
+        out.append(PricePoint(provider="azure", category="streaming",
+            sku="kinesis:shard-hour", name="Event Hubs throughput unit",
+            region=region, unit="hour", price_usd=tu))
+    if ingress is not None:
+        out.append(PricePoint(provider="azure", category="streaming",
+            sku="kinesis:put-payload-units", name="Event Hubs ingress events",
+            region=region, unit="request",
+            price_usd=ingress / Decimal(1_000_000)))   # published per 1M
+    return out
+
+
 def fetch_warehouse_prices(region_key: str) -> list[PricePoint]:
     """Synapse dedicated SQL pool, priced per DW100c unit-hour.
 
@@ -1382,6 +1423,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_container_prices,
         fetch_vision_prices,
         fetch_warehouse_prices,
+        fetch_streaming_prices,
         fetch_apigateway_prices,
         fetch_queue_prices,
         fetch_notification_prices,

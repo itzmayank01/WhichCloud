@@ -828,7 +828,12 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         if point:
             result.items.append(_tiered_line("Firehose delivery", point, spec.firehose_gb_per_month))
         else:
-            result.missing.append("firehose")
+            cap = store.get_price(provider, region, "capture_hour",
+                                  "eventhubs:capture-hour", dsn=dsn)
+            if cap:
+                result.items.append(_hourly_line("Event Hubs Capture", cap, 1))
+            else:
+                result.missing.append("stream delivery to storage")
 
     if spec.athena_tb_scanned_per_month:
         point = _by_role(provider, region, "athena", "tb", dsn)
@@ -1067,10 +1072,24 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- event streaming (Kinesis) ----
     if spec.stream_shards:
+        priced_serverless = False
         shard = store.get_price(provider, region, "streaming", "kinesis:shard-hour", dsn=dsn)
         puts = store.get_price(
             provider, region, "streaming", "kinesis:put-payload-units", dsn=dsn
         )
+        if not shard:
+            # Pub/Sub has no provisioned shards -- it is serverless, billed on
+            # ingest alone. Price the ingest and add no capacity line rather
+            # than reporting the stream missing.
+            serverless_ingest = store.get_price(
+                provider, region, "streaming", "pubsub:stream-ingest", dsn=dsn
+            )
+            if serverless_ingest and spec.stream_put_units:
+                result.items.append(
+                    _metered_line("Pub/Sub stream ingest", serverless_ingest,
+                                  spec.stream_put_units)
+                )
+                priced_serverless = True
         if shard:
             result.items.append(
                 _hourly_line(f"Event stream shards \u00d7 {spec.stream_shards}", shard, spec.stream_shards)
@@ -1079,7 +1098,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 result.items.append(
                     _metered_line("Event stream PUT units", puts, spec.stream_put_units)
                 )
-        else:
+        elif not priced_serverless:
             result.missing.append("event streaming")
 
     # ---- managed Kafka (MSK) ----
@@ -1099,7 +1118,15 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
         else:
-            result.missing.append("managed Kafka broker")
+            endpoint = store.get_price(provider, region, "kafka_endpoint",
+                                       "eventhubs:kafka-endpoint", dsn=dsn)
+            if endpoint:
+                result.items.append(
+                    _hourly_line(f"Kafka endpoint \u00d7 {spec.kafka_broker_count}",
+                                 endpoint, spec.kafka_broker_count)
+                )
+            else:
+                result.missing.append("managed Kafka broker")
 
     # ---- search / analytics (OpenSearch) ----
     if spec.search_node_count:
