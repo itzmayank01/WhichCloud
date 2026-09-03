@@ -503,6 +503,64 @@ def fetch_db_storage_prices(region_key: str) -> list[PricePoint]:
     return points
 
 
+#: Firestore SKUs are named by LOCATION rather than region code, and their
+#: serviceRegions are inconsistent (some "global", some the real region), so
+#: they are matched on the location word in the description.
+_GCP_FIRESTORE_LOCATION = {
+    "india": "mumbai", "india-south": "delhi",
+    "singapore": "singapore", "us-east": "south carolina", "eu-west": "belgium",
+}
+
+
+def fetch_keyvalue_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Firestore -- GCP's serverless document/key-value store, and the
+    closest analogue to DynamoDB's per-request + per-GB billing.
+
+    Mapped onto the estimator's dynamodb read/write/storage roles: Firestore
+    bills "Read Ops", "Entity Writes" and "Storage" the same way DynamoDB bills
+    read units, write units and GB-month, so no model is invented here.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key)
+    sid = find_service_id("Cloud Firestore")
+    if not sid or not place:
+        return []
+    skus = fetch_skus(sid)
+
+    def rate(*words: str) -> "Decimal | None":
+        best = None
+        for sku in skus:
+            text = str(sku.get("description", "")).lower()
+            if place not in text or "enterprise" in text:
+                continue
+            if not all(w in text for w in words):
+                continue
+            price = sku_price(sku)
+            if price is not None and (best is None or price < best):
+                best = price
+        return best
+
+    reads = rate("read ops")
+    writes = rate("entity writes")
+    # "storage" alone would also match backup/recovery/clone storage meters.
+    stored = rate("firestore storage")
+
+    out: list[PricePoint] = []
+    if reads is not None:
+        out.append(PricePoint(provider="gcp", category="dynamodb-reads",
+                              sku="firestore:read-ops", name="Firestore read operations",
+                              region=region, unit="request", price_usd=reads))
+    if writes is not None:
+        out.append(PricePoint(provider="gcp", category="dynamodb-writes",
+                              sku="firestore:write-ops", name="Firestore write operations",
+                              region=region, unit="request", price_usd=writes))
+    if stored is not None:
+        out.append(PricePoint(provider="gcp", category="dynamodb-storage",
+                              sku="firestore:storage", name="Firestore storage",
+                              region=region, unit="GB-month", price_usd=stored))
+    return out
+
+
 def fetch_waf_prices(region_key: str) -> list[PricePoint]:
     """Cloud Armor: a security policy, its rules, and per-request inspection.
 
@@ -994,6 +1052,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_db_storage_prices,
         fetch_cdn_prices,
         fetch_waf_prices,
+        fetch_keyvalue_prices,
         fetch_object_request_prices,
         fetch_lb_data_prices,
         fetch_cache_prices,

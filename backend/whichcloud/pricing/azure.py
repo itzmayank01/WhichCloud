@@ -925,6 +925,73 @@ _AZURE_FRONTDOOR_ZONE = {
 }
 
 
+#: Cosmos DB bills ONE request-unit rate; the read/write asymmetry is in how
+#: many RUs an operation consumes, not in the price. Microsoft's documented
+#: model for a 1 KB item: a point read costs 1 RU, a write costs ~5 RU. The
+#: engine passes read and write REQUEST COUNTS (the DynamoDB model, where the
+#: asymmetry is priced instead), so the write rate is scaled by this factor to
+#: keep both providers answering the same question. Derived, and labelled so.
+_COSMOS_RU_PER_WRITE = 5
+
+
+def fetch_keyvalue_prices(region_key: str) -> list[PricePoint]:
+    """Azure Cosmos DB serverless -- the DynamoDB-equivalent key-value store.
+
+    Serverless (per-RU) rather than provisioned throughput, because that is the
+    mode that bills per request the way DynamoDB on-demand does.
+    """
+    region = provider_region(region_key, "azure")
+    ru_price = None
+    storage = None
+    for item in _paged(
+        "serviceName eq 'Azure Cosmos DB' and priceType eq 'Consumption'", max_pages=8
+    ):
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        product = item.get("productName") or ""
+        meter = item.get("meterName") or ""
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        if product == "Azure Cosmos DB serverless" and meter == "1M RUs":
+            if ru_price is None or price < ru_price:
+                ru_price = price
+        elif product == "Azure Cosmos DB" and meter == "Data Stored":
+            # ALLOW-LIST, not min(). One product/meter pair carries several
+            # skuNames at very different rates: the RU-based account's
+            # transactional storage (RUs/RUm/mRUs, ~$0.25/GB) alongside
+            # "Data Capacity"/"Managed RUs" at $0.008 -- a different product
+            # entirely. Taking the cheapest silently priced Cosmos storage 30x
+            # too low, which is the "plausible and wrong" failure this catalog
+            # exists to avoid.
+            if item.get("skuName") not in ("RUs", "RUm", "mRUs"):
+                continue
+            if storage is None or price < storage:
+                storage = price
+
+    out: list[PricePoint] = []
+    if ru_price is not None:
+        per_ru = ru_price / Decimal(1_000_000)   # published per 1M RUs
+        out.append(PricePoint(
+            provider="azure", category="dynamodb-reads", sku="cosmos:read-request-units",
+            name="Cosmos DB read requests (1 RU each)", region=region,
+            unit="request", price_usd=per_ru,
+            attributes={"ru_per_op": "1", "rate_per_1m_ru": str(ru_price)}))
+        out.append(PricePoint(
+            provider="azure", category="dynamodb-writes", sku="cosmos:write-request-units",
+            name=f"Cosmos DB write requests (~{_COSMOS_RU_PER_WRITE} RU each)",
+            region=region, unit="request",
+            price_usd=per_ru * Decimal(_COSMOS_RU_PER_WRITE),
+            attributes={"ru_per_op": str(_COSMOS_RU_PER_WRITE),
+                        "derived": "write billed at documented ~5 RU per 1KB item",
+                        "rate_per_1m_ru": str(ru_price)}))
+    if storage is not None:
+        out.append(PricePoint(
+            provider="azure", category="dynamodb-storage", sku="cosmos:storage",
+            name="Cosmos DB storage", region=region, unit="GB-month", price_usd=storage))
+    return out
+
+
 def fetch_cdn_prices(region_key: str) -> list[PricePoint]:
     """Azure Front Door Standard data transfer out, per GB, for the region's
     zone. The modern CDN equivalent of CloudFront/Cloud CDN egress."""
@@ -1073,6 +1140,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_storage_prices,
         fetch_egress_prices,
         fetch_cdn_prices,
+        fetch_keyvalue_prices,
         fetch_cache_prices,
         fetch_monitoring_prices,
         fetch_loadbalancer_prices,

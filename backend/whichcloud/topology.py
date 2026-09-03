@@ -57,8 +57,8 @@ _KIND_BY_PREFIX = {
     "Fargate memory": "compute_fargate",
     "Database storage": "database",
     "Load balancer LCUs": "loadbalancer",
-    "S3 write requests": "storage",
-    "S3 read requests": "storage",
+    "Object storage write requests": "storage",
+    "Object storage read requests": "storage",
     # Previously unmapped -- fell through to "compute" by default (see
     # _kind_for below), which folded their cost into the compute box and
     # meant these services never appeared on the diagram at all.
@@ -76,6 +76,13 @@ _KIND_BY_PREFIX = {
     "DynamoDB reads": "dynamodb",
     "DynamoDB writes": "dynamodb",
     "DynamoDB storage": "dynamodb",
+    # Same node kind, the other clouds' product names for it.
+    "Cosmos DB reads": "dynamodb",
+    "Cosmos DB writes": "dynamodb",
+    "Cosmos DB storage": "dynamodb",
+    "Firestore reads": "dynamodb",
+    "Firestore writes": "dynamodb",
+    "Firestore storage": "dynamodb",
     "Rekognition images": "rekognition",
     "Comprehend sentiment": "comprehend",
     "IoT Core messages": "iot",

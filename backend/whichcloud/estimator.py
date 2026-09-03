@@ -339,6 +339,14 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "dynamodb-reads", "request-units"): "dynamodb:read-request-units",
     ("aws", "dynamodb-writes", "request-units"): "dynamodb:write-request-units",
     ("aws", "dynamodb-storage", "gb-month"): "dynamodb:storage",
+    # Key-value equivalents. Azure Cosmos DB serverless and GCP Firestore both
+    # bill per request + per GB, the same shape DynamoDB does.
+    ("azure", "dynamodb-reads", "request-units"): "cosmos:read-request-units",
+    ("azure", "dynamodb-writes", "request-units"): "cosmos:write-request-units",
+    ("azure", "dynamodb-storage", "gb-month"): "cosmos:storage",
+    ("gcp", "dynamodb-reads", "request-units"): "firestore:read-ops",
+    ("gcp", "dynamodb-writes", "request-units"): "firestore:write-ops",
+    ("gcp", "dynamodb-storage", "gb-month"): "firestore:storage",
     ("aws", "rekognition", "images"): "rekognition:images",
     ("aws", "comprehend", "units"): "comprehend:sentiment",
     ("aws", "iot", "messages"): "iot:messages",
@@ -728,21 +736,26 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- DynamoDB (on-demand) ----
     if spec.dynamodb_read_units_per_month or spec.dynamodb_write_units_per_month:
+        # The store's real product name per cloud -- an Azure bill showing
+        # "DynamoDB reads" beside a cosmos: SKU reads as a mistake.
+        _kv_name = {"aws": "DynamoDB", "azure": "Cosmos DB", "gcp": "Firestore"}.get(
+            provider, "Key-value store"
+        )
         reads = _by_role(provider, region, "dynamodb-reads", "request-units", dsn)
         writes = _by_role(provider, region, "dynamodb-writes", "request-units", dsn)
         store_pt = _by_role(provider, region, "dynamodb-storage", "gb-month", dsn)
         if reads and writes:
             if spec.dynamodb_read_units_per_month:
                 result.items.append(
-                    _tiered_line("DynamoDB reads", reads, spec.dynamodb_read_units_per_month)
+                    _tiered_line(f"{_kv_name} reads", reads, spec.dynamodb_read_units_per_month)
                 )
             if spec.dynamodb_write_units_per_month:
                 result.items.append(
-                    _tiered_line("DynamoDB writes", writes, spec.dynamodb_write_units_per_month)
+                    _tiered_line(f"{_kv_name} writes", writes, spec.dynamodb_write_units_per_month)
                 )
             if store_pt and spec.dynamodb_storage_gb:
                 result.items.append(
-                    _tiered_line("DynamoDB storage", store_pt, spec.dynamodb_storage_gb)
+                    _tiered_line(f"{_kv_name} storage", store_pt, spec.dynamodb_storage_gb)
                 )
         else:
             result.missing.append("dynamodb")
@@ -1202,9 +1215,13 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         put = _by_role(provider, region, "s3_requests", "put", dsn)
         get = _by_role(provider, region, "s3_requests", "get", dsn)
         if put and spec.s3_put_requests:
-            result.items.append(_metered_line("S3 write requests", put, spec.s3_put_requests))
+            result.items.append(
+                _metered_line("Object storage write requests", put, spec.s3_put_requests)
+            )
         if get and spec.s3_get_requests:
-            result.items.append(_metered_line("S3 read requests", get, spec.s3_get_requests))
+            result.items.append(
+                _metered_line("Object storage read requests", get, spec.s3_get_requests)
+            )
         if not put or not get:
             result.missing.append("object storage requests")
 
