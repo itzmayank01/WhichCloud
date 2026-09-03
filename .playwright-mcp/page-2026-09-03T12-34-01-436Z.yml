@@ -1,0 +1,26 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#content"
+  - banner [ref=e3]:
+    - link "WhichCloud home" [ref=e4] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e5]:
+        - img "WhichCloud" [ref=e6]
+        - generic [ref=e9]: WhichCloud
+    - navigation "Main" [ref=e10]:
+      - link "Price index" [ref=e11] [cursor=pointer]:
+        - /url: /prices
+      - link "Architecture" [ref=e12] [cursor=pointer]:
+        - /url: /#architecture
+      - link "Optimizations" [ref=e13] [cursor=pointer]:
+        - /url: /#optimizations
+      - link "Provenance" [ref=e14] [cursor=pointer]:
+        - /url: /#provenance
+      - link "Price your app" [ref=e15] [cursor=pointer]:
+        - /url: /estimate
+    - generic [ref=e16]:
+      - button "Sign in" [ref=e17]
+      - button "Get started" [ref=e18]
+  - main [ref=e19]
+  - button "Open Next.js Dev Tools" [ref=e26] [cursor=pointer]
+  - alert [ref=e30]

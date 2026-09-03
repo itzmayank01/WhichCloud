@@ -239,6 +239,32 @@ export function WorkspaceView({ name }: { name: string | null }) {
                   nodes={shown.topology.nodes}
                   edges={shown.topology.edges}
                   playing
+                  overlayHeader={
+                    result && result.options.length > 0 ? (
+                      /* Tier switcher travels into the overlay so the three
+                         options can be compared full-page without exiting. */
+                      <div className="flex items-center gap-1.5 rounded-xl border border-line bg-surface/95 p-1.5 shadow-lg backdrop-blur">
+                        {result.options.map((option) => (
+                          <button
+                            key={option.label}
+                            onClick={() => setSelected(option.label)}
+                            className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 transition-all ${
+                              option.label === selected
+                                ? "border-accent bg-accent-wash shadow-sm"
+                                : "border-line bg-canvas hover:border-line-strong hover:bg-sunk"
+                            }`}
+                          >
+                            <span className="text-[13px] font-semibold text-ink">
+                              {option.label}
+                            </span>
+                            <span className="tnum font-mono text-[13px] font-semibold text-ink">
+                              {money(option.monthly_usd)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null
+                  }
                 />
               </div>
 

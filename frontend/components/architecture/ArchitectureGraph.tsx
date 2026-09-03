@@ -328,12 +328,15 @@ function Inner({
   nodes: topoNodes,
   edges: topoEdges,
   playing,
+  onPaneClick,
 }: {
   nodes: TopoNode[];
   edges: TopoEdge[];
   playing: boolean;
+  onPaneClick?: () => void;
 }) {
   const [laid, setLaid] = useState<Layout | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const rf = useReactFlow();
   const reduced =
     typeof window !== "undefined" &&
@@ -420,27 +423,38 @@ function Inner({
     // have reported their size so the whole height (account band included) fits.
     const fit = () =>
       rf.fitView({ padding: 0.12, duration: 400, maxZoom: 1.2, minZoom: 0.15 });
-    const t1 = setTimeout(fit, 160);
-    const t2 = setTimeout(fit, 520);
-    // Re-fit on container resize. Without this the diagram keeps the scale it
-    // was fitted at when the sidebar opened or the window changed, and drifts
-    // off the visible area.
+    // Three settles, not two. The layout now runs ELK twice (once per
+    // direction) before nodes exist, and container boxes report their size a
+    // frame after that -- so a fit at 160ms framed an empty graph and a fit at
+    // 520ms framed a partly-measured one. The last settle is what the full-page
+    // overlay actually lands on, and it has to outlast both layouts.
+    const t1 = setTimeout(fit, 200);
+    const t2 = setTimeout(fit, 700);
+    const t3 = setTimeout(fit, 1400);
+    // Re-fit whenever THIS instance's container changes size -- which is how
+    // the full-page overlay gets fitted correctly. Two instances are mounted
+    // (collapsed pane and overlay), so a document-wide querySelector matched
+    // the collapsed one and the overlay fitted to a stale size, opening
+    // zoomed in with the diagram running off the edge. Scope it to our own
+    // element via a ref, and let the observer -- not a fixed timeout -- be
+    // what tells us the surface has finished resizing.
     let raf = 0;
     const ro = new ResizeObserver(() => {
       window.clearTimeout(raf);
       raf = window.setTimeout(fit, 150);
     });
-    const host = document.querySelector(".react-flow");
-    if (host) ro.observe(host);
+    if (hostRef.current) ro.observe(hostRef.current);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      clearTimeout(t3);
       window.clearTimeout(raf);
       ro.disconnect();
     };
   }, [rfNodes, rf]);
 
   return (
+    <div ref={hostRef} className="h-full w-full">
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
@@ -453,12 +467,30 @@ function Inner({
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable
+      onPaneClick={onPaneClick}
+      // onInit fires once React Flow has measured its own container, which is
+      // the only moment we can be sure the surface has real dimensions. The
+      // timer-based settles were firing against a container React Flow had not
+      // measured yet, so the overlay opened at whatever zoom the instance
+      // started with instead of a fitted one.
+      onInit={(inst) => {
+        window.setTimeout(
+          () => inst.fitView({ padding: 0.1, maxZoom: 1.2, minZoom: 0.05 }),
+          400
+        );
+        window.setTimeout(
+          () => inst.fitView({ padding: 0.1, maxZoom: 1.2, minZoom: 0.05 }),
+          1200
+        );
+      }}
       proOptions={{ hideAttribution: true }}
       className="bg-white"
+      style={{ cursor: onPaneClick ? "zoom-in" : undefined }}
     >
       <Background gap={20} size={1} color="#F3F4F6" />
       <Controls showInteractive={false} />
     </ReactFlow>
+    </div>
   );
 }
 
@@ -466,13 +498,69 @@ export function ArchitectureGraph(props: {
   nodes: TopoNode[];
   edges: TopoEdge[];
   playing?: boolean;
+  /** Rendered at the top of the overlay so tiers can be compared without
+   *  leaving full-page view. */
+  overlayHeader?: React.ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Esc closes. Bound on the window rather than the overlay so it works
+  // regardless of where focus happens to be after a pan.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
+
+  const graph = (inOverlay: boolean) => (
+    <ReactFlowProvider>
+      <Inner
+        nodes={props.nodes}
+        edges={props.edges}
+        playing={props.playing ?? true}
+        onPaneClick={inOverlay ? undefined : () => setExpanded(true)}
+      />
+    </ReactFlowProvider>
+  );
+
   return (
-    <div className="h-full w-full">
+    <div className="group relative h-full w-full">
       <style>{`@keyframes wc-flow { to { stroke-dashoffset: -226; } }`}</style>
-      <ReactFlowProvider>
-        <Inner nodes={props.nodes} edges={props.edges} playing={props.playing ?? true} />
-      </ReactFlowProvider>
+
+      {/* Only ONE graph is mounted at a time. Keeping the collapsed pane alive
+          under the overlay meant two React Flow instances laying out and
+          fitting simultaneously; the overlay opened un-fitted because its fit
+          was racing a second instance measuring the same content. Unmounting
+          the collapsed one also halves the ELK work when expanding. */}
+      {!expanded && graph(false)}
+
+      {!expanded && (
+        <div className="pointer-events-none absolute bottom-3 right-3 rounded-md border border-line bg-surface/95 px-2 py-1 text-[11px] font-medium text-ink-3 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+          Click to expand
+        </div>
+      )}
+
+      {expanded && (
+        <div className="fixed inset-0 z-[100] bg-white" role="dialog" aria-modal="true">
+          {props.overlayHeader && (
+            <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
+              <div className="pointer-events-auto">{props.overlayHeader}</div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            aria-label="Close full-page diagram"
+            className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-lg border border-line-strong bg-surface text-ink-2 shadow-sm transition-colors hover:bg-sunk focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <Icon icon="mdi:close" className="h-5 w-5" />
+          </button>
+          <div className="h-full w-full" key="overlay-graph">{graph(true)}</div>
+        </div>
+      )}
     </div>
   );
 }
