@@ -94,7 +94,11 @@ _KIND_BY_PREFIX = {
     "Timestream storage": "timestream",
     "Firehose delivery": "firehose",
     "Athena data scanned": "athena",
+    "Synapse serverless SQL data scanned": "athena",
+    "BigQuery data scanned": "athena",
     "Glue ETL": "glue",
+    "Data Factory": "glue",
+    "Dataflow": "glue",
     # Was falling through to the "compute" default -- harmless-looking on a
     # server diagram (its $0.40 quietly summed onto the compute box) but on a
     # serverless one it MANUFACTURED an EC2 box, and an EC2 box in a subnet

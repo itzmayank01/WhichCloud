@@ -632,6 +632,26 @@ def fetch_functions_prices(region_key: str) -> list[PricePoint]:
     return out
 
 
+def fetch_warehouse_prices(region_key: str) -> list[PricePoint]:
+    """BigQuery has no warehouse NODES to provision, at a genuine $0.
+
+    Redshift and Synapse sell provisioned capacity; BigQuery is serverless --
+    the same queries are billed per TiB scanned, which this bill already
+    carries as "BigQuery on-demand analysis". Publishing the node line at a
+    real $0 with that reason states where the cost went, instead of reporting
+    the warehouse missing and marking an otherwise complete estimate
+    incomplete. (Slot reservations exist under BigQuery Editions, but their
+    meters are not published in the Cloud Billing Catalog.)
+    """
+    region = provider_region(region_key, "gcp")
+    return [PricePoint(
+        provider="gcp", category="warehouse_unit", sku="bigquery:serverless",
+        name="BigQuery serverless (no provisioned nodes)", region=region,
+        unit="hour", price_usd=Decimal(0),
+        attributes={"billed_as": "per-TiB scanned, see BigQuery analysis line"},
+    )]
+
+
 def fetch_apigateway_prices(region_key: str) -> list[PricePoint]:
     """The HTTPS entry point for a GCP serverless backend, at a genuine $0.
 
@@ -1255,6 +1275,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_container_prices,
         fetch_vision_prices,
         fetch_apigateway_prices,
+        fetch_warehouse_prices,
         fetch_query_engine_prices,
         fetch_etl_prices,
         fetch_object_request_prices,

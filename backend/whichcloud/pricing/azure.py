@@ -962,6 +962,28 @@ def _consumption(service: str, region: str, pages: int = 6) -> list[dict]:
     ]
 
 
+def fetch_warehouse_prices(region_key: str) -> list[PricePoint]:
+    """Synapse dedicated SQL pool, priced per DW100c unit-hour.
+
+    Redshift sells sized NODES; Synapse sells data-warehouse units. DW100c --
+    100 DWUs, the smallest dedicated pool you can provision -- is the closest
+    like-for-like to one node, so it is published in its own category and the
+    estimator prices one unit per requested node.
+    """
+    region = provider_region(region_key, "azure")
+    price = _first_paid(
+        _consumption("Azure Synapse Analytics", region),
+        lambda i: "DWU" in (i.get("meterName") or "")
+        and "Provisioned" in (i.get("productName") or ""),
+    )
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="warehouse_unit",
+        sku="synapse:dw100c-hour", name="Synapse dedicated SQL (DW100c)",
+        region=region, unit="hour", price_usd=price,
+        attributes={"dwu": "100"})]
+
+
 def fetch_vision_prices(region_key: str) -> list[PricePoint]:
     """Azure Vision image analysis, per transaction -- the Rekognition role.
 
@@ -1359,6 +1381,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_functions_prices,
         fetch_container_prices,
         fetch_vision_prices,
+        fetch_warehouse_prices,
         fetch_apigateway_prices,
         fetch_queue_prices,
         fetch_notification_prices,

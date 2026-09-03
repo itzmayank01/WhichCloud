@@ -429,6 +429,14 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("gcp", "posture", "checks"): None,
 }
 
+#: The unit-priced warehouse SKU per cloud, for providers that do not sell
+#: sized warehouse nodes the way Redshift does.
+_WAREHOUSE_UNIT_SKU: dict[str, str] = {
+    "azure": "synapse:dw100c-hour",
+    "gcp": "bigquery:serverless",
+}
+
+
 
 def _sku(provider: str, category: str, role: str) -> str | None:
     return PROVIDER_SKUS.get((provider, category, role))
@@ -825,14 +833,22 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     if spec.athena_tb_scanned_per_month:
         point = _by_role(provider, region, "athena", "tb", dsn)
         if point:
-            result.items.append(_tiered_line("Athena data scanned", point, spec.athena_tb_scanned_per_month))
+            _q = {"aws": "Athena", "azure": "Synapse serverless SQL",
+                  "gcp": "BigQuery"}.get(provider, "Query engine")
+            result.items.append(
+                _tiered_line(f"{_q} data scanned", point, spec.athena_tb_scanned_per_month)
+            )
         else:
             result.missing.append("query engine")
 
     if spec.glue_dpu_hours_per_month:
         point = _by_role(provider, region, "glue", "dpu-hour", dsn)
         if point:
-            result.items.append(_tiered_line("Glue ETL", point, spec.glue_dpu_hours_per_month))
+            _e = {"aws": "Glue ETL", "azure": "Data Factory",
+                  "gcp": "Dataflow"}.get(provider, "Managed ETL")
+            result.items.append(
+                _tiered_line(_e, point, spec.glue_dpu_hours_per_month)
+            )
         else:
             result.missing.append("managed ETL")
 
@@ -1146,6 +1162,15 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.warehouse_node_memory_gb or 0.0,
             dsn=dsn,
         )
+        # Only Redshift sells sized warehouse NODES. Synapse sells DW100c
+        # units, and BigQuery sells nothing at all (it is serverless, billed
+        # per TiB scanned on the analysis line). Both are published in
+        # `warehouse_unit` and priced one unit per requested node.
+        unit = (
+            None if point
+            else store.get_price(provider, region, "warehouse_unit",
+                                 _WAREHOUSE_UNIT_SKU.get(provider, ""), dsn=dsn)
+        )
         if point:
             result.items.append(
                 _hourly_line(
@@ -1153,6 +1178,11 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                     point,
                     spec.warehouse_node_count,
                 )
+            )
+        elif unit:
+            result.items.append(
+                _hourly_line(f"{unit.name} \u00d7 {spec.warehouse_node_count}",
+                             unit, spec.warehouse_node_count)
             )
         else:
             result.missing.append("data warehouse node")
@@ -1169,6 +1199,17 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             provider, region, "fargate", f"{prefix}vcpu-hour", dsn=dsn
         )
         gb_point = store.get_price(provider, region, "fargate", f"{prefix}gb-hour", dsn=dsn)
+        # Only AWS prices Arm containers as a separate, cheaper SKU (Graviton
+        # Fargate). Azure Container Instances and Cloud Run publish ONE rate
+        # whatever the architecture, so an Arm request there falls back to the
+        # standard rate rather than reporting the whole container tier missing.
+        if prefix.endswith("arm-") and not (vcpu_point and gb_point):
+            vcpu_point = vcpu_point or store.get_price(
+                provider, region, "fargate", "fargate:vcpu-hour", dsn=dsn
+            )
+            gb_point = gb_point or store.get_price(
+                provider, region, "fargate", "fargate:gb-hour", dsn=dsn
+            )
         if vcpu_point and gb_point:
             hours = HOURS_PER_MONTH * Decimal(spec.fargate_task_count)
             vcpu_qty = hours * Decimal(str(spec.fargate_task_vcpu))
