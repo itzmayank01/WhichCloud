@@ -104,6 +104,7 @@ type ElkChild = {
  *  Non-VPC nodes hang directly under the region; VPC-resident ones nest into
  *  the public or private subnet inside the single AZ. */
 function parentOf(node: PlanedNode, hasVpc: boolean): string {
+  if (node.container === "outside") return "outside";
   if (node.container === "edge") return "edge";
   // Managed services outside the VPC get their own strip rather than floating
   // loose in the region -- see REGIONAL_SERVICE in graphModel.
@@ -146,6 +147,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // (an AZ or subnet with nothing in it must not be drawn).
   const regionChildren: ElkChild[] = (byParent.get("region") ?? []).map(serviceChild);
 
+  const outsideNodes = byParent.get("outside") ?? [];
   const edgeNodes = byParent.get("edge") ?? [];
   const regionalNodes = byParent.get("regional") ?? [];
   if (regionalNodes.length) {
@@ -205,10 +207,16 @@ export async function layout(model: GraphModel): Promise<Layout> {
     id: "cloud",
     layoutOptions: {
       "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
+      "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+      // BRANDES_KOEPF centres each rank instead of top-aligning it. With
+      // NETWORK_SIMPLEX the edge cluster sank to the bottom of its column and
+      // left a tall empty band above it, with long edges climbing back up into
+      // the VPC.
+      "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.alignment": "CENTER",
       "elk.layered.spacing.nodeNodeBetweenLayers": "64",
       "elk.layered.spacing.edgeNodeBetweenLayers": "28",
       "elk.spacing.nodeNode": "40",
@@ -224,6 +232,9 @@ export async function layout(model: GraphModel): Promise<Layout> {
     },
     labels: [{ text: CONTAINER_LABEL["cloud"] }],
     children: [
+      // The caller, at graph root and first in declaration order so the request
+      // path reads left to right: users -> edge -> region.
+      ...outsideNodes.map(serviceChild),
       ...(edgeNodes.length
         ? [{
             id: "edge",

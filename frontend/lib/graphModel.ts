@@ -142,6 +142,7 @@ export type PlanedNode = TopoNode & {
 
 export type ContainerId =
   | "cloud"
+  | "outside"
   | "edge"
   | "region"
   | "regional"
@@ -224,9 +225,16 @@ const REGIONAL_SERVICE = new Set([
  *  are -- the reference AWS diagrams always put them outside it. Doing so also
  *  removes the long edges that used to run from the top-right of the region all
  *  the way down into the VPC. */
-const EDGE_SERVICE = new Set(["cdn", "waf", "dns", "tls"]);
+const EDGE_SERVICE = new Set(["cdn", "network", "waf", "dns", "tls"]);
+
+/** The caller. Belongs OUTSIDE the cloud boundary entirely -- it is the one
+ *  node that is not infrastructure we bill for. Leaving it to fall through to
+ *  the region drew end users inside the AWS region box, and pushed the whole
+ *  request path out of reading order. */
+const OUTSIDE_CLOUD = new Set(["client"]);
 
 function containerFor(kind: string, hasVpc: boolean): ContainerId {
+  if (OUTSIDE_CLOUD.has(kind)) return "outside";
   if (EDGE_SERVICE.has(kind)) return "edge";
   if (REGIONAL_SERVICE.has(kind)) return "regional";
   if (!hasVpc) return "region";
