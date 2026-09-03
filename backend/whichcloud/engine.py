@@ -1032,7 +1032,10 @@ def ai_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
     whole reason the generic-compute shape was the wrong answer for it.
     """
     spec = serverless_spec(requirement, label)
-    calls = _monthly_invocations(requirement)  # one inference per request
+    # Volume comes from _ai_inference_volume, not the raw request count: for a
+    # pure AI service every call IS an inference (so they are equal), but the
+    # same helper serves the overlay path where they are not.
+    calls = _ai_inference_volume(requirement)
 
     return replace(
         spec,
@@ -1782,6 +1785,93 @@ def _scale_to_budget(
     return spec, budget_exceeds_ceiling
 
 
+#: Fraction of AI inference volume that is driven by USER UPLOADS rather than
+#: by every request. Image moderation runs on a seller's photo upload, not on
+#: each of a marketplace's four million daily orders -- billing it per request
+#: put $70,250/mo of Rekognition on a bill whose whole compute tier was $568.
+#: HEURISTIC, stated in one place so it can be argued with, like BASE_SIZING.
+AI_UPLOADS_PER_TRANSACTION = 0.02
+
+
+def _ai_inference_volume(requirement: Requirement) -> float:
+    """Monthly AI inferences.
+
+    Driven by content submitted for analysis, not by request count. A pure AI
+    service (serverless, every call IS an inference) still gets one per
+    invocation; a web app that happens to moderate uploads gets the upload
+    share instead.
+    """
+    calls = _monthly_invocations(requirement)
+    if requirement.serverless or not requirement.serves_requests:
+        return calls
+    return max(LAMBDA_INVOCATIONS_FLOOR, calls * AI_UPLOADS_PER_TRANSACTION)
+
+
+#: Capabilities that only a full application has. An "AI image platform" is an
+#: AI service and nothing else; a marketplace that moderates seller photos
+#: declares a search index, analytics, queues and an availability promise as
+#: well -- so AI is a FEATURE of it, not its shape. This is the discriminator
+#: between "AI/events IS the workload" and "the workload HAS AI/events", and it
+#: is a HEURISTIC stated in one place so it can be argued with.
+def _has_application_tier(requirement: Requirement) -> bool:
+    """Does this workload run an application of its own, beyond the capability?
+
+    True when it declares things only a full app needs. The AI and event
+    archetypes then become overlays on that app rather than replacing it --
+    which is what stopped a marketplace losing its compute, database, load
+    balancer and cache the moment image moderation was mentioned.
+    """
+    # Deliberately NOT needs_analytics: an IoT telemetry pipeline wants
+    # analytics because analysing the telemetry is the whole job, so it says
+    # nothing about whether an application tier exists.
+    return bool(
+        requirement.needs_search
+        or requirement.needs_queue
+        or requirement.needs_notifications
+        or requirement.needs_email
+        or requirement.high_availability
+    )
+
+
+def _with_capabilities(
+    spec: ArchitectureSpec, requirement: Requirement
+) -> ArchitectureSpec:
+    """Layer capability services ONTO whatever base shape was chosen.
+
+    THE BUG THIS FIXES: the shape router used to be exclusive --
+    `if event_driven / elif ai / elif serverless / elif batch / else web` --
+    so one shape won and the rest were silently discarded. Adding AI moderation
+    and order-streaming to a marketplace therefore REMOVED its compute,
+    database, load balancer and cache: 39 priced services collapsed to 29, of
+    which one Rekognition line was half the bill.
+
+    A marketplace that moderates images is a web app that also calls
+    Rekognition, not a serverless AI app with no database. So capabilities are
+    additive here, and only the PRIMARY shape is chosen exclusively.
+
+    Only fills fields the base shape left empty, so a shape that already sizes
+    its own streaming or inference (the event and AI archetypes) is untouched.
+    """
+    updates: dict = {}
+
+    if getattr(requirement, "ai", False):
+        volume = _ai_inference_volume(requirement)
+        if requirement.ai_vision and not spec.rekognition_images_per_month:
+            updates["rekognition_images_per_month"] = volume
+        if requirement.ai_language and not spec.comprehend_units_per_month:
+            updates["comprehend_units_per_month"] = (
+                volume * AI_UNITS_PER_TEXT_PREDICTION
+            )
+
+    # A web app with an event feed gets a stream alongside its database, not
+    # instead of it.
+    if requirement.needs_event_streaming and not spec.stream_shards:
+        updates["stream_shards"] = stream_shards_for(requirement) or 1
+        updates["stream_put_units"] = _monthly_invocations(requirement)
+
+    return replace(spec, **updates) if updates else spec
+
+
 def recommend(
     requirement: Requirement,
     provider: str = "aws",
@@ -1808,9 +1898,20 @@ def recommend(
     # Lower priority than event_driven (a streaming pipeline that also happens
     # to be labelled batch is still event-driven), higher than the web shape.
     batch = (not event_driven) and requirement.workload_type == "batch"
-    if event_driven:
+
+    # PRIMARY SHAPE ONLY. `ai` and `event_driven` describe capabilities a
+    # workload HAS, not necessarily the shape it IS -- so they select the
+    # primary shape only when nothing is being served over the web. A
+    # request-serving app keeps its web (or serverless) shape and picks the AI
+    # and streaming services up as overlays in _with_capabilities().
+    web_first = (
+        requirement.serves_requests
+        and not serverless
+        and _has_application_tier(requirement)
+    )
+    if event_driven and not web_first:
         variants = _event_driven_variants(requirement)
-    elif ai:
+    elif ai and not web_first:
         variants = _ai_variants(requirement)
     elif serverless:
         variants = _serverless_variants(requirement)
@@ -1827,9 +1928,13 @@ def recommend(
     _scaled_by_label: dict[str, ArchitectureSpec] = {}
 
     for label, rationale, delta, tradeoffs in variants:
-        if event_driven:
+        # Mirrors the variant routing above -- the two chains MUST agree, or the
+        # tiers describe one shape while the spec prices another. They diverged
+        # once: variants said web, spec still said event-driven, and the bill
+        # came back with a load balancer beside DynamoDB and API Gateway.
+        if event_driven and not web_first:
             spec = event_driven_spec(requirement, label)
-        elif ai:
+        elif ai and not web_first:
             spec = ai_spec(requirement, label)
         elif serverless:
             spec = serverless_spec(requirement, label)
@@ -1839,6 +1944,8 @@ def recommend(
             spec = base_spec(requirement, label)
         if delta:
             spec = replace(spec, **delta)
+        # Capabilities layer ON TOP of the primary shape (see _with_capabilities).
+        spec = _with_capabilities(spec, requirement)
         # A tier cannot be less available than the one below it. This floor
         # was applied to "Most reliable" alone, so on a small workload the
         # top tier came out with ONE instance where the middle tier had two
@@ -1846,7 +1953,17 @@ def recommend(
         # Server shapes only: serverless, AI and event-driven shapes have no
         # fixed instance count to floor, and forcing one would manufacture a
         # phantom EC2 fleet (or, for event_driven, override its Spot workers).
-        server_shape = not serverless and not ai and not event_driven and not batch
+        # THIRD place the shape decision is made, and it has to agree with the
+        # other two. Keying it off the raw ai/event_driven FLAGS rather than the
+        # chosen shape meant a web app that merely *had* those capabilities was
+        # treated as not-a-server: it silently lost its compute floors, its
+        # cross-AZ transfer line and budget scaling entirely, and adding a
+        # capability made the bill go DOWN by $19k.
+        server_shape = (
+            not serverless
+            and not batch
+            and (web_first or not (ai or event_driven))
+        )
         if server_shape and label == "Most reliable":
             spec = replace(spec, compute_count=max(2, spec.compute_count))
         elif server_shape and label == "Most optimized":
