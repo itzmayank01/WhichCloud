@@ -64,6 +64,8 @@ const CONTAINER_STYLE: Record<string, ContainerStyle> = {
   "subnet-data":   { border: "#3B48CC", width: 1.5, fill: "#F7F8FD", ink: "#3B48CC" },
   edge:     { border: "#8C4FFF", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#8C4FFF" },
   regional: { border: "#232F3E", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#232F3E" },
+  "routetable-public": { border: "#7AA116", width: 1.5, fill: "#FFFFFF", ink: "#5B7A10" },
+  "routetable-private": { border: "#00A4A6", width: 1.5, fill: "#FFFFFF", ink: "#007F80" },
 };
 
 function containerStyle(kind: string): ContainerStyle {
@@ -74,10 +76,132 @@ function containerStyle(kind: string): ContainerStyle {
   return CONTAINER_STYLE[kind] ?? CONTAINER_STYLE.cloud;
 }
 
+/* Container badges, the way the AWS reference diagrams mark a boundary: a
+   small filled square carrying a white glyph, sitting to the left of the
+   label. The glyph is what tells you at a glance whether a box is the account,
+   a region, a zone, the VPC or a subnet -- colour alone does not, especially
+   for the two subnet tiers that share a family of blues. */
+function badgeFor(kind: string): { bg: string; glyph: React.ReactNode } | null {
+  const lock = (
+    <>
+      <path d="M4.5 7.5V6a2 2 0 014 0v1.5" fill="none" stroke="#FFF" strokeWidth="1.3" />
+      <rect x="3.4" y="7.4" width="6.2" height="5" rx="1" fill="#FFF" />
+    </>
+  );
+  if (kind === "cloud") return { bg: "#232F3E", glyph: "aws" };
+  if (kind === "region")
+    return {
+      // Flag on a pole -- the reference's region marker.
+      bg: "#00A4A6",
+      glyph: (
+        <>
+          <path d="M4 3v9" stroke="#FFF" strokeWidth="1.3" strokeLinecap="round" />
+          <path d="M4.8 3.6h5l-1.4 2 1.4 2h-5z" fill="#FFF" />
+        </>
+      ),
+    };
+  if (kind.startsWith("az-"))
+    return {
+      // Location pin -- a zone is a place.
+      bg: "#147EBA",
+      glyph: (
+        <>
+          <path d="M6.5 2.6c1.9 0 3.4 1.5 3.4 3.4 0 2.4-3.4 6-3.4 6S3.1 8.4 3.1 6c0-1.9 1.5-3.4 3.4-3.4z" fill="#FFF" />
+          <circle cx="6.5" cy="5.9" r="1.2" fill="#147EBA" />
+        </>
+      ),
+    };
+  if (kind === "vpc")
+    return {
+      bg: "#8C4FFF",
+      glyph: (
+        <>
+          <rect x="2.6" y="2.6" width="7.8" height="7.8" rx="1" fill="none" stroke="#FFF" strokeWidth="1.3" />
+          <path d="M6.5 4.4v4.2M4.6 6.5h3.8" stroke="#FFF" strokeWidth="1.1" />
+        </>
+      ),
+    };
+  if (kind.startsWith("routetable-")) {
+    const bg = kind.endsWith("public") ? "#7AA116" : "#00A4A6";
+    return {
+      bg,
+      glyph: (
+        <>
+          <rect x="2.4" y="3" width="8.2" height="7" rx="1" fill="none" stroke="#FFF" strokeWidth="1.2" />
+          <path d="M2.4 5.3h8.2M5.6 5.3V10" stroke="#FFF" strokeWidth="1.1" />
+        </>
+      ),
+    };
+  }
+  if (kind.startsWith("subnet-public")) return { bg: "#7AA116", glyph: lock };
+  if (kind.startsWith("subnet-")) return { bg: "#00A4A6", glyph: lock };
+  if (kind === "edge")
+    return {
+      bg: "#8C4FFF",
+      glyph: (
+        <>
+          <circle cx="6.5" cy="6.5" r="4" fill="none" stroke="#FFF" strokeWidth="1.3" />
+          <path d="M2.5 6.5h8M6.5 2.5c1.8 2.3 1.8 5.7 0 8M6.5 2.5c-1.8 2.3-1.8 5.7 0 8" fill="none" stroke="#FFF" strokeWidth="1" />
+        </>
+      ),
+    };
+  if (kind === "regional")
+    return {
+      bg: "#232F3E",
+      glyph: (
+        <>
+          <path d="M6.5 2.4l3.8 2.1v4.2L6.5 10.8 2.7 8.7V4.5z" fill="none" stroke="#FFF" strokeWidth="1.2" />
+          <path d="M2.7 4.5l3.8 2.1 3.8-2.1M6.5 6.6v4.2" fill="none" stroke="#FFF" strokeWidth="1.1" />
+        </>
+      ),
+    };
+  return null;
+}
+
+function ContainerBadge({ kind }: { kind: string }) {
+  const b = badgeFor(kind);
+  if (!b) return null;
+  // The AWS wordmark is set as text; every other badge is a glyph.
+  if (b.glyph === "aws")
+    return (
+      <span
+        className="grid h-[18px] w-[22px] shrink-0 place-items-center rounded-[2px] text-[8px] font-bold lowercase leading-none tracking-tight text-white"
+        style={{ background: b.bg }}
+      >
+        aws
+      </span>
+    );
+  return (
+    <span
+      className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[2px]"
+      style={{ background: b.bg }}
+    >
+      <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden>
+        {b.glyph}
+      </svg>
+    </span>
+  );
+}
+
+/* Destination -> target, the two rows every VPC route table really has: the
+   local CIDR, and the default route out. Which gateway the default route uses
+   is the actual difference between a public and a private subnet, so it is
+   worth showing rather than implying. */
+const ROUTE_ROWS: Record<string, Array<[string, string]>> = {
+  "routetable-public": [
+    ["10.0.0.0/16", "local"],
+    ["0.0.0.0/0", "igw"],
+  ],
+  "routetable-private": [
+    ["10.0.0.0/16", "local"],
+    ["0.0.0.0/0", "nat"],
+  ],
+};
+
 function ContainerNode({ data }: NodeProps) {
   const d = data as { label: string; kind: string; w: number; h: number };
   const st = containerStyle(d.kind);
-  const locked = d.kind.startsWith("subnet-");
+  const routes = ROUTE_ROWS[d.kind];
   return (
     <div
       style={{
@@ -91,22 +215,22 @@ function ContainerNode({ data }: NodeProps) {
       {/* Label on a white chip so the container's own border never strikes
           through its text. Sentence case, never centred, never all-caps. */}
       <span
-        className="absolute flex items-center gap-1 whitespace-nowrap rounded-[2px] px-1.5 text-[12px] font-semibold leading-[18px]"
-        style={{ left: 10, top: -10, background: "#FFFFFF", color: st.ink }}
+        className="absolute flex items-center gap-1.5 whitespace-nowrap rounded-[2px] pr-1.5 text-[12px] font-semibold leading-[18px]"
+        style={{ left: 8, top: -10, background: "#FFFFFF", color: st.ink }}
       >
-        {locked && (
-          <svg width="9" height="11" viewBox="0 0 9 11" aria-hidden>
-            <path
-              d="M2 4V3a2.5 2.5 0 015 0v1"
-              fill="none"
-              stroke={st.ink}
-              strokeWidth="1.2"
-            />
-            <rect x="1" y="4" width="7" height="6" rx="1" fill={st.ink} />
-          </svg>
-        )}
+        <ContainerBadge kind={d.kind} />
         {d.label}
       </span>
+      {routes && (
+        <div className="flex h-full flex-col justify-center gap-0.5 px-2 pt-2">
+          {routes.map(([dest, via]) => (
+            <div key={dest} className="flex items-center justify-between gap-2">
+              <span className="font-mono text-[9.5px] text-ink-2">{dest}</span>
+              <span className="font-mono text-[9.5px] text-ink-3">{via}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

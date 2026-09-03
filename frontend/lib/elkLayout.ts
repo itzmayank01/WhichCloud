@@ -96,6 +96,8 @@ const CONTAINER_LABEL: Record<string, string> = {
   region: "Region: ap-south-1 (Mumbai)",
   regional: "Regional services",
   vpc: "VPC 10.0.0.0/16",
+  "routetable-public": "Public route table",
+  "routetable-private": "Private route table",
   az: "Availability Zone",
   "az-a": "Availability Zone ap-south-1a",
   "az-b": "Availability Zone ap-south-1b",
@@ -236,6 +238,25 @@ export async function layout(model: GraphModel): Promise<Layout> {
     // or placing the AZ blocks by hand after layout.
     const azs = [azBlock("a"), azBlock("b")].filter(Boolean) as ElkChild[];
     if (azs.length) {
+      // Route tables, the way the AWS reference draws them: inside the VPC,
+      // outside the zones, one per subnet tier. They are structural rather
+      // than billed -- a route table costs nothing -- so they carry no price
+      // and no edges; which subnets they govern is shown by placement, the
+      // same convention the governance strip already uses.
+      const routeTables: ElkChild[] = [];
+      const hasPublic = (["a", "b"] as const).some(
+        (z) => (byParent.get(`subnet-public-${z}`) ?? []).length
+      );
+      const hasPrivate = (["a", "b"] as const).some(
+        (z) =>
+          (byParent.get(`subnet-app-${z}`) ?? []).length ||
+          (byParent.get(`subnet-data-${z}`) ?? []).length
+      );
+      if (hasPublic)
+        routeTables.push({ id: "routetable-public", width: 168, height: 74, children: [] });
+      if (hasPrivate)
+        routeTables.push({ id: "routetable-private", width: 168, height: 74, children: [] });
+
       regionChildren.push({
         id: "vpc",
         layoutOptions: {
@@ -246,7 +267,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
           "elk.direction": "RIGHT",
         },
         labels: [{ text: CONTAINER_LABEL["vpc"] }],
-        children: azs,
+        children: [...azs, ...routeTables],
       });
     }
   }
@@ -431,8 +452,10 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const y = oy + (elkNode.y ?? 0);
     abs.set(elkNode.id, { x, y });
     box.set(elkNode.id, { x, y, w: elkNode.width ?? 0, h: elkNode.height ?? 0 });
-    const isContainer = Array.isArray(elkNode.children) && elkNode.children.length > 0
-      && !nodeById.has(elkNode.id);
+    const isContainer =
+      (elkNode.id.startsWith("routetable-") ||
+        (Array.isArray(elkNode.children) && elkNode.children.length > 0)) &&
+      !nodeById.has(elkNode.id);
     // Subnet ids carry a zone suffix (subnet-app-a, subnet-data-b) but the
     // label table is keyed unsuffixed -- looked up raw, every subnet box failed
     // the lookup and was silently dropped from the render, which is why the
