@@ -934,6 +934,118 @@ _AZURE_FRONTDOOR_ZONE = {
 _COSMOS_RU_PER_WRITE = 5
 
 
+def _first_paid(items, match) -> "Decimal | None":
+    """Lowest non-zero rate among rows `match` accepts.
+
+    Azure publishes consumption meters as graduated bands with a free grant at
+    tierMinimumUnits 0. `_decimal` already returns None for a zero price, so
+    this picks the first band a real workload actually pays.
+    """
+    best = None
+    for item in items:
+        if not match(item):
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is None:
+            continue
+        if best is None or price < best:
+            best = price
+    return best
+
+
+def _consumption(service: str, region: str, pages: int = 6) -> list[dict]:
+    return [
+        it for it in _paged(
+            f"serviceName eq '{service}' and priceType eq 'Consumption' "
+            f"and armRegionName eq '{region}'", max_pages=pages
+        )
+    ]
+
+
+def fetch_functions_prices(region_key: str) -> list[PricePoint]:
+    """Azure Functions consumption: executions and GB-second duration --
+    the same two meters AWS Lambda bills, so they map onto the same roles."""
+    region = provider_region(region_key, "azure")
+    items = _consumption("Functions", region)
+    out: list[PricePoint] = []
+    execs = _first_paid(items, lambda i: "Total Executions" in (i.get("meterName") or ""))
+    dur = _first_paid(items, lambda i: "Execution Time" in (i.get("meterName") or ""))
+    if execs is not None:
+        # Published per 10 executions; the estimator bills per execution.
+        out.append(PricePoint(provider="azure", category="lambda-requests",
+            sku="functions:executions", name="Functions executions", region=region,
+            unit="request", price_usd=execs / Decimal(10)))
+    if dur is not None:
+        out.append(PricePoint(provider="azure", category="lambda-duration",
+            sku="functions:duration", name="Functions execution time", region=region,
+            unit="GB-second", price_usd=dur))
+    return out
+
+
+def fetch_apigateway_prices(region_key: str) -> list[PricePoint]:
+    """API Management consumption tier, billed per call."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("API Management", region),
+                        lambda i: (i.get("meterName") or "") == "Consumption Calls")
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="apigateway",
+        sku="apim:consumption-calls", name="API Management calls", region=region,
+        unit="request", price_usd=price / Decimal(10_000))]   # published per 10K
+
+
+def fetch_queue_prices(region_key: str) -> list[PricePoint]:
+    """Service Bus messaging operations -- the SQS-equivalent queue meter."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("Service Bus", region),
+                        lambda i: "Messaging Operations" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="queue",
+        sku="servicebus:operations", name="Service Bus operations", region=region,
+        unit="request", price_usd=price / Decimal(1_000_000))]  # published per 1M
+
+
+def fetch_notification_prices(region_key: str) -> list[PricePoint]:
+    """Notification Hubs pushes -- the SNS-equivalent notification meter."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("Notification Hubs", region),
+                        lambda i: "Pushes" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="notification",
+        sku="notificationhubs:pushes", name="Notification Hubs pushes", region=region,
+        unit="request", price_usd=price / Decimal(1_000_000))]
+
+
+def fetch_query_engine_prices(region_key: str) -> list[PricePoint]:
+    """Synapse serverless SQL, billed per TB scanned -- Athena's model."""
+    region = provider_region(region_key, "azure")
+    price = _first_paid(_consumption("Azure Synapse Analytics", region),
+        lambda i: "Serverless SQL Pool" in (i.get("productName") or "")
+                  and "Data Processed" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="athena",
+        sku="synapse:serverless-scanned", name="Synapse serverless SQL data processed",
+        region=region, unit="TB", price_usd=price)]
+
+
+def fetch_etl_prices(region_key: str) -> list[PricePoint]:
+    """Data Factory cloud data movement, per DIU-hour -- Glue's DPU-hour analogue."""
+    region = provider_region(region_key, "azure")
+    items = _consumption("Azure Data Factory", region)
+    price = _first_paid(items, lambda i: "Data Movement" in (i.get("meterName") or "")
+                                          and "On Premises" not in (i.get("meterName") or ""))
+    if price is None:
+        price = _first_paid(items, lambda i: "Data Movement" in (i.get("meterName") or ""))
+    if price is None:
+        return []
+    return [PricePoint(provider="azure", category="glue",
+        sku="datafactory:data-movement", name="Data Factory data movement",
+        region=region, unit="DIU-hour", price_usd=price)]
+
+
 def fetch_search_prices(region_key: str) -> list[PricePoint]:
     """Azure AI Search, billed per SEARCH UNIT-hour rather than per sized node.
 
@@ -1183,6 +1295,12 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_cdn_prices,
         fetch_keyvalue_prices,
         fetch_search_prices,
+        fetch_functions_prices,
+        fetch_apigateway_prices,
+        fetch_queue_prices,
+        fetch_notification_prices,
+        fetch_query_engine_prices,
+        fetch_etl_prices,
         fetch_cache_prices,
         fetch_monitoring_prices,
         fetch_loadbalancer_prices,

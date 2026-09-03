@@ -561,6 +561,131 @@ def fetch_keyvalue_prices(region_key: str) -> list[PricePoint]:
     return out
 
 
+#: Pub/Sub bills THROUGHPUT ($/TiB), not messages. Google's documented
+#: minimum billable message size is 1 KB, so a per-message rate is derived at
+#: that floor -- the same "state the model, don't invent a number" approach
+#: used for Cosmos RUs. Messages larger than 1 KB cost proportionally more, so
+#: this is a floor, and it is labelled as derived on the point.
+_PUBSUB_MIN_BILLABLE_BYTES = 1024
+_BYTES_PER_TIB = 1024 ** 4
+
+
+def _loc_rate(skus, region, place, *words, exclude=()):
+    """Cheapest matching SKU, preferring one priced FOR THIS REGION.
+
+    Google publishes some meters per region (named by location, e.g. "Analysis
+    (asia-south1)") and others once as "global". Taking the cheapest across
+    both picked the global list price over the real regional one -- BigQuery
+    analysis came out at $6.25/TiB instead of asia-south1's $7.50. So regional
+    matches win outright, and global is only a fallback for meters that have
+    no regional variant at all (Cloud Run functions invocations, for one).
+    """
+    regional = None
+    globalish = None
+    for sku in skus:
+        text = str(sku.get("description", "")).lower()
+        regs = sku.get("serviceRegions") or []
+        if not all(w in text for w in words):
+            continue
+        if any(x in text for x in exclude):
+            continue
+        price = sku_price(sku)
+        if price is None:
+            continue
+        is_regional = (place and place in text) or region in regs
+        if is_regional:
+            if regional is None or price < regional:
+                regional = price
+        elif "global" in regs:
+            if globalish is None or price < globalish:
+                globalish = price
+    return regional if regional is not None else globalish
+
+
+def fetch_functions_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Run functions: invocations, plus CPU and memory time.
+
+    Lambda bills requests + GB-seconds. Cloud Run functions bills invocations +
+    vCPU-seconds + GiB-seconds separately, so the duration role is filled with
+    the MEMORY (GiB-second) rate -- the same unit Lambda's GB-second is -- and
+    the vCPU rate is recorded on the point rather than silently folded in.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Cloud Run Functions")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    out: list[PricePoint] = []
+    inv = _loc_rate(skus, region, place, "invocations", exclude=("1st gen",))
+    mem = _loc_rate(skus, region, place, "memory", exclude=("min-instance", "min instance", "1st gen"))
+    cpu = _loc_rate(skus, region, place, "cpu", exclude=("min-instance", "min instance", "1st gen"))
+    if inv is not None:
+        out.append(PricePoint(provider="gcp", category="lambda-requests",
+            sku="cloudrunfunctions:invocations", name="Cloud Run functions invocations",
+            region=region, unit="request", price_usd=inv))
+    if mem is not None:
+        out.append(PricePoint(provider="gcp", category="lambda-duration",
+            sku="cloudrunfunctions:memory-time", name="Cloud Run functions memory time",
+            region=region, unit="GB-second", price_usd=mem,
+            attributes={"vcpu_second_usd": str(cpu) if cpu is not None else ""}))
+    return out
+
+
+def fetch_pubsub_prices(region_key: str) -> list[PricePoint]:
+    """Pub/Sub, filling BOTH the queue and notification roles.
+
+    One service does what SQS and SNS do separately on AWS, so the same rate
+    answers both. See _PUBSUB_MIN_BILLABLE_BYTES for the per-message derivation.
+    """
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Pub/Sub")
+    if not sid:
+        return []
+    per_tib = _loc_rate(fetch_skus(sid), region, "", "message delivery basic")
+    if per_tib is None:
+        return []
+    per_msg = per_tib * Decimal(_PUBSUB_MIN_BILLABLE_BYTES) / Decimal(_BYTES_PER_TIB)
+    attrs = {"derived": "per-message at Google's 1 KB minimum billable size",
+             "rate_per_tib": str(per_tib)}
+    return [
+        PricePoint(provider="gcp", category="queue", sku="pubsub:messages",
+                   name="Pub/Sub messages", region=region, unit="request",
+                   price_usd=per_msg, attributes=attrs),
+        PricePoint(provider="gcp", category="notification", sku="pubsub:notifications",
+                   name="Pub/Sub notifications", region=region, unit="request",
+                   price_usd=per_msg, attributes=attrs),
+    ]
+
+
+def fetch_query_engine_prices(region_key: str) -> list[PricePoint]:
+    """BigQuery on-demand analysis, per TiB scanned -- Athena's model."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("BigQuery")
+    if not sid:
+        return []
+    price = _loc_rate(fetch_skus(sid), region, "", "analysis", exclude=("slots", "attribution"))
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="athena", sku="bigquery:analysis",
+        name="BigQuery on-demand analysis", region=region, unit="TB", price_usd=price)]
+
+
+def fetch_etl_prices(region_key: str) -> list[PricePoint]:
+    """Dataflow batch vCPU time -- Glue's DPU-hour analogue."""
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Cloud Dataflow")
+    if not sid:
+        return []
+    price = _loc_rate(fetch_skus(sid), region, place, "vcpu time", "batch",
+                      exclude=("flexrs", "arm", "streaming"))
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="glue", sku="dataflow:vcpu-hour",
+        name="Dataflow batch vCPU time", region=region, unit="DPU-hour", price_usd=price)]
+
+
 def fetch_waf_prices(region_key: str) -> list[PricePoint]:
     """Cloud Armor: a security policy, its rules, and per-request inspection.
 
@@ -1053,6 +1178,10 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_cdn_prices,
         fetch_waf_prices,
         fetch_keyvalue_prices,
+        fetch_functions_prices,
+        fetch_pubsub_prices,
+        fetch_query_engine_prices,
+        fetch_etl_prices,
         fetch_object_request_prices,
         fetch_lb_data_prices,
         fetch_cache_prices,
