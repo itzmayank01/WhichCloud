@@ -215,6 +215,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
         id: `az-${z}`,
         layoutOptions: {
           "elk.padding": "[top=34,left=16,bottom=16,right=16]",
+
           // Tiers run ACROSS inside a zone (public | app | data), and the two
           // zones stack. Side-by-side zones each three subnets wide is what
           // made the graph 3.4:1 -- half the canvas height went unused. This
@@ -226,6 +227,15 @@ export async function layout(model: GraphModel): Promise<Layout> {
         children: subnets,
       };
     };
+    // KNOWN COSMETIC DEFECT: zone b renders ABOVE zone a. Vertical order
+    // inside a layer is decided by BRANDES_KOEPF, which aligns each zone with
+    // the edge feeding it; zone a is fed by the balancer, which sits low, so
+    // zone a lands low. elk.position, considerModelOrder/forceNodeModelOrder,
+    // and swapping declaration order were all tried and are all no-ops against
+    // that alignment. Both zones are drawn, labelled and connected correctly --
+    // only the top-to-bottom order reads wrong. Fixing it properly means
+    // either nodePlacement SIMPLE (which costs the alignment everywhere else)
+    // or placing the AZ blocks by hand after layout.
     const azs = [azBlock("a"), azBlock("b")].filter(Boolean) as ElkChild[];
     if (azs.length) {
       regionChildren.push({
@@ -275,8 +285,13 @@ export async function layout(model: GraphModel): Promise<Layout> {
       // width left the diagram a third of the canvas tall. Wrapping lets the
       // layered algorithm break that chain across rows and use the height,
       // which is the only lever that changes the SHAPE rather than the scale.
-      "elk.layered.wrapping.strategy": "MULTI_EDGE",
-      "elk.layered.wrapping.additionalEdgeSpacing": "40",
+      // Wrapping is OFF. It existed to fold an over-wide graph into two rows,
+      // but the fold itself is drawn: the edge from the end of row one to the
+      // start of row two ran the full width of the canvas, turned down, and
+      // came back -- the long empty rectangle above the region box, which read
+      // as a container rather than as the request path it actually was. Now
+      // that the two zones stack rather than sitting end to end the graph is
+      // about half as wide, and it fits without folding.
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
@@ -340,11 +355,24 @@ export async function layout(model: GraphModel): Promise<Layout> {
           targets: [target],
         }));
       }),
-      ...model.dataEdges.map((e, i) => ({
-        id: `e${i}`,
-        sources: [e.source],
-        targets: [e.target],
-      })),
+      // Replication edges are DRAWN but do not get a vote on layering -- the
+      // same trick as constraint="false" in the Graphviz reference. With
+      // INCLUDE_CHILDREN the whole hierarchy lays out in one pass along the
+      // root direction, so a database-a -> database-b edge puts zone b in a
+      // later layer, i.e. beside zone a rather than under it. Three such edges
+      // (db sync, cache replica, balancer -> compute b) were enough to lay the
+      // two zones out end to end and make the canvas 4:1, which fits to a band
+      // using 40% of the viewport height with every label too small to read.
+      // Dropped here and routed by hand below, the zones share a layer and
+      // stack, which is both the reference arrangement and half the width.
+      ...model.dataEdges
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.kind !== "replication")
+        .map(({ e, i }) => ({
+          id: `e${i}`,
+          sources: [e.source],
+          targets: [e.target],
+        })),
       // attachment edges: target(data) → control, so ELK places the control
       // node as a leaf beside its resource and routes the dotted line.
       ...model.attachments.map((a, i) => ({
@@ -510,6 +538,44 @@ export async function layout(model: GraphModel): Promise<Layout> {
     for (const c of elkNode.children ?? []) collectEdges(c, base.x, base.y);
   };
   collectEdges(res, 0, 0);
+
+  // Route the replication edges we withheld from ELK. They were excluded so
+  // they could not distort layering, but they still have to be DRAWN -- a
+  // standby database with no line to its primary reads as a second unrelated
+  // database. Zone b sits directly under zone a now, so a three-segment
+  // orthogonal drop from the bottom of the primary to the top of the mirror is
+  // both the shortest route and the one the reference diagrams use.
+  for (const [i, e] of model.dataEdges.entries()) {
+    if (e.kind !== "replication") continue;
+    const a = box.get(e.source);
+    const b = box.get(e.target);
+    if (!a || !b) continue;
+    const ax = a.x + a.w / 2;
+    const bx = b.x + b.w / 2;
+    // Leave from whichever face points at the target, so the line does not
+    // cut back across the node it starts from.
+    const vertical = Math.abs(b.y - a.y) >= Math.abs(b.x - a.x);
+    const start = vertical
+      ? { x: ax, y: b.y > a.y ? a.y + a.h : a.y }
+      : { x: b.x > a.x ? a.x + a.w : a.x, y: a.y + a.h / 2 };
+    const end = vertical
+      ? { x: bx, y: b.y > a.y ? b.y : b.y + b.h }
+      : { x: b.x > a.x ? b.x : b.x + b.w, y: b.y + b.h / 2 };
+    const mid = vertical
+      ? [{ x: start.x, y: (start.y + end.y) / 2 }, { x: end.x, y: (start.y + end.y) / 2 }]
+      : [{ x: (start.x + end.x) / 2, y: start.y }, { x: (start.x + end.x) / 2, y: end.y }];
+    edges.push({
+      id: `e${i}`,
+      source: e.source,
+      target: e.target,
+      label: e.label,
+      onPath: false,
+      seq: null,
+      attach: false,
+      kind: "replication",
+      points: [start, ...mid, end],
+    });
+  }
 
   let width = res.width ?? 0;
   let height = res.height ?? 0;
