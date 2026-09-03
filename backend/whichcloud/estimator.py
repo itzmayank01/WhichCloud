@@ -369,6 +369,8 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("gcp", "notification", "requests"): "pubsub:notifications",
     ("gcp", "athena", "tb"): "bigquery:analysis",
     ("gcp", "glue", "dpu-hour"): "dataflow:vcpu-hour",
+    ("azure", "rekognition", "images"): "aivision:transactions",
+    ("gcp", "rekognition", "images"): "cloudvision:images",
     ("aws", "cdn", "data-transfer"): "cloudfront:data-transfer-out",
     ("aws", "cdn", "requests"): "cloudfront:requests-https",
     ("azure", "cdn", "data-transfer"): "frontdoor:data-transfer-out",
@@ -1158,6 +1160,10 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     # Priced instead of EC2, not alongside it: a task is the compute tier.
     if spec.fargate_task_count:
         prefix = "fargate:arm-" if spec.fargate_arm else "fargate:"
+        # The serverless-container product per cloud, so an Azure bill does not
+        # read "Fargate vCPU" beside an ACI rate.
+        _ctr = {"aws": "Fargate", "azure": "Container Instances",
+                "gcp": "Cloud Run"}.get(provider, "Container")
         vcpu_point = store.get_price(
             provider, region, "fargate", f"{prefix}vcpu-hour", dsn=dsn
         )
@@ -1179,11 +1185,11 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 vcpu_qty += burst * Decimal(str(spec.fargate_task_vcpu))
                 gb_qty += burst * Decimal(str(spec.fargate_task_memory_gb))
                 label = (
-                    f"Fargate vCPU × {spec.fargate_task_count}"
+                    f"{_ctr} vCPU × {spec.fargate_task_count}"
                     f"–{spec.fargate_peak_tasks} tasks"
                 )
             else:
-                label = f"Fargate vCPU × {spec.fargate_task_count} tasks"
+                label = f"{_ctr} vCPU × {spec.fargate_task_count} tasks"
             result.items.append(
                 LineItem(
                     label=label,
@@ -1196,7 +1202,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
             result.items.append(
                 LineItem(
-                    label=label.replace("Fargate vCPU", "Fargate memory"),
+                    label=label.replace(f"{_ctr} vCPU", f"{_ctr} memory"),
                     sku=gb_point.sku,
                     unit="GB-hour",
                     unit_price=gb_point.price_usd,

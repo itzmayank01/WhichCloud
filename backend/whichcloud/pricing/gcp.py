@@ -632,6 +632,53 @@ def fetch_functions_prices(region_key: str) -> list[PricePoint]:
     return out
 
 
+def fetch_vision_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Vision API label detection, per image -- the Rekognition role."""
+    region = provider_region(region_key, "gcp")
+    sid = find_service_id("Cloud Vision API")
+    if not sid:
+        return []
+    price = _loc_rate(fetch_skus(sid), region, "", "label detection operations",
+                      exclude=("automl", "domain"))
+    if price is None:
+        return []
+    return [PricePoint(provider="gcp", category="rekognition", sku="cloudvision:images",
+        name="Cloud Vision label detection", region=region, unit="image",
+        price_usd=price)]
+
+
+def fetch_container_prices(region_key: str) -> list[PricePoint]:
+    """Cloud Run services -- GCP's Fargate-equivalent serverless container tier.
+
+    Cloud Run bills per vCPU-SECOND and GiB-second; the estimator's container
+    block bills per hour, so both rates are converted to an hourly rate here
+    (x3600) rather than the caller having to know which cloud it is talking to.
+    Instance-based billing is the like-for-like with a Fargate task that stays
+    up, so it is preferred over request-based.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Cloud Run")
+    if not sid:
+        return []
+    skus = fetch_skus(sid)
+    excl = ("min-instance", "min instance", "jobs", "worker pools", "committed", "gpu")
+    out: list[PricePoint] = []
+    for words, sku, name in (
+        (("services cpu", "instance-based"), "fargate:vcpu-hour", "Cloud Run vCPU"),
+        (("services memory", "instance-based"), "fargate:gb-hour", "Cloud Run memory"),
+    ):
+        per_second = _loc_rate(skus, region, place, *words, exclude=excl)
+        if per_second is None:
+            per_second = _loc_rate(skus, region, place, words[0], exclude=excl)
+        if per_second is not None:
+            out.append(PricePoint(provider="gcp", category="fargate", sku=sku,
+                name=name, region=region, unit="hour",
+                price_usd=per_second * Decimal(3600),
+                attributes={"published_per_second": str(per_second)}))
+    return out
+
+
 def fetch_pubsub_prices(region_key: str) -> list[PricePoint]:
     """Pub/Sub, filling BOTH the queue and notification roles.
 
@@ -1180,6 +1227,8 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_keyvalue_prices,
         fetch_functions_prices,
         fetch_pubsub_prices,
+        fetch_container_prices,
+        fetch_vision_prices,
         fetch_query_engine_prices,
         fetch_etl_prices,
         fetch_object_request_prices,

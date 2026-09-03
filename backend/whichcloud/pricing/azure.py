@@ -962,6 +962,67 @@ def _consumption(service: str, region: str, pages: int = 6) -> list[dict]:
     ]
 
 
+def fetch_vision_prices(region_key: str) -> list[PricePoint]:
+    """Azure Vision image analysis, per transaction -- the Rekognition role.
+
+    Published under serviceName "Foundry Tools" since the Azure AI Foundry
+    rebrand (the older "Cognitive Services" name returns nothing), and priced
+    per 1K transactions. Commitment-tier and disconnected-container meters are
+    excluded: those are annual capacity purchases, not pay-as-you-go.
+    """
+    region = provider_region(region_key, "azure")
+    best = None
+    for item in _paged(
+        "serviceName eq 'Foundry Tools' and priceType eq 'Consumption'", max_pages=8
+    ):
+        product = item.get("productName") or ""
+        meter = item.get("meterName") or ""
+        if "Vision" not in product or "Disconnected" in product:
+            continue
+        # ALLOW-LIST the image-analysis meter specifically. "Vision" +
+        # "Transactions" alone also matches Image Retrieval ingestion ($0.03/1K
+        # -- a vector-index feature, not analysis), and taking the cheapest
+        # priced image recognition 33x under AWS and GCP. Commitment-tier and
+        # overage bands are excluded: those price a prepaid capacity purchase.
+        if "Image Analysis" not in meter or "Transactions" not in meter:
+            continue
+        if "Commitment" in meter or "Overage" in meter or "Free" in meter:
+            continue
+        if item.get("armRegionName") not in (region, "Global", ""):
+            continue
+        price = _decimal(item.get("retailPrice"))
+        if price is not None and (best is None or price < best):
+            best = price
+    if best is None:
+        return []
+    return [PricePoint(provider="azure", category="rekognition", sku="aivision:transactions",
+        name="Azure Vision image analysis", region=region, unit="image",
+        price_usd=best / Decimal(1000))]   # published per 1K transactions
+
+
+def fetch_container_prices(region_key: str) -> list[PricePoint]:
+    """Azure Container Instances -- the Fargate-equivalent serverless container
+    tier, billed per vCPU-hour and per GB-hour exactly as Fargate is.
+
+    Published under the sku names the estimator's container block looks up, so
+    the same code path prices all three clouds.
+    """
+    region = provider_region(region_key, "azure")
+    items = _consumption("Container Instances", region)
+    def std(word):
+        return _first_paid(items, lambda i: (i.get("productName") or "") == "Container Instances"
+                           and (i.get("meterName") or "") == f"Standard {word} Duration")
+    vcpu, mem = std("vCPU"), std("Memory")
+    out: list[PricePoint] = []
+    if vcpu is not None:
+        out.append(PricePoint(provider="azure", category="fargate", sku="fargate:vcpu-hour",
+            name="Container Instances vCPU", region=region, unit="hour", price_usd=vcpu))
+    if mem is not None:
+        out.append(PricePoint(provider="azure", category="fargate", sku="fargate:gb-hour",
+            name="Container Instances memory", region=region, unit="hour", price_usd=mem))
+    return out
+
+
 def fetch_functions_prices(region_key: str) -> list[PricePoint]:
     """Azure Functions consumption: executions and GB-second duration --
     the same two meters AWS Lambda bills, so they map onto the same roles."""
@@ -1296,6 +1357,8 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_keyvalue_prices,
         fetch_search_prices,
         fetch_functions_prices,
+        fetch_container_prices,
+        fetch_vision_prices,
         fetch_apigateway_prices,
         fetch_queue_prices,
         fetch_notification_prices,
