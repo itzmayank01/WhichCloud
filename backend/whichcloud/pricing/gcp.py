@@ -786,6 +786,77 @@ def fetch_etl_prices(region_key: str) -> list[PricePoint]:
         name="Dataflow batch vCPU time", region=region, unit="DPU-hour", price_usd=price)]
 
 
+def fetch_commitment_prices(region_key: str) -> list[PricePoint]:
+    """One-year committed-use discounts for Compute Engine.
+
+    Google does not sell a committed machine; it sells committed vCPU-hours
+    and RAM GB-hours per family ("Commitment v1: N2D AMD Cpu in Mumbai for 1
+    Year"). So the committed price of a machine is composed from its two
+    parts, exactly the way Cloud SQL instances already are -- and both
+    component rates are recorded on the point so the total can be taken apart.
+
+    Only families that actually appear in the on-demand catalog get a
+    committed row; a commitment rate for a family we never quote would be a
+    price nothing can select.
+    """
+    region = provider_region(region_key, "gcp")
+    place = _GCP_FIRESTORE_LOCATION.get(region_key, "")
+    sid = find_service_id("Compute Engine")
+    if not sid:
+        return []
+
+    # family -> {"cpu": rate, "ram": rate}
+    rates: dict[str, dict[str, Decimal]] = {}
+    for sku in fetch_skus(sid):
+        text = str(sku.get("description", "")).lower()
+        if "commitment v1:" not in text or "for 1 year" not in text:
+            continue
+        if place and place not in text:
+            continue
+        if any(x in text for x in ("local ssd", "gpu", "sole tenancy")):
+            continue
+        price = sku_price(sku)
+        if price is None:
+            continue
+        # "commitment v1: n2d amd cpu in mumbai for 1 year" -> family "n2d"
+        after = text.split("commitment v1:", 1)[1].strip()
+        family = after.split()[0] if after.split() else ""
+        kind = "cpu" if " cpu " in f" {after} " else "ram" if " ram " in f" {after} " else ""
+        if not family or not kind:
+            continue
+        slot = rates.setdefault(family, {})
+        if kind not in slot or price < slot[kind]:
+            slot[kind] = price
+
+    points: list[PricePoint] = []
+    for base in load_compute_prices(region_key):
+        # On-demand rows only. Committing spot capacity is not a thing, and
+        # composing off a spot row produced ":spot:commit1yr" SKUs priced
+        # ABOVE the spot rate they claimed to discount.
+        if base.attributes.get("purchase") != "ondemand":
+            continue
+        family = base.sku.split("-", 1)[0].lower()
+        pair = rates.get(family)
+        if not pair or "cpu" not in pair or "ram" not in pair:
+            continue
+        if base.vcpu is None or base.memory_gb is None:
+            continue
+        hourly = (pair["cpu"] * Decimal(base.vcpu)
+                  + pair["ram"] * Decimal(str(base.memory_gb)))
+        points.append(PricePoint(
+            provider="gcp", category="compute", sku=f"{base.sku}:commit1yr",
+            name=f"{base.sku} (1-yr committed use)", region=region, unit="hour",
+            price_usd=hourly, vcpu=base.vcpu, memory_gb=base.memory_gb,
+            arch=base.arch,
+            attributes={"purchase": "commit1yr",
+                        "term": "1-year committed use discount",
+                        "composed": "true",
+                        "vcpu_hour_usd": str(pair["cpu"]),
+                        "ram_gb_hour_usd": str(pair["ram"])},
+        ))
+    return points
+
+
 def fetch_waf_prices(region_key: str) -> list[PricePoint]:
     """Cloud Armor: a security policy, its rules, and per-request inspection.
 
@@ -1276,6 +1347,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         fetch_database_prices,
         fetch_db_storage_prices,
         fetch_cdn_prices,
+        fetch_commitment_prices,
         fetch_waf_prices,
         fetch_keyvalue_prices,
         fetch_functions_prices,

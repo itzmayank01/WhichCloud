@@ -1063,6 +1063,57 @@ def fetch_vision_prices(region_key: str) -> list[PricePoint]:
         price_usd=best / Decimal(1000))]   # published per 1K transactions
 
 
+#: Hours in the one-year reservation term Azure quotes a total price for.
+_RESERVATION_HOURS_1YR = 365 * 24
+
+
+def fetch_vm_reservation_prices(region_key: str) -> list[PricePoint]:
+    """One-year Reserved VM Instances, converted to an hourly rate.
+
+    Azure publishes reservations as the TOTAL cost of the term (a 1-Year row
+    reads e.g. $10,842) even though unitOfMeasure says "1 Hour" -- so the
+    figure has to be divided by the hours in the term to compare with the
+    on-demand rate. Quoting it as published would overstate compute by four
+    orders of magnitude.
+
+    Matched to the same armSkuName the on-demand VM rows use, so the estimator
+    finds the committed variant of the machine it already chose.
+    """
+    region = provider_region(region_key, "azure")
+    best: dict[str, Decimal] = {}
+    for item in _paged(
+        f"serviceName eq 'Virtual Machines' and armRegionName eq '{region}' "
+        "and priceType eq 'Reservation'", max_pages=12
+    ):
+        if item.get("reservationTerm") != "1 Year":
+            continue
+        sku = item.get("armSkuName") or ""
+        # Same allow-list the on-demand loader uses: Linux only, no Windows /
+        # sovereign-cloud / low-priority variants riding the same sku name.
+        blob = _blob(item, "skuName", "meterName", "productName")
+        if not sku or any(term in blob for term in _EXCLUDE_VM):
+            continue
+        if not _is_commercial(item):
+            continue
+        total = _decimal(item.get("retailPrice"))
+        if total is None:
+            continue
+        hourly = total / Decimal(_RESERVATION_HOURS_1YR)
+        if sku not in best or hourly < best[sku]:
+            best[sku] = hourly
+
+    return [
+        PricePoint(
+            provider="azure", category="compute", sku=f"{sku}:commit1yr",
+            name=f"{sku} (1-yr reserved)", region=region, unit="hour",
+            price_usd=hourly,
+            attributes={"purchase": "commit1yr",
+                        "term": "1-year Reserved VM Instance"},
+        )
+        for sku, hourly in best.items()
+    ]
+
+
 def fetch_container_prices(region_key: str) -> list[PricePoint]:
     """Azure Container Instances -- the Fargate-equivalent serverless container
     tier, billed per vCPU-hour and per GB-hour exactly as Fargate is.
@@ -1420,6 +1471,7 @@ def load_all(region_key: str) -> list[PricePoint]:
         fetch_keyvalue_prices,
         fetch_search_prices,
         fetch_functions_prices,
+        fetch_vm_reservation_prices,
         fetch_container_prices,
         fetch_vision_prices,
         fetch_warehouse_prices,

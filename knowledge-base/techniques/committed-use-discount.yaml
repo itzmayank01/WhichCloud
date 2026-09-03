@@ -49,5 +49,5 @@ effect:
 counterfactual:
   use_commitment: false
 
-providers: [aws]
+providers: [aws, azure, gcp]
 obviousness: medium
