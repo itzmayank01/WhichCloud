@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import contextmanager
 from decimal import Decimal
 
@@ -23,10 +24,59 @@ DSN = os.getenv(
 )
 
 
+#: One live connection per thread, per DSN.
+_local = threading.local()
+
+
 @contextmanager
 def connect(dsn: str | None = None):
-    with psycopg.connect(dsn or DSN, row_factory=dict_row) as conn:
+    """Hand out a reused connection rather than opening a new one per query.
+
+    There are eighteen call sites in this module and every one of them is on
+    the pricing hot path, so a single recommend() -- three tiers, each pricing
+    a dozen components, the upper two looping while they grow into the budget
+    -- opened thousands of short-lived TCP connections.
+
+    Docker Desktop's port forwarder on macOS drops connections under that
+    churn. The symptom was psycopg reporting "server closed the connection
+    unexpectedly" with NOTHING in the Postgres log, the server at 1% memory and
+    six of a hundred connections used -- because the server never saw them.
+    The same test file passed, failed, then skipped on three consecutive runs
+    of identical code, which made the suite useless as a signal for weeks.
+
+    Reuse removes the churn, and is faster besides. Transaction semantics are
+    preserved: commit on a clean exit, roll back on an exception, exactly as
+    `with psycopg.connect(...)` did -- the connection is simply not closed
+    afterwards. A connection found closed or belonging to a different DSN is
+    replaced.
+    """
+    target = dsn or DSN
+    conn = getattr(_local, "conn", None)
+    if conn is not None and (conn.closed or getattr(_local, "dsn", None) != target):
+        try:
+            conn.close()
+        except Exception:
+            pass
+        conn = None
+    if conn is None:
+        conn = psycopg.connect(target, row_factory=dict_row)
+        _local.conn = conn
+        _local.dsn = target
+    try:
         yield conn
+        conn.commit()
+    except Exception:
+        # A broken connection cannot be rolled back; drop it so the next
+        # caller opens a fresh one rather than inheriting the failure.
+        try:
+            conn.rollback()
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _local.conn = None
+        raise
 
 
 UPSERT = """

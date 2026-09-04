@@ -1692,6 +1692,12 @@ _BUDGET_CEILING_MULTIPLE: dict[str, float] = {
     "Most optimized": 2.5,
 }
 
+#: How much headroom above the load-derived instance count the budget may buy.
+#: Three means "enough to absorb a 3x spike without re-architecting", which is
+#: the same reasoning the spike headroom uses. HEURISTIC, stated in one place
+#: so it can be argued with, like BASE_SIZING.
+USABLE_HEADROOM_MULTIPLE = 3
+
 _BUDGET_CAPS: dict[str, dict[str, int]] = {
     # Reliability is about surviving a zone failure, not peak throughput:
     # a couple of standbys and a modest cache, not a maxed-out fleet.
@@ -1735,6 +1741,29 @@ def _scale_to_budget(
     has_rds = _store_for(requirement).has_rds
     caps = _BUDGET_CAPS[label]
 
+    # CAPACITY THE WORKLOAD CAN ACTUALLY USE.
+    #
+    # The caps above are absolute ceilings, not a statement about this
+    # workload. Left at that, budget alone decided the fleet: 8,000
+    # transactions a day -- under a tenth of a request per second -- bought
+    # twelve instances because $5,000 had room for twelve, and the bill came
+    # out nearly identical at 8,000 and at 800,000 a day (a 100x load
+    # increase moved it 4%). Worse, the count went DOWN as load went up, since
+    # a costlier workload leaves less budget to spend on instances.
+    #
+    # Headroom is worth paying for; a twelvefold over-provision is not. Cap
+    # growth at a multiple of what the stated load actually needs, so the
+    # budget buys room above the requirement rather than replacing it.
+    peak = peak_rps_for(requirement)
+    if peak:
+        vcpu = max(1, spec.compute_vcpu)
+        needed = max(1, math.ceil((peak / RPS_PER_VCPU) / vcpu))
+    else:
+        # No stated volume: the tier floor is the only signal we have, so
+        # leave the absolute cap in charge rather than inventing a number.
+        needed = caps["compute"]
+    usable_compute = min(caps["compute"], max(3, needed * USABLE_HEADROOM_MULTIPLE))
+
     def priced(candidate: "ArchitectureSpec") -> Decimal:
         return estimate(candidate, provider, dsn=dsn).total_monthly
 
@@ -1767,7 +1796,7 @@ def _scale_to_budget(
         moves: list["ArchitectureSpec"] = []
         if not growable:
             return moves
-        if sp.compute_count < caps["compute"]:
+        if sp.compute_count < usable_compute:
             moves.append(replace(sp, compute_count=sp.compute_count + 1))
         if has_rds and sp.database_read_replicas < caps["replicas"]:
             moves.append(
