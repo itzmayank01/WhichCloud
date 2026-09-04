@@ -1137,7 +1137,7 @@ def plan_export_terraform_route(body: PlanExportIn):
     from fastapi.responses import Response
 
     from . import plan as planning
-    from . import terraform_export
+    from . import terraform_export, terraform_export_gcp
 
     if not body.description.strip():
         raise HTTPException(400, "description is empty")
@@ -1219,7 +1219,7 @@ def describe_export_terraform_route(body: DescribeExportIn):
     """
     from fastapi.responses import Response
 
-    from . import terraform_export
+    from . import terraform_export, terraform_export_gcp
     from .intake import IntakeError
 
     try:
@@ -1229,14 +1229,19 @@ def describe_export_terraform_route(body: DescribeExportIn):
 
     requirement = intake.requirement
     provider = body.provider or requirement.provider_preference or "aws"
-    if provider != "aws":
+    # One generator per cloud, because the resource graphs differ in shape and
+    # not merely in resource names -- a global network, one regional Cloud NAT
+    # and an anycast load balancer are different FILES, not renamed ones.
+    generators = {"aws": terraform_export, "gcp": terraform_export_gcp}
+    generator = generators.get(provider)
+    if generator is None:
         raise HTTPException(
             400,
-            f"Terraform export generates AWS resources only. This architecture "
-            f"is priced on {provider.upper()}, and emitting AWS resources for "
-            f"it would produce a plan that does not match what you are looking "
-            f"at. Switch to AWS to export, or use the cost sheet as the "
-            f"specification.",
+            f"Terraform export covers AWS and Google Cloud. This architecture "
+            f"is priced on {provider.upper()}, and emitting another cloud's "
+            f"resources for it would produce a plan that applies cleanly and "
+            f"builds the wrong thing. Switch provider to export, or use the "
+            f"cost sheet as the specification.",
         )
     options = recommend(requirement, provider)
 
@@ -1244,7 +1249,7 @@ def describe_export_terraform_route(body: DescribeExportIn):
     if option is None:
         raise HTTPException(404, f"no priced option named {body.option!r}")
 
-    files = terraform_export.generate(option.spec, option.estimate)
+    files = generator.generate(option.spec, option.estimate)
     archive = terraform_export.zip_bytes(files)
     return Response(
         content=archive,
