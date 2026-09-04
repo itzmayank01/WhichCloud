@@ -298,6 +298,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
       {/* ── rail + canvas ─────────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <CostRail
+          cloud={cloud ?? "aws"}
           description={description}
           setDescription={setDescription}
           onAsk={ask}

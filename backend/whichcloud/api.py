@@ -92,6 +92,16 @@ class LineItemOut(BaseModel):
     unit_price: float
     quantity: float
     monthly_usd: float
+    #: The diagram node this line belongs to, as a node KIND. The cost sheet
+    #: groups by it -- "Cloud SQL" gathering its instance, standby, storage and
+    #: backup rows rather than scattering them as four siblings -- and it is
+    #: the same key the diagram uses, so clicking a node can find its lines and
+    #: clicking a line can find its node without a second mapping to keep in
+    #: step.
+    group: str = ""
+    #: What that node is called on this provider, so the sheet can head the
+    #: group with "Cloud SQL" rather than the kind.
+    group_label: str = ""
 
 
 class TechniqueOut(BaseModel):
@@ -417,6 +427,14 @@ def _option_out(option: Option, provider: str) -> OptionOut:
             "azure": "zone-redundant db",
         }.get(provider, "multi-AZ db")
 
+    # Group every line under the diagram node it pays for, using the same
+    # kind mapping the topology uses. One key for both views is what makes the
+    # node-to-line link exact rather than a best-effort match on labels.
+    from . import topology as _topo
+
+    _graph = _topo.build(option.spec, option.estimate, option.applied)
+    node_label = {n.kind: n.label for n in _graph.nodes}
+
     parts: list[dict] = [{"label": "tier", "value": option.label}]
     if spec.compute_count:
         compute = f"{spec.compute_count} × {spec.compute_vcpu} vCPU / {spec.compute_memory_gb:g} GB"
@@ -467,6 +485,8 @@ def _option_out(option: Option, provider: str) -> OptionOut:
                 unit_price=float(i.unit_price),
                 quantity=float(i.quantity),
                 monthly_usd=float(i.monthly_usd),
+                group=_topo._kind_for(i),
+                group_label=node_label.get(_topo._kind_for(i), i.label),
             )
             for i in option.estimate.items
         ],

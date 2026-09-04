@@ -54,6 +54,11 @@ export type LineItem = {
   unit_price: number;
   quantity: number;
   monthly_usd: number;
+  /** The diagram node this line pays for, as a node kind. One key shared by
+   *  the sheet and the diagram, so a node can find its lines and a line can
+   *  find its node without a second mapping to keep in step. */
+  group: string;
+  group_label: string;
 };
 
 export type Technique = {
