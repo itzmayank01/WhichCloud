@@ -260,15 +260,6 @@ const OUTSIDE_CLOUD = new Set(["client"]);
  *  bill already carries (the ":multi-az" SKU, or a count > 1), so mirroring
  *  them adds no cost, it just stops the picture claiming a single-zone
  *  deployment when the bill paid for two. */
-const ZONE_REDUNDANT = new Set([
-  "compute",
-  "compute_fargate",
-  "database",
-  "cache",
-  "search",
-  "nat",
-]);
-
 /** Suffix for the standby half, so the label reads like the architecture. */
 const STANDBY_LABEL: Record<string, string> = {
   database: "standby",
@@ -296,9 +287,27 @@ function containerFor(kind: string, hasVpc: boolean): ContainerId {
  * the layout harness can assert on it and two identical tiers producing an
  * identical model is a real signal (the tier-spread bug), not noise.
  */
+export type CloudId = "aws" | "gcp" | "azure";
+
+/** Which kinds genuinely exist once per zone, per cloud.
+ *
+ *  Mirroring is not decoration -- it says the bill paid for two of something.
+ *  But WHICH things come in pairs is a fact about the provider's model, not
+ *  about the design, and treating AWS's answer as universal is what put a
+ *  "NAT gateway zone b" on a Google diagram. Cloud NAT is a configuration on
+ *  a Cloud Router serving a whole region; there is no per-zone Cloud NAT to
+ *  draw. Azure's NAT Gateway attaches to a subnet and one per VNet is the
+ *  normal shape for this design. */
+const ZONE_REDUNDANT_BY_CLOUD: Record<CloudId, Set<string>> = {
+  aws: new Set(["compute", "compute_fargate", "database", "cache", "search", "nat"]),
+  gcp: new Set(["compute", "compute_fargate", "database", "cache", "search"]),
+  azure: new Set(["compute", "compute_fargate", "database", "cache", "search"]),
+};
+
 export function buildGraphModel(
   nodes: TopoNode[],
-  edges: TopoEdge[]
+  edges: TopoEdge[],
+  cloud: CloudId = "aws"
 ): GraphModel {
   const present = new Set(nodes.map((n) => n.id));
   const hasVpc = nodes.some((n) => VPC_RESIDENT.has(n.kind));
@@ -332,7 +341,8 @@ export function buildGraphModel(
   const multiAz = nodes.some((n) => /:multi-az/i.test(n.sku ?? ""));
   if (multiAz && hasVpc) {
     for (const n of [...data]) {
-      if (!ZONE_REDUNDANT.has(n.kind)) continue;
+      if (!(ZONE_REDUNDANT_BY_CLOUD[cloud] ?? ZONE_REDUNDANT_BY_CLOUD.aws).has(n.kind))
+        continue;
       if (n.container !== "subnet-app" && n.container !== "subnet-data" && n.container !== "subnet-public") continue;
       n.zone = "a";
       mirrorOf.set(`${n.id}__b`, n.id);
