@@ -188,6 +188,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
   // again inside the full-page overlay. Going full page should not cost you
   // the ability to replay the build or pull the Terraform for what you are
   // looking at.
+  // Tier chips and the pick both read the ON-DEMAND total, matching the
+  // headline. Comparing one tier's committed price against another's
+  // on-demand would rank them on a difference in commitment rather than in
+  // architecture.
   const actionBar = shown ? (
     <div className="flex items-center gap-2 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-lg backdrop-blur">
       <button
@@ -270,7 +274,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     {option.label}
                   </span>
                   <span className="tnum font-mono text-[13px] font-semibold text-ink">
-                    {money(option.monthly_usd)}
+                    {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
                   </span>
                   {recommended && (
                     <span className="rounded-full bg-save px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-white">
@@ -343,7 +347,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                               {option.label}
                             </span>
                             <span className="tnum font-mono text-[13px] font-semibold text-ink">
-                              {money(option.monthly_usd)}
+                              {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
                             </span>
                           </button>
                         ))}

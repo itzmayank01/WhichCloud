@@ -308,6 +308,24 @@ class Option:
     #: "sized to your workload; more budget adds no useful capacity" instead of
     #: leaving an unchanged number looking like a bug.
     budget_saturated: bool = False
+    #: The SAME architecture priced with no commitment at all -- what the user
+    #: pays if they sign nothing. `monthly` may include committed rates on
+    #: compute and database, which is a price nobody can obtain today: it
+    #: requires a one-year term they have not agreed to. Carrying both means
+    #: the interface can lead with the number that is actually available and
+    #: name the commitment as a separate, optional decision, rather than
+    #: presenting a blend of the two as though it were one price.
+    ondemand_monthly: "Decimal | None" = None
+    #: Which resources the committed price depends on. "1-year commitment"
+    #: with no object is not something a user can act on.
+    commitment_covers: tuple[str, ...] = ()
+
+    @property
+    def commitment_saving(self) -> "Decimal":
+        """What the commitment is worth, if one is on offer."""
+        if self.ondemand_monthly is None:
+            return Decimal(0)
+        return self.ondemand_monthly - self.monthly
 
 
 def size_for(requirement: Requirement) -> tuple[int, int, float]:
@@ -2023,6 +2041,25 @@ def recommend(
         # estimate `incomplete` and keeps it from winning a comparison it
         # cannot actually deliver on. See estimator.py's own rule.
 
+        # The same architecture with nothing committed. Priced from the spec
+        # the option actually shipped, so the two totals describe one design
+        # rather than two, and skipped entirely when no line committed anyway.
+        final_spec = current if applied else spec
+        commitment_covers = tuple(
+            sorted(
+                {
+                    item.label.split(" ×")[0].split(" (")[0]
+                    for item in final.items
+                    if ":commit" in item.sku or ":reserved" in item.sku
+                }
+            )
+        )
+        ondemand_monthly = None
+        if commitment_covers:
+            ondemand_monthly = estimate(
+                replace(final_spec, use_commitment=False), provider, dsn=dsn
+            ).total_monthly
+
         options.append(
             Option(
                 label=label,
@@ -2036,6 +2073,8 @@ def recommend(
                 spec_budget=requirement.budget_monthly_usd,
                 steady_monthly=steady_monthly,
                 budget_saturated=budget_saturated,
+                ondemand_monthly=ondemand_monthly,
+                commitment_covers=commitment_covers,
             )
         )
 

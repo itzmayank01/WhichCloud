@@ -103,6 +103,13 @@ export type Option = {
       budget — a higher budget buys no more useful capacity. Use it to explain
       why raising the budget stops moving the number. */
   budget_saturated: boolean;
+  /** What this architecture costs with NOTHING committed -- the price the
+   *  user pays today, without signing a one-year term. Null when no line had
+   *  a committed rate, in which case monthly_usd is already on-demand. */
+  ondemand_monthly_usd: number | null;
+  /** Which resources the committed price depends on. "1-year commitment"
+   *  with no object is not something anyone can act on. */
+  commitment_covers: string[];
   /** Steady-state monthly cost for spiky workloads — the same architecture
       with the spike-headroom compute removed. The headline `monthly_usd`
       provisions the peak; this is the floor between spikes. Null when the
