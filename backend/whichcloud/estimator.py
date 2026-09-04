@@ -1146,12 +1146,28 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     if spec.nat_gateway_count:
         hourly = _by_role(provider, region, "nat", "gateway", dsn)
         per_gb = _by_role(provider, region, "nat", "data", dsn)
+        # HOW MANY, is a question about the provider's model, not the design.
+        #
+        # An AWS NAT Gateway lives in one subnet in one availability zone, so
+        # a design spanning three zones buys three of them -- and paying for
+        # one would mean traffic from the other two crossing a zone boundary
+        # to reach it, which is both slower and separately billed.
+        #
+        # Google's Cloud NAT is not that. It is a REGIONAL configuration on a
+        # Cloud Router, one per region per VPC, serving every zone in the
+        # region. There is no such thing as a per-zone Cloud NAT, so quoting
+        # three was inventing two resources that cannot be bought. The count
+        # travels with the provider's model rather than with the zone count.
+        count = 1 if provider == "gcp" else spec.nat_gateway_count
         if hourly:
             result.items.append(
                 _hourly_line(
-                    f"NAT gateway × {spec.nat_gateway_count}",
+                    # "× 1" stays even at one, matching "KMS keys × 1" and
+                    # "Secrets × 1" elsewhere in this file -- and the count is
+                    # read back out of this label by a test.
+                    f"NAT gateway × {count}",
                     hourly,
-                    spec.nat_gateway_count,
+                    count,
                 )
             )
             if per_gb and spec.nat_gb_processed:
