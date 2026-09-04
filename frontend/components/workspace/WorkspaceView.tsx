@@ -312,8 +312,13 @@ export function WorkspaceView({ name }: { name: string | null }) {
           because={advice?.because ?? null}
         />
 
-        {/* canvas — the stage */}
-        <main className="relative min-h-0 flex-1 bg-sunk">
+        {/* canvas — the stage.
+            White, not the sunk grey. The diagram already draws its own
+            boundaries as pale outlines on white, and a grey stage behind them
+            put a second, stronger edge around the whole picture -- the eye
+            reads that outer rectangle as part of the architecture. Reference
+            architecture diagrams are published on white for the same reason. */}
+        <main className="relative min-h-0 flex-1 bg-surface">
           {shown?.topology?.nodes?.length ? (
             <>
               <div className="h-full overflow-hidden">
