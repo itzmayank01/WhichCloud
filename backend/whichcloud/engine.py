@@ -1763,6 +1763,23 @@ def _scale_to_budget(
         # leave the absolute cap in charge rather than inventing a number.
         needed = caps["compute"]
     usable_compute = min(caps["compute"], max(3, needed * USABLE_HEADROOM_MULTIPLE))
+    # The same reasoning applies to every other knob, and leaving them
+    # uncapped is why capping compute alone did not fix the bill. On GCP this
+    # workload -- 8,000 transactions a day, about a tenth of a request per
+    # second -- was given FIVE read replicas ($607/mo) and a 32 GB Redis
+    # ($397/mo): $1,004 of a $1,461 estimate, two thirds of it, bought purely
+    # because the budget had room. A read replica serves read load and a cache
+    # serves working set; neither is sized by how much money is left over.
+    usable_replicas = min(caps["replicas"], max(1, needed))
+    usable_cache_vcpu = min(caps["cache_vcpu"], max(2, _snap_vcpu(needed * 2)))
+    # And the database's own size. Capping replicas and cache without this
+    # only moved the money: the spend that had been buying five replicas went
+    # into a bigger primary instead, and the database line came back at the
+    # same total. Every knob the budget can turn needs the same bound, or the
+    # growth loop simply finds the one that is still open.
+    usable_db_vcpu = min(
+        caps["db_vcpu"], max(spec.database_vcpu or 2, _snap_vcpu(needed * 2))
+    )
 
     def priced(candidate: "ArchitectureSpec") -> Decimal:
         return estimate(candidate, provider, dsn=dsn).total_monthly
@@ -1798,15 +1815,15 @@ def _scale_to_budget(
             return moves
         if sp.compute_count < usable_compute:
             moves.append(replace(sp, compute_count=sp.compute_count + 1))
-        if has_rds and sp.database_read_replicas < caps["replicas"]:
+        if has_rds and sp.database_read_replicas < usable_replicas:
             moves.append(
                 replace(sp, database_read_replicas=sp.database_read_replicas + 1)
             )
-        if has_rds and (sp.cache_vcpu or 0) < caps["cache_vcpu"]:
-            nxt = min(caps["cache_vcpu"], _snap_vcpu((sp.cache_vcpu or 2) + 1))
+        if has_rds and (sp.cache_vcpu or 0) < usable_cache_vcpu:
+            nxt = min(usable_cache_vcpu, _snap_vcpu((sp.cache_vcpu or 2) + 1))
             moves.append(replace(sp, cache_vcpu=nxt, cache_memory_gb=float(nxt) * 2.0))
-        if has_rds and (sp.database_vcpu or 0) < caps["db_vcpu"]:
-            nxt = min(caps["db_vcpu"], _snap_vcpu((sp.database_vcpu or 2) + 1))
+        if has_rds and (sp.database_vcpu or 0) < usable_db_vcpu:
+            nxt = min(usable_db_vcpu, _snap_vcpu((sp.database_vcpu or 2) + 1))
             moves.append(
                 replace(sp, database_vcpu=nxt, database_memory_gb=float(nxt) * 4.0)
             )
