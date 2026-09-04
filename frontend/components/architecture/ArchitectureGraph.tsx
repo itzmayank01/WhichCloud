@@ -375,8 +375,9 @@ function ControlNode({ data }: NodeProps) {
 
 /* ── an account-plane chip: lives in the band, never wired ── */
 function AccountNode({ data }: NodeProps) {
-  const d = data as unknown as LaidNode;
-  const icon = serviceIconPath(d.kind);
+  const d = data as unknown as LaidNode & { cloud: CloudId };
+  const cloud = d.cloud ?? "aws";
+  const icon = serviceIconPath(d.kind, cloud);
   return (
     <div className="flex h-full w-full items-center gap-1.5 rounded-md border border-line bg-sunk/60 px-2">
       {icon ? (
@@ -386,7 +387,9 @@ function AccountNode({ data }: NodeProps) {
         <Icon icon="mdi:eye-outline" className="h-4 w-4 shrink-0 text-ink-3" />
       )}
       <div className="min-w-0">
-        <div className="truncate text-[10px] font-medium leading-tight text-ink-2">{d.label}</div>
+        <div className="truncate text-[10px] font-medium leading-tight text-ink-2">
+          {serviceDisplayName(d.kind, cloud) ?? d.label}
+        </div>
         <div className="truncate text-[9px] leading-tight text-ink-3">{roleFor(d.kind)}</div>
       </div>
     </div>
