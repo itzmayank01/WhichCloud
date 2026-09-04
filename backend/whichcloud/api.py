@@ -569,6 +569,10 @@ class DescribeIn(BaseModel):
 class PlanExportIn(BaseModel):
     description: str
     tier: Literal["tier_1", "tier_2", "tier_3"] = "tier_2"
+    #: Which cloud to price AND to generate for. One field, because the two
+    #: cannot disagree: exporting a cloud the tier was not priced on would
+    #: hand out resources nobody costed.
+    provider: Literal["aws", "gcp", "azure"] = "aws"
 
 
 class DescribeExportIn(BaseModel):
@@ -1137,13 +1141,13 @@ def plan_export_terraform_route(body: PlanExportIn):
     from fastapi.responses import Response
 
     from . import plan as planning
-    from . import terraform_export, terraform_export_gcp
+    from . import terraform_export, terraform_export_azure, terraform_export_gcp
 
     if not body.description.strip():
         raise HTTPException(400, "description is empty")
 
     try:
-        result = planning.build(body.description)
+        result = planning.build(body.description, provider=body.provider)
     except AssertionError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -1151,7 +1155,12 @@ def plan_export_terraform_route(body: PlanExportIn):
     if tier is None:
         raise HTTPException(404, f"no priced tier named {body.tier!r}")
 
-    files = terraform_export.generate(tier.spec, tier.estimate)
+    generator = {
+        "aws": terraform_export,
+        "gcp": terraform_export_gcp,
+        "azure": terraform_export_azure,
+    }[body.provider]
+    files = generator.generate(tier.spec, tier.estimate)
     archive = terraform_export.zip_bytes(files)
     return Response(
         content=archive,
@@ -1219,7 +1228,7 @@ def describe_export_terraform_route(body: DescribeExportIn):
     """
     from fastapi.responses import Response
 
-    from . import terraform_export, terraform_export_gcp
+    from . import terraform_export, terraform_export_azure, terraform_export_gcp
     from .intake import IntakeError
 
     try:
@@ -1232,16 +1241,18 @@ def describe_export_terraform_route(body: DescribeExportIn):
     # One generator per cloud, because the resource graphs differ in shape and
     # not merely in resource names -- a global network, one regional Cloud NAT
     # and an anycast load balancer are different FILES, not renamed ones.
-    generators = {"aws": terraform_export, "gcp": terraform_export_gcp}
+    generators = {
+        "aws": terraform_export,
+        "gcp": terraform_export_gcp,
+        "azure": terraform_export_azure,
+    }
     generator = generators.get(provider)
     if generator is None:
         raise HTTPException(
             400,
-            f"Terraform export covers AWS and Google Cloud. This architecture "
-            f"is priced on {provider.upper()}, and emitting another cloud's "
-            f"resources for it would produce a plan that applies cleanly and "
-            f"builds the wrong thing. Switch provider to export, or use the "
-            f"cost sheet as the specification.",
+            f"No Terraform generator for {provider!r}. Emitting another "
+            f"cloud's resources for it would produce a plan that applies "
+            f"cleanly and builds the wrong thing.",
         )
     options = recommend(requirement, provider)
 
