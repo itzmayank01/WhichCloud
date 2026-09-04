@@ -737,8 +737,20 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- load balancer ----
     if spec.load_balancer:
-        point = _preferred(provider, region, "loadbalancer", dsn)
-        if point:
+        # On Azure a WAF IS a load balancer. Application Gateway WAF v2 is an
+        # L7 gateway that terminates and balances HTTP itself, so charging a
+        # Standard Load Balancer alongside it bills ingress twice: $18.25 of
+        # L4 balancer in front of a $367.92 L7 gateway that needs no help.
+        # AWS and GCP genuinely do sell the firewall as a policy ATTACHED to
+        # a balancer they already have, so both lines are correct there --
+        # which is why this reads as a provider difference rather than an
+        # exception. Azure ingress was $396.68 against $44.29 and $44.90.
+        gateway_is_the_balancer = (
+            provider == "azure" and spec.waf_rule_count is not None
+        )
+        if gateway_is_the_balancer:
+            pass
+        elif (point := _preferred(provider, region, "loadbalancer", dsn)):
             result.items.append(_hourly_line("Load balancer", point, 1))
         else:
             result.missing.append("load balancer")
