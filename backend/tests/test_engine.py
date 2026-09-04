@@ -375,7 +375,7 @@ def test_recommend_cli_parser_builds():
 # ── budget must not buy capacity the workload cannot use ────────────────
 
 
-def _retail(daily: int, budget: float = 5000.0) -> Requirement:
+def _retail(daily: int, budget: float | None = 5000.0) -> Requirement:
     """A steady web workload, varying only in stated transaction volume."""
     return Requirement(
         goal="Retail billing",
@@ -399,12 +399,41 @@ def test_more_load_never_buys_fewer_machines():
     costlier workload had less budget left for instances and came out with
     FEWER of them. Twelve machines at 8,000 transactions a day, nine at
     800,000, four at 8,000,000 -- exactly backwards.
+
+    Sized with NO budget, deliberately. This asserts the relationship between
+    load and capacity, and a budget in the mix measures something else: at a
+    thousand times the traffic the design legitimately costs more than a fixed
+    budget allows, so it degrades, and the count falls for a reason that has
+    nothing to do with the bug this guards. The degradation floor is asserted
+    separately below.
     """
     counts = [
-        engine.recommend(_retail(daily), dsn=None)[-1].spec.compute_count
+        engine.recommend(_retail(daily, budget=None), dsn=None)[-1].spec.compute_count
         for daily in (8_000, 80_000, 800_000, 8_000_000)
     ]
     assert counts == sorted(counts), f"instance count fell as load rose: {counts}"
+
+
+@needs_db
+def test_budget_never_cuts_capacity_below_what_the_load_needs():
+    """Degrading to fit a budget must stop at the load's own floor.
+
+    Cutting past it ships a design that cannot serve the stated traffic, which
+    is worse than being over budget: the number would be for something that
+    does not work. Being over budget is a fact the interface can report; being
+    undersized is a fault it cannot see.
+    """
+    from whichcloud.engine import RPS_PER_VCPU, peak_rps_for
+    import math
+
+    req = _retail(8_000_000, budget=500.0)  # far too little for this load
+    option = engine.recommend(req, dsn=None)[-1]
+    peak = peak_rps_for(req)
+    floor = max(1, math.ceil((peak / RPS_PER_VCPU) / option.spec.compute_vcpu))
+    assert option.spec.compute_count >= floor, (
+        f"budget cut the tier to {option.spec.compute_count} instances; "
+        f"the stated load needs {floor}"
+    )
 
 
 @needs_db

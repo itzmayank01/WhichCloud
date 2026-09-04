@@ -1723,6 +1723,37 @@ def _trades_availability(technique: Technique) -> bool:
 #: which is the bug they were built to contain rather than prevent.
 
 
+#: Business criticality, derived from what the requirement SAYS rather than
+#: asked for as a field. It is the input that decides which parts of a design
+#: the budget is allowed to take away.
+#:
+#: The distinction matters because "cheapest" and "cheapest that meets the
+#: requirement" are different architectures, and only one of them is honest to
+#: recommend for a workload whose owner said it must not go down.
+def business_criticality(requirement: Requirement) -> str:
+    """LOW | MEDIUM | HIGH | CRITICAL."""
+    # An explicit availability requirement is the strongest signal there is:
+    # the person writing it has told us downtime costs them something.
+    if requirement.high_availability:
+        # Money stops moving when these stop, so an outage is not an
+        # inconvenience, it is lost revenue or a compliance event.
+        if requirement.workload_type in ("web", "api") and (
+            requirement.daily_transactions or 0
+        ) > 0:
+            return "CRITICAL"
+        return "HIGH"
+    if requirement.workload_type in ("batch", "ml"):
+        return "LOW"
+    return "MEDIUM"
+
+
+#: What a CRITICAL workload's budget may never buy its way out of. These are
+#: HARD CONSTRAINTS: the optimizer can spend less on anything else, but it
+#: cannot deliver a single-instance, single-zone design to someone who said
+#: billing must not stop and still call it a recommendation.
+PROTECTED_WHEN_CRITICAL = ("database_multi_az", "min_two_instances")
+
+
 def _fit_within_budget(
     spec: "ArchitectureSpec",
     requirement: Requirement,
@@ -1759,47 +1790,93 @@ def _fit_within_budget(
         # Headroom, not an opportunity. Nothing to do.
         return spec, True, ()
 
-    # Over budget. Give up capacity in reliability order -- the cheapest
-    # promise to break first -- and stop as soon as it fits. Each step names
-    # itself so the option can say what it gave up rather than presenting a
-    # smaller design as though it were the one that was asked for.
-    given_up: list[str] = []
-    steps: list[tuple[str, "ArchitectureSpec"]] = []
-    if spec.database_read_replicas:
-        steps.append((
-            f"dropped {spec.database_read_replicas} read "
-            f"replica{'s' if spec.database_read_replicas > 1 else ''} to fit the budget",
-            replace(spec, database_read_replicas=0),
-        ))
-    if spec.cache_vcpu:
-        steps.append((
-            "dropped the cache to fit the budget",
-            replace(spec, cache_vcpu=None, cache_memory_gb=None),
-        ))
-    if spec.compute_count > 1:
-        steps.append((
-            "reduced the application tier to a single instance to fit the budget",
-            replace(spec, compute_count=1),
-        ))
-    if spec.database_multi_az:
-        steps.append((
-            "dropped the standby database -- a zone failure now takes the "
-            "system down -- to fit the budget",
-            replace(spec, database_multi_az=False),
-        ))
+    # Over budget. WHAT GETS GIVEN UP, AND IN WHAT ORDER, IS THE WHOLE
+    # QUESTION.
+    #
+    # This ladder used to run in reliability order -- replicas, cache,
+    # compute, then the standby database -- which is exactly backwards. On a
+    # retail billing workload whose owner wrote "it must not go down", a $500
+    # budget against a $1,434 design stripped the standby database, cut the
+    # application tier to one instance, and STILL did not fit, because the
+    # thing actually blowing the budget was a $632 analytics warehouse the
+    # ladder never touched. It sacrificed the one requirement stated as
+    # mandatory in order to protect an optional reporting cluster.
+    #
+    # So optional CAPABILITY goes first -- an analytics warehouse, a search
+    # cluster, an event stream are all things a workload can do without and
+    # still take payments -- and availability goes last, or not at all. On a
+    # CRITICAL workload the standby database and a second instance are
+    # off-limits at any price: if the design cannot fit the budget without
+    # them, the honest output is that the budget does not fit the
+    # requirement, not a cheaper thing that fails the requirement silently.
+    criticality = business_criticality(requirement)
+    protect_availability = criticality == "CRITICAL"
 
-    for why, candidate in steps:
-        spec = candidate
-        given_up.append(why)
+    # THE STEPS COMPOUND. Each one is applied to the running spec, not to the
+    # original -- built the other way round, taking step two silently restored
+    # whatever step one removed, so the ladder reported dropping a warehouse
+    # AND replicas AND a cache while pricing an architecture that still had
+    # all three. The tradeoffs described a design that was thrown away.
+    given_up: list[str] = []
+    ladder: list[tuple[str, object, object]] = [
+        (
+            "dropped the analytics warehouse -- reporting now runs against "
+            "the database rather than its own cluster",
+            lambda sp: sp.warehouse_node_count > 0,
+            lambda sp: replace(sp, warehouse_node_count=0),
+        ),
+        (
+            "dropped the read replicas",
+            lambda sp: sp.database_read_replicas > 0,
+            lambda sp: replace(sp, database_read_replicas=0),
+        ),
+        (
+            "dropped the cache -- reads now go to the primary",
+            lambda sp: bool(sp.cache_vcpu),
+            lambda sp: replace(sp, cache_vcpu=None, cache_memory_gb=None),
+        ),
+        (
+            "reduced the application tier to two instances",
+            lambda sp: sp.compute_count > 2,
+            lambda sp: replace(sp, compute_count=2),
+        ),
+        # Below this line the design stops meeting a stated availability
+        # requirement, so these are only ever offered when none was made.
+        (
+            "reduced the application tier to a single instance -- a restart "
+            "is now downtime",
+            lambda sp: sp.compute_count > 1 and not protect_availability,
+            lambda sp: replace(sp, compute_count=1),
+        ),
+        (
+            "dropped the standby database -- a zone failure now takes the "
+            "system down",
+            lambda sp: sp.database_multi_az and not protect_availability,
+            lambda sp: replace(sp, database_multi_az=False),
+        ),
+    ]
+
+    for why, applies, apply in ladder:
+        if not applies(spec):  # type: ignore[operator]
+            continue
+        spec = apply(spec)  # type: ignore[operator]
+        given_up.append(f"{why} to fit the budget")
         if estimate(spec, provider, dsn=dsn).total_monthly <= ceiling:
             return spec, False, tuple(given_up)
 
-    # Nothing left to give up and it still does not fit. Say so plainly: this
-    # requirement cannot be met at this budget, which is a real answer.
-    given_up.append(
-        "still over budget with nothing further to give up -- this "
-        "requirement cannot be met at this budget"
-    )
+    if protect_availability:
+        given_up.append(
+            "kept the standby database and a second instance: this workload "
+            "was described as one that cannot go down, and those are the two "
+            "things that keep it up. The budget does not stretch to a design "
+            "that meets that requirement -- which is a fact about the budget, "
+            "not a reason to quietly ship a single point of failure"
+        )
+    else:
+        given_up.append(
+            "still over budget with nothing further to give up -- this "
+            "requirement cannot be met at this budget"
+        )
     return spec, False, tuple(given_up)
 
 
