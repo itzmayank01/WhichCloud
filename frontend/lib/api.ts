@@ -147,7 +147,24 @@ export type Recommendation = {
   assumed: string[];
   clarifying_question: string | null;
   read_by: string | null;
+  /** Which cloud these options were priced against. The caller may not have
+   *  chosen it -- the description can state a preference, and the default is
+   *  AWS -- so the answer says which cloud it describes rather than leaving
+   *  the interface to assume. */
+  provider: CloudId;
 };
+
+/** The three clouds the catalog prices. */
+export type CloudId = "aws" | "gcp" | "azure";
+
+export const CLOUDS: { id: CloudId; name: string; region: string }[] = [
+  // Region is the primary India region each provider is priced in, named by
+  // city rather than code: "Mumbai + Hyderabad" against "Mumbai + Delhi" is a
+  // real difference to someone choosing, and a region code hides it.
+  { id: "aws", name: "AWS", region: "ap-south-1 (Mumbai)" },
+  { id: "gcp", name: "Google Cloud", region: "asia-south1 (Mumbai)" },
+  { id: "azure", name: "Azure", region: "Central India (Pune)" },
+];
 
 export type Comparison = {
   goal: string;

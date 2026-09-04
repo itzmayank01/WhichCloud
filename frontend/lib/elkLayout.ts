@@ -94,22 +94,68 @@ export type Layout = {
   height: number;
 };
 
-const CONTAINER_LABEL: Record<string, string> = {
-  // Sentence case throughout. The AWS reference diagrams never shout their
-  // boundary labels, and ALL-CAPS at this size costs legibility for nothing.
-  cloud: "AWS Cloud",
-  edge: "Edge / Global services",
-  region: "Region: ap-south-1 (Mumbai)",
-  regional: "Regional services",
-  vpc: "VPC 10.0.0.0/16",
-  "routetable-public": "Public route table",
-  "routetable-private": "Private route table",
-  az: "Availability Zone",
-  "az-a": "Availability Zone ap-south-1a",
-  "az-b": "Availability Zone ap-south-1b",
-  "subnet-public": "Public subnet",
-  "subnet-app": "Private app subnet",
-  "subnet-data": "Private data subnet",
+export type CloudId = "aws" | "gcp" | "azure";
+
+/* Boundary names, per cloud. Sentence case throughout -- the reference
+   diagrams never shout their boundary labels, and ALL-CAPS at this size costs
+   legibility for nothing.
+
+   These are not cosmetic. Each cloud draws a genuinely different set of
+   boundaries: an AWS subnet lives in one availability zone, a GCP subnet
+   spans a whole region and the zone sits inside it, and Azure groups by
+   subscription and resource group with no zone container at all. Labelling a
+   GCP diagram "AWS Cloud / VPC 10.0.0.0/16" would be worse than not drawing
+   it, which is why the server refused to draw non-AWS at all until now. */
+const CONTAINER_LABELS: Record<CloudId, Record<string, string>> = {
+  aws: {
+    cloud: "AWS Cloud",
+    edge: "Edge / Global services",
+    region: "Region: ap-south-1 (Mumbai)",
+    regional: "Regional services",
+    vpc: "VPC 10.0.0.0/16",
+    "routetable-public": "Public route table",
+    "routetable-private": "Private route table",
+    az: "Availability Zone",
+    "az-a": "Availability Zone ap-south-1a",
+    "az-b": "Availability Zone ap-south-1b",
+    "subnet-public": "Public subnet",
+    "subnet-app": "Private app subnet",
+    "subnet-data": "Private data subnet",
+  },
+  gcp: {
+    cloud: "Google Cloud project",
+    edge: "Edge / Global services",
+    region: "Region: asia-south1 (Mumbai)",
+    regional: "Regional services",
+    // A GCP VPC is global, not regional -- it spans every region in the
+    // project -- so it carries no CIDR of its own the way an AWS VPC does.
+    vpc: "VPC network (global)",
+    "routetable-public": "Routes: default internet",
+    "routetable-private": "Routes: via Cloud NAT",
+    az: "Zone",
+    "az-a": "Zone asia-south1-a",
+    "az-b": "Zone asia-south1-b",
+    // GCP subnets are regional and span the zones, so "public/private" is a
+    // firewall and Cloud NAT distinction rather than a routing-table one.
+    "subnet-public": "Subnet · external access",
+    "subnet-app": "Subnet · application",
+    "subnet-data": "Subnet · data",
+  },
+  azure: {
+    cloud: "Azure subscription",
+    edge: "Edge / Global services",
+    region: "Region: Central India (Pune)",
+    regional: "Resource group services",
+    vpc: "Virtual network 10.0.0.0/16",
+    "routetable-public": "Route table: internet",
+    "routetable-private": "Route table: NAT gateway",
+    az: "Availability zone",
+    "az-a": "Availability zone 1",
+    "az-b": "Availability zone 2",
+    "subnet-public": "Public subnet",
+    "subnet-app": "Application subnet",
+    "subnet-data": "Data subnet",
+  },
 };
 
 type ElkChild = {
@@ -137,8 +183,12 @@ function parentOf(node: PlanedNode, hasVpc: boolean): string {
   return `subnet-data${z}`;
 }
 
-export async function layout(model: GraphModel): Promise<Layout> {
+export async function layout(
+  model: GraphModel,
+  cloud: CloudId = "aws"
+): Promise<Layout> {
   const hasVpc = model.hasVpc;
+  const CONTAINER_LABEL = CONTAINER_LABELS[cloud] ?? CONTAINER_LABELS.aws;
 
   // Control nodes join the layout INSIDE the same container as the node they
   // serve, wired by their attachment edge, so ELK positions and routes them
