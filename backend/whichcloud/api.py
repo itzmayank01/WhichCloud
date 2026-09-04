@@ -576,6 +576,15 @@ class DescribeExportIn(BaseModel):
     reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
     #: One of the labels `/describe` returned, e.g. "Cheapest".
     option: str
+    #: Which cloud the caller is looking at. WITHOUT THIS the route fell back
+    #: to the description's stated preference, which is almost always unset,
+    #: so it resolved to AWS and handed out AWS resources to someone viewing a
+    #: Google Cloud or Azure architecture. The guard below existed the whole
+    #: time; it simply never fired, because nothing told it what was on screen.
+    #: That is worse than an unsupported-export error: a plausible-looking
+    #: main.tf full of aws_instance and aws_db_instance is something a person
+    #: can run.
+    provider: Literal["aws", "gcp", "azure"] | None = None
 
 
 class SaveArchitectureIn(BaseModel):
@@ -1219,12 +1228,15 @@ def describe_export_terraform_route(body: DescribeExportIn):
         raise HTTPException(400, str(exc)) from exc
 
     requirement = intake.requirement
-    provider = requirement.provider_preference or "aws"
+    provider = body.provider or requirement.provider_preference or "aws"
     if provider != "aws":
         raise HTTPException(
             400,
-            "Terraform export only generates AWS resources for now — this "
-            f"description priced on {provider}.",
+            f"Terraform export generates AWS resources only. This architecture "
+            f"is priced on {provider.upper()}, and emitting AWS resources for "
+            f"it would produce a plan that does not match what you are looking "
+            f"at. Switch to AWS to export, or use the cost sheet as the "
+            f"specification.",
         )
     options = recommend(requirement, provider)
 

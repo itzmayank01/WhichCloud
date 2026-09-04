@@ -80,9 +80,11 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
 function DownloadTerraformButton({
   description,
   option,
+  cloud,
 }: {
   description: string;
   option: string;
+  cloud: CloudId;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -91,7 +93,11 @@ function DownloadTerraformButton({
     setBusy(true);
     setError("");
     try {
-      const blob = await api.describeExportTf({ description, option });
+      // The provider travels with the request. Without it the route fell
+      // back to the description's stated preference -- almost always unset --
+      // and handed out AWS resources to someone looking at a Google Cloud or
+      // Azure architecture.
+      const blob = await api.describeExportTf({ description, option, provider: cloud });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -107,17 +113,25 @@ function DownloadTerraformButton({
 
   return (
     <>
+      {/* Disabled off AWS rather than left to fail on click. The export
+          generates AWS resources only, and a button that looks available and
+          then errors is a worse answer than one that says up front what it
+          can do. */}
       <button
         type="button"
         onClick={download}
-        disabled={busy}
-        title="Download this architecture as a Terraform project"
+        disabled={busy || cloud !== "aws"}
+        title={
+          cloud === "aws"
+            ? "Download this architecture as a Terraform project"
+            : `Terraform export generates AWS resources only — this architecture is priced on ${cloud.toUpperCase()}`
+        }
         className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-sunk disabled:opacity-60"
       >
         <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
         </svg>
-        {busy ? "Generating…" : "Terraform"}
+        {busy ? "Generating…" : cloud === "aws" ? "Terraform" : "Terraform (AWS only)"}
       </button>
       {error && <span className="text-[12px] text-spend">{error}</span>}
     </>
@@ -206,7 +220,11 @@ export function WorkspaceView({ name }: { name: string | null }) {
         Replay
       </button>
       <span className="h-4 w-px bg-line" aria-hidden />
-      <DownloadTerraformButton description={asked} option={shown.label} />
+      <DownloadTerraformButton
+        description={asked}
+        option={shown.label}
+        cloud={cloud ?? "aws"}
+      />
       <span className="h-4 w-px bg-line" aria-hidden />
       <span className="px-1 font-mono text-[11.5px] text-ink-3">
         {shown.topology.nodes.length} services · {shown.region}
