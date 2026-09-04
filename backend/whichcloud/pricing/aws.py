@@ -735,9 +735,37 @@ def load_cache_prices(region_key: str) -> list[PricePoint]:
                 vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
                 memory_gb=_memory_gb(attrs.get("memory")),
                 arch=_arch_of(instance),
-                attributes={"engine": engine},
+                attributes={"engine": engine, "purchase": "ondemand"},
             )
         )
+
+        # ElastiCache reserved nodes, on the same 1-year no-upfront standard
+        # term the compute and database commitments use. Without these the
+        # cache line stayed on-demand inside an otherwise committed estimate,
+        # so AWS committed totals were overstated in exactly the way Azure's
+        # were before its database reservations were found -- a bias in the
+        # committed comparison, just pointing the other way.
+        reserved = _reserved_hourly(doc, sku)
+        if reserved:
+            points.append(
+                PricePoint(
+                    provider="aws",
+                    category="cache",
+                    sku=f"{instance}:commit1yr",
+                    name=f"{instance} {engine} (1-yr reserved)",
+                    region=region,
+                    unit=_UNITS.get(unit, unit),
+                    price_usd=reserved,
+                    vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
+                    memory_gb=_memory_gb(attrs.get("memory")),
+                    arch=_arch_of(instance),
+                    attributes={
+                        "engine": engine,
+                        "purchase": "commit1yr",
+                        "term": "1-year reserved node, no upfront",
+                    },
+                )
+            )
     return points
 
 

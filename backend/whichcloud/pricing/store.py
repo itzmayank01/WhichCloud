@@ -291,21 +291,48 @@ def cheapest_compute_like(
     min_vcpu: int,
     min_memory_gb: float = 0.0,
     dsn: str | None = None,
+    purchase: str = "ondemand",
 ) -> PricePoint | None:
     """Cheapest node in a category that meets a vCPU/memory spec.
 
     Cache nodes are sized like compute but priced in their own category, so
     they need spec matching rather than a flat cheapest-in-category lookup.
+
+    `purchase` matters as soon as a category holds committed rows: reserved
+    nodes are cheaper by construction, so a lookup that ignored the term would
+    quote a one-year price to an estimate that has committed to nothing. Rows
+    predating the attribute carry no purchase at all, and those are on-demand
+    -- treating a missing value as committed would be the same mistake in
+    reverse.
     """
-    with connect(dsn) as conn, conn.cursor() as cur:
-        cur.execute(
-            """SELECT * FROM price_points
-               WHERE provider=%s AND region=%s AND category=%s
-                 AND (vcpu IS NULL OR vcpu >= %s) AND memory_gb >= %s
-               ORDER BY price_usd ASC LIMIT 1""",
-            (provider, region, category, min_vcpu, min_memory_gb),
+    committed = purchase != "ondemand"
+    sql = """SELECT * FROM price_points
+             WHERE provider=%s AND region=%s AND category=%s
+               AND (vcpu IS NULL OR vcpu >= %s) AND memory_gb >= %s
+               AND {term}
+             ORDER BY price_usd ASC LIMIT 1"""
+    sql = sql.format(
+        term=(
+            "attributes->>'purchase' = %s"
+            if committed
+            else "(attributes->>'purchase' IS NULL "
+            "OR attributes->>'purchase' = 'ondemand')"
         )
+    )
+    params: tuple = (provider, region, category, min_vcpu, min_memory_gb)
+    if committed:
+        params = params + (purchase,)
+    with connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
         row = cur.fetchone()
+    if row is None and committed:
+        # No committed node at this size. Falling back keeps the estimate
+        # complete; the line simply stays on-demand, which the basis summary
+        # then reports honestly rather than implying a discount that is not
+        # on offer.
+        return cheapest_compute_like(
+            provider, region, category, min_vcpu, min_memory_gb, dsn
+        )
     return _to_point(row) if row else None
 
 
