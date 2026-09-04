@@ -401,7 +401,15 @@ def _option_out(option: Option, provider: str) -> OptionOut:
     # tiers regardless, so a batch job with no database was described as
     # "multi-AZ db" while its architecture contained no database at all.
     if spec.database_multi_az and spec.database_vcpu:
-        shape += " · multi-AZ db"
+        # Each cloud has its own word for this and they are not synonyms.
+        # "Multi-AZ" is an AWS product term; Google calls the same thing a
+        # regional (HA) configuration, and Azure calls it zone-redundant.
+        # Printing "multi-AZ db" on a Cloud SQL estimate describes AWS.
+        shape += " · " + {
+            "aws": "multi-AZ db",
+            "gcp": "regional (HA) db",
+            "azure": "zone-redundant db",
+        }.get(provider, "multi-AZ db")
 
     return OptionOut(
         drawn=_drawn(option, provider),
