@@ -162,6 +162,40 @@ def cheapest_compute(query: ComputeQuery) -> PricePoint | None:
     return min(candidates, key=lambda p: p.price_usd, default=None)
 
 
+#: Memory per vCore for the two Flexible Server tiers Azure sells by vCore.
+#: General Purpose is 4 GiB/vCore and Memory Optimized 8 GiB/vCore; the series
+#: name in productName is the only thing that says which.
+_PG_TIER_MEMORY_PER_VCPU = {"general purpose": 4.0, "memory optimized": 8.0}
+
+
+def _vcore_series_spec(sku_name: str, product_name: str):
+    """("D4ds_v5-class name", vcpu, memory_gb) for a per-vCore Postgres meter.
+
+    Returns None for rows that really are billing fragments -- "Auto Tune",
+    "Extended Support" and the free tier -- so those stay dropped.
+    """
+    import re
+
+    m = re.match(r"^(\d+)m?\s+vcore$", sku_name.strip().lower())
+    if not m or "free" in sku_name.lower():
+        return None
+    vcpu = int(m.group(1))
+    low = product_name.lower()
+    for tier, per_vcpu in _PG_TIER_MEMORY_PER_VCPU.items():
+        if tier in low:
+            # Series is the word before "Series", e.g. "... Ddsv5 Series ..."
+            series = ""
+            words = product_name.split()
+            for i, w in enumerate(words):
+                if w.lower() == "series" and i:
+                    series = words[i - 1]
+                    break
+            if not series:
+                return None
+            return (f"{series}-{vcpu}vcore", vcpu, float(vcpu) * per_vcpu)
+    return None
+
+
 def fetch_database_prices(region_key: str) -> list[PricePoint]:
     """Azure Database for PostgreSQL — flexible server compute.
 
@@ -184,14 +218,32 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
             continue
 
         raw = (item.get("skuName") or "").strip()
-        spec = azure_spec_for(raw) if raw else None
-        if spec is None or raw.upper() in seen:
-            continue
-
         price = _decimal(item.get("retailPrice"))
         if price is None:
             continue
 
+        spec = azure_spec_for(raw) if raw else None
+        if spec is None:
+            # NOT a billing fragment. Azure publishes Burstable servers BY NAME
+            # ("B2ms") but General Purpose and Memory Optimized PER VCORE
+            # ("4 vCore"), with the series only in productName. Resolving the
+            # sku name against the machine catalog therefore dropped every
+            # production database tier as noise and left the catalog holding
+            # burstable machines alone -- so every Azure estimate was sized on
+            # a tier that throttles under sustained load, and none could be
+            # reserved, because Azure sells no reservation for Burstable. That
+            # was read as "Azure offers no database commitment"; it offers 28
+            # of them, for the tiers we were discarding.
+            resolved = _vcore_series_spec(raw, item.get("productName") or "")
+            if resolved is None:
+                continue
+            raw, vcpu, memory_gb, price = resolved[0], resolved[1], resolved[2], price * resolved[1]
+            spec = None
+        else:
+            vcpu, memory_gb = spec.vcpu, spec.memory_gb
+
+        if raw.upper() in seen:
+            continue
         seen.add(raw.upper())
         points.append(
             PricePoint(
@@ -202,8 +254,8 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
                 region=region,
                 unit="hour",
                 price_usd=price,
-                vcpu=spec.vcpu,
-                memory_gb=spec.memory_gb,
+                vcpu=vcpu,
+                memory_gb=memory_gb,
                 attributes={"engine": "postgresql", "deployment": "Single-AZ"},
             )
         )
@@ -221,8 +273,8 @@ def fetch_database_prices(region_key: str) -> list[PricePoint]:
                 region=region,
                 unit="hour",
                 price_usd=price * 2,
-                vcpu=spec.vcpu,
-                memory_gb=spec.memory_gb,
+                vcpu=vcpu,
+                memory_gb=memory_gb,
                 attributes={
                     "engine": "postgresql",
                     "deployment": "Multi-AZ",
