@@ -1667,187 +1667,92 @@ def _trades_availability(technique: Technique) -> bool:
 #: The share of the stated budget each tier may grow into. Cheapest is absent
 #: -- it is never scaled. The upper tiers leave headroom below the budget so
 #: the result "fits with room to spare" rather than sitting exactly on it.
-_BUDGET_TARGET_FILL: dict[str, float] = {
-    "Most reliable": 0.45,
-    "Most optimized": 0.85,
-}
-
-#: Absolute ceilings on what budget can buy, per knob, PER TIER. These are
-#: what stop a large budget on a small workload from ballooning: once every
-#: knob is capped the tier is saturated and further budget is inert. The caps
-#: are lower for Most reliable than Most optimized so the two tiers stay
-#: distinct postures even at a budget large enough to saturate both -- without
-#: this they converge on the same maxed-out stack and the tier choice becomes
-#: meaningless.
-#: The budget-driven total is also capped at a MULTIPLE of the tier's own
-#: natural (workload-sized) cost. This is what keeps the plateau defensible:
-#: a $50k budget on a workload that naturally costs $1k lands near 2-2.5x
-#: that, not at some fixed five-figure ceiling that happens to be where the
-#: capacity caps bite. Anchored on the observation that no architect -- human
-#: or LLM -- sizes a 50k-user store past a few thousand dollars a month. The
-#: fixed capacity caps below still apply as a secondary backstop for genuinely
-#: large workloads, where even 2.5x the floor is a lot of money.
-_BUDGET_CEILING_MULTIPLE: dict[str, float] = {
-    "Most reliable": 1.8,
-    "Most optimized": 2.5,
-}
-
-#: How much headroom above the load-derived instance count the budget may buy.
-#: Three means "enough to absorb a 3x spike without re-architecting", which is
-#: the same reasoning the spike headroom uses. HEURISTIC, stated in one place
-#: so it can be argued with, like BASE_SIZING.
-USABLE_HEADROOM_MULTIPLE = 3
-
-_BUDGET_CAPS: dict[str, dict[str, int]] = {
-    # Reliability is about surviving a zone failure, not peak throughput:
-    # a couple of standbys and a modest cache, not a maxed-out fleet.
-    "Most reliable": {"compute": 6, "replicas": 2, "cache_vcpu": 8, "db_vcpu": 16},
-    # The top tier is "everything this workload can use": the real ceilings.
-    "Most optimized": {"compute": 12, "replicas": 5, "cache_vcpu": 16, "db_vcpu": 32},
-}
+#: Budget is deliberately absent from sizing. The tables that used to live
+#: here -- a target fill per tier, a ceiling multiple, and per-knob caps --
+#: existed only to bound a growth loop that expanded the design toward the
+#: stated budget. That loop is gone (see _fit_within_budget), and so are they:
+#: leaving them would invite the next person to wire budget back into sizing,
+#: which is the bug they were built to contain rather than prevent.
 
 
-def _scale_to_budget(
+def _fit_within_budget(
     spec: "ArchitectureSpec",
     requirement: Requirement,
-    label: str,
     provider: str,
     dsn: str | None,
-    *,
-    growable: bool = True,
-) -> tuple["ArchitectureSpec", bool]:
-    """Grow an upper-tier spec into its share of the stated budget.
+) -> tuple["ArchitectureSpec", bool, tuple[str, ...]]:
+    """Test a sized architecture against the budget. Never grow into it.
 
-    Returns (spec, saturated). `saturated` is True when every knob hit its
-    cap before the budget target was reached -- i.e. the workload cannot
-    usefully absorb the money on offer, which is a fact worth surfacing
-    rather than hiding behind an unchanged number.
+    Returns (spec, headroom, given_up).
 
-    `growable` is False for shapes with no capacity to buy. A serverless or
-    event-driven architecture is billed on volume -- invocations, inferences,
-    stored bytes -- and scales itself; there is no bigger instance to purchase.
-    Such a shape is saturated the moment the budget exceeds its cost, and
-    saying so is the honest answer. It used to skip this function altogether
-    and report `saturated=False`, so a $14k serverless estimate against a $60k
-    budget claimed it "fits with room to spare" as though more money would buy
-    something.
+    THIS FUNCTION MUST NOT SIZE ANYTHING UPWARD. It replaced a growth loop
+    that expanded the design toward the stated budget until some cap stopped
+    it, and the history of that loop is the argument for this shape: four
+    knobs were capped in four sessions -- compute, then read replicas, then
+    cache, then the database's own size -- and each time a cap landed the loop
+    moved the money to whichever knob was still open. A 0.09 request/second
+    workload came out with five read replicas and a 32 GB Redis. Capping knobs
+    was always going to be one knob behind, because the loop was the bug.
+
+    So the budget is a constraint applied AFTER sizing, and it has exactly two
+    outcomes. Under budget, the difference is headroom and the design does not
+    change -- which is what makes "a higher budget won't add useful capacity"
+    a true statement rather than a hopeful one. Over budget, capacity is given
+    up in a stated order and the caller is told what went, because a design
+    quietly shrunk to fit a number is worse than one that says what it cost.
     """
     budget = requirement.budget_monthly_usd
-    fill = _BUDGET_TARGET_FILL.get(label)
-    if not budget or budget <= 0 or fill is None:
-        return spec, False
+    if not budget or budget <= 0:
+        return spec, False, ()
 
-    budget_target = Decimal(str(budget)) * Decimal(str(fill))
-    has_rds = _store_for(requirement).has_rds
-    caps = _BUDGET_CAPS[label]
+    ceiling = Decimal(str(budget))
+    cost = estimate(spec, provider, dsn=dsn).total_monthly
+    if cost <= ceiling:
+        # Headroom, not an opportunity. Nothing to do.
+        return spec, True, ()
 
-    # CAPACITY THE WORKLOAD CAN ACTUALLY USE.
-    #
-    # The caps above are absolute ceilings, not a statement about this
-    # workload. Left at that, budget alone decided the fleet: 8,000
-    # transactions a day -- under a tenth of a request per second -- bought
-    # twelve instances because $5,000 had room for twelve, and the bill came
-    # out nearly identical at 8,000 and at 800,000 a day (a 100x load
-    # increase moved it 4%). Worse, the count went DOWN as load went up, since
-    # a costlier workload leaves less budget to spend on instances.
-    #
-    # Headroom is worth paying for; a twelvefold over-provision is not. Cap
-    # growth at a multiple of what the stated load actually needs, so the
-    # budget buys room above the requirement rather than replacing it.
-    peak = peak_rps_for(requirement)
-    if peak:
-        vcpu = max(1, spec.compute_vcpu)
-        needed = max(1, math.ceil((peak / RPS_PER_VCPU) / vcpu))
-    else:
-        # No stated volume: the tier floor is the only signal we have, so
-        # leave the absolute cap in charge rather than inventing a number.
-        needed = caps["compute"]
-    usable_compute = min(caps["compute"], max(3, needed * USABLE_HEADROOM_MULTIPLE))
-    # The same reasoning applies to every other knob, and leaving them
-    # uncapped is why capping compute alone did not fix the bill. On GCP this
-    # workload -- 8,000 transactions a day, about a tenth of a request per
-    # second -- was given FIVE read replicas ($607/mo) and a 32 GB Redis
-    # ($397/mo): $1,004 of a $1,461 estimate, two thirds of it, bought purely
-    # because the budget had room. A read replica serves read load and a cache
-    # serves working set; neither is sized by how much money is left over.
-    usable_replicas = min(caps["replicas"], max(1, needed))
-    usable_cache_vcpu = min(caps["cache_vcpu"], max(2, _snap_vcpu(needed * 2)))
-    # And the database's own size. Capping replicas and cache without this
-    # only moved the money: the spend that had been buying five replicas went
-    # into a bigger primary instead, and the database line came back at the
-    # same total. Every knob the budget can turn needs the same bound, or the
-    # growth loop simply finds the one that is still open.
-    usable_db_vcpu = min(
-        caps["db_vcpu"], max(spec.database_vcpu or 2, _snap_vcpu(needed * 2))
+    # Over budget. Give up capacity in reliability order -- the cheapest
+    # promise to break first -- and stop as soon as it fits. Each step names
+    # itself so the option can say what it gave up rather than presenting a
+    # smaller design as though it were the one that was asked for.
+    given_up: list[str] = []
+    steps: list[tuple[str, "ArchitectureSpec"]] = []
+    if spec.database_read_replicas:
+        steps.append((
+            f"dropped {spec.database_read_replicas} read "
+            f"replica{'s' if spec.database_read_replicas > 1 else ''} to fit the budget",
+            replace(spec, database_read_replicas=0),
+        ))
+    if spec.cache_vcpu:
+        steps.append((
+            "dropped the cache to fit the budget",
+            replace(spec, cache_vcpu=None, cache_memory_gb=None),
+        ))
+    if spec.compute_count > 1:
+        steps.append((
+            "reduced the application tier to a single instance to fit the budget",
+            replace(spec, compute_count=1),
+        ))
+    if spec.database_multi_az:
+        steps.append((
+            "dropped the standby database -- a zone failure now takes the "
+            "system down -- to fit the budget",
+            replace(spec, database_multi_az=False),
+        ))
+
+    for why, candidate in steps:
+        spec = candidate
+        given_up.append(why)
+        if estimate(spec, provider, dsn=dsn).total_monthly <= ceiling:
+            return spec, False, tuple(given_up)
+
+    # Nothing left to give up and it still does not fit. Say so plainly: this
+    # requirement cannot be met at this budget, which is a real answer.
+    given_up.append(
+        "still over budget with nothing further to give up -- this "
+        "requirement cannot be met at this budget"
     )
-
-    def priced(candidate: "ArchitectureSpec") -> Decimal:
-        return estimate(candidate, provider, dsn=dsn).total_monthly
-
-    # The effective target is the SMALLER of the budget's share and a multiple
-    # of the workload's own natural cost. The cost ceiling is what makes the
-    # plateau scale with the workload instead of ballooning to wherever the
-    # fixed capacity caps happen to sit.
-    floor_cost = priced(spec)
-    # With nothing to buy, the shape's own cost IS its ceiling: the early
-    # return below then reports saturation exactly when the budget exceeds it.
-    ceiling = (
-        floor_cost
-        if not growable
-        else floor_cost * Decimal(str(_BUDGET_CEILING_MULTIPLE[label]))
-    )
-    target = min(budget_target, ceiling)
-    # Budget wants to pay for more than this workload can usefully absorb: the
-    # ceiling (or caps) will bind, so a higher budget changes nothing -- which
-    # is what `saturated` tells the interface to say.
-    budget_exceeds_ceiling = budget_target > ceiling
-
-    # Already at or above the effective target: nothing to grow.
-    if floor_cost >= target:
-        return spec, budget_exceeds_ceiling
-
-    def upgrades(sp: "ArchitectureSpec"):
-        """The next capacity buy for each knob, cheapest-value first, or None
-        when that knob is capped. A round-robin over these gives balanced
-        growth rather than pouring the whole budget into one dimension."""
-        moves: list["ArchitectureSpec"] = []
-        if not growable:
-            return moves
-        if sp.compute_count < usable_compute:
-            moves.append(replace(sp, compute_count=sp.compute_count + 1))
-        if has_rds and sp.database_read_replicas < usable_replicas:
-            moves.append(
-                replace(sp, database_read_replicas=sp.database_read_replicas + 1)
-            )
-        if has_rds and (sp.cache_vcpu or 0) < usable_cache_vcpu:
-            nxt = min(usable_cache_vcpu, _snap_vcpu((sp.cache_vcpu or 2) + 1))
-            moves.append(replace(sp, cache_vcpu=nxt, cache_memory_gb=float(nxt) * 2.0))
-        if has_rds and (sp.database_vcpu or 0) < usable_db_vcpu:
-            nxt = min(usable_db_vcpu, _snap_vcpu((sp.database_vcpu or 2) + 1))
-            moves.append(
-                replace(sp, database_vcpu=nxt, database_memory_gb=float(nxt) * 4.0)
-            )
-        return moves
-
-    # Greedy round-robin: at each step take the cheapest upgrade that still
-    # fits under target. Stop when nothing fits (budget bound) or nothing is
-    # left to buy (capacity bound -> saturated). Bounded step count so a
-    # pathological budget cannot spin the pricing loop indefinitely.
-    for _ in range(64):
-        moves = upgrades(spec)
-        if not moves:
-            return spec, True  # every knob capped: workload is saturated
-        affordable = [(priced(m), m) for m in moves]
-        affordable = [(c, m) for c, m in affordable if c <= target]
-        if not affordable:
-            # Nothing more fits under the effective target. If the budget
-            # itself was the binding constraint, that's not saturation -- a
-            # bigger budget WOULD buy more. If the workload's cost ceiling
-            # bound us first, it is: extra budget is inert.
-            return spec, budget_exceeds_ceiling
-        affordable.sort(key=lambda cm: cm[0])
-        spec = affordable[0][1]
-    return spec, budget_exceeds_ceiling
+    return spec, False, tuple(given_up)
 
 
 #: Fraction of AI inference volume that is driven by USER UPLOADS rather than
@@ -2042,17 +1947,10 @@ def recommend(
         if server_shape and (spec.database_multi_az or spec.compute_count > 1):
             spec = replace(spec, inter_az_gb=requirement.egress_gb)
 
-        # Budget as an active lever: grow the upper tiers into the stated
-        # budget, bounded by hard caps so it never pads into absurdity. The
-        # workload floor above still binds; Cheapest is deliberately excluded
-        # so it stays the honest minimum. No-op when no budget was stated.
-        # Called for EVERY shape now. A serverless or event-driven
-        # architecture has no capacity knob to turn, but that is a reason to
-        # report it as saturated -- extra budget genuinely buys nothing -- not
-        # a reason to skip the question and imply the money is still in play.
-        spec, budget_saturated = _scale_to_budget(
-            spec, requirement, label, provider, dsn, growable=server_shape
-        )
+        # The architecture is now fully sized, from load, uptime and data
+        # volume alone. The budget has not been consulted and must not be:
+        # it is applied below as a CONSTRAINT on the finished design, never as
+        # an input to it.
         if server_shape:
             # A tier is never smaller than the one below it. Floor each scalable
             # knob at the cheaper tier's value so "Most optimized" is always >=
@@ -2070,6 +1968,13 @@ def recommend(
                     cache_memory_gb=(max(spec.cache_memory_gb or 0, floor_from.cache_memory_gb or 0) or None),
                 )
             _scaled_by_label[label] = spec
+
+        # Budget last, and only ever downward. Under budget the difference is
+        # headroom and nothing changes; over budget, capacity is given up in a
+        # stated order and `given_up` records what went.
+        spec, budget_saturated, budget_given_up = _fit_within_budget(
+            spec, requirement, provider, dsn
+        )
 
         baseline = estimate(spec, provider, dsn=dsn)
 
@@ -2127,7 +2032,7 @@ def recommend(
                 applied=tuple(applied),
                 advisory=tuple(advisory),
                 baseline_monthly=baseline.total_monthly,
-                tradeoffs=tradeoffs,
+                tradeoffs=tuple(tradeoffs) + budget_given_up,
                 spec_budget=requirement.budget_monthly_usd,
                 steady_monthly=steady_monthly,
                 budget_saturated=budget_saturated,
