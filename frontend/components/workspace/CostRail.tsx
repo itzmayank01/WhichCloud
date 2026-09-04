@@ -108,9 +108,11 @@ function Section({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-sunk"
       >
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
-          {title}
-        </span>
+        {/* Sentence case, sans, in ink. The mono-uppercase-tracked eyebrow
+            is the single most recognisable tell of a generated interface, and
+            five of them stacked down one panel read as decoration rather than
+            structure. */}
+        <span className="text-[15px] font-semibold text-ink">{title}</span>
         <svg
           viewBox="0 0 20 20"
           className={`h-3.5 w-3.5 text-ink-3 transition-transform ${open ? "" : "-rotate-90"}`}
@@ -162,7 +164,7 @@ export function CostRail({
       <div className="border-b border-line p-4">
         <label
           htmlFor="workspace-description"
-          className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3"
+          className="text-[15px] font-semibold text-ink"
         >
           Describe your app
         </label>
@@ -210,15 +212,26 @@ export function CostRail({
                 and database, which is a price nobody can obtain today -- it
                 needs a one-year term they have not agreed to. Leading with a
                 blend of the two would be a number no user could act on. */}
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="tnum font-mono text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink">
+            <div className="mt-3">
+              <div className="tnum font-mono text-[40px] font-semibold leading-none tracking-[-0.02em] text-ink">
                 {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
-              </span>
-              <span className="text-[12.5px] text-ink-3">/mo on-demand</span>
+              </div>
+              <p className="mt-1.5 text-[13px] text-ink-muted">per month, on-demand</p>
             </div>
-            <p className="mt-1 font-mono text-[11.5px] text-ink-3">
-              {option.label} · {option.shape}
-            </p>
+            {/* The shape as an aligned definition list. Labels in one column,
+                values in another, values in mono so figures and identifiers
+                line up down the page -- the same discipline as the cost sheet
+                below, which is what makes the panel read as one document. */}
+            {option.shape_parts?.length > 0 && (
+              <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                {option.shape_parts.map((part) => (
+                  <div key={part.label} className="contents">
+                    <dt className="text-[13px] text-ink-muted">{part.label}</dt>
+                    <dd className="font-mono text-[13px] text-ink">{part.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             {/* The commitment as a full sentence naming what it covers, not a
                 parenthetical. It is a business decision, not a discount code. */}
             {option.ondemand_monthly_usd != null &&

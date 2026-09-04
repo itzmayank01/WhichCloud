@@ -110,6 +110,10 @@ export type Option = {
   /** Which resources the committed price depends on. "1-year commitment"
    *  with no object is not something anyone can act on. */
   commitment_covers: string[];
+  /** The shape as labelled pairs. A quotation sets its terms as a definition
+   *  list with the labels aligned; a middle-dot-joined string runs four facts
+   *  together and makes the reader parse punctuation to find one. */
+  shape_parts: { label: string; value: string }[];
   /** Steady-state monthly cost for spiky workloads — the same architecture
       with the spike-headroom compute removed. The headline `monthly_usd`
       provisions the peak; this is the floor between spikes. Null when the

@@ -165,6 +165,12 @@ class OptionOut(BaseModel):
     #: a committed rate to begin with, in which case `monthly_usd` is already
     #: the on-demand price.
     ondemand_monthly_usd: float | None = None
+    #: The shape as labelled pairs rather than one middle-dot-joined string.
+    #: A quotation sets its terms as a definition list with the labels aligned;
+    #: "Most optimized · 3× 2 vCPU / 8 GB · regional (HA) db" is four facts
+    #: run together, and the reader has to parse the punctuation to find the
+    #: one they want.
+    shape_parts: list[dict] = Field(default_factory=list)
     #: Which resources the committed price depends on, so the interface can
     #: name them rather than saying "1-year commitment" with no object.
     commitment_covers: list[str] = Field(default_factory=list)
@@ -411,7 +417,29 @@ def _option_out(option: Option, provider: str) -> OptionOut:
             "azure": "zone-redundant db",
         }.get(provider, "multi-AZ db")
 
+    parts: list[dict] = [{"label": "tier", "value": option.label}]
+    if spec.compute_count:
+        compute = f"{spec.compute_count} × {spec.compute_vcpu} vCPU / {spec.compute_memory_gb:g} GB"
+        if spec.arch:
+            compute += f" {spec.arch}"
+        parts.append({"label": "compute", "value": compute})
+    elif spec.lambda_invocations_per_month:
+        parts.append(
+            {"label": "compute", "value": f"serverless, {_compact(spec.lambda_invocations_per_month)} calls/mo"}
+        )
+    if spec.database_multi_az and spec.database_vcpu:
+        parts.append({
+            "label": "database",
+            "value": {
+                "aws": "multi-AZ",
+                "gcp": "regional (HA)",
+                "azure": "zone-redundant",
+            }.get(provider, "multi-AZ"),
+        })
+    parts.append({"label": "region", "value": option.estimate.region})
+
     return OptionOut(
+        shape_parts=parts,
         drawn=_drawn(option, provider),
         label=option.label,
         rationale=option.rationale,

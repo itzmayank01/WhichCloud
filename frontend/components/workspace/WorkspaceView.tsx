@@ -250,9 +250,6 @@ export function WorkspaceView({ name }: { name: string | null }) {
             })}
           </div>
         )}
-        <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
-          Workspace
-        </span>
         {result && result.options.length > 0 ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
             {result.options.map((option) => {
