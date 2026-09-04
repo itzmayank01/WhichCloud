@@ -21,15 +21,41 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Node as TopoNode, Edge as TopoEdge } from "@/lib/api";
 import { buildGraphModel } from "@/lib/graphModel";
 import { layout, type CloudId, type Layout, type LaidNode } from "@/lib/elkLayout";
+import { PROVIDER_SERVICES } from "@/lib/providerServices";
 import { iconFor } from "@/lib/serviceIcon";
 import { KIND_ICON_LABEL, roleFor } from "@/lib/serviceMeta";
 
 const money = (v: number) =>
   v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : v >= 1 ? `$${v.toFixed(0)}` : v > 0 ? `$${v.toFixed(2)}` : "—";
 
-function serviceIconPath(kind: string): string | null {
-  const label = KIND_ICON_LABEL[kind];
-  return label ? iconFor(label) : null;
+/** The mark for a service, KEYED ON PROVIDER.
+ *
+ *  There is deliberately no cross-provider fallback. iconFor() resolves every
+ *  label to /icons/aws/..., so before this every icon on a Google Cloud or
+ *  Azure diagram was an AWS icon -- silently, because a fallback that always
+ *  succeeds never reports a miss. A gap now returns null, the card draws a
+ *  neutral placeholder, and the console names the provider and kind that is
+ *  missing so it can be added rather than disguised. */
+function serviceIconPath(kind: string, cloud: CloudId = "aws"): string | null {
+  if (cloud === "aws") {
+    const label = KIND_ICON_LABEL[kind];
+    return label ? iconFor(label) : null;
+  }
+  const entry = PROVIDER_SERVICES[cloud]?.[kind];
+  if (!entry) {
+    if (typeof window !== "undefined") {
+      console.warn(`[icons] no ${cloud} icon registered for kind "${kind}"`);
+    }
+    return null;
+  }
+  return entry.icon;
+}
+
+/** The provider's own name for a service, or null to keep the generic label.
+ *  A GCP diagram should say "Cloud SQL", not "Database". */
+function serviceDisplayName(kind: string, cloud: CloudId): string | null {
+  if (cloud === "aws") return null;
+  return PROVIDER_SERVICES[cloud]?.[kind]?.name ?? null;
 }
 
 /* ── container background box ──
@@ -89,6 +115,9 @@ function badgeFor(kind: string): { bg: string; glyph: React.ReactNode } | null {
     </>
   );
   if (kind === "cloud") return { bg: "#232F3E", glyph: "aws" };
+  // NOTE: the wordmark above is resolved per provider by ContainerBadge --
+  // it read "aws" on every cloud, so a container labelled "Google Cloud
+  // project" carried the AWS smile.
   if (kind === "region")
     return {
       // Flag on a pole -- the reference's region marker.
@@ -158,19 +187,31 @@ function badgeFor(kind: string): { bg: string; glyph: React.ReactNode } | null {
   return null;
 }
 
-function ContainerBadge({ kind }: { kind: string }) {
+/** The account-boundary wordmark, per cloud. Hardcoding "aws" here put the
+ *  AWS smile on containers labelled "Google Cloud project" and "Azure
+ *  subscription" -- the single most visible way a diagram can claim to be
+ *  about the wrong provider. */
+const CLOUD_WORDMARK: Record<string, { text: string; bg: string }> = {
+  aws: { text: "aws", bg: "#232F3E" },
+  gcp: { text: "GCP", bg: "#4285F4" },
+  azure: { text: "Azure", bg: "#0078D4" },
+};
+
+function ContainerBadge({ kind, cloud = "aws" }: { kind: string; cloud?: CloudId }) {
   const b = badgeFor(kind);
   if (!b) return null;
-  // The AWS wordmark is set as text; every other badge is a glyph.
-  if (b.glyph === "aws")
+  // The account wordmark is set as text; every other badge is a glyph.
+  if (b.glyph === "aws") {
+    const mark = CLOUD_WORDMARK[cloud] ?? CLOUD_WORDMARK.aws;
     return (
       <span
-        className="grid h-[18px] w-[22px] shrink-0 place-items-center rounded-[2px] text-[8px] font-bold lowercase leading-none tracking-tight text-white"
-        style={{ background: b.bg }}
+        className="grid h-[18px] shrink-0 place-items-center rounded-[2px] px-1 text-[8px] font-bold leading-none tracking-tight text-white"
+        style={{ background: mark.bg }}
       >
-        aws
+        {mark.text}
       </span>
     );
+  }
   return (
     <span
       className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[2px]"
@@ -199,7 +240,7 @@ const ROUTE_ROWS: Record<string, Array<[string, string]>> = {
 };
 
 function ContainerNode({ data }: NodeProps) {
-  const d = data as { label: string; kind: string; w: number; h: number };
+  const d = data as { label: string; kind: string; w: number; h: number; cloud?: CloudId };
   const st = containerStyle(d.kind);
   const routes = ROUTE_ROWS[d.kind];
   return (
@@ -218,7 +259,7 @@ function ContainerNode({ data }: NodeProps) {
         className="absolute flex items-center gap-1.5 whitespace-nowrap rounded-[2px] pr-1.5 text-[12px] font-semibold leading-[18px]"
         style={{ left: 8, top: -10, background: "#FFFFFF", color: st.ink }}
       >
-        <ContainerBadge kind={d.kind} />
+        <ContainerBadge kind={d.kind} cloud={d.cloud} />
         {d.label}
       </span>
       {routes && (
@@ -237,8 +278,13 @@ function ContainerNode({ data }: NodeProps) {
 
 /* ── a data-plane service node: icon, name, role, cost ── */
 function ServiceNode({ data }: NodeProps) {
-  const d = data as unknown as LaidNode & { accent: boolean };
-  const icon = serviceIconPath(d.kind);
+  const d = data as unknown as LaidNode & { accent: boolean; cloud: CloudId };
+  const cloud = d.cloud ?? "aws";
+  const icon = serviceIconPath(d.kind, cloud);
+  // Title is the provider's real product name where we know it; the generic
+  // role stays underneath as the descriptor. This is the reverse of the old
+  // arrangement, where the title was generic ("Database") on every cloud.
+  const title = serviceDisplayName(d.kind, cloud) ?? d.label;
   // AWS reference styling: a hairline #D5DBDB box, 2px corners, NO shadow.
   // The rounded-xl card with a drop shadow read as a web UI component rather
   // than a diagram symbol -- twenty of them stacked looked like a dashboard,
@@ -269,7 +315,7 @@ function ServiceNode({ data }: NodeProps) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-[11.5px] font-semibold leading-tight text-ink" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-          {d.label}
+          {title}
         </div>
         {/* Italic descriptor -- the reference diagrams set the role line in
             italic so it reads as a gloss on the service name, not a second
@@ -304,8 +350,9 @@ function ServiceNode({ data }: NodeProps) {
 
 /* ── a control-plane node: smaller, dotted-attached ── */
 function ControlNode({ data }: NodeProps) {
-  const d = data as unknown as LaidNode;
-  const icon = serviceIconPath(d.kind);
+  const d = data as unknown as LaidNode & { cloud: CloudId };
+  const cloud = d.cloud ?? "aws";
+  const icon = serviceIconPath(d.kind, cloud);
   return (
     <div className="relative flex h-full w-full items-center gap-1.5 rounded-lg border border-dashed border-line-strong bg-surface/90 px-2 py-1">
       <Handle type="target" position={Position.Left} className="!opacity-0" />
@@ -317,7 +364,9 @@ function ControlNode({ data }: NodeProps) {
         <Icon icon="mdi:cog-outline" className="h-4 w-4 shrink-0 text-ink-3" />
       )}
       <div className="min-w-0">
-        <div className="truncate text-[10.5px] font-medium leading-tight text-ink-2">{d.label}</div>
+        <div className="truncate text-[10.5px] font-medium leading-tight text-ink-2">
+          {serviceDisplayName(d.kind, cloud) ?? d.label}
+        </div>
         <div className="truncate text-[9px] leading-tight text-ink-3">{roleFor(d.kind)}</div>
       </div>
     </div>
@@ -528,7 +577,7 @@ function Inner({
 
   useEffect(() => {
     let alive = true;
-    const model = buildGraphModel(topoNodes, topoEdges);
+    const model = buildGraphModel(topoNodes, topoEdges, cloud);
     layout(model, cloud)
       .then((res) => alive && setLaid(res))
       .catch((err) => console.error("[graph] layout failed", err));
@@ -546,7 +595,7 @@ function Inner({
         id: `c:${c.id}`,
         type: "container",
         position: { x: c.x, y: c.y },
-        data: { label: c.label, kind: c.kind, w: c.w, h: c.h },
+        data: { label: c.label, kind: c.kind, w: c.w, h: c.h, cloud },
         draggable: false,
         selectable: false,
         zIndex: 0,
@@ -558,7 +607,7 @@ function Inner({
         id: n.id,
         type: n.plane === "data" ? "service" : n.plane === "control" ? "control" : "account",
         position: { x: n.x, y: n.y },
-        data: { ...n, accent: n.seq != null },
+        data: { ...n, accent: n.seq != null, cloud },
         draggable: false,
         selectable: true,
         zIndex: 10,

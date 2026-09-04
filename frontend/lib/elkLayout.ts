@@ -170,14 +170,29 @@ type ElkChild = {
 /** Which container each data node lives in, resolved to a concrete parent id.
  *  Non-VPC nodes hang directly under the region; VPC-resident ones nest into
  *  the public or private subnet inside the single AZ. */
-function parentOf(node: PlanedNode, hasVpc: boolean): string {
+/** Does this cloud put subnets INSIDE a zone?
+ *
+ *  Only AWS. An AWS subnet is created in exactly one availability zone, so a
+ *  zone genuinely contains subnets and drawing it as a box around them is the
+ *  structure. A GCP subnet is REGIONAL -- it spans every zone in its region --
+ *  and Azure has no zone container at all; zones there are a property of a
+ *  resource, not a place that holds one. Drawing "Zone asia-south1-b" wrapped
+ *  around "Subnet - application" states something about Google Cloud that is
+ *  simply untrue. */
+function subnetsAreZonal(cloud: CloudId): boolean {
+  return cloud === "aws";
+}
+
+function parentOf(node: PlanedNode, hasVpc: boolean, cloud: CloudId): string {
   if (node.container === "outside") return "outside";
   if (node.container === "edge") return "edge";
   // Managed services outside the VPC get their own strip rather than floating
   // loose in the region -- see REGIONAL_SERVICE in graphModel.
   if (node.container === "regional") return "regional";
   if (!hasVpc || node.container === "region") return "region";
-  const z = node.zone === "b" ? "-b" : "-a";
+  // One subnet per tier where subnets are regional; one per tier PER ZONE
+  // where they are zonal.
+  const z = subnetsAreZonal(cloud) ? (node.zone === "b" ? "-b" : "-a") : "";
   if (node.container === "subnet-public") return `subnet-public${z}`;
   if (node.container === "subnet-app") return `subnet-app${z}`;
   return `subnet-data${z}`;
@@ -200,14 +215,14 @@ export async function layout(
   const dataById = new Map(model.data.map((n) => [n.id, n]));
   for (const c of model.control) {
     const tgt = c.attachedTo ? dataById.get(c.attachedTo) : undefined;
-    controlParent.set(c.id, tgt ? parentOf(tgt, hasVpc) : "region");
+    controlParent.set(c.id, tgt ? parentOf(tgt, hasVpc, cloud) : "region");
   }
 
   // Group data + control nodes by their concrete parent container.
   const byParent = new Map<string, PlanedNode[]>();
   const push = (p: string, n: PlanedNode) =>
     (byParent.get(p) ?? byParent.set(p, []).get(p)!).push(n);
-  for (const n of model.data) push(parentOf(n, hasVpc), n);
+  for (const n of model.data) push(parentOf(n, hasVpc, cloud), n);
   for (const c of model.control) push(controlParent.get(c.id)!, c);
 
   const serviceChild = (n: PlanedNode): ElkChild => ({
@@ -292,7 +307,35 @@ export async function layout(
     // only the top-to-bottom order reads wrong. Fixing it properly means
     // either nodePlacement SIMPLE (which costs the alignment everywhere else)
     // or placing the AZ blocks by hand after layout.
-    const azs = [azBlock("a"), azBlock("b")].filter(Boolean) as ElkChild[];
+    /** Subnets straight under the VPC, no zone box. Used where a subnet is a
+     *  regional object: on GCP it spans the zones, and on Azure zones are a
+     *  resource property rather than a container. */
+    const regionalSubnets = (): ElkChild[] => {
+      const out: ElkChild[] = [];
+      for (const [id, labelKey] of [
+        ["subnet-public", "subnet-public"],
+        ["subnet-app", "subnet-app"],
+        ["subnet-data", "subnet-data"],
+      ] as const) {
+        const members = byParent.get(id) ?? [];
+        if (!members.length) continue;
+        out.push({
+          id,
+          layoutOptions: {
+            "elk.padding": "[top=34,left=16,bottom=16,right=16]",
+            "elk.direction": "RIGHT",
+            "elk.spacing.nodeNode": "28",
+          },
+          labels: [{ text: CONTAINER_LABEL[labelKey] }],
+          children: members.map(serviceChild),
+        });
+      }
+      return out;
+    };
+
+    const azs = subnetsAreZonal(cloud)
+      ? ([azBlock("a"), azBlock("b")].filter(Boolean) as ElkChild[])
+      : regionalSubnets();
     if (azs.length) {
       // Route tables, the way the AWS reference draws them: inside the VPC,
       // outside the zones, one per subnet tier. They are structural rather
@@ -300,13 +343,14 @@ export async function layout(
       // and no edges; which subnets they govern is shown by placement, the
       // same convention the governance strip already uses.
       const routeTables: ElkChild[] = [];
-      const hasPublic = (["a", "b"] as const).some(
-        (z) => (byParent.get(`subnet-public-${z}`) ?? []).length
+      const suffixes = subnetsAreZonal(cloud) ? (["-a", "-b"] as const) : ([""] as const);
+      const hasPublic = suffixes.some(
+        (z) => (byParent.get(`subnet-public${z}`) ?? []).length
       );
-      const hasPrivate = (["a", "b"] as const).some(
+      const hasPrivate = suffixes.some(
         (z) =>
-          (byParent.get(`subnet-app-${z}`) ?? []).length ||
-          (byParent.get(`subnet-data-${z}`) ?? []).length
+          (byParent.get(`subnet-app${z}`) ?? []).length ||
+          (byParent.get(`subnet-data${z}`) ?? []).length
       );
       if (hasPublic)
         routeTables.push({ id: "routetable-public", width: 168, height: 74, children: [] });
