@@ -231,6 +231,33 @@ export async function layout(
     height: n.plane === "control" ? CONTROL_H : NODE_H,
   });
 
+  /** GCP: the global VPC network wraps the region, not the reverse.
+   *
+   *  `regionChildren` is built region-first because that is AWS's shape, so
+   *  the network is lifted out of it and the remaining region contents are
+   *  nested inside the network instead. Anything that is genuinely regional
+   *  and outside the network -- the managed-services strip -- stays with the
+   *  region where it belongs. */
+  const globalNetworkWrappingRegion = (children: ElkChild[]): ElkChild => {
+    const vpc = children.find((c) => c.id === "vpc");
+    const rest = children.filter((c) => c.id !== "vpc");
+    const region: ElkChild = {
+      id: "region",
+      layoutOptions: { "elk.padding": "[top=34,left=18,bottom=18,right=18]" },
+      labels: [{ text: CONTAINER_LABEL["region"] }],
+      children: vpc ? [...rest, ...(vpc.children ?? [])] : rest,
+    };
+    return {
+      id: "vpc",
+      layoutOptions: {
+        "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+        "elk.direction": "RIGHT",
+      },
+      labels: [{ text: CONTAINER_LABEL["vpc"] }],
+      children: [region],
+    };
+  };
+
   // Build the container hierarchy, omitting any container that would be empty
   // (an AZ or subnet with nothing in it must not be drawn).
   const regionChildren: ElkChild[] = (byParent.get("region") ?? []).map(serviceChild);
@@ -473,12 +500,30 @@ export async function layout(
             children: edgeNodes.map(serviceChild),
           }]
         : []),
-      {
-        id: "region",
-        layoutOptions: { "elk.padding": "[top=34,left=18,bottom=18,right=18]" },
-        labels: [{ text: CONTAINER_LABEL["region"] }],
-        children: regionChildren,
-      },
+      // WHICH WAY ROUND THE NETWORK AND THE REGION NEST.
+      //
+      // An AWS VPC is a REGIONAL object: it is created in one region and
+      // cannot span two, so the region contains it. A Google VPC network is
+      // GLOBAL -- one network spans every region in the project, and subnets
+      // in Mumbai and Delhi belong to the same network -- so the containment
+      // runs the other way, and drawing the network inside a region states
+      // the opposite of how the product works. Azure's VNet is regional like
+      // AWS's.
+      //
+      // So this is not a label swap; the two levels genuinely trade places,
+      // which is why renaming the containers earlier left the structure wrong.
+      ...(cloud === "gcp"
+        ? [globalNetworkWrappingRegion(regionChildren)]
+        : [
+            {
+              id: "region",
+              layoutOptions: {
+                "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+              },
+              labels: [{ text: CONTAINER_LABEL["region"] }],
+              children: regionChildren,
+            },
+          ]),
     ],
     edges: [
       // TIER ORDER. ELK ranks a container's children by the edges between them,
