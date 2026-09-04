@@ -143,14 +143,27 @@ def fetch_vm_prices(region_key: str) -> list[PricePoint]:
                 vcpu=spec.vcpu,
                 memory_gb=spec.memory_gb,
                 arch=spec.arch,
-                attributes={
-                    "meter": item.get("meterName", ""),
-                    "family": spec.family,
-                    "purchase": "spot" if is_spot else "ondemand",
-                },
+                attributes=_with_baseline(
+                    {
+                        "meter": item.get("meterName", ""),
+                        "family": spec.family,
+                        "purchase": "spot" if is_spot else "ondemand",
+                    },
+                    "azure",
+                    key,
+                ),
             )
         )
     return points
+
+
+def _with_baseline(attrs: dict, provider: str, sku: str) -> dict:
+    """Tag a row with its CPU baseline when the family is credit-limited, so
+    the sizing rule can ask the catalog rather than carry its own table."""
+    from .models import burstable_baseline
+
+    b = burstable_baseline(provider, sku)
+    return {**attrs, "burstable_baseline": str(b)} if b is not None else attrs
 
 
 def cheapest_compute(query: ComputeQuery) -> PricePoint | None:
@@ -1173,8 +1186,8 @@ def fetch_vm_reservation_prices(region_key: str) -> list[PricePoint]:
             name=f"{sku} (1-yr reserved)", region=region, unit="hour",
             price_usd=hourly,
             vcpu=base.vcpu, memory_gb=base.memory_gb, arch=base.arch,
-            attributes={"purchase": "commit1yr",
-                        "term": "1-year Reserved VM Instance"},
+            attributes=_with_baseline({"purchase": "commit1yr",
+                        "term": "1-year Reserved VM Instance"}, "azure", base.sku),
         ))
     return points
 

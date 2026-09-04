@@ -241,6 +241,11 @@ class ArchitectureSpec:
     #: instead of on-demand. The largest single lever on a real bill, and the
     #: one the planner previously could only mention as an advisory range.
     use_commitment: bool = False
+    #: Refuse credit-limited ("burstable") compute. Set by the engine when the
+    #: projected sustained load would run such a machine above its baseline,
+    #: and on the tier whose promise is headroom for an unstated peak -- the
+    #: one thing CPU credits cannot deliver.
+    forbid_burstable: bool = False
 
     # Fraction of the month compute actually runs. 1.0 = always on. Scale-to-
     # zero lowers this. The hourly RATE stays real; only the hours change.
@@ -544,6 +549,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.compute_memory_gb,
             region=spec.region,
             arch=spec.arch,
+            exclude_burstable=spec.forbid_burstable,
         )
         # Spot wins over a commitment when both are set: you cannot buy a
         # Savings Plan for capacity you are already getting at spot rates.

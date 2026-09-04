@@ -78,6 +78,36 @@ def _snap_vcpu(needed: float) -> int:
     return VCPU_STEPS[-1]
 
 
+#: Sustained utilisation at which a credit-limited machine stops being safe,
+#: as a fraction of ONE vCPU. Half of a typical 20-40% baseline: credits are
+#: earned continuously and spent above the line, so a workload averaging well
+#: under it never depletes, and one approaching it has no margin for the hour
+#: that runs hot. HEURISTIC, stated once so it can be argued with.
+BURSTABLE_HEADROOM = 0.15
+
+
+def projected_cpu_utilisation(requirement: Requirement, total_vcpu: float) -> float:
+    """Sustained CPU utilisation the stated load implies, as a fraction of the
+    fleet's capacity.
+
+    MEAN rate, deliberately, not peak. A burstable family accrues credits
+    continuously and spends them only while demand sits above its baseline, so
+    the question it asks is about the average hour rather than the busiest
+    second -- a workload that peaks at 4x for a few minutes an hour and idles
+    the rest never runs its credits down. Sizing uses peak; this does not, and
+    the difference is the whole point.
+
+    Returns 0.0 when the description stated no volume: with nothing to project
+    from, the honest answer is that we do not know, and the caller treats an
+    unknown as "do not claim burstable is safe".
+    """
+    daily = requirement.daily_transactions or 0
+    if not daily or total_vcpu <= 0:
+        return 0.0
+    mean_rps = daily / 86_400
+    return mean_rps / (total_vcpu * RPS_PER_VCPU)
+
+
 def peak_rps_for(requirement: Requirement) -> float:
     """Peak requests per second implied by the stated daily volume.
 
@@ -1964,6 +1994,28 @@ def recommend(
         # zero. Volume is proxied on egress; see the spec field's note.
         if server_shape and (spec.database_multi_az or spec.compute_count > 1):
             spec = replace(spec, inter_az_gb=requirement.egress_gb)
+
+        # BURSTABLE POLICY, asked identically of all three providers.
+        #
+        # Two of the three were being sized on credit-limited machines and one
+        # was not -- AWS t4g.large and Azure B2ps_v2 against GCP
+        # n2d-standard-2 -- which is an apples-to-oranges comparison before
+        # any price is involved. Fixing one provider alone would only move the
+        # distortion, so the rule is provider-neutral and each candidate is
+        # judged against its OWN published baseline, read from the catalog.
+        #
+        # It is deliberately not a ban. At a tenth of a request per second the
+        # projected sustained CPU is 0.01% and credits never deplete, so
+        # burstable is simply the cheaper correct answer; forbidding it would
+        # raise every estimate for no reliability gain, which is the mirror of
+        # the budget-filling bug. What it cannot answer for is the top tier,
+        # whose whole premise is headroom for a peak nobody has stated -- and
+        # headroom is the one thing a credit balance does not provide.
+        utilisation = projected_cpu_utilisation(
+            requirement, spec.compute_count * spec.compute_vcpu
+        )
+        if server_shape and (label == "Most optimized" or utilisation >= BURSTABLE_HEADROOM):
+            spec = replace(spec, forbid_burstable=True)
 
         # The architecture is now fully sized, from load, uptime and data
         # volume alone. The budget has not been consulted and must not be:

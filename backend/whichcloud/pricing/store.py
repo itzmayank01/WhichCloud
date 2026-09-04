@@ -196,6 +196,12 @@ def cheapest_compute(
         sql += " AND region = ANY(%(regions)s)"
         params["regions"] = regions
 
+    if query.exclude_burstable:
+        # The attribute is present only on credit-limited families, so its
+        # absence IS the statement that a machine runs at full vCPU
+        # indefinitely. Asked of every provider identically.
+        sql += " AND attributes->>'burstable_baseline' IS NULL"
+
     if query.arch:
         sql += " AND arch = %(arch)s"
         params["arch"] = query.arch
