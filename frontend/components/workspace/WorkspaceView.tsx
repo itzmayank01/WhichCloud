@@ -4,6 +4,8 @@ import { useState } from "react";
 import {
   api,
   money,
+  CLOUDS,
+  type CloudId,
   type Option,
   type Recommendation,
 } from "@/lib/api";
@@ -134,16 +136,41 @@ export function WorkspaceView({ name }: { name: string | null }) {
      the animation is a mount effect, and without a new key there is nothing
      to re-trigger. */
   const [replay, setReplay] = useState(0);
+  // Which cloud to price against. Null means "let the description decide",
+  // which is the honest default: someone describing a retail chain has no
+  // reason to have picked a cloud yet, and being made to choose one before
+  // seeing a number is the opposite of what this tool is for.
+  const [cloud, setCloud] = useState<CloudId | null>(null);
 
-  async function ask() {
+  // NOTE the guard on `overrideCloud`. This is passed to onAsk, and a click
+  // handler receives the event as its first argument -- so an unguarded
+  // parameter here became the provider, and a React synthetic event went into
+  // the request body as one. It serialises to a circular structure through its
+  // fibre, so the failure surfaced as "Converting circular structure to JSON"
+  // rather than as anything to do with clouds.
+  async function ask(overrideCloud?: CloudId | null | unknown) {
     const text = description.trim() || EXAMPLE;
+    const picked =
+      overrideCloud === null ||
+      overrideCloud === "aws" ||
+      overrideCloud === "gcp" ||
+      overrideCloud === "azure"
+        ? (overrideCloud as CloudId | null)
+        : undefined;
+    const provider = picked === undefined ? cloud : picked;
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const answer = await api.describe({ description: text });
+      const answer = await api.describe({
+        description: text,
+        ...(provider ? { provider } : {}),
+      });
       setResult(answer);
       setAsked(text);
+      // The backend decides when we sent nothing, so read the provider back
+      // rather than assuming ours won.
+      setCloud(answer.provider);
       setSelected(
         recommend(answer.options)?.pick.label ?? answer.options[0]?.label ?? null,
       );
@@ -161,6 +188,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
   // again inside the full-page overlay. Going full page should not cost you
   // the ability to replay the build or pull the Terraform for what you are
   // looking at.
+  // Tier chips and the pick both read the ON-DEMAND total, matching the
+  // headline. Comparing one tier's committed price against another's
+  // on-demand would rank them on a difference in commitment rather than in
+  // architecture.
   const actionBar = shown ? (
     <div className="flex items-center gap-2 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-lg backdrop-blur">
       <button
@@ -189,6 +220,36 @@ export function WorkspaceView({ name }: { name: string | null }) {
     <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
       {/* ── option switcher ───────────────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-4 border-b border-line bg-surface px-5 py-2.5">
+        {/* Which cloud. Shown only once there is a result, because before that
+            there is nothing to compare and the question is premature -- the
+            product's job is to recommend a cloud, not to make someone pick one
+            before they have seen a single number. */}
+        {result && (
+          <div className="flex shrink-0 items-center gap-1 rounded-lg border border-line bg-canvas p-0.5">
+            {CLOUDS.map((c) => {
+              const active = cloud === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setCloud(c.id);
+                    void ask(c.id);
+                  }}
+                  title={`Price this on ${c.name} — ${c.region}`}
+                  className={`rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors disabled:opacity-50 ${
+                    active
+                      ? "bg-surface text-ink shadow-sm ring-1 ring-line-strong"
+                      : "text-ink-3 hover:text-ink-2"
+                  }`}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
           Workspace
         </span>
@@ -213,7 +274,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     {option.label}
                   </span>
                   <span className="tnum font-mono text-[13px] font-semibold text-ink">
-                    {money(option.monthly_usd)}
+                    {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
                   </span>
                   {recommended && (
                     <span className="rounded-full bg-save px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-white">
@@ -261,7 +322,8 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     from scratch rather than silently swapping node positions
                     under a finished animation. */}
                 <ArchitectureGraph
-                  graphKey={`${shown.label}-${replay}`}
+                  graphKey={`${shown.label}-${replay}-${cloud ?? "aws"}`}
+                  cloud={cloud ?? "aws"}
                   nodes={shown.topology.nodes}
                   edges={shown.topology.edges}
                   playing
@@ -285,7 +347,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                               {option.label}
                             </span>
                             <span className="tnum font-mono text-[13px] font-semibold text-ink">
-                              {money(option.monthly_usd)}
+                              {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
                             </span>
                           </button>
                         ))}

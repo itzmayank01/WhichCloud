@@ -65,6 +65,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${sans.variable} ${mono.variable} h-full antialiased`}
+      // Browser extensions write their own attributes onto <html> before
+      // React hydrates -- password managers, analytics, ad blockers. The one
+      // that surfaced here was data-qb-installed. React compares the server
+      // HTML against the live DOM, finds an attribute it did not render, and
+      // reports a hydration mismatch that no application change can fix,
+      // because the markup React produced was correct. Suppressing on this
+      // element only covers attributes on <html> itself; mismatches anywhere
+      // inside the app still report normally.
+      suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col bg-canvas text-ink">
         {/* First thing in the tab order, invisible until focused: lets a

@@ -125,6 +125,14 @@ class ComputeQuery:
     min_memory_gb: float
     region: str  # our own region key, e.g. "india"
     arch: str | None = None  # None = any; "arm64" to force ARM
+    #: Refuse credit-limited ("burstable") families. Set when the projected
+    #: sustained load would run the machine above its baseline, and on the
+    #: tier whose premise is headroom for an unstated peak -- which is exactly
+    #: what CPU credits do not provide. Provider-neutral on purpose: the same
+    #: question is asked of all three, answered against each one's own
+    #: published baseline, so the comparison never turns on one provider
+    #: being quietly given a throttled machine and another a sustained one.
+    exclude_burstable: bool = False
 
     def matches(self, p: PricePoint) -> bool:
         if p.vcpu is None or p.memory_gb is None:
@@ -186,3 +194,52 @@ def provider_region(region_key: str, provider: str) -> str:
             f"No {provider} region mapped for '{region_key}'. "
             f"Known regions: {', '.join(sorted(REGIONS))}"
         ) from None
+
+
+#: CPU baseline for credit-limited ("burstable") instance families, as a
+#: fraction of one vCPU sustained. A burstable machine earns credits while it
+#: runs below this line and spends them above it; run above it for long enough
+#: and it throttles TO the baseline. That makes the family correct for a
+#: workload whose sustained demand sits well under the line and wrong for one
+#: that does not, which is a question about load, not about price.
+#:
+#: These come from provider documentation, because no pricing API publishes
+#: them -- the rate feeds price a machine, they do not describe how it behaves.
+#: They live here, once, so the adapters record them as catalog attributes and
+#: the engine reads them as data rather than carrying a table of its own.
+_AWS_T_BASELINE = {
+    "nano": 0.05, "micro": 0.10, "small": 0.20, "medium": 0.20,
+    "large": 0.30, "xlarge": 0.40, "2xlarge": 0.40,
+}
+#: Azure publishes a baseline per B-series size rather than per suffix.
+_AZURE_B_BASELINE = {
+    "b1s": 0.10, "b1ms": 0.20, "b2s": 0.40, "b2ms": 0.30, "b4ms": 0.225,
+    "b8ms": 0.17, "b12ms": 0.17, "b16ms": 0.17, "b20ms": 0.17,
+    "b2ts_v2": 0.20, "b2ls_v2": 0.30, "b2s_v2": 0.40,
+    "b4ls_v2": 0.30, "b4s_v2": 0.40, "b8ls_v2": 0.30, "b8s_v2": 0.40,
+    "b16ls_v2": 0.30, "b16s_v2": 0.40, "b32ls_v2": 0.30, "b32s_v2": 0.40,
+    "b2pts_v2": 0.20, "b2pls_v2": 0.30, "b2ps_v2": 0.40,
+    "b4pls_v2": 0.30, "b4ps_v2": 0.40, "b8pls_v2": 0.30, "b8ps_v2": 0.40,
+    "b16pls_v2": 0.30, "b16ps_v2": 0.40,
+}
+#: Google's shared-core machines are the burstable ones; N2, N2D, C2 and the
+#: rest deliver their full vCPU continuously and carry no baseline at all.
+_GCP_SHARED_CORE_BASELINE = {
+    "e2-micro": 0.25, "e2-small": 0.50, "e2-medium": 0.50,
+    "f1-micro": 0.20, "g1-small": 0.50,
+}
+
+
+def burstable_baseline(provider: str, sku: str) -> float | None:
+    """The sustained CPU fraction this machine is entitled to, or None if it
+    is not credit-limited. None means "runs at full vCPU indefinitely"."""
+    low = sku.lower().split(":")[0]
+    if provider == "aws":
+        if not low.startswith(("t2.", "t3.", "t3a.", "t4g.")):
+            return None
+        return _AWS_T_BASELINE.get(low.split(".", 1)[1] if "." in low else "")
+    if provider == "azure":
+        return _AZURE_B_BASELINE.get(low.replace("standard_", ""))
+    if provider == "gcp":
+        return _GCP_SHARED_CORE_BASELINE.get(low)
+    return None

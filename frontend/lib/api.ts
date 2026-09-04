@@ -103,6 +103,13 @@ export type Option = {
       budget — a higher budget buys no more useful capacity. Use it to explain
       why raising the budget stops moving the number. */
   budget_saturated: boolean;
+  /** What this architecture costs with NOTHING committed -- the price the
+   *  user pays today, without signing a one-year term. Null when no line had
+   *  a committed rate, in which case monthly_usd is already on-demand. */
+  ondemand_monthly_usd: number | null;
+  /** Which resources the committed price depends on. "1-year commitment"
+   *  with no object is not something anyone can act on. */
+  commitment_covers: string[];
   /** Steady-state monthly cost for spiky workloads — the same architecture
       with the spike-headroom compute removed. The headline `monthly_usd`
       provisions the peak; this is the floor between spikes. Null when the
@@ -147,7 +154,24 @@ export type Recommendation = {
   assumed: string[];
   clarifying_question: string | null;
   read_by: string | null;
+  /** Which cloud these options were priced against. The caller may not have
+   *  chosen it -- the description can state a preference, and the default is
+   *  AWS -- so the answer says which cloud it describes rather than leaving
+   *  the interface to assume. */
+  provider: CloudId;
 };
+
+/** The three clouds the catalog prices. */
+export type CloudId = "aws" | "gcp" | "azure";
+
+export const CLOUDS: { id: CloudId; name: string; region: string }[] = [
+  // Region is the primary India region each provider is priced in, named by
+  // city rather than code: "Mumbai + Hyderabad" against "Mumbai + Delhi" is a
+  // real difference to someone choosing, and a region code hides it.
+  { id: "aws", name: "AWS", region: "ap-south-1 (Mumbai)" },
+  { id: "gcp", name: "Google Cloud", region: "asia-south1 (Mumbai)" },
+  { id: "azure", name: "Azure", region: "Central India (Pune)" },
+];
 
 export type Comparison = {
   goal: string;

@@ -210,6 +210,21 @@ def _detect_arch(inst: dict) -> str:
     return "x86_64"
 
 
+def _with_baseline(attrs: dict, provider: str, sku: str) -> dict:
+    """Tag a row with its CPU baseline when the family is credit-limited.
+
+    Recorded as an attribute so the sizing rule can be data-driven: the engine
+    asks the catalog whether a candidate machine throttles and at what level,
+    rather than carrying its own table of instance families.
+    """
+    from .models import burstable_baseline
+
+    baseline = burstable_baseline(provider, sku)
+    if baseline is not None:
+        attrs = {**attrs, "burstable_baseline": str(baseline)}
+    return attrs
+
+
 def load_compute_prices(region_key: str, path: Path | None = None) -> list[PricePoint]:
     """Every on-demand Linux EC2 instance priced in this region.
 
@@ -245,7 +260,11 @@ def load_compute_prices(region_key: str, path: Path | None = None) -> list[Price
                     vcpu=vcpu,
                     memory_gb=mem,
                     arch=arch,
-                    attributes={"processor": processor, "purchase": "ondemand"},
+                    attributes=_with_baseline(
+                        {"processor": processor, "purchase": "ondemand"},
+                        "aws",
+                        inst["instance_type"],
+                    ),
                 )
             )
 
@@ -273,11 +292,21 @@ def load_compute_prices(region_key: str, path: Path | None = None) -> list[Price
                     vcpu=vcpu,
                     memory_gb=mem,
                     arch=arch,
-                    attributes={
-                        "processor": processor,
-                        "purchase": "commit1yr",
-                        "term": "1-year Compute Savings Plan, no upfront",
-                    },
+                    # The baseline travels with the COMMITTED row too. Without
+                    # it the burstable filter passed every committed machine
+                    # -- the attribute's absence means "not credit-limited" --
+                    # so the top tier kept selecting t4g.large through the
+                    # commitment path while the on-demand path was correctly
+                    # excluding it.
+                    attributes=_with_baseline(
+                        {
+                            "processor": processor,
+                            "purchase": "commit1yr",
+                            "term": "1-year Compute Savings Plan, no upfront",
+                        },
+                        "aws",
+                        inst["instance_type"],
+                    ),
                 )
             )
 
@@ -706,9 +735,37 @@ def load_cache_prices(region_key: str) -> list[PricePoint]:
                 vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
                 memory_gb=_memory_gb(attrs.get("memory")),
                 arch=_arch_of(instance),
-                attributes={"engine": engine},
+                attributes={"engine": engine, "purchase": "ondemand"},
             )
         )
+
+        # ElastiCache reserved nodes, on the same 1-year no-upfront standard
+        # term the compute and database commitments use. Without these the
+        # cache line stayed on-demand inside an otherwise committed estimate,
+        # so AWS committed totals were overstated in exactly the way Azure's
+        # were before its database reservations were found -- a bias in the
+        # committed comparison, just pointing the other way.
+        reserved = _reserved_hourly(doc, sku)
+        if reserved:
+            points.append(
+                PricePoint(
+                    provider="aws",
+                    category="cache",
+                    sku=f"{instance}:commit1yr",
+                    name=f"{instance} {engine} (1-yr reserved)",
+                    region=region,
+                    unit=_UNITS.get(unit, unit),
+                    price_usd=reserved,
+                    vcpu=int(attrs["vcpu"]) if attrs.get("vcpu", "").isdigit() else None,
+                    memory_gb=_memory_gb(attrs.get("memory")),
+                    arch=_arch_of(instance),
+                    attributes={
+                        "engine": engine,
+                        "purchase": "commit1yr",
+                        "term": "1-year reserved node, no upfront",
+                    },
+                )
+            )
     return points
 
 

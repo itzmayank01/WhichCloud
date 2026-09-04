@@ -31,6 +31,14 @@ _KIND_BY_PREFIX = {
     "Cache": "cache",
     "Monitoring": "monitoring",
     "WAF": "waf",
+    # Azure's firewall line is "Web application firewall" -- Application
+    # Gateway WAF v2 -- and matched none of the prefixes here, so $367.92 of
+    # an Azure estimate was billed with no box on the diagram to show it.
+    # Every priced line is meant to be a box and every box a line; a table
+    # keyed on one provider's product wording breaks that silently for the
+    # other two.
+    "Web application firewall": "waf",
+    "Cloud Armor": "waf",
     "Audit logging": "audit",
     "KMS keys": "kms",
     "Key management operations": "kms",
@@ -246,7 +254,15 @@ _MISSING_PHRASES: tuple[tuple[str, str], ...] = (
     ("storage", "storage"),
     ("egress", "network"),
     ("cache", "cache"),
+    # Provider-neutral. This read ("aws waf", "waf") and matched on a label
+    # only AWS produces, so Azure's "Web application firewall" line -- $367.92
+    # of an Azure estimate -- was billed with no node on the diagram to show
+    # it. Every priced line is supposed to be a box and every box a line; a
+    # matcher keyed on one provider's product name breaks that for the other
+    # two silently.
     ("aws waf", "waf"),
+    ("web application firewall", "waf"),
+    ("cloud armor", "waf"),
     ("audit logging", "audit"),
     ("kms", "kms"),
     ("nat gateway", "nat"),

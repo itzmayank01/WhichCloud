@@ -241,6 +241,11 @@ class ArchitectureSpec:
     #: instead of on-demand. The largest single lever on a real bill, and the
     #: one the planner previously could only mention as an advisory range.
     use_commitment: bool = False
+    #: Refuse credit-limited ("burstable") compute. Set by the engine when the
+    #: projected sustained load would run such a machine above its baseline,
+    #: and on the tier whose promise is headroom for an unstated peak -- the
+    #: one thing CPU credits cannot deliver.
+    forbid_burstable: bool = False
 
     # Fraction of the month compute actually runs. 1.0 = always on. Scale-to-
     # zero lowers this. The hourly RATE stays real; only the hours change.
@@ -532,6 +537,41 @@ def _tiered_line(label: str, point: PricePoint, amount: float) -> LineItem:
     )
 
 
+#: Google's sustained-use discount at full-month running, by machine family.
+#: N1 reaches 30%; N2, N2D, C2 and the rest of the current generation reach
+#: 20%. Shared-core and E2 machines earn none -- their price already reflects
+#: it -- and neither do committed rates. Published in Google's Compute Engine
+#: pricing documentation rather than in the billing catalog, which prices a
+#: machine without describing the discount applied to it afterwards.
+_GCP_SUD_BY_FAMILY = {"n1": 0.30, "n2": 0.20, "n2d": 0.20, "c2": 0.20, "c2d": 0.20, "m1": 0.30, "m2": 0.30}
+
+
+def _sustained_use_discount(provider, point, spec, compute_line):
+    """The SUD line for a GCP compute row, or None when none applies."""
+    if provider != "gcp" or spec.use_commitment or spec.use_spot:
+        return None
+    if spec.compute_duty_cycle < 1.0:
+        # The discount scales with the share of the month the instance runs;
+        # a duty-cycled fleet does not reach the full-month rate, and quoting
+        # it as though it did would overstate the saving.
+        return None
+    family = point.sku.split(":")[0].split("-")[0].lower()
+    rate = _GCP_SUD_BY_FAMILY.get(family)
+    if not rate:
+        return None
+    saving = (compute_line.monthly_usd * Decimal(str(rate))).quantize(Decimal("0.00000001"))
+    if saving <= 0:
+        return None
+    return LineItem(
+        label=f"Sustained use discount ({rate:.0%})",
+        sku=f"{point.sku}:sud",
+        unit="month",
+        unit_price=-saving,
+        quantity=Decimal(1),
+        monthly_usd=-saving,
+    )
+
+
 def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> Estimate:
     """Price one architecture on one provider."""
     region = provider_region(spec.region, provider)
@@ -544,6 +584,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_memory_gb=spec.compute_memory_gb,
             region=spec.region,
             arch=spec.arch,
+            exclude_burstable=spec.forbid_burstable,
         )
         # Spot wins over a commitment when both are set: you cannot buy a
         # Savings Plan for capacity you are already getting at spot rates.
@@ -561,11 +602,33 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 label += " (spot)"
             elif spec.use_commitment:
                 label += " (1-yr commitment)"
-            result.items.append(
-                _hourly_line(
-                    label, point, spec.compute_count, spec.compute_duty_cycle
-                )
+            compute_line = _hourly_line(
+                label, point, spec.compute_count, spec.compute_duty_cycle
             )
+            result.items.append(compute_line)
+
+            # GCP SUSTAINED USE DISCOUNT.
+            #
+            # Google discounts Compute Engine automatically for instances that
+            # run most of the month -- no commitment, no action, up to 30% on
+            # the N-series at full-month use. It is not a commitment, so it
+            # belongs in the ON-DEMAND total, and without it every GCP
+            # on-demand figure was quoted at list while the real bill would
+            # arrive lower.
+            #
+            # Shown as its own line rather than folded into the compute rate:
+            # a silent discount reads as an arithmetic error, and the whole
+            # point of the provenance panel is that a number can be taken
+            # apart. It also cannot stack with a committed rate -- CUD-covered
+            # usage does not additionally earn SUD -- which the guard below
+            # asserts rather than assumes.
+            sud = _sustained_use_discount(provider, point, spec, compute_line)
+            if sud is not None:
+                assert not spec.use_commitment, (
+                    "sustained-use discount applied to a committed rate: "
+                    "CUD-covered usage does not also earn SUD"
+                )
+                result.items.append(sud)
         else:
             result.missing.append(
                 f"{purchase} compute {spec.compute_vcpu}vCPU/"
@@ -711,6 +774,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             min_vcpu=spec.cache_vcpu,
             min_memory_gb=spec.cache_memory_gb or 0.0,
             dsn=dsn,
+            purchase="commit1yr" if spec.use_commitment else "ondemand",
         )
         if point:
             result.items.append(_hourly_line("Cache", point, 1))
@@ -731,8 +795,20 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- load balancer ----
     if spec.load_balancer:
-        point = _preferred(provider, region, "loadbalancer", dsn)
-        if point:
+        # On Azure a WAF IS a load balancer. Application Gateway WAF v2 is an
+        # L7 gateway that terminates and balances HTTP itself, so charging a
+        # Standard Load Balancer alongside it bills ingress twice: $18.25 of
+        # L4 balancer in front of a $367.92 L7 gateway that needs no help.
+        # AWS and GCP genuinely do sell the firewall as a policy ATTACHED to
+        # a balancer they already have, so both lines are correct there --
+        # which is why this reads as a provider difference rather than an
+        # exception. Azure ingress was $396.68 against $44.29 and $44.90.
+        gateway_is_the_balancer = (
+            provider == "azure" and spec.waf_rule_count is not None
+        )
+        if gateway_is_the_balancer:
+            pass
+        elif (point := _preferred(provider, region, "loadbalancer", dsn)):
             result.items.append(_hourly_line("Load balancer", point, 1))
         else:
             result.missing.append("load balancer")
@@ -1070,12 +1146,28 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     if spec.nat_gateway_count:
         hourly = _by_role(provider, region, "nat", "gateway", dsn)
         per_gb = _by_role(provider, region, "nat", "data", dsn)
+        # HOW MANY, is a question about the provider's model, not the design.
+        #
+        # An AWS NAT Gateway lives in one subnet in one availability zone, so
+        # a design spanning three zones buys three of them -- and paying for
+        # one would mean traffic from the other two crossing a zone boundary
+        # to reach it, which is both slower and separately billed.
+        #
+        # Google's Cloud NAT is not that. It is a REGIONAL configuration on a
+        # Cloud Router, one per region per VPC, serving every zone in the
+        # region. There is no such thing as a per-zone Cloud NAT, so quoting
+        # three was inventing two resources that cannot be bought. The count
+        # travels with the provider's model rather than with the zone count.
+        count = 1 if provider == "gcp" else spec.nat_gateway_count
         if hourly:
             result.items.append(
                 _hourly_line(
-                    f"NAT gateway × {spec.nat_gateway_count}",
+                    # "× 1" stays even at one, matching "KMS keys × 1" and
+                    # "Secrets × 1" elsewhere in this file -- and the count is
+                    # read back out of this label by a test.
+                    f"NAT gateway × {count}",
                     hourly,
-                    spec.nat_gateway_count,
+                    count,
                 )
             )
             if per_gb and spec.nat_gb_processed:

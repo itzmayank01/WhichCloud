@@ -20,7 +20,7 @@ import { Icon } from "@iconify/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Node as TopoNode, Edge as TopoEdge } from "@/lib/api";
 import { buildGraphModel } from "@/lib/graphModel";
-import { layout, type Layout, type LaidNode } from "@/lib/elkLayout";
+import { layout, type CloudId, type Layout, type LaidNode } from "@/lib/elkLayout";
 import { iconFor } from "@/lib/serviceIcon";
 import { KIND_ICON_LABEL, roleFor } from "@/lib/serviceMeta";
 
@@ -455,6 +455,18 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
   const animate = d.onPath && d.playing && !d.reduced;
   return (
     <>
+      {/* A white casing under every line. Where two edges cross, or a line
+          passes close to a box border, the casing breaks the one behind so the
+          two still read as separate paths -- the standard trick on transit
+          maps and AWS reference diagrams alike. Without it, crossings fuse
+          into a single ambiguous mark. */}
+      <path
+        d={path}
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth={EDGE_STYLE(d).strokeWidth + 3.5}
+        strokeLinecap="round"
+      />
       <BaseEdge
         id={id}
         path={path}
@@ -498,11 +510,13 @@ function Inner({
   nodes: topoNodes,
   edges: topoEdges,
   playing,
+  cloud,
   onPaneClick,
 }: {
   nodes: TopoNode[];
   edges: TopoEdge[];
   playing: boolean;
+  cloud: CloudId;
   onPaneClick?: () => void;
 }) {
   const [laid, setLaid] = useState<Layout | null>(null);
@@ -515,13 +529,13 @@ function Inner({
   useEffect(() => {
     let alive = true;
     const model = buildGraphModel(topoNodes, topoEdges);
-    layout(model)
+    layout(model, cloud)
       .then((res) => alive && setLaid(res))
       .catch((err) => console.error("[graph] layout failed", err));
     return () => {
       alive = false;
     };
-  }, [topoNodes, topoEdges]);
+  }, [topoNodes, topoEdges, cloud]);
 
   const { rfNodes, rfEdges } = useMemo(() => {
     if (!laid) return { rfNodes: [] as RFNode[], rfEdges: [] as RFEdge[] };
@@ -663,6 +677,9 @@ export function ArchitectureGraph(props: {
   nodes: TopoNode[];
   edges: TopoEdge[];
   playing?: boolean;
+  /** Which cloud's boundary names to draw. Each cloud groups differently, so
+   *  this is not styling: a GCP VPC is global where an AWS one is regional. */
+  cloud?: CloudId;
   /** Rendered at the top of the overlay so tiers can be compared without
    *  leaving full-page view. */
   overlayHeader?: React.ReactNode;
@@ -695,6 +712,7 @@ export function ArchitectureGraph(props: {
         nodes={props.nodes}
         edges={props.edges}
         playing={props.playing ?? true}
+        cloud={props.cloud ?? "aws"}
         onPaneClick={inOverlay ? undefined : () => setExpanded(true)}
       />
     </ReactFlowProvider>

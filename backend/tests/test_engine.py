@@ -370,3 +370,54 @@ def test_recommend_cli_parser_builds():
     with pytest.raises(SystemExit) as exc:
         module.main()
     assert exc.value.code == 0
+
+
+# ── budget must not buy capacity the workload cannot use ────────────────
+
+
+def _retail(daily: int, budget: float = 5000.0) -> Requirement:
+    """A steady web workload, varying only in stated transaction volume."""
+    return Requirement(
+        goal="Retail billing",
+        workload_type="web",
+        traffic_pattern="steady",
+        traffic_scale="high",
+        region="india",
+        budget_monthly_usd=budget,
+        storage_gb=500,
+        egress_gb=500,
+        high_availability=True,
+        daily_transactions=daily,
+    )
+
+
+@needs_db
+def test_more_load_never_buys_fewer_machines():
+    """Instance count must not fall as stated load rises.
+
+    It used to: budget scaling grew the fleet to fill the budget, so a
+    costlier workload had less budget left for instances and came out with
+    FEWER of them. Twelve machines at 8,000 transactions a day, nine at
+    800,000, four at 8,000,000 -- exactly backwards.
+    """
+    counts = [
+        engine.recommend(_retail(daily), dsn=None)[-1].spec.compute_count
+        for daily in (8_000, 80_000, 800_000, 8_000_000)
+    ]
+    assert counts == sorted(counts), f"instance count fell as load rose: {counts}"
+
+
+@needs_db
+def test_budget_headroom_is_bounded_by_what_the_load_needs():
+    """A tenth of a request per second does not become a twelve-machine fleet.
+
+    Headroom is worth paying for; a twelvefold over-provision is not. With a
+    budget far above the workload, growth stops at a multiple of what the
+    stated load actually requires, and the option says it is saturated rather
+    than implying the extra money is still buying something.
+    """
+    top = engine.recommend(_retail(8_000, budget=50_000.0), dsn=None)[-1]
+    assert top.spec.compute_count <= 6, (
+        f"budget bought {top.spec.compute_count} machines for a 0.4 rps workload"
+    )
+    assert top.budget_saturated, "unusable budget headroom should be declared"

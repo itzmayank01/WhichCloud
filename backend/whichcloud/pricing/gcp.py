@@ -21,6 +21,7 @@ from pathlib import Path
 
 import httpx
 
+from .models import burstable_baseline as _baseline_for
 from .models import ComputeQuery, PricePoint, PriceTier, provider_region
 from .specs import gcp_arch_for
 
@@ -28,6 +29,14 @@ INSTANCES_URL = "https://instances.vantage.sh/gcp/instances.json"
 CATALOG_API = "https://cloudbilling.googleapis.com/v1/services"
 
 CACHE_DIR = Path(os.getenv("WHICHCLOUD_CACHE", Path.home() / ".cache" / "whichcloud"))
+
+def _with_baseline(attrs: dict, provider: str, sku: str) -> dict:
+    """Tag a row with its CPU baseline when the family is credit-limited, so
+    the sizing rule can ask the catalog rather than carry its own table."""
+    b = _baseline_for(provider, sku)
+    return {**attrs, "burstable_baseline": str(b)} if b is not None else attrs
+
+
 
 def _decimal(value: object) -> Decimal | None:
     try:
@@ -94,7 +103,9 @@ def load_compute_prices(region_key: str, path: Path | None = None) -> list[Price
                     vcpu=vcpu,
                     memory_gb=mem,
                     arch=arch,
-                    attributes={"family": family, "purchase": purchase},
+                    attributes=_with_baseline(
+                        {"family": family, "purchase": purchase}, "gcp", sku
+                    ),
                 )
             )
 
@@ -877,11 +888,11 @@ def fetch_commitment_prices(region_key: str) -> list[PricePoint]:
             name=f"{base.sku} (1-yr committed use)", region=region, unit="hour",
             price_usd=hourly, vcpu=base.vcpu, memory_gb=base.memory_gb,
             arch=base.arch,
-            attributes={"purchase": "commit1yr",
+            attributes=_with_baseline({"purchase": "commit1yr",
                         "term": "1-year committed use discount",
                         "composed": "true",
                         "vcpu_hour_usd": str(pair["cpu"]),
-                        "ram_gb_hour_usd": str(pair["ram"])},
+                        "ram_gb_hour_usd": str(pair["ram"])}, "gcp", base.sku),
         ))
     return points
 

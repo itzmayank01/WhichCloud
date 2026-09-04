@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import contextmanager
 from decimal import Decimal
 
@@ -23,10 +24,59 @@ DSN = os.getenv(
 )
 
 
+#: One live connection per thread, per DSN.
+_local = threading.local()
+
+
 @contextmanager
 def connect(dsn: str | None = None):
-    with psycopg.connect(dsn or DSN, row_factory=dict_row) as conn:
+    """Hand out a reused connection rather than opening a new one per query.
+
+    There are eighteen call sites in this module and every one of them is on
+    the pricing hot path, so a single recommend() -- three tiers, each pricing
+    a dozen components, the upper two looping while they grow into the budget
+    -- opened thousands of short-lived TCP connections.
+
+    Docker Desktop's port forwarder on macOS drops connections under that
+    churn. The symptom was psycopg reporting "server closed the connection
+    unexpectedly" with NOTHING in the Postgres log, the server at 1% memory and
+    six of a hundred connections used -- because the server never saw them.
+    The same test file passed, failed, then skipped on three consecutive runs
+    of identical code, which made the suite useless as a signal for weeks.
+
+    Reuse removes the churn, and is faster besides. Transaction semantics are
+    preserved: commit on a clean exit, roll back on an exception, exactly as
+    `with psycopg.connect(...)` did -- the connection is simply not closed
+    afterwards. A connection found closed or belonging to a different DSN is
+    replaced.
+    """
+    target = dsn or DSN
+    conn = getattr(_local, "conn", None)
+    if conn is not None and (conn.closed or getattr(_local, "dsn", None) != target):
+        try:
+            conn.close()
+        except Exception:
+            pass
+        conn = None
+    if conn is None:
+        conn = psycopg.connect(target, row_factory=dict_row)
+        _local.conn = conn
+        _local.dsn = target
+    try:
         yield conn
+        conn.commit()
+    except Exception:
+        # A broken connection cannot be rolled back; drop it so the next
+        # caller opens a fresh one rather than inheriting the failure.
+        try:
+            conn.rollback()
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _local.conn = None
+        raise
 
 
 UPSERT = """
@@ -146,6 +196,12 @@ def cheapest_compute(
         sql += " AND region = ANY(%(regions)s)"
         params["regions"] = regions
 
+    if query.exclude_burstable:
+        # The attribute is present only on credit-limited families, so its
+        # absence IS the statement that a machine runs at full vCPU
+        # indefinitely. Asked of every provider identically.
+        sql += " AND attributes->>'burstable_baseline' IS NULL"
+
     if query.arch:
         sql += " AND arch = %(arch)s"
         params["arch"] = query.arch
@@ -235,21 +291,48 @@ def cheapest_compute_like(
     min_vcpu: int,
     min_memory_gb: float = 0.0,
     dsn: str | None = None,
+    purchase: str = "ondemand",
 ) -> PricePoint | None:
     """Cheapest node in a category that meets a vCPU/memory spec.
 
     Cache nodes are sized like compute but priced in their own category, so
     they need spec matching rather than a flat cheapest-in-category lookup.
+
+    `purchase` matters as soon as a category holds committed rows: reserved
+    nodes are cheaper by construction, so a lookup that ignored the term would
+    quote a one-year price to an estimate that has committed to nothing. Rows
+    predating the attribute carry no purchase at all, and those are on-demand
+    -- treating a missing value as committed would be the same mistake in
+    reverse.
     """
-    with connect(dsn) as conn, conn.cursor() as cur:
-        cur.execute(
-            """SELECT * FROM price_points
-               WHERE provider=%s AND region=%s AND category=%s
-                 AND (vcpu IS NULL OR vcpu >= %s) AND memory_gb >= %s
-               ORDER BY price_usd ASC LIMIT 1""",
-            (provider, region, category, min_vcpu, min_memory_gb),
+    committed = purchase != "ondemand"
+    sql = """SELECT * FROM price_points
+             WHERE provider=%s AND region=%s AND category=%s
+               AND (vcpu IS NULL OR vcpu >= %s) AND memory_gb >= %s
+               AND {term}
+             ORDER BY price_usd ASC LIMIT 1"""
+    sql = sql.format(
+        term=(
+            "attributes->>'purchase' = %s"
+            if committed
+            else "(attributes->>'purchase' IS NULL "
+            "OR attributes->>'purchase' = 'ondemand')"
         )
+    )
+    params: tuple = (provider, region, category, min_vcpu, min_memory_gb)
+    if committed:
+        params = params + (purchase,)
+    with connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
         row = cur.fetchone()
+    if row is None and committed:
+        # No committed node at this size. Falling back keeps the estimate
+        # complete; the line simply stays on-demand, which the basis summary
+        # then reports honestly rather than implying a discount that is not
+        # on offer.
+        return cheapest_compute_like(
+            provider, region, category, min_vcpu, min_memory_gb, dsn
+        )
     return _to_point(row) if row else None
 
 

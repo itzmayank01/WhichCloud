@@ -160,6 +160,14 @@ class OptionOut(BaseModel):
     #: budget -- extra budget buys no more useful capacity. Lets the UI explain
     #: why a higher budget stops changing the number.
     budget_saturated: bool
+    #: What this architecture costs with nothing committed -- the price the
+    #: user pays today, without signing a one-year term. Null when no line had
+    #: a committed rate to begin with, in which case `monthly_usd` is already
+    #: the on-demand price.
+    ondemand_monthly_usd: float | None = None
+    #: Which resources the committed price depends on, so the interface can
+    #: name them rather than saying "1-year commitment" with no object.
+    commitment_covers: list[str] = Field(default_factory=list)
     #: Steady-state monthly cost for spiky workloads (same architecture, spike
     #: headroom removed). None when traffic is not spiky or has no headroom.
     steady_monthly_usd: float | None
@@ -193,6 +201,11 @@ class RecommendationOut(BaseModel):
     assumed: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
     read_by: str | None = None
+    #: Which cloud these options were priced against. The caller may not have
+    #: chosen it -- the description can state a preference, and the default is
+    #: AWS -- so the answer has to say which cloud it is describing rather than
+    #: leaving the interface to assume.
+    provider: str = "aws"
 
 
 def _technique_out(
@@ -400,6 +413,12 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         complete=option.estimate.is_complete,
         within_budget=option.within_budget,
         budget_saturated=option.budget_saturated,
+        ondemand_monthly_usd=(
+            float(option.ondemand_monthly)
+            if option.ondemand_monthly is not None
+            else None
+        ),
+        commitment_covers=list(option.commitment_covers),
         steady_monthly_usd=(
             float(option.steady_monthly) if option.steady_monthly is not None else None
         ),
@@ -484,6 +503,11 @@ class RecommendIn(BaseModel):
 class DescribeIn(BaseModel):
     description: str
     reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
+    #: Which cloud to price against. Omitted, the description decides -- a
+    #: stated preference wins, and failing that AWS. The interface needs to be
+    #: able to override that so the same requirement can be compared across
+    #: providers without rewriting the description to say "on GCP".
+    provider: Literal["aws", "gcp", "azure"] | None = None
 
 
 class PlanExportIn(BaseModel):
@@ -711,6 +735,7 @@ def recommend_route(body: RecommendIn) -> RecommendationOut:
             for t, why in why_not(requirement, provider)
         ],
         sizing_basis=SIZING_BASIS,
+        provider=provider,
     )
 
 
@@ -1088,7 +1113,10 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
         raise HTTPException(400, str(exc)) from exc
 
     requirement = intake.requirement
-    provider = requirement.provider_preference or "aws"
+    # An explicit request wins over the description's stated preference, which
+    # in turn wins over the default. Comparing providers is the product's whole
+    # job, so the caller has to be able to ask for one.
+    provider = body.provider or requirement.provider_preference or "aws"
     options = recommend(requirement, provider)
 
     return RecommendationOut(
@@ -1109,6 +1137,7 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
         assumed=list(intake.assumed),
         clarifying_question=intake.clarifying_question,
         read_by=intake.provider,
+        provider=provider,
     )
 
 

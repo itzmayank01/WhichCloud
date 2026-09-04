@@ -205,15 +205,32 @@ export function CostRail({
             {result?.goal && (
               <p className="text-[13px] leading-snug text-ink-2">{result.goal}</p>
             )}
+            {/* The headline is the ON-DEMAND price: what you pay if you sign
+                nothing. `monthly_usd` may include committed rates on compute
+                and database, which is a price nobody can obtain today -- it
+                needs a one-year term they have not agreed to. Leading with a
+                blend of the two would be a number no user could act on. */}
             <div className="mt-2.5 flex items-baseline gap-2">
               <span className="tnum font-mono text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink">
-                {money(option.monthly_usd)}
+                {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
               </span>
-              <span className="text-[12.5px] text-ink-3">/mo</span>
+              <span className="text-[12.5px] text-ink-3">/mo on-demand</span>
             </div>
             <p className="mt-1 font-mono text-[11.5px] text-ink-3">
               {option.label} · {option.shape}
             </p>
+            {/* The commitment as a full sentence naming what it covers, not a
+                parenthetical. It is a business decision, not a discount code. */}
+            {option.ondemand_monthly_usd != null &&
+              option.commitment_covers.length > 0 && (
+                <p className="mt-1.5 text-[11.5px] leading-snug text-ink-2">
+                  <span className="font-mono font-semibold text-save">
+                    {money(option.monthly_usd)}/mo
+                  </span>{" "}
+                  with a 1-year commitment on{" "}
+                  {option.commitment_covers.join(", ").toLowerCase()}
+                </p>
+              )}
             {option.steady_monthly_usd != null &&
               option.steady_monthly_usd < option.monthly_usd && (
                 <p className="mt-1 font-mono text-[11.5px] text-ink-3">

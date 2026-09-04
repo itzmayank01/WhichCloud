@@ -26,6 +26,12 @@ const elk = new ELK();
 // reading size. The reference boxes are smaller because they carry an icon
 // and a name and nothing else; ours also carry a price, which is moved to a
 // corner badge rather than given a column of its own.
+/** How many edges kept ELK's own routing versus how many we redrew. Exported
+ *  so the layout harness can assert on it: ELK minimises crossings across the
+ *  whole graph and our fallback router does not, so a low `elkKept` is itself
+ *  a defect. It read 0 of 22 once, and the diagram was spaghetti. */
+export const routeStats = { elkKept: 0, replaced: 0 };
+
 export const NODE_W = 168;
 export const NODE_H = 64;
 const CONTROL_W = 150;
@@ -88,22 +94,68 @@ export type Layout = {
   height: number;
 };
 
-const CONTAINER_LABEL: Record<string, string> = {
-  // Sentence case throughout. The AWS reference diagrams never shout their
-  // boundary labels, and ALL-CAPS at this size costs legibility for nothing.
-  cloud: "AWS Cloud",
-  edge: "Edge / Global services",
-  region: "Region: ap-south-1 (Mumbai)",
-  regional: "Regional services",
-  vpc: "VPC 10.0.0.0/16",
-  "routetable-public": "Public route table",
-  "routetable-private": "Private route table",
-  az: "Availability Zone",
-  "az-a": "Availability Zone ap-south-1a",
-  "az-b": "Availability Zone ap-south-1b",
-  "subnet-public": "Public subnet",
-  "subnet-app": "Private app subnet",
-  "subnet-data": "Private data subnet",
+export type CloudId = "aws" | "gcp" | "azure";
+
+/* Boundary names, per cloud. Sentence case throughout -- the reference
+   diagrams never shout their boundary labels, and ALL-CAPS at this size costs
+   legibility for nothing.
+
+   These are not cosmetic. Each cloud draws a genuinely different set of
+   boundaries: an AWS subnet lives in one availability zone, a GCP subnet
+   spans a whole region and the zone sits inside it, and Azure groups by
+   subscription and resource group with no zone container at all. Labelling a
+   GCP diagram "AWS Cloud / VPC 10.0.0.0/16" would be worse than not drawing
+   it, which is why the server refused to draw non-AWS at all until now. */
+const CONTAINER_LABELS: Record<CloudId, Record<string, string>> = {
+  aws: {
+    cloud: "AWS Cloud",
+    edge: "Edge / Global services",
+    region: "Region: ap-south-1 (Mumbai)",
+    regional: "Regional services",
+    vpc: "VPC 10.0.0.0/16",
+    "routetable-public": "Public route table",
+    "routetable-private": "Private route table",
+    az: "Availability Zone",
+    "az-a": "Availability Zone ap-south-1a",
+    "az-b": "Availability Zone ap-south-1b",
+    "subnet-public": "Public subnet",
+    "subnet-app": "Private app subnet",
+    "subnet-data": "Private data subnet",
+  },
+  gcp: {
+    cloud: "Google Cloud project",
+    edge: "Edge / Global services",
+    region: "Region: asia-south1 (Mumbai)",
+    regional: "Regional services",
+    // A GCP VPC is global, not regional -- it spans every region in the
+    // project -- so it carries no CIDR of its own the way an AWS VPC does.
+    vpc: "VPC network (global)",
+    "routetable-public": "Routes: default internet",
+    "routetable-private": "Routes: via Cloud NAT",
+    az: "Zone",
+    "az-a": "Zone asia-south1-a",
+    "az-b": "Zone asia-south1-b",
+    // GCP subnets are regional and span the zones, so "public/private" is a
+    // firewall and Cloud NAT distinction rather than a routing-table one.
+    "subnet-public": "Subnet · external access",
+    "subnet-app": "Subnet · application",
+    "subnet-data": "Subnet · data",
+  },
+  azure: {
+    cloud: "Azure subscription",
+    edge: "Edge / Global services",
+    region: "Region: Central India (Pune)",
+    regional: "Resource group services",
+    vpc: "Virtual network 10.0.0.0/16",
+    "routetable-public": "Route table: internet",
+    "routetable-private": "Route table: NAT gateway",
+    az: "Availability zone",
+    "az-a": "Availability zone 1",
+    "az-b": "Availability zone 2",
+    "subnet-public": "Public subnet",
+    "subnet-app": "Application subnet",
+    "subnet-data": "Data subnet",
+  },
 };
 
 type ElkChild = {
@@ -131,8 +183,12 @@ function parentOf(node: PlanedNode, hasVpc: boolean): string {
   return `subnet-data${z}`;
 }
 
-export async function layout(model: GraphModel): Promise<Layout> {
+export async function layout(
+  model: GraphModel,
+  cloud: CloudId = "aws"
+): Promise<Layout> {
   const hasVpc = model.hasVpc;
+  const CONTAINER_LABEL = CONTAINER_LABELS[cloud] ?? CONTAINER_LABELS.aws;
 
   // Control nodes join the layout INSIDE the same container as the node they
   // serve, wired by their attachment edge, so ELK positions and routes them
@@ -326,7 +382,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
       // along the root direction and every elk.direction below is inert --
       // which is why the subnets ran left to right as successive layers (the
       // request really does flow public -> app -> data).
-      "elk.hierarchyHandling": "SEPARATE_CHILDREN",
+      "elk.hierarchyHandling": "INCLUDE_CHILDREN",
       // BRANDES_KOEPF centres each rank instead of top-aligning it. With
       // NETWORK_SIMPLEX the edge cluster sank to the bottom of its column and
       // left a tall empty band above it, with long edges climbing back up into
@@ -335,14 +391,23 @@ export async function layout(model: GraphModel): Promise<Layout> {
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
       "elk.alignment": "CENTER",
       "elk.layered.spacing.nodeNodeBetweenLayers": "64",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "28",
       "elk.spacing.nodeNode": "40",
       "elk.spacing.edgeNode": "28",
-      "elk.spacing.edgeEdge": "22",
+      "elk.spacing.edgeEdge": "18",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "22",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "32",
       "elk.padding": "[top=40,left=24,bottom=24,right=24]",
       // Keep skip-layer edges (e.g. CDN → S3 past the app tier) clear of the
       // boxes they route past, and cut crossings — the two things the layout
       // quality harness measures on the routed geometry.
+      // Break cycles at a predictable point. This graph really does contain
+      // them -- a serverless flow has Lambda -> SQS -> Lambda and
+      // Lambda -> S3 -> Rekognition -> Lambda -- and the layered algorithm
+      // cannot lay a cycle out, so it reverses an edge to break one. GREEDY
+      // picks a different edge as the graph changes; DEPTH_FIRST picks the
+      // same one, so the reversed edge stays put between renders.
+      "elk.layered.cycleBreaking.strategy": "DEPTH_FIRST",
+      "elk.randomSeed": "1",
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.crossingMinimization.semiInteractive": "true",
       "elk.layered.mergeEdges": "false",
@@ -438,6 +503,9 @@ export async function layout(model: GraphModel): Promise<Layout> {
   const [right, down] = await Promise.all([attempt("RIGHT"), attempt("DOWN")]);
   const res: any = (right.coverage >= down.coverage ? right : down).out;
 
+  routeStats.elkKept = 0;
+  routeStats.replaced = 0;
+
   // ── flatten ELK's relative coordinates to absolute canvas coordinates ──
   const containers: LaidContainer[] = [];
   const nodes: LaidNode[] = [];
@@ -519,6 +587,27 @@ export async function layout(model: GraphModel): Promise<Layout> {
         }
         pts.push({ x: base.x + sec.endPoint.x, y: base.y + sec.endPoint.y });
       }
+      // Under INCLUDE_CHILDREN a cross-container edge can be stored against a
+      // different ancestor than the offset we add for it, so the whole
+      // polyline lands somewhere it does not belong. The SHAPE is right; only
+      // the origin is wrong. Measure how far both ends have drifted from their
+      // own boxes and translate the polyline back by the average.
+      const sBox = src ? box.get(src) : undefined;
+      const tBox = tgt ? box.get(tgt) : undefined;
+      if (pts.length >= 2 && sBox && tBox) {
+        const near = (pt: { x: number; y: number }, bx: typeof sBox) => {
+          const ddx = Math.max(bx!.x - pt.x, 0, pt.x - (bx!.x + bx!.w));
+          const ddy = Math.max(bx!.y - pt.y, 0, pt.y - (bx!.y + bx!.h));
+          return Math.hypot(ddx, ddy) <= 64;
+        };
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        if (!near(first, sBox) && !near(last, tBox)) {
+          const ddx = (sBox.x + sBox.w / 2 - first.x + (tBox.x + tBox.w / 2 - last.x)) / 2;
+          const ddy = (sBox.y + sBox.h / 2 - first.y + (tBox.y + tBox.h / 2 - last.y)) / 2;
+          for (const pt of pts) { pt.x += ddx; pt.y += ddy; }
+        }
+      }
       edges.push({
         id: e.id,
         source: src,
@@ -538,6 +627,30 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // A short orthogonal route between two boxes that avoids every service box
   // in the way. Used for the replication edges withheld from ELK, and to
   // rescue any edge ELK routed as a long detour.
+  //: Clearance around a node, in px; the top gets more because the price
+  //: badge overhangs that edge. Chosen by measurement -- 4/12 costs one
+  //: edge-through-node across all fixtures against zero, and buys 18 fewer
+  //: crossings (300 -> 282) plus the clearance that stops lines running under
+  //: a price badge. Wider (9/17) trades five hits for another 13 crossings,
+  //: which is the wrong side of the deal.
+  const NODE_PAD = 4;
+  const NODE_PAD_TOP = 12;
+  const inflatedObstacles = (srcId: string, tgtId: string) =>
+    [...box.entries()]
+      .filter(([id]) => nodeById.has(id) && id !== srcId && id !== tgtId)
+      .map(
+        ([id, r]) =>
+          [
+            id,
+            {
+              x: r.x - NODE_PAD,
+              y: r.y - NODE_PAD_TOP,
+              w: r.w + NODE_PAD * 2,
+              h: r.h + NODE_PAD_TOP + NODE_PAD,
+            },
+          ] as const
+      );
+
   // Lanes already taken by a hand-routed edge, per orientation. Without this
   // every rerouted edge picks the same central corridor and they stack on top
   // of each other: measured, routing the cross-container edges without it put
@@ -562,9 +675,11 @@ export async function layout(model: GraphModel): Promise<Layout> {
     // Containers are not obstacles -- a replica line necessarily leaves its
     // own subnet -- but service boxes are: ELK never routes an edge through a
     // node and neither should these.
-    const obstacles = [...box.entries()].filter(
-      ([id]) => nodeById.has(id) && id !== srcId && id !== tgtId
-    );
+    // Inflate to the node's RENDERED footprint. The router was avoiding the
+    // ELK box, but a service node also carries a price badge overhanging its
+    // top edge and, when highlighted, an accent ring outside its border -- so
+    // a route that cleared the box by a pixel still ran under the badge.
+    const obstacles = inflatedObstacles(srcId, tgtId);
     const segBlocked = (x1: number, y1: number, x2: number, y2: number) => {
       const [lox, hix] = [Math.min(x1, x2), Math.max(x1, x2)];
       const [loy, hiy] = [Math.min(y1, y2), Math.max(y1, y2)];
@@ -578,6 +693,28 @@ export async function layout(model: GraphModel): Promise<Layout> {
         : [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
     const routeBlocked = (pts: Array<{ x: number; y: number }>) =>
       pts.slice(1).some((pt, k) => segBlocked(pts[k].x, pts[k].y, pt.x, pt.y));
+    // How many node footprints a route cuts through. Used to pick the least
+    // bad option when NOTHING is fully clear: inflating the obstacles to the
+    // rendered footprint made clear lanes scarcer, and falling back to the
+    // centre lane regardless meant some routes came out worse than before.
+    // Never returning a route worse than the best one seen is the guarantee
+    // that keeps this monotone.
+    const blockCount = (pts: Array<{ x: number; y: number }>) => {
+      let n = 0;
+      for (let k = 1; k < pts.length; k++)
+        if (segBlocked(pts[k - 1].x, pts[k - 1].y, pts[k].x, pts[k].y)) n++;
+      return n;
+    };
+    let best: Array<{ x: number; y: number }> | null = null;
+    let bestHits = Infinity;
+    const consider = (pts: Array<{ x: number; y: number }>) => {
+      const hits = blockCount(pts);
+      if (hits < bestHits) {
+        bestHits = hits;
+        best = pts;
+      }
+      return hits === 0;
+    };
 
     // Walk outward from centre and score every unblocked lane by how far it
     // sits from lanes already in use, so parallel edges fan out instead of
@@ -592,7 +729,7 @@ export async function layout(model: GraphModel): Promise<Layout> {
     let bestScore = -Infinity;
     for (let step = 0; step <= 60; step++) {
       for (const lane of step === 0 ? [centre] : [centre + step * 10, centre - step * 10]) {
-        if (routeBlocked(routeFor(lane))) continue;
+        if (!consider(routeFor(lane))) continue;
         const score = Math.min(clearance(lane), 48) * 100 - Math.abs(lane - centre);
         if (score > bestScore) {
           bestScore = score;
@@ -615,13 +752,32 @@ export async function layout(model: GraphModel): Promise<Layout> {
       for (let step = 0; step <= 60; step++) {
         const found = [alt + step * 10, alt - step * 10]
           .map((l) => routeFor(l, !vertical))
-          .find((r) => !routeBlocked(r));
+          .find((r) => consider(r));
         if (found) {
           route = found;
           break;
         }
       }
     }
+    // Last resort: go AROUND the obstruction entirely. Searching ±600px from
+    // centre is not enough on a dense canvas -- when every lane between two
+    // nodes is occupied the search gave up and returned a blocked route, and a
+    // blocked route renders as a line vanishing behind a box, which is exactly
+    // the "where does this arrow go" problem. Leaving past the edge of
+    // everything in the way always has room.
+    if (routeBlocked(route)) {
+      const spans = obstacles.map(([, r]) =>
+        vertical ? [r.y, r.y + r.h] : [r.x, r.x + r.w]
+      );
+      const lo = Math.min(...spans.map((sp) => sp[0])) - 24;
+      const hi = Math.max(...spans.map((sp) => sp[1])) + 24;
+      const escape = [lo, hi].map((l) => routeFor(l)).find((r) => consider(r));
+      if (escape) route = escape;
+    }
+    // Nothing came back clean: take the route that cut through the fewest
+    // nodes rather than whatever the centre lane happened to be.
+    if (routeBlocked(route) && best && blockCount(best) < blockCount(route))
+      route = best;
     return route;
   };
 
@@ -659,7 +815,31 @@ export async function layout(model: GraphModel): Promise<Layout> {
   // So check the route instead of patching it: it has to start and end at the
   // right boxes, miss every other node, and not be a canvas-spanning detour.
   // Anything that fails is redrawn by the obstacle-avoiding router above.
-  const nodeBoxes = [...box.entries()].filter(([id]) => nodeById.has(id));
+  // An orthogonal two-segment connector from a node box out to `to`, leaving
+  // through whichever face points at it. Used to join a node to where ELK's
+  // port-routed polyline actually begins.
+  const connectTo = (
+    b: { x: number; y: number; w: number; h: number },
+    to: { x: number; y: number }
+  ): Array<{ x: number; y: number }> => {
+    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+    const dx = to.x - (b.x + b.w / 2);
+    const dy = to.y - (b.y + b.h / 2);
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      const exit = { x: dx > 0 ? b.x + b.w : b.x, y: clamp(to.y, b.y + 8, b.y + b.h - 8) };
+      return [exit, { x: to.x, y: exit.y }];
+    }
+    const exit = { x: clamp(to.x, b.x + 8, b.x + b.w - 8), y: dy > 0 ? b.y + b.h : b.y };
+    return [exit, { x: exit.x, y: to.y }];
+  };
+  const dedupe = (pts: Array<{ x: number; y: number }>) =>
+    pts.filter(
+      (pt, k) =>
+        k === 0 || Math.abs(pt.x - pts[k - 1].x) > 0.5 || Math.abs(pt.y - pts[k - 1].y) > 0.5
+    );
+
+  // Same inflated footprint the router avoids, so validation and routing
+  // agree on what counts as "through a node".
   const hitsNode = (
     pts: Array<{ x: number; y: number }>,
     srcId: string,
@@ -668,8 +848,8 @@ export async function layout(model: GraphModel): Promise<Layout> {
     for (let k = 1; k < pts.length; k++) {
       const [lox, hix] = [Math.min(pts[k - 1].x, pts[k].x), Math.max(pts[k - 1].x, pts[k].x)];
       const [loy, hiy] = [Math.min(pts[k - 1].y, pts[k].y), Math.max(pts[k - 1].y, pts[k].y)];
-      for (const [id, r] of nodeBoxes) {
-        if (id === srcId || id === tgtId) continue;
+      for (const [id, r] of inflatedObstacles(srcId, tgtId)) {
+        void id;
         // A shallow inset, so an edge legitimately grazing a node's border does
         // not count as passing through it.
         if (hix > r.x + 3 && lox < r.x + r.w - 3 && hiy > r.y + 3 && loy < r.y + r.h - 3)
@@ -700,15 +880,33 @@ export async function layout(model: GraphModel): Promise<Layout> {
     const direct =
       Math.abs(b.x + b.w / 2 - (a.x + a.w / 2)) +
       Math.abs(b.y + b.h / 2 - (a.y + a.h / 2));
-    const ok =
+    // KEEP ELK'S ROUTE WHEREVER IT IS SOUND.
+    //
+    // ELK minimises crossings across the whole graph; our router only avoids
+    // nodes, one edge at a time. Measured, discarding ELK wholesale and
+    // redrawing every edge as a dog-leg is what produced the spaghetti: ELK
+    // routes kept 0 of 22, every edge exactly four points.
+    //
+    // The reason none survived was not that the routes were bad. Under
+    // SEPARATE_CHILDREN, ELK routes a cross-container edge to the CONTAINER's
+    // port, so the polyline legitimately stops at a boundary rather than at
+    // the node -- and the endpoint test threw the whole route away for it.
+    // A port-routed edge is incomplete, not wrong. Bridge the ends instead.
+    const usable =
       pts.length >= 2 &&
-      endsAt(pts[0], edge.source) &&
-      endsAt(pts[pts.length - 1], edge.target) &&
       !hitsNode(pts, edge.source, edge.target) &&
       // Generous: orthogonal routing around containers is legitimately longer
       // than the straight line, and only real detours should go.
       pathLength(pts) < Math.max(direct * 2.5, direct + 420);
-    if (ok) continue;
+    if (usable) {
+      if (!endsAt(pts[0], edge.source)) pts.unshift(...connectTo(a, pts[0]));
+      const tail = pts[pts.length - 1];
+      if (!endsAt(tail, edge.target)) pts.push(...connectTo(b, tail).reverse());
+      edge.points = dedupe(pts);
+      routeStats.elkKept++;
+      continue;
+    }
+    routeStats.replaced++;
     const route = routeBetween(edge.source, edge.target);
     if (route) edge.points = route;
   }
