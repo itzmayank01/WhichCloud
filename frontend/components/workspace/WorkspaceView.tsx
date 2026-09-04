@@ -250,9 +250,6 @@ export function WorkspaceView({ name }: { name: string | null }) {
             })}
           </div>
         )}
-        <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
-          Workspace
-        </span>
         {result && result.options.length > 0 ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
             {result.options.map((option) => {
@@ -301,6 +298,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
       {/* ── rail + canvas ─────────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <CostRail
+          cloud={cloud ?? "aws"}
           description={description}
           setDescription={setDescription}
           onAsk={ask}
@@ -312,8 +310,13 @@ export function WorkspaceView({ name }: { name: string | null }) {
           because={advice?.because ?? null}
         />
 
-        {/* canvas — the stage */}
-        <main className="relative min-h-0 flex-1 bg-sunk">
+        {/* canvas — the stage.
+            White, not the sunk grey. The diagram already draws its own
+            boundaries as pale outlines on white, and a grey stage behind them
+            put a second, stronger edge around the whole picture -- the eye
+            reads that outer rectangle as part of the architecture. Reference
+            architecture diagrams are published on white for the same reason. */}
+        <main className="relative min-h-0 flex-1 bg-surface">
           {shown?.topology?.nodes?.length ? (
             <>
               <div className="h-full overflow-hidden">

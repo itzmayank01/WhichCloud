@@ -40,33 +40,57 @@
 :root {
   color-scheme: light;
 
-  --canvas: #fbfbfc;
-  --surface: #ffffff;
-  --surface-sunk: #f4f5f7;
+  /* SIX VALUES, and that is the whole system.
+   *
+   * Three provider brand palettes have to live inside this interface and none
+   * of them is ours to change -- AWS navy and orange, Google's four colours,
+   * Azure blue. So the chrome has to be near-neutral or it fights whichever
+   * provider is selected. This is a functional constraint, not a taste for
+   * minimalism, and it is why colour is admitted only where it carries
+   * meaning. */
+  --paper: #ffffff;
+  --ink: #16191f;
+  --ink-muted: #5b6470;
+  --rule: #e3e6ea;
+  /* Navy, not indigo. Indigo-violet is the generic SaaS primary, and navy
+   * sits further from all three provider blues -- so a selected Azure chip
+   * never reads as application chrome. */
+  --accent: #1b3a6b;
+  /* Burnt amber. Warnings, and what a choice gives up. */
+  --flag: #b4530a;
 
-  --border: #e4e6ea;
+  /* Cost categories are the one place a wider palette earns its place, since
+   * the categories genuinely need telling apart. A single desaturated ramp
+   * off the navy rather than the default chart set, with the flag colour last
+   * and reserved for the LARGEST category -- so the eye lands on whatever is
+   * driving the bill. */
+  --cat-1: #1b3a6b;
+  --cat-2: #3e6491;
+  --cat-3: #6c8fb5;
+  --cat-4: #9cb6d2;
+  --cat-5: #c7d6e5;
+  --cat-largest: #b4530a;
+
+  /* ── compatibility aliases ──
+   * Existing components reference these names. They now resolve to the six
+   * values above rather than to a second, competing palette. */
+  --canvas: var(--paper);
+  --surface: var(--paper);
+  --surface-sunk: var(--paper);
+  --border: var(--rule);
   --border-strong: #cfd3da;
+  --ink-2: var(--ink-muted);
+  --ink-3: var(--ink-muted);
+  --accent-wash: #eef1f6;
+  --accent-line: #c3cfe0;
+  --spend: var(--flag);
+  --caution: var(--flag);
+  --caution-wash: #fdf4ec;
+  --save: #1b5e3f;
 
-  --ink: #0b0d12;
-  --ink-2: #3a4250;
-  --ink-3: #525a68;
-
-  /* One accent, used sparingly: links, the active state, the winning figure. */
-  --accent: #2451d9;
-  --accent-wash: #eef2fe;
-  --accent-line: #b9c8f5;
-
-  /* Semantic, and never used decoratively. */
-  --spend: #b4442a;
-  --caution: #96650f;
-  /* Money kept, as opposed to --spend for money going out. Darker than the
-     green these figures are usually set in: the bright mint reads at about
-     1.9:1 on white, which fails even the relaxed bar for large text. */
-  --save: #0b7a45;
-  --caution-wash: #fdf6e6;
-
-  /* Cloud service categories — the colour language of provider architecture
-     diagrams, so an engineer reads the shapes before the labels. */
+  /* Cloud service categories -- the colour language of provider architecture
+     diagrams, so an engineer reads the shapes before the labels. These stay:
+     they live inside the diagram, which is the annexe, not the chrome. */
   --svc-compute: #ed7100;
   --svc-database: #3556c8;
   --svc-storage: #4a8c1c;
@@ -90,6 +114,17 @@
   --color-caution: var(--caution);
   --color-save: var(--save);
   --color-caution-wash: var(--caution-wash);
+
+  --color-paper: var(--paper);
+  --color-ink-muted: var(--ink-muted);
+  --color-rule: var(--rule);
+  --color-flag: var(--flag);
+  --color-cat-1: var(--cat-1);
+  --color-cat-2: var(--cat-2);
+  --color-cat-3: var(--cat-3);
+  --color-cat-4: var(--cat-4);
+  --color-cat-5: var(--cat-5);
+  --color-cat-largest: var(--cat-largest);
 
   --font-sans: var(--font-sans-family);
   --font-mono: var(--font-mono-family);

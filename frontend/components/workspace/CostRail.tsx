@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { money, type Node, type Option, type Recommendation } from "@/lib/api";
+import {
+  money,
+  type CloudId,
+  type LineItem,
+  type Node,
+  type Option,
+  type Recommendation,
+} from "@/lib/api";
+import { PROVIDER_SERVICES } from "@/lib/providerServices";
 
 /**
  * The rail beside the canvas: what was asked, what it costs, and why.
@@ -73,10 +81,18 @@ const BUCKETS: { key: string; label: string; kinds: string[] }[] = [
  *  Three of these sit under 3:1 contrast on this surface, so the relief rule
  *  applies -- the legend below states every value directly rather than
  *  leaving the colour to carry it. */
-const COLORS = [
-  "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-  "#e87ba4", "#008300", "#4a3aa7", "#e34948",
-];
+/* One desaturated ramp off the accent navy, not the default chart set.
+ *
+ * Blue/orange/green/yellow/pink says "chart" and drags four unrelated hues
+ * into an interface that has to host three provider brand palettes without
+ * fighting them. A single ramp keeps the chrome neutral and still separates
+ * the categories, which is the only job the colour has here.
+ *
+ * The amber is LAST and belongs to the LARGEST category, so the eye lands on
+ * whatever is actually driving the bill rather than on whichever slice
+ * happened to be first. */
+const RAMP = ["#1b3a6b", "#3e6491", "#6c8fb5", "#9cb6d2", "#c7d6e5"];
+const LARGEST = "#b4530a";
 
 function bucketize(nodes: Node[]): Bucket[] {
   const totals = new Map<string, number>();
@@ -108,9 +124,11 @@ function Section({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-sunk"
       >
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">
-          {title}
-        </span>
+        {/* Sentence case, sans, in ink. The mono-uppercase-tracked eyebrow
+            is the single most recognisable tell of a generated interface, and
+            five of them stacked down one panel read as decoration rather than
+            structure. */}
+        <span className="text-[15px] font-semibold text-ink">{title}</span>
         <svg
           viewBox="0 0 20 20"
           className={`h-3.5 w-3.5 text-ink-3 transition-transform ${open ? "" : "-rotate-90"}`}
@@ -129,6 +147,42 @@ function Section({
   );
 }
 
+/** 1_200_000 -> "1.2M". A quantity column has to stay narrow enough that the
+ *  figures beside it still line up. */
+function compact(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e4) return `${(n / 1e3).toFixed(0)}k`;
+  return n % 1 === 0 ? n.toLocaleString() : n.toFixed(1);
+}
+
+/** Line items gathered under the diagram node they pay for, biggest first.
+ *
+ *  The backend tags each line with the node KIND it belongs to, so this is a
+ *  grouping rather than a guess: "Cloud SQL" gathers its instance, standby and
+ *  storage rows instead of scattering them as three siblings sorted by price.
+ *  The provider's own product name comes from the same catalog the diagram
+ *  uses, which is why the sheet and the picture agree on what a thing is
+ *  called. */
+function groupedItems(option: Option, cloud: CloudId) {
+  const by = new Map<string, LineItem[]>();
+  for (const item of option.items) {
+    const key = item.group || item.label;
+    by.set(key, [...(by.get(key) ?? []), item]);
+  }
+  return [...by.entries()]
+    .map(([key, items]) => ({
+      key,
+      label:
+        PROVIDER_SERVICES[cloud]?.[key]?.name ??
+        (items[0].group_label || items[0].label),
+      sku: items.length === 1 ? items[0].sku : items[0].sku.split(":")[0],
+      total: items.reduce((sum, i) => sum + i.monthly_usd, 0),
+      items,
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 export function CostRail({
   description,
   setDescription,
@@ -139,6 +193,10 @@ export function CostRail({
   result,
   option,
   because,
+  cloud = "aws",
+  highlightGroup = null,
+  onHoverGroup,
+  onSelectGroup,
 }: {
   description: string;
   setDescription: (value: string) => void;
@@ -149,12 +207,23 @@ export function CostRail({
   result: Recommendation | null;
   option: Option | null;
   because: string | null;
+  cloud?: CloudId;
+  /** Node <-> cost are the same object. The sheet reports which resource the
+   *  reader is pointing at so the diagram can answer, and highlights whichever
+   *  the diagram reports back. */
+  highlightGroup?: string | null;
+  onHoverGroup?: (group: string | null) => void;
+  onSelectGroup?: (group: string) => void;
 }) {
   const [active, setActive] = useState<string | null>(null);
   const buckets = option ? bucketize(option.topology.nodes) : [];
   const total = buckets.reduce((sum, b) => sum + b.value, 0);
-  const colorFor = (key: string) =>
-    COLORS[buckets.findIndex((b) => b.key === key)] ?? "#c3cad6";
+  // buckets arrive largest-first, so index 0 is the one to flag.
+  const colorFor = (key: string) => {
+    const i = buckets.findIndex((b) => b.key === key);
+    if (i === 0) return LARGEST;
+    return RAMP[i] ?? RAMP[RAMP.length - 1];
+  };
 
   return (
     <aside className="flex w-full shrink-0 flex-col overflow-y-auto border-line bg-surface lg:h-full lg:w-[380px] lg:border-r">
@@ -162,7 +231,7 @@ export function CostRail({
       <div className="border-b border-line p-4">
         <label
           htmlFor="workspace-description"
-          className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3"
+          className="text-[15px] font-semibold text-ink"
         >
           Describe your app
         </label>
@@ -210,15 +279,26 @@ export function CostRail({
                 and database, which is a price nobody can obtain today -- it
                 needs a one-year term they have not agreed to. Leading with a
                 blend of the two would be a number no user could act on. */}
-            <div className="mt-2.5 flex items-baseline gap-2">
-              <span className="tnum font-mono text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink">
+            <div className="mt-3">
+              <div className="tnum font-mono text-[40px] font-semibold leading-none tracking-[-0.02em] text-ink">
                 {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
-              </span>
-              <span className="text-[12.5px] text-ink-3">/mo on-demand</span>
+              </div>
+              <p className="mt-1.5 text-[13px] text-ink-muted">per month, on-demand</p>
             </div>
-            <p className="mt-1 font-mono text-[11.5px] text-ink-3">
-              {option.label} · {option.shape}
-            </p>
+            {/* The shape as an aligned definition list. Labels in one column,
+                values in another, values in mono so figures and identifiers
+                line up down the page -- the same discipline as the cost sheet
+                below, which is what makes the panel read as one document. */}
+            {option.shape_parts?.length > 0 && (
+              <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                {option.shape_parts.map((part) => (
+                  <div key={part.label} className="contents">
+                    <dt className="text-[13px] text-ink-muted">{part.label}</dt>
+                    <dd className="font-mono text-[13px] text-ink">{part.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             {/* The commitment as a full sentence naming what it covers, not a
                 parenthetical. It is a business decision, not a discount code. */}
             {option.ondemand_monthly_usd != null &&
@@ -328,23 +408,67 @@ export function CostRail({
             </Section>
           )}
 
-          {/* ── every line ── */}
-          <Section title="Every line" defaultOpen={false}>
-            <div className="space-y-0.5">
-              {option.items.map((item) => (
+          {/* ── the cost sheet ──
+              A quotation's shape, not a list: resource, then its components
+              indented beneath, figures right-aligned on one edge so decimals
+              stack. That shared right edge is the spine of the whole design --
+              it is what makes a column of numbers readable as a rate sheet
+              rather than as a pile of values. */}
+          <Section title="Cost sheet" defaultOpen={false}>
+            <div>
+              {groupedItems(option, cloud).map((g) => (
                 <div
-                  key={item.label + item.sku}
-                  className="flex items-baseline justify-between gap-2 py-1"
+                  key={g.key}
+                  data-cost-group={g.key}
+                  onMouseEnter={() => onHoverGroup?.(g.key)}
+                  onMouseLeave={() => onHoverGroup?.(null)}
+                  onClick={() => onSelectGroup?.(g.key)}
+                  className={`cursor-pointer border-t border-rule py-2 transition-colors first:border-t-0 ${
+                    highlightGroup === g.key ? "bg-accent-wash" : ""
+                  }`}
                 >
-                  <div className="min-w-0">
-                    <div className="truncate text-[12.5px] text-ink-2">{item.label}</div>
-                    <div className="truncate font-mono text-[10.5px] text-ink-3">
-                      {item.sku}
+                  <div className="flex items-baseline gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] text-ink">{g.label}</div>
+                      {g.sku && (
+                        <div className="truncate font-mono text-[11px] text-ink-muted">
+                          {g.sku}
+                        </div>
+                      )}
                     </div>
+                    <span className="tnum shrink-0 font-mono text-[13px] font-semibold text-ink">
+                      {money(g.total)}
+                    </span>
                   </div>
-                  <span className="tnum shrink-0 font-mono text-[12px] font-semibold text-ink">
-                    {money(item.monthly_usd)}
-                  </span>
+
+                  {/* Components. No rule between them -- they belong to the
+                      resource above, and ruling each one would break the group
+                      back into the flat list this replaced. */}
+                  {g.items.length > 1 &&
+                    g.items.map((item) => (
+                      <div
+                        key={item.label + item.sku}
+                        className="mt-1 flex items-baseline gap-2 pl-3"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-ink-muted">
+                          {item.label}
+                        </span>
+                        {/* Quantity is DERIVED by our engine; the rate is
+                            published fact. They are set apart so a reader can
+                            see which half of a number is an assumption -- when
+                            someone disputes a figure it is almost always the
+                            quantity, not the rate. */}
+                        <span className="tnum shrink-0 font-mono text-[11px] text-ink-muted">
+                          {compact(item.quantity)} {item.unit}
+                        </span>
+                        <span className="tnum w-[68px] shrink-0 text-right font-mono text-[11px] text-ink-muted">
+                          ${item.unit_price < 0.01 ? item.unit_price.toFixed(6) : item.unit_price.toFixed(4)}
+                        </span>
+                        <span className="tnum w-[72px] shrink-0 text-right font-mono text-[12px] text-ink">
+                          {money(item.monthly_usd)}
+                        </span>
+                      </div>
+                    ))}
                 </div>
               ))}
             </div>

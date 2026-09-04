@@ -270,9 +270,16 @@ const STANDBY_LABEL: Record<string, string> = {
   nat: "zone b",
 };
 
-function containerFor(kind: string, hasVpc: boolean): ContainerId {
+function containerFor(kind: string, hasVpc: boolean, cloud: CloudId): ContainerId {
   if (OUTSIDE_CLOUD.has(kind)) return "outside";
   if (EDGE_SERVICE.has(kind)) return "edge";
+  // Google's external Application Load Balancer is ANYCAST: one global
+  // forwarding rule answers on the same address from every point of presence,
+  // so it does not live in a region, let alone in a subnet. An AWS ALB and an
+  // Azure Application Gateway are both regional and genuinely do sit inside
+  // the network, so this is a difference in the product rather than a
+  // difference in how we choose to draw it.
+  if (cloud === "gcp" && kind === "loadbalancer") return "edge";
   if (REGIONAL_SERVICE.has(kind)) return "regional";
   if (!hasVpc) return "region";
   if (!VPC_RESIDENT.has(kind)) return "region";
@@ -324,7 +331,7 @@ export function buildGraphModel(
     } else if (plane === "control") {
       control.push(pn);
     } else {
-      pn.container = containerFor(n.kind, hasVpc);
+      pn.container = containerFor(n.kind, hasVpc, cloud);
       data.push(pn);
     }
   }

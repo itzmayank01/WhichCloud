@@ -54,6 +54,11 @@ export type LineItem = {
   unit_price: number;
   quantity: number;
   monthly_usd: number;
+  /** The diagram node this line pays for, as a node kind. One key shared by
+   *  the sheet and the diagram, so a node can find its lines and a line can
+   *  find its node without a second mapping to keep in step. */
+  group: string;
+  group_label: string;
 };
 
 export type Technique = {
@@ -110,6 +115,10 @@ export type Option = {
   /** Which resources the committed price depends on. "1-year commitment"
    *  with no object is not something anyone can act on. */
   commitment_covers: string[];
+  /** The shape as labelled pairs. A quotation sets its terms as a definition
+   *  list with the labels aligned; a middle-dot-joined string runs four facts
+   *  together and makes the reader parse punctuation to find one. */
+  shape_parts: { label: string; value: string }[];
   /** Steady-state monthly cost for spiky workloads — the same architecture
       with the spike-headroom compute removed. The headline `monthly_usd`
       provisions the peak; this is the floor between spikes. Null when the
