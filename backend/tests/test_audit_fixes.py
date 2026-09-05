@@ -237,3 +237,177 @@ def test_the_first_hundred_gigabytes_of_egress_are_free():
         assert float(line.quantity) == 400, (
             f"{provider}: billed {line.quantity} GB, the allowance was not deducted"
         )
+
+
+# ── 7. replicas and a cache are earned by READS, not by size ──────────────
+
+
+def _read_heavy_site() -> Requirement:
+    return Requirement(
+        goal="Product catalogue", workload_type="web", audience="public",
+        read_write_mix="read-heavy", traffic_scale="medium", region="india",
+        egress_gb=500.0,
+    )
+
+
+def _write_heavy_at_the_same_size() -> Requirement:
+    return Requirement(
+        goal="Order capture", workload_type="web", audience="public",
+        read_write_mix="write-heavy", traffic_scale="medium", region="india",
+        egress_gb=500.0,
+    )
+
+
+@needs_db
+def test_a_read_heavy_store_gets_replicas_a_write_heavy_one_does_not():
+    """traffic_scale cannot tell these apart, and they want opposite things.
+
+    A catalogue read five million times and a ledger written to five million
+    times land in the same bucket. The first wants copies to read from; the
+    second wants a primary that can take the writes.
+    """
+    read = _tiers(_read_heavy_site(), "aws")["Most reliable"]
+    write = _tiers(_write_heavy_at_the_same_size(), "aws")["Most reliable"]
+    assert read.spec.database_read_replicas > 0, "read-heavy got no replicas"
+    assert write.spec.database_read_replicas == 0, "write-heavy bought replicas"
+
+
+@needs_db
+def test_a_stated_latency_target_earns_a_cache_over_any_store():
+    """A managed key-value store scales on its own. That is not the same as
+    meeting a p99 somebody asked for, and every vendor answers this case with
+    a cache."""
+    fast = Requirement(
+        goal="Public read API", workload_type="api", audience="public",
+        read_write_mix="read-heavy", data_shape="key-value",
+        traffic_scale="medium", latency_target_ms=100, region="india",
+    )
+    for provider in ("aws", "gcp", "azure"):
+        assert "cache" in _kinds(_tiers(fast, provider)["Most reliable"]), (
+            f"{provider}: p99 target over a key-value store, no cache"
+        )
+
+
+@needs_db
+def test_a_small_workload_still_buys_no_cache():
+    """The guard that stops this becoming a default: a cache billing $38 a
+    month to memoise queries a site serving two hundred visitors a day does
+    not repeat often enough."""
+    tiny = Requirement(
+        goal="Internal tool", workload_type="web", audience="internal",
+        traffic_scale="low", region="india",
+    )
+    for label in ("Cheapest", "Most reliable"):
+        # The top tier turns on everything a well-resourced team would run and
+        # is excluded on purpose; these two are sized to the workload.
+        assert "cache" not in _kinds(_tiers(tiny, "aws")[label]), (
+            f"{label}: cache for a low-traffic tool"
+        )
+
+
+# ── 8. the shape comes from the axes, not from two booleans ───────────────
+
+
+def test_files_arriving_in_near_real_time_is_a_function_pipeline():
+    """The axes exist to DRIVE the architecture, and were not being read.
+
+    Documents uploaded and classified at two thousand an hour came back with
+    every flag false and got a load-balanced fleet of always-on servers --
+    for work that is bursty, arrives as uploads, and is idle between them.
+    """
+    uploads = Requirement(
+        goal="Process uploaded documents", workload_type="api",
+        ingress_shape="files", processing_mode="near-real-time",
+        needs_queue=True, traffic_pattern="spiky", region="india",
+    )
+    assert uploads.is_serverless
+    assert not uploads.is_event_driven, "files are functions, streams are processors"
+
+    stream = Requirement(
+        goal="Clickstream", workload_type="api", ingress_shape="streams",
+        processing_mode="near-real-time", region="india",
+    )
+    assert stream.is_event_driven
+    assert not stream.is_serverless
+
+
+@needs_db
+def test_a_document_pipeline_runs_no_always_on_fleet():
+    uploads = Requirement(
+        goal="Process uploaded documents", workload_type="api",
+        ingress_shape="files", processing_mode="near-real-time",
+        data_shape="document", needs_queue=True, needs_notifications=True,
+        traffic_pattern="spiky", traffic_scale="low", region="india",
+    )
+    for provider in ("aws", "gcp", "azure"):
+        kinds = _kinds(_tiers(uploads, provider)["Most reliable"])
+        assert "lambda" in kinds, f"{provider}: no functions"
+        assert "compute" not in kinds, f"{provider}: always-on servers"
+        assert "loadbalancer" not in kinds, f"{provider}: a balancer with no fleet"
+
+
+def test_a_queue_is_not_evidence_of_an_application_tier():
+    """Buffering bursty arrivals so the processor is not sized for the peak
+    IS the job of an event pipeline. Reading a queue as proof of a full
+    application inverted the test: the pipeline was handed always-on servers
+    BECAUSE it asked for the one component that says it does not need them."""
+    from whichcloud.engine import _has_application_tier
+
+    queue_only = Requirement(
+        goal="Pipeline", workload_type="api", needs_queue=True, region="india",
+    )
+    assert not _has_application_tier(queue_only)
+
+
+# ── 9. volumes derived from the right quantity ────────────────────────────
+
+
+def test_tracing_volume_follows_requests_not_data_volume():
+    """`traffic_scale` on a batch job measures DATA, so a nightly ETL over
+    2 TB landed in the `high` bucket and was billed for twenty million traces
+    -- $99.50/month of X-Ray for a job that runs thirty times, and the single
+    largest line on that architecture."""
+    from whichcloud.engine import TRACING_MONTHLY_TRACES, tracing_traces_for
+
+    batch = Requirement(
+        goal="Nightly ETL", workload_type="batch", traffic_scale="high",
+        region="india",
+    )
+    serving = Requirement(
+        goal="Busy API", workload_type="api", traffic_scale="high", region="india",
+    )
+    assert tracing_traces_for(batch) == TRACING_MONTHLY_TRACES["low"]
+    assert tracing_traces_for(serving) == TRACING_MONTHLY_TRACES["high"]
+
+
+@needs_db
+def test_google_functions_are_not_five_times_cheaper_than_everyone_else():
+    """Cloud Run bills vCPU and memory as TWO meters; Lambda and Azure
+    Functions fold both into one GB-second rate. Charging only memory put
+    Google's serverless at $17 against $98 and $107 for identical work -- a
+    5x lead it does not have, on a meter nobody had charged.
+
+    Warm instances are billed on Google's min-instance meter, which this
+    catalog does not carry, so that part is REPORTED rather than guessed:
+    an estimate that says it is incomplete cannot win a comparison it cannot
+    deliver on.
+    """
+    spec = ArchitectureSpec(
+        name="fn", region="india", compute_count=0,
+        lambda_invocations_per_month=1_440_000, lambda_avg_ms=150.0,
+        lambda_memory_mb=512.0,
+    )
+    totals = {}
+    for provider in ("aws", "gcp", "azure"):
+        est = estimate(spec, provider)
+        totals[provider] = float(
+            sum(i.monthly_usd for i in est.items if "Lambda" in i.label)
+        )
+    # The defect was Google being FIVE TIMES CHEAPER on a meter nobody had
+    # charged. Cloud Run genuinely costs more per invocation than Lambda for
+    # a short handler -- Lambda's ARM rate is aggressive -- so the guard is
+    # against the under-price, not against Google being dearer.
+    assert totals["gcp"] > totals["aws"], (
+        f"Google is cheaper than AWS for identical serverless work: {totals}"
+    )
+    assert totals["gcp"] < totals["aws"] * 4, f"overcorrected: {totals}"

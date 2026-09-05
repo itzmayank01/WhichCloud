@@ -8,11 +8,12 @@
         "function-compute",
         "queue",
         "keyvalue-db",
-        "notification"
+        "notification",
+        "api-frontdoor"
       ],
       "source": "https://docs.aws.amazon.com/lambda/latest/dg/services-s3.html",
       "verified": "url",
-      "note": "S3 upload event -> Lambda -> DynamoDB, with SQS for buffering and SNS for the notify step. No always-on fleet and nothing to load-balance."
+      "note": "S3 upload event -> Lambda -> DynamoDB, with SQS for buffering and SNS for the notify step. No always-on fleet and nothing to load-balance. The uploader submits documents and is notified, so there is a front door -- an API gateway routing to functions, not a balancer in front of a fleet."
     },
     "gcp": {
       "roles": [
@@ -20,11 +21,12 @@
         "function-compute",
         "queue",
         "keyvalue-db",
-        "notification"
+        "notification",
+        "api-frontdoor"
       ],
       "source": "https://docs.cloud.google.com/architecture/application-development/three-tier-web-app",
       "verified": "url",
-      "note": "Cloud Storage trigger -> Cloud Functions/Run -> Firestore, Pub/Sub as the queue."
+      "note": "Cloud Storage trigger -> Cloud Functions/Run -> Firestore, Pub/Sub as the queue. The uploader submits documents and is notified, so there is a front door -- an API gateway routing to functions, not a balancer in front of a fleet."
     },
     "azure": {
       "roles": [
@@ -32,11 +34,12 @@
         "function-compute",
         "queue",
         "keyvalue-db",
-        "notification"
+        "notification",
+        "api-frontdoor"
       ],
       "source": "https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/serverless/event-processing",
       "verified": "url",
-      "note": "Event-driven reference: Blob/Event Hubs -> Functions -> Cosmos DB."
+      "note": "Event-driven reference: Blob/Event Hubs -> Functions -> Cosmos DB. The uploader submits documents and is notified, so there is a front door -- an API gateway routing to functions, not a balancer in front of a fleet."
     }
   },
   "forbidden": {

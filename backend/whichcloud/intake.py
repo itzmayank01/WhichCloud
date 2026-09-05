@@ -160,6 +160,12 @@ no human caller). Read this from who is described as USING it, not from \
 how many there are. "300 internal staff", "for our employees", "head \
 office" and "back office" are internal. This decides whether a CDN and a \
 web firewall are bought, so a wrong answer here spends real money.
+  read_write_mix — how the STORE is used: "read-heavy" (the same data \
+read far more often than written: catalogues, content, feeds, reporting, \
+"almost no writes", "mostly browsing"), "write-heavy" (ingestion, logging, \
+telemetry, order capture at volume), "balanced" (ordinary CRUD, and the \
+answer when the text does not say). This decides read replicas and a cache, \
+so guessing read-heavy on an unstated workload spends money on nothing.
   ingress_shape — what enters: "requests" (users calling an API/site), \
 "events" (webhooks, messages, discrete signals), "files" (uploads, media), \
 "batches" (scheduled bulk loads), "connections" (persistent sockets, live \
@@ -229,6 +235,9 @@ class RequirementDraft(BaseModel):
     ai_language: bool = Field(description="Analyses text — sentiment, NLP, entities, key phrases?")
     event_driven: bool = Field(description="A stream/event processor — continuous ingestion of events or telemetry processed as they arrive, not a request-serving app?")
     telemetry: bool = Field(description="Time-series, append-only or sensor telemetry data (IoT, metrics, clickstream)?")
+    read_write_mix: Literal["read-heavy", "write-heavy", "balanced"] = Field(
+        description="How the store is USED: same data read far more often than written (read-heavy), dominated by ingestion/writes (write-heavy), or ordinary CRUD and when unstated (balanced)",
+    )
     audience: Literal["public", "internal", "machine"] = Field(
         description="WHO calls this: anyone on the public internet (public), named staff of one organisation (internal), or other services/devices with no human caller (machine)",
     )
@@ -298,6 +307,7 @@ class RequirementDraft(BaseModel):
             event_driven=self.event_driven,
             telemetry=self.telemetry,
             audience=self.audience,
+            read_write_mix=self.read_write_mix,
             ingress_shape=self.ingress_shape,
             processing_mode=self.processing_mode,
             data_shape=self.data_shape,
@@ -526,7 +536,7 @@ _GROQ_SHAPE = """Reply with JSON in exactly this form, filled in from the text:
 "needs_search":false,"needs_email":false,"needs_queue":false,
 "needs_notifications":false,"serverless":false,"ai":false,"ai_vision":false,
 "ai_language":false,"event_driven":false,"telemetry":false,
-"audience":"internal","ingress_shape":"requests","processing_mode":"synchronous",
+"audience":"internal","read_write_mix":"balanced","ingress_shape":"requests","processing_mode":"synchronous",
 "data_shape":"relational","egress_shape":"api",
 "daily_transactions":8000,
 "latency_target_ms":0,"provider_preference":"none","compliance":[],
@@ -553,6 +563,8 @@ request-serving app. telemetry: time-series/append-only/sensor data (IoT, \
 metrics). Both false for an ordinary web app.
 audience: public|internal|machine — WHO calls it. Staff of one company \
 = internal, whatever the headcount. Decides CDN and web firewall.
+read_write_mix: read-heavy|write-heavy|balanced — how the store is used. \
+"almost no writes"/browsing = read-heavy. Decides replicas and cache.
 ingress_shape: requests|events|files|batches|connections|streams — what enters.
 processing_mode: synchronous|near-real-time|batch|offline — what happens to it.
 data_shape: relational|time-series|key-value|document|object|search|warehouse\

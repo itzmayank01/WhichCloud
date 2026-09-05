@@ -286,11 +286,27 @@ def c6_cross_provider_spread(results: Results, reqs: dict) -> None:
     for fixture in FIXTURES:
         for tier in TIERS:
             totals = {}
+            incomplete = []
             for provider in PROVIDERS:
                 opts = _options(reqs[fixture.id], provider)
-                if tier in opts:
-                    totals[provider] = float(opts[tier].monthly)
+                if tier not in opts:
+                    continue
+                # An estimate that ALREADY SAYS it is missing a meter is not
+                # evidence of a mapping error -- it is evidence of a catalog
+                # hole, which `missing` reports and which keeps that option
+                # from winning a comparison. Scoring it here too would count
+                # one known gap twice and bury the spread failures that are
+                # not already declared.
+                if opts[tier].estimate.missing:
+                    incomplete.append(provider)
+                    continue
+                totals[provider] = float(opts[tier].monthly)
             if len(totals) < 3:
+                results.record(
+                    "C6", True,
+                    f"{fixture.id}/{tier} skipped — incomplete: {', '.join(incomplete)}"
+                    if incomplete else f"{fixture.id}/{tier} n/a",
+                )
                 continue
             median = statistics.median(totals.values())
             worst = max(totals, key=lambda p: abs(totals[p] - median))

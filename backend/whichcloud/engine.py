@@ -133,6 +133,26 @@ DB_SIZING: dict[str, tuple[int, float]] = {
 # tier pays for. HEURISTIC, like the rest of this table.
 DB_READ_REPLICAS: dict[str, int] = {"low": 0, "medium": 0, "high": 2}
 
+
+def _wants_cache(requirement: "Requirement", has_rds: bool) -> bool:
+    """Does this workload earn a node in front of its store?
+
+    Three ways to earn one, and a small workload earns none of them: a cache
+    billing $38/month to memoise queries a site serving two hundred visitors
+    a day does not repeat often enough is the failure this still guards.
+    """
+    if requirement.traffic_scale == "low":
+        return False
+    # A relational primary under load, which is the original case.
+    if has_rds:
+        return True
+    # A stated latency target, whatever the store. The requirement asked for
+    # a number; a managed store scaling on its own does not deliver it.
+    if requirement.latency_target_ms:
+        return True
+    # Reads repeated often enough that serving them twice is waste.
+    return requirement.is_read_heavy
+
 # WAF is a security control, not a reliability tier -- a workload that named
 # an attack surface needs protecting on Cheapest as much as on Most reliable,
 # so unlike read replicas this applies to the base shape every tier inherits.
@@ -250,6 +270,28 @@ TRACING_MONTHLY_TRACES: dict[str, float] = {
     "medium": 2_000_000.0,
     "high": 20_000_000.0,
 }
+
+
+def tracing_traces_for(requirement: "Requirement") -> float:
+    """Monthly traces. A TRACE IS A REQUEST THROUGH THE SYSTEM.
+
+    Read straight off traffic_scale, which is right for a workload that
+    serves requests and meaningless for one that does not: `traffic_scale`
+    on a batch job measures DATA volume, so a nightly ETL over 2 TB landed
+    in the `high` bucket and was billed for twenty million traces --
+    $99.50/month of X-Ray for a job that runs thirty times. It was the
+    largest single line on that architecture and the biggest driver of its
+    cross-provider gap.
+
+    A job that serves nothing traces its RUNS.
+    """
+    if requirement.serves_requests:
+        return TRACING_MONTHLY_TRACES[requirement.traffic_scale]
+    # ~30 runs a month, a few thousand spans each. Inside every provider's
+    # free allowance, which is the honest answer for this shape.
+    return TRACING_MONTHLY_TRACES["low"]
+
+
 #: Security Hub evaluates each enabled control against each resource,
 #: continuously. Scales with estate size rather than with traffic.
 POSTURE_MONTHLY_CHECKS: dict[str, float] = {
@@ -793,12 +835,15 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # OpenSearch store scales on its own and does not take an ElastiCache
         # in front. Held out of the Cheapest tier (see _shape_variants), which
         # accepts hitting the database directly to save the node.
-        cache_vcpu=(
-            2 if has_rds and requirement.traffic_scale != "low" else None
-        ),
-        cache_memory_gb=(
-            2.0 if has_rds and requirement.traffic_scale != "low" else None
-        ),
+        # A cache fronts a RELATIONAL primary under load -- or ANY store the
+        # requirement gave a latency target for. Gating on `has_rds` alone
+        # meant a public API asking for p99 under 100ms over a key-value store
+        # got no cache at all, which is the exact case every vendor reference
+        # answers with one (DAX, Memorystore, Azure Cache for Redis). A
+        # managed key-value store scales on its own; it does not thereby meet
+        # a stated latency target.
+        cache_vcpu=(2 if _wants_cache(requirement, has_rds) else None),
+        cache_memory_gb=(2.0 if _wants_cache(requirement, has_rds) else None),
         monitored_metrics=30 if stateful else 10,
         waf_rule_count=(
             WAF_RULE_COUNT if requirement.needs_waf and requirement.internet_facing else None
@@ -905,7 +950,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # base and peak counts; see scripts/ for the selecting call.
         secret_count=BASE_SECRET_COUNT if stateful else 0,
         threat_detection=True,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         # Security Hub is a compliance product, and it was being billed on
         # every architecture regardless. On a bakery's marketing site with
         # no compliance requirement it was $50/mo -- the largest line after
@@ -1008,7 +1053,7 @@ def serverless_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # Production hygiene that is not server-specific: metrics, tracing,
         # audit, a key, secrets. Priced the same way every tier prices them.
         monitored_metrics=20,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         audit_logging=True,
         kms_key_count=1,
         secret_count=BASE_SECRET_COUNT,
@@ -1224,7 +1269,7 @@ def event_driven_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # An event pipeline is fronted by an API for control/queries.
         apigateway_requests_per_month=events if requirement.serves_requests else 0.0,
         monitored_metrics=30,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         audit_logging=True,
         kms_key_count=1,
         s3_put_requests=events,
@@ -1377,7 +1422,7 @@ def batch_etl_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         storage_gb=requirement.storage_gb,   # the S3 data lake
         egress_gb=requirement.egress_gb,
         monitored_metrics=20,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         audit_logging=True,
         kms_key_count=1,
         s3_put_requests=rows,
@@ -1497,6 +1542,15 @@ def _shape_variants(
     # `serves_requests` still gates the balancer, which fronts any app tier.
     has_rds = _store_for(requirement).has_rds
     replicas = DB_READ_REPLICAS[requirement.traffic_scale] if has_rds else 0
+    # A READ REPLICA IS EARNED BY READS, NOT BY SIZE.
+    #
+    # This came only from traffic_scale, which cannot tell a catalogue read
+    # five million times from a ledger written to five million times: same
+    # bucket, opposite architectures. A public product catalogue with "almost
+    # no writes" landed on `medium` and got none, which is the one workload
+    # every vendor reference puts replicas in front of.
+    if has_rds and requirement.is_read_heavy and requirement.traffic_scale != "low":
+        replicas = max(replicas, 2)
     # A balancer only where something is being balanced. The base shape
     # already gates this on the workload serving requests; setting it True
     # here regardless put an Elastic Load Balancing box in front of a
@@ -2023,9 +2077,16 @@ def _has_application_tier(requirement: Requirement) -> bool:
     # Deliberately NOT needs_analytics: an IoT telemetry pipeline wants
     # analytics because analysing the telemetry is the whole job, so it says
     # nothing about whether an application tier exists.
+    #
+    # And deliberately NOT needs_queue, for exactly the same reason. A queue
+    # is the DEFINING component of an event pipeline -- buffering bursty
+    # arrivals so the processor is not sized for the peak IS the job -- so
+    # reading one as evidence of a full application inverted the test. A
+    # document pipeline that asked for a queue was handed a load-balanced
+    # fleet of always-on servers BECAUSE it asked for the one component that
+    # says it does not need them.
     return bool(
         requirement.needs_search
-        or requirement.needs_queue
         or requirement.needs_notifications
         or requirement.needs_email
         or requirement.high_availability
@@ -2090,8 +2151,11 @@ def recommend(
     ai = getattr(requirement, "ai", False) and (
         requirement.ai_vision or requirement.ai_language
     )
-    event_driven = getattr(requirement, "event_driven", False)
-    serverless = getattr(requirement, "serverless", False)
+    # Read the DERIVED property, not the raw flag: the axes carry this too,
+    # and a shape chosen from one field while five others describe a
+    # different architecture is the template problem in miniature.
+    event_driven = requirement.is_event_driven
+    serverless = requirement.is_serverless
     # A batch/ETL run is its own shape too: an object lake, reclaimable
     # workers and a query engine, with no edge, LB, cache or relational OLTP.
     # Lower priority than event_driven (a streaming pipeline that also happens

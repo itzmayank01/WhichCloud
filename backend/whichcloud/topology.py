@@ -94,6 +94,7 @@ _KIND_BY_PREFIX = {
     # would otherwise fall through on, and each DynamoDB/Lambda line folds
     # onto one box per service via the summing in build() below.
     "Lambda requests": "lambda",
+    "Lambda vCPU time": "lambda",
     "Lambda duration": "lambda",
     "API Gateway requests": "apigateway",
     "DynamoDB reads": "dynamodb",

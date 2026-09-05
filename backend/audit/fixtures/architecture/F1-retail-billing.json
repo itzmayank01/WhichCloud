@@ -29,14 +29,13 @@
     "azure": {
       "roles": [
         "ingress-lb",
-        "waf",
         "app-compute",
         "relational-db",
         "object-store"
       ],
-      "source": "https://learn.microsoft.com/en-us/azure/architecture/web-apps/app-service/architectures/baseline-zone-redundant",
-      "verified": "content",
-      "note": "Fetched component list: App Service, Application Gateway WITH WAF, Azure SQL, Blob Storage, Key Vault, Private Link, VNet, Monitor. WAF is baseline on Azure because it is a MODE of the gateway, not a separate purchase. CDN appears only under Performance Efficiency as an option; no cache in the component list."
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/app-service-web-app/basic-web-app",
+      "verified": "url",
+      "note": "CORRECTED. This expected a WAF, taken from the baseline zone-redundant reference -- which is a PUBLIC app secured behind Application Gateway. F1 is 300 internal staff. Scoring an internal workload against a public-app reference was the audit assuming an attack surface, which is the exact defect it caught in the product."
     }
   }
 }

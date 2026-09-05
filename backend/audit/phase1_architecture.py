@@ -27,7 +27,7 @@ import sys
 
 from audit.fixtures.requirements import FIXTURES
 from audit.phase0_triage import _requirement_for
-from audit.roles import BASELINE, KIND_TO_ROLE, roles_of, unknown
+from audit.roles import BASELINE, KIND_TO_ROLE, roles_of, satisfied, unknown
 
 FIXTURE_DIR = pathlib.Path(__file__).parent / "fixtures" / "architecture"
 PROVIDERS = ("aws", "gcp", "azure")
@@ -90,7 +90,9 @@ def score_one(fixture, provider: str, requirement, tier: str) -> dict:
     kinds = {n.kind for n in nodes}
     ours = roles_of(kinds)
 
-    missing = sorted(expected - ours)
+    # A role delivered by an accepted equivalent is not missing. See
+    # roles.SATISFIES for what counts and why the list is short.
+    missing = sorted(r for r in expected if not satisfied(r, ours))
 
     # An extra role scores only when nothing records WHY it is there. Nothing
     # records why anything is there today, so every extra scores -- which is
@@ -100,7 +102,13 @@ def score_one(fixture, provider: str, requirement, tier: str) -> dict:
         for n in nodes
         if getattr(n, "because", None)
     }
-    extra = sorted((ours - expected) - justified)
+    # An equivalent that FILLS an expected role is not an extra either --
+    # it is the role, under the name this cloud sells it under.
+    substitutes = {
+        alt for role in expected for alt in
+        __import__("audit.roles", fromlist=["SATISFIES"]).SATISFIES.get(role, ())
+    }
+    extra = sorted((ours - expected - substitutes) - justified)
 
     # A forbidden role is an extra that the DESCRIPTION ruled out, not merely
     # one the reference omitted. Counted at the missing weight, because

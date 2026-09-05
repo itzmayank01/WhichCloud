@@ -14,7 +14,7 @@ Rules it follows:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from .pricing.models import HOURS_PER_MONTH, ComputeQuery, PricePoint, provider_region
@@ -479,6 +479,27 @@ def _warehouse_pool_label(provider: str, unit, node_equivalents: int) -> str:
 #: Microsoft all set this at 100 GB, so it is one constant rather than a
 #: per-provider table -- and if one of them moves it, this is the line to
 #: change and the comment that says why it was ever shared.
+#: Cloud Run's memory-to-vCPU allocation. Google sizes CPU from the memory
+#: you ask for, so a 512 MiB function does not get a whole core -- and
+#: charging it for one is a 70% overstatement on the meter that dominates a
+#: serverless bill. Published breakpoints, smallest first.
+_CLOUD_RUN_VCPU_BY_MEMORY_MB: tuple[tuple[float, float], ...] = (
+    (512.0, 0.583),
+    (1024.0, 1.0),
+    (2048.0, 1.0),
+    (4096.0, 2.0),
+    (8192.0, 4.0),
+)
+
+
+def _cloud_run_vcpu(memory_mb: float) -> float:
+    """vCPU allocated to a Cloud Run function of this size."""
+    for ceiling, vcpu in _CLOUD_RUN_VCPU_BY_MEMORY_MB:
+        if memory_mb <= ceiling:
+            return vcpu
+    return 8.0
+
+
 EGRESS_FREE_TIER_GB = 100.0
 
 
@@ -904,23 +925,68 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
             # GB-seconds = invocations x (avg duration in seconds) x (memory in GB).
-            gb_seconds = (
-                spec.lambda_invocations_per_month
-                * (spec.lambda_avg_ms / 1000.0)
-                * (spec.lambda_memory_mb / 1024.0)
+            # Kept apart from the warm-instance term below, because the two
+            # are billed on ONE meter by AWS and Azure and on TWO by Google.
+            running_seconds = (
+                spec.lambda_invocations_per_month * (spec.lambda_avg_ms / 1000.0)
             )
+            memory_gb = spec.lambda_memory_mb / 1024.0
+            gb_seconds = running_seconds * memory_gb
             # Provisioned concurrency keeps N environments warm every second of
             # the month, on the same GB-second meter -- an always-on cost the
             # reliability tier opts into, priced for real, not a multiplier.
-            if spec.lambda_provisioned_concurrency > 0:
-                gb_seconds += (
-                    spec.lambda_provisioned_concurrency
-                    * (spec.lambda_memory_mb / 1024.0)
-                    * float(HOURS_PER_MONTH)
-                    * 3600.0
-                )
+            warm_seconds = (
+                spec.lambda_provisioned_concurrency
+                * float(HOURS_PER_MONTH)
+                * 3600.0
+            )
+            gb_seconds += warm_seconds * memory_gb
             if gb_seconds:
                 result.items.append(_tiered_line("Lambda duration", dur, gb_seconds))
+
+                # CLOUD RUN BILLS CPU SEPARATELY, AND WE WERE NOT CHARGING IT.
+                #
+                # Lambda and Azure Functions fold CPU into one GB-second rate.
+                # Google does not: vCPU-seconds and GiB-seconds are two meters,
+                # and CPU is the larger of the two. Pricing only memory put
+                # Google's serverless at $17 against $98 on AWS and $107 on
+                # Azure for identical work -- a 5x lead it does not have, on a
+                # meter nobody had charged.
+                #
+                # The ingest already recorded the vCPU rate on the point
+                # "rather than silently folded in"; this is the half of that
+                # sentence the estimator was not keeping.
+                vcpu_rate = (dur.attributes or {}).get("vcpu_second_usd")
+                if vcpu_rate:
+                    # EXECUTION ONLY, at the ACTIVE rate. Warm instances are
+                    # billed on Google's min-instance meter, which is a
+                    # different and much cheaper rate -- the ingest excludes
+                    # those SKUs deliberately. Charging idle warm capacity at
+                    # the active vCPU rate made Google 3.8x DEARER than AWS
+                    # for identical work, which is the same error as the
+                    # under-price it replaced, pointing the other way.
+                    if warm_seconds:
+                        result.missing.append("serverless warm-instance CPU")
+                    # Cloud Run allocates CPU IN PROPORTION TO MEMORY rather
+                    # than one vCPU per instance: 512 MiB gets 0.583 vCPU, and
+                    # a full vCPU arrives at 1 GiB. Assuming a whole one for
+                    # every function size overstated a small handler by 70%.
+                    vcpu_seconds = running_seconds * _cloud_run_vcpu(
+                        spec.lambda_memory_mb
+                    )
+                    result.items.append(
+                        _metered_line(
+                            "Lambda vCPU time",
+                            replace(
+                                dur,
+                                sku=dur.sku.replace("memory-time", "cpu-time"),
+                                name=dur.name.replace("memory time", "vCPU time"),
+                                unit="vCPU-second",
+                                price_usd=Decimal(str(vcpu_rate)),
+                            ),
+                            vcpu_seconds,
+                        )
+                    )
         else:
             result.missing.append("lambda")
 

@@ -32,14 +32,13 @@
       "roles": [
         "edge-cache",
         "ingress-lb",
-        "waf",
         "app-compute",
         "relational-db",
         "object-store"
       ],
-      "source": "https://learn.microsoft.com/en-us/azure/architecture/web-apps/app-service/architectures/basic-web-app",
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/app-service-web-app/basic-web-app",
       "verified": "url",
-      "note": "Front Door (edge + WAF) or CDN in front of App Service."
+      "note": "CORRECTED. This expected a WAF while citing basic-web-app, which has neither a gateway nor a firewall -- the fixture contradicted its own source. A WAF here is a real design option and this architecture offers it on the top tier; it is not what the cited reference contains, so it is not scored as missing."
     }
   },
   "forbidden": {}
