@@ -197,6 +197,7 @@ export function CostRail({
   highlightGroup = null,
   onHoverGroup,
   onSelectGroup,
+  onSelectOption,
 }: {
   description: string;
   setDescription: (value: string) => void;
@@ -214,10 +215,25 @@ export function CostRail({
   highlightGroup?: string | null;
   onHoverGroup?: (group: string | null) => void;
   onSelectGroup?: (group: string) => void;
+  /** Switch tiers. The rail names the cheapest shape that meets the brief
+   *  when the shown one does not, and naming it without being able to go
+   *  there leaves the reader to hunt for the tab. */
+  onSelectOption?: (label: string) => void;
 }) {
   const [active, setActive] = useState<string | null>(null);
   const buckets = option ? bucketize(option.topology.nodes) : [];
   const total = buckets.reduce((sum, b) => sum + b.value, 0);
+  // What the compliant alternative actually costs. Naming it without its
+  // price asks the reader to click to find out whether they can afford it.
+  // On-demand first, matching the tier tabs. Quoting the committed price
+  // here put $387.12 in the rail against $447.13 on the tab for the same
+  // option -- two numbers for one thing, and the reader has no way to know
+  // which one they would pay.
+  const compliantOption = result?.options.find(
+    (o) => o.label === result.cheapest_compliant,
+  );
+  const cheapestCompliantCost =
+    compliantOption?.ondemand_monthly_usd ?? compliantOption?.monthly_usd ?? null;
   // buckets arrive largest-first, so index 0 is the one to flag.
   const colorFor = (key: string) => {
     const i = buckets.findIndex((b) => b.key === key);
@@ -338,6 +354,54 @@ export function CostRail({
                 {option.missing.length === 1 ? "" : "s"} could not be priced in
                 this region — this total is a floor, not the answer.
               </p>
+            )}
+            {/* Above the cost sheet, not filed under "what this gives up".
+                A price is only meaningful once you know whether the thing
+                priced is the thing you asked for, and the cheapest shape is
+                always one machine and one database — so on a workload whose
+                owner wrote that it cannot go down, this is the lowest number
+                on screen AND the one that fails the brief. Naming the cheaper
+                compliant alternative turns the warning into a decision. */}
+            {!option.compliant && (
+              <div className="mt-2.5 rounded-lg border border-caution/30 bg-caution-wash px-2.5 py-2">
+                <p className="text-[12px] font-semibold text-caution">
+                  This does not meet what you asked for
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {option.unmet.map((u) => (
+                    <li key={u} className="text-[12px] leading-relaxed text-caution">
+                      {u}
+                    </li>
+                  ))}
+                </ul>
+                {result?.cheapest_compliant ? (
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-2">
+                    <button
+                      type="button"
+                      onClick={() => onSelectOption?.(result.cheapest_compliant!)}
+                      className="font-semibold text-accent underline underline-offset-2"
+                    >
+                      {result.cheapest_compliant}
+                    </button>{" "}
+                    is the cheapest shape here that does
+                    {cheapestCompliantCost != null && (
+                      <>
+                        , at{" "}
+                        <span className="tnum font-mono font-semibold">
+                          {money(cheapestCompliantCost)}/mo
+                        </span>
+                      </>
+                    )}
+                    .
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-2">
+                    Nothing on offer meets it at this budget. That is a fact
+                    about the budget, not a reason to ship a single point of
+                    failure.
+                  </p>
+                )}
+              </div>
             )}
           </div>
 

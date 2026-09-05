@@ -52,16 +52,28 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
     };
   }
 
-  const affordable = usable.filter((o) => o.within_budget !== false);
+  // A recommendation that does not meet the brief is not a recommendation.
+  // The cheapest way to serve traffic is always one machine and one database,
+  // so on a workload whose owner wrote that it cannot go down, the cheapest
+  // option is both the lowest number here AND the one that fails the
+  // requirement. Without this filter it could be put forward as the pick,
+  // with "it fits the budget with room to spare" written underneath.
+  const meets = usable.filter((o) => o.compliant);
+  const candidates = meets.length ? meets : usable;
+
+  const affordable = candidates.filter((o) => o.within_budget !== false);
   if (affordable.length === 0) {
-    const cheapest = usable.reduce((a, b) =>
+    const cheapest = candidates.reduce((a, b) =>
       a.monthly_usd <= b.monthly_usd ? a : b,
     );
     return {
       pick: cheapest,
-      because:
-        "Nothing here fits the budget given. This is the least expensive " +
-        "option that still runs the workload.",
+      because: meets.length
+        ? "Nothing here fits the budget given. This is the least expensive " +
+          "option that still meets what you asked for."
+        : "Nothing here both fits the budget and meets what you asked for. " +
+          "This is the least expensive option that runs the workload — see " +
+          "what it does not meet, below.",
     };
   }
 
@@ -296,6 +308,20 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       pick
                     </span>
                   )}
+                  {/* An option that does not meet the brief must not read as a
+                      peer of the ones that do. The cheapest architecture is
+                      always one machine and one database, so on a workload
+                      whose owner wrote "it must not go down" this tab was the
+                      cheapest number on screen with nothing to say it fails
+                      the requirement. */}
+                  {!option.compliant && (
+                    <span
+                      className="rounded-full bg-caution px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-white"
+                      title={option.unmet.join("\n\n")}
+                    >
+                      ⚠ unmet
+                    </span>
+                  )}
                   {!option.complete && (
                     <span
                       className="h-1.5 w-1.5 rounded-full bg-caution"
@@ -325,7 +351,15 @@ export function WorkspaceView({ name }: { name: string | null }) {
           error={error}
           result={result}
           option={shown}
-          because={advice?.because ?? null}
+          // Only under the option it is ABOUT. This sentence explains why
+          // the pick was put forward; shown under every tier it read as a
+          // verdict on whichever one was selected, so the cheapest option
+          // carried "it fits the budget with room to spare" directly above
+          // the notice saying it fails the requirement.
+          because={
+            advice && shown?.label === advice.pick.label ? advice.because : null
+          }
+          onSelectOption={setSelected}
         />
 
         {/* canvas — the stage.

@@ -132,6 +132,14 @@ export type Option = {
   applied: Technique[];
   advisory: Technique[];
   tradeoffs: string[];
+  /** Does this shape meet what the requirement ASKED for? A tradeoff is a
+   *  consequence to weigh; an unmet requirement is a promise broken. Without
+   *  this the cheapest option renders as a peer of the other two, when on an
+   *  availability-critical workload it is the one that fails the brief. */
+  compliant: boolean;
+  /** The specific promises this shape breaks, in the requirement's own terms.
+   *  Empty when `compliant`. */
+  unmet: string[];
   topology: { nodes: Node[]; edges: Edge[] };
   /** The option as a laid-out, priced AWS architecture. Null on other clouds
       until a service-equivalence table exists. */
@@ -168,6 +176,14 @@ export type Recommendation = {
    *  AWS -- so the answer says which cloud it describes rather than leaving
    *  the interface to assume. */
   provider: CloudId;
+  /** LOW | MEDIUM | HIGH | CRITICAL, derived from what the description says.
+   *  It is the reason an option is marked non-compliant, and a warning
+   *  without its reason is noise. */
+  criticality: string;
+  /** Label of the cheapest option that actually meets the brief. Equal to the
+   *  cheapest option's label when that one is compliant; dearer when it is
+   *  not. Null when nothing on offer meets it. */
+  cheapest_compliant: string | null;
 };
 
 /** The three clouds the catalog prices. */

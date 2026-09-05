@@ -195,6 +195,15 @@ class OptionOut(BaseModel):
     applied: list[TechniqueOut]
     advisory: list[TechniqueOut]
     tradeoffs: list[str]
+    #: Does this shape meet what the requirement actually ASKED for? A
+    #: tradeoff is a consequence to weigh; an unmet requirement is a promise
+    #: broken. Without this the cheapest option arrives looking like a peer of
+    #: the other two, when on an availability-critical workload it is the one
+    #: that fails the brief.
+    compliant: bool = True
+    #: The specific promises this shape breaks, in the requirement's own
+    #: terms. Empty when `compliant`.
+    unmet: list[str] = Field(default_factory=list)
     topology: TopologyOut
     #: The option as a laid-out AWS architecture, priced. None on the other
     #: clouds until a service-equivalence table exists -- drawing a GCP option
@@ -222,6 +231,20 @@ class RecommendationOut(BaseModel):
     #: AWS -- so the answer has to say which cloud it is describing rather than
     #: leaving the interface to assume.
     provider: str = "aws"
+    #: LOW | MEDIUM | HIGH | CRITICAL, derived from what the description SAYS
+    #: rather than asked for as a field. It is the reason any option is marked
+    #: non-compliant, and a warning without its reason is noise.
+    criticality: str = "MEDIUM"
+    #: Label of the cheapest option that actually meets the brief. Equal to
+    #: the cheapest option's label when that one is compliant; different, and
+    #: dearer, when it is not. Null when nothing on offer meets it -- which is
+    #: a real answer, and the one a $500 budget on a must-not-go-down workload
+    #: deserves.
+    #:
+    #: A LABEL rather than a relabelling: `label` is the key the export and
+    #: diff routes look options up by, so renaming "Cheapest" to "Cheapest
+    #: compliant" would break the download the user just asked for.
+    cheapest_compliant: str | None = None
 
 
 def _technique_out(
@@ -499,8 +522,21 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         ],
         advisory=[_technique_out(m.technique, reasons=m.reasons) for m in option.advisory],
         tradeoffs=list(option.tradeoffs),
+        compliant=option.compliant,
+        unmet=list(option.unmet),
         topology=_topology_out(option),
     )
+
+
+def _cheapest_compliant(options: list[Option]) -> str | None:
+    """Label of the cheapest option that actually meets the brief.
+
+    Cheapest by PRICE, not by position: the tiers are ordered by posture and
+    a budget ladder can reorder them by cost, so picking the first compliant
+    one in the list would sometimes name a dearer option than necessary.
+    """
+    meets = [o for o in options if o.compliant]
+    return min(meets, key=lambda o: o.monthly).label if meets else None
 
 
 # ── requests ────────────────────────────────────────────────────────────
@@ -798,6 +834,8 @@ def recommend_route(body: RecommendIn) -> RecommendationOut:
         goal=requirement.goal,
         region=requirement.region,
         options=[_option_out(o, provider) for o in options],
+        criticality=options[0].criticality if options else "MEDIUM",
+        cheapest_compliant=_cheapest_compliant(options),
         diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
         not_applied=[
             {"id": t.id, "name": t.name, "reason": why}
@@ -1197,6 +1235,8 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
         goal=requirement.goal,
         region=requirement.region,
         options=[_option_out(o, provider) for o in options],
+        criticality=options[0].criticality if options else "MEDIUM",
+        cheapest_compliant=_cheapest_compliant(options),
         diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
         not_applied=[
             {"id": t.id, "name": t.name, "reason": why}

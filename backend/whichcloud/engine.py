@@ -349,6 +349,25 @@ class Option:
     #: Which resources the committed price depends on. "1-year commitment"
     #: with no object is not something a user can act on.
     commitment_covers: tuple[str, ...] = ()
+    #: LOW | MEDIUM | HIGH | CRITICAL, from what the requirement SAYS. Carried
+    #: on the option rather than left in the engine because it is the reason
+    #: `unmet` is not empty, and a warning without its reason is noise.
+    criticality: str = "MEDIUM"
+    #: Stated requirements this shape does not meet. Empty on a compliant
+    #: option. See `unmet_requirements` for why these are not tradeoffs.
+    unmet: tuple[str, ...] = ()
+
+    @property
+    def compliant(self) -> bool:
+        """Does this shape meet what the requirement actually asked for?
+
+        The cheapest option and the cheapest option that MEETS THE BRIEF are
+        different architectures whenever availability was asked for, because
+        the cheapest way to serve traffic is always one machine and one
+        database. Presenting the first as though it were the second is the
+        failure this exists to make visible.
+        """
+        return not self.unmet
 
     @property
     def commitment_saving(self) -> "Decimal":
@@ -1754,6 +1773,45 @@ def business_criticality(requirement: Requirement) -> str:
 PROTECTED_WHEN_CRITICAL = ("database_multi_az", "min_two_instances")
 
 
+def unmet_requirements(
+    spec: "ArchitectureSpec", requirement: Requirement
+) -> tuple[str, ...]:
+    """Which STATED requirements this shape does not meet.
+
+    Distinct from `tradeoffs`, which every option has: a tradeoff is a
+    consequence the reader should weigh, an unmet requirement is a promise
+    the design breaks. "No cache -- reads hit the primary" is a tradeoff on
+    any workload. "Single-zone database" is a tradeoff on most workloads and
+    an unmet requirement on one whose owner wrote that it cannot go down.
+
+    Only the requirement's own words can tell the two apart, which is why
+    this takes the requirement and `tradeoffs` does not. The engine already
+    knew the difference -- `_fit_within_budget` refuses to trade these away
+    on a CRITICAL workload -- but nothing carried it out to the caller, so
+    the Cheapest option arrived looking like a peer of the other two rather
+    than one that fails the brief.
+    """
+    if not requirement.high_availability:
+        return ()
+
+    gaps: list[str] = []
+    # Serverless and managed shapes have no instance count to speak of; the
+    # platform handles the spreading. Only assert this where the design is
+    # actually a fleet of machines we chose the size of.
+    if spec.compute_count == 1:
+        gaps.append(
+            "you asked for high availability, and this runs a single "
+            "application instance -- a restart, a crash or a deploy is "
+            "downtime"
+        )
+    if spec.database_vcpu and not spec.database_multi_az:
+        gaps.append(
+            "you asked for high availability, and this database has no "
+            "standby -- losing its zone takes the system down with it"
+        )
+    return tuple(gaps)
+
+
 def _fit_within_budget(
     spec: "ArchitectureSpec",
     requirement: Requirement,
@@ -1864,13 +1922,29 @@ def _fit_within_budget(
         if estimate(spec, provider, dsn=dsn).total_monthly <= ceiling:
             return spec, False, tuple(given_up)
 
-    if protect_availability:
+    # Only claim to have KEPT what this shape actually has. The Cheapest
+    # variant is built without a standby and without a second instance by
+    # definition, so this message went out attached to an option that had
+    # neither -- telling a reader their single-instance, single-zone design
+    # had been protected. The ladder was right; the sentence was a lie.
+    kept = []
+    if spec.database_multi_az:
+        kept.append("the standby database")
+    if spec.compute_count > 1:
+        kept.append("a second instance")
+    if protect_availability and kept:
         given_up.append(
-            "kept the standby database and a second instance: this workload "
-            "was described as one that cannot go down, and those are the two "
-            "things that keep it up. The budget does not stretch to a design "
-            "that meets that requirement -- which is a fact about the budget, "
-            "not a reason to quietly ship a single point of failure"
+            f"kept {' and '.join(kept)}: this workload was described as one "
+            "that cannot go down, and that is what keeps it up. The budget "
+            "does not stretch to a design that meets that requirement -- "
+            "which is a fact about the budget, not a reason to quietly ship "
+            "a single point of failure"
+        )
+    elif protect_availability:
+        given_up.append(
+            "this workload was described as one that cannot go down, and "
+            "this shape does not deliver that at any budget -- see what it "
+            "does not meet, above"
         )
     else:
         given_up.append(
@@ -2201,9 +2275,17 @@ def recommend(
                 tradeoffs=tuple(tradeoffs) + budget_given_up,
                 spec_budget=requirement.budget_monthly_usd,
                 steady_monthly=steady_monthly,
-                budget_saturated=budget_saturated,
+                # "A higher budget won't add useful capacity" is only true of
+                # a shape that already delivers what was asked for. On one
+                # that does not, a higher budget buys exactly the thing it is
+                # missing -- so claiming saturation there told a reader with
+                # a single point of failure that spending more would not help.
+                budget_saturated=budget_saturated
+                and not unmet_requirements(current if applied else spec, requirement),
                 ondemand_monthly=ondemand_monthly,
                 commitment_covers=commitment_covers,
+                criticality=business_criticality(requirement),
+                unmet=unmet_requirements(current if applied else spec, requirement),
             )
         )
 
