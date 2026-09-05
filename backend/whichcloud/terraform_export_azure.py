@@ -665,6 +665,9 @@ def _readme(*, spec, estimate, has_db, has_gateway, db_sku) -> str:
         "- A **regional** virtual network. Its subnets span every zone in the",
         "  region — there is no subnet-per-zone here, because on Azure a zone",
         "  is a property of the resource, not of the subnet.",
+        "- **One** NAT gateway, which is what the estimate prices. A subnet",
+        "  accepts at most one, so the count follows subnets rather than",
+        "  zones — the opposite of the AWS design, which buys one per zone.",
     ]
     if spec.compute_count:
         lines.append(
@@ -714,20 +717,6 @@ def _readme(*, spec, estimate, has_db, has_gateway, db_sku) -> str:
         "   `Microsoft.Storage`.",
         "",
     ]
-    nat_priced = next(
-        (i.label for i in estimate.items if i.label.startswith("NAT gateway ×")), None
-    )
-    if nat_priced and not nat_priced.endswith("× 1"):
-        lines += [
-            "## Where this differs from the estimate",
-            "",
-            f"The estimate prices `{nat_priced}`; this project builds **one**.",
-            "A subnet accepts at most one NAT gateway, and this design has one",
-            "subnet needing outbound access. Buying more would mean more",
-            "subnets, not more resilience for these. The plan therefore costs",
-            "slightly less than the figure above.",
-            "",
-        ]
     lines += ["## Priced but not generated", ""]
     if missing:
         lines.append(

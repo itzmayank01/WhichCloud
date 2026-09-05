@@ -1156,9 +1156,19 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         # Google's Cloud NAT is not that. It is a REGIONAL configuration on a
         # Cloud Router, one per region per VPC, serving every zone in the
         # region. There is no such thing as a per-zone Cloud NAT, so quoting
-        # three was inventing two resources that cannot be bought. The count
-        # travels with the provider's model rather than with the zone count.
-        count = 1 if provider == "gcp" else spec.nat_gateway_count
+        # three was inventing two resources that cannot be bought.
+        #
+        # Azure lands in the same place by a different route. A zonal NAT
+        # gateway does exist there, so the per-zone pattern is buildable --
+        # but it is buildable only with a subnet per zone, and an Azure
+        # subnet is regional, so these architectures have one. A subnet
+        # accepts at most one NAT gateway. Quoting more prices a second
+        # gateway that the deployed design has nowhere to attach.
+        #
+        # The count travels with the provider's model rather than with the
+        # zone count. `terraform_export_*` builds exactly this many, and a
+        # test holds the two together.
+        count = 1 if provider in ("gcp", "azure") else spec.nat_gateway_count
         if hourly:
             result.items.append(
                 _hourly_line(
