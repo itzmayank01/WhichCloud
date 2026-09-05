@@ -1,0 +1,46 @@
+{
+  "requirement": "Product catalogue site, 5M page views a month, almost no writes, visitors across India.",
+  "class": "public read-heavy content site",
+  "expected": {
+    "aws": {
+      "roles": [
+        "edge-cache",
+        "ingress-lb",
+        "app-compute",
+        "relational-db",
+        "object-store",
+        "read-replica"
+      ],
+      "source": "https://aws.amazon.com/websites/",
+      "verified": "url",
+      "note": "CloudFront in front of ALB/EC2 with S3 for static assets and RDS read replicas for a read-heavy mix. CloudFront is the defining component of this class."
+    },
+    "gcp": {
+      "roles": [
+        "edge-cache",
+        "ingress-lb",
+        "app-compute",
+        "relational-db",
+        "object-store",
+        "read-replica"
+      ],
+      "source": "https://cloud.google.com/cdn/docs/overview",
+      "verified": "url",
+      "note": "Cloud CDN is enabled ON the global external Application Load Balancer, so edge-cache and ingress-lb are one purchase but two roles."
+    },
+    "azure": {
+      "roles": [
+        "edge-cache",
+        "ingress-lb",
+        "waf",
+        "app-compute",
+        "relational-db",
+        "object-store"
+      ],
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/web-apps/app-service/architectures/basic-web-app",
+      "verified": "url",
+      "note": "Front Door (edge + WAF) or CDN in front of App Service."
+    }
+  },
+  "forbidden": {}
+}

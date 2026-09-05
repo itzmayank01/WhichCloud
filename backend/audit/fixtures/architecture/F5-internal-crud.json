@@ -1,0 +1,41 @@
+{
+  "requirement": "Internal HR tool for 80 employees. Leave requests and payroll records. Office hours only.",
+  "class": "small internal CRUD app, no public surface, no HA stated",
+  "expected": {
+    "aws": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "relational-db"
+      ],
+      "source": "https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/deploy-a-three-tier-web-application.html",
+      "verified": "url",
+      "note": "The smallest honest shape. 80 internal users do not justify a CDN, a WAF or a cache tier."
+    },
+    "gcp": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "relational-db"
+      ],
+      "source": "https://docs.cloud.google.com/architecture/application-development/three-tier-web-app",
+      "verified": "content",
+      "note": "Cloud Run + Cloud SQL is the documented minimum three-tier shape."
+    },
+    "azure": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "relational-db"
+      ],
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/app-service-web-app/basic-web-app",
+      "verified": "url",
+      "note": "Basic web app: App Service + Azure SQL. No gateway/WAF in the basic tier."
+    }
+  },
+  "forbidden": {
+    "edge-cache": "80 internal employees is not a CDN workload",
+    "waf": "internal tool behind the corporate boundary",
+    "cache": "leave requests and payroll at office-hours volume do not need a cache tier"
+  }
+}

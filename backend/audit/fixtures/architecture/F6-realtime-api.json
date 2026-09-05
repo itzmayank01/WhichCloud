@@ -1,0 +1,42 @@
+{
+  "requirement": "Public API serving 3,000 requests/second, p99 under 100ms, read-heavy with a small key-value store.",
+  "class": "high-throughput public read API, key-value state, latency target",
+  "expected": {
+    "aws": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "keyvalue-db",
+        "cache"
+      ],
+      "source": "https://docs.aws.amazon.com/whitepapers/latest/serverless-multi-tier-architectures-api-gateway-lambda/serverless-multi-tier-architectures-api-gateway-lambda.html",
+      "verified": "url",
+      "note": "API Gateway or ALB -> compute -> DynamoDB, with DAX/ElastiCache for a p99 under 100ms on a read-heavy mix. Relational is explicitly not the store here."
+    },
+    "gcp": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "keyvalue-db",
+        "cache"
+      ],
+      "source": "https://docs.cloud.google.com/architecture/application-development/three-tier-web-app",
+      "verified": "content",
+      "note": "Load balancer -> Cloud Run -> Firestore/Bigtable, Memorystore for the latency target."
+    },
+    "azure": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "keyvalue-db",
+        "cache"
+      ],
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/web-queue-worker",
+      "verified": "url",
+      "note": "Front end -> Cosmos DB, with Azure Cache for Redis for the read path."
+    }
+  },
+  "forbidden": {
+    "relational-db": "the description says key-value, not relational"
+  }
+}

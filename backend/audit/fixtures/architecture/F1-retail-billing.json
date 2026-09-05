@@ -1,0 +1,42 @@
+{
+  "requirement": "Online stock and billing for a retail chain in India, 40 stores, 300 internal staff, 8,000 transactions/day, must not go down in business hours.",
+  "class": "internal line-of-business web app, HA required, low request rate",
+  "expected": {
+    "aws": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "relational-db",
+        "object-store",
+        "nat-egress"
+      ],
+      "source": "https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/deploy-a-three-tier-web-application.html",
+      "verified": "url",
+      "note": "Three-tier: ALB -> EC2/ASG in private subnets -> RDS Multi-AZ. CDN and WAF are not part of the base pattern."
+    },
+    "gcp": {
+      "roles": [
+        "ingress-lb",
+        "app-compute",
+        "relational-db",
+        "object-store",
+        "nat-egress"
+      ],
+      "source": "https://docs.cloud.google.com/architecture/application-development/three-tier-web-app",
+      "verified": "content",
+      "note": "Fetched: Cloud Run, Cloud SQL, Memorystore, Cloud Storage, Cloud Load Balancing, VPC. Memorystore is listed, so cache is allowed but not required at this rate."
+    },
+    "azure": {
+      "roles": [
+        "ingress-lb",
+        "waf",
+        "app-compute",
+        "relational-db",
+        "object-store"
+      ],
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/web-apps/app-service/architectures/baseline-zone-redundant",
+      "verified": "content",
+      "note": "Fetched component list: App Service, Application Gateway WITH WAF, Azure SQL, Blob Storage, Key Vault, Private Link, VNet, Monitor. WAF is baseline on Azure because it is a MODE of the gateway, not a separate purchase. CDN appears only under Performance Efficiency as an option; no cache in the component list."
+    }
+  }
+}

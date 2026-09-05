@@ -1,0 +1,46 @@
+{
+  "requirement": "Process uploaded documents: extract text, classify, notify the uploader. Bursty, up to 2,000 documents an hour.",
+  "class": "event-driven document pipeline, bursty, scale-to-zero fit",
+  "expected": {
+    "aws": {
+      "roles": [
+        "object-store",
+        "function-compute",
+        "queue",
+        "keyvalue-db",
+        "notification"
+      ],
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/services-s3.html",
+      "verified": "url",
+      "note": "S3 upload event -> Lambda -> DynamoDB, with SQS for buffering and SNS for the notify step. No always-on fleet and nothing to load-balance."
+    },
+    "gcp": {
+      "roles": [
+        "object-store",
+        "function-compute",
+        "queue",
+        "keyvalue-db",
+        "notification"
+      ],
+      "source": "https://docs.cloud.google.com/architecture/application-development/three-tier-web-app",
+      "verified": "url",
+      "note": "Cloud Storage trigger -> Cloud Functions/Run -> Firestore, Pub/Sub as the queue."
+    },
+    "azure": {
+      "roles": [
+        "object-store",
+        "function-compute",
+        "queue",
+        "keyvalue-db",
+        "notification"
+      ],
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/serverless/event-processing",
+      "verified": "url",
+      "note": "Event-driven reference: Blob/Event Hubs -> Functions -> Cosmos DB."
+    }
+  },
+  "forbidden": {
+    "ingress-lb": "queue-driven, not a request-serving fleet behind a balancer",
+    "edge-cache": "nothing public is being read repeatedly"
+  }
+}
