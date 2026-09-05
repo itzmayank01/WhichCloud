@@ -20,6 +20,7 @@ KIND_TO_ROLE: dict[str, str] = {
     "dns": "dns",
     "tls": "tls",
     "edge": "edge-cache",
+    "cdn": "edge-cache",
     "waf": "waf",
     "loadbalancer": "ingress-lb",
     "apigateway": "ingress-lb",

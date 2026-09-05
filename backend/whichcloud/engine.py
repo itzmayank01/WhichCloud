@@ -580,10 +580,31 @@ def _delivery(requirement: Requirement) -> tuple[float, float, float]:
     egress = requirement.egress_gb
     # A media/object workload is served THROUGH CloudFront by definition --
     # that is what an object primary means -- so it goes behind a CDN whatever
-    # the byte count. Other shapes only earn a CDN once egress is large enough
-    # to be real content delivery rather than API responses.
+    # the byte count.
     is_media = requirement.serves_requests and requirement.data_shape == "object"
-    if not requirement.serves_requests or (egress < CDN_EGRESS_THRESHOLD_GB and not is_media):
+
+    # A PUBLIC SITE EARNS A CDN ON READERS, NOT ON BYTES.
+    #
+    # The byte threshold alone was the wrong test, and a product catalogue
+    # showed why: five million page views a month, read almost exclusively,
+    # visitors across a country -- the textbook CDN case, and every vendor's
+    # published reference for it puts CloudFront, Cloud CDN or Front Door in
+    # front. It came out at 500 GB of egress, under the one-terabyte bar, and
+    # got none. What a CDN buys a site like that is latency at the reader and
+    # load off the origin; neither is a function of the byte count.
+    #
+    # `web` and not `api` on purpose. The threshold exists to keep a CDN off
+    # an API returning a different JSON body to every caller, and that is
+    # still the right answer -- there is nothing to cache. A public SITE
+    # serves the same pages to everyone, which is the whole premise.
+    public_site = (
+        requirement.audience == "public"
+        and requirement.workload_type in ("web", "mixed")
+        and requirement.serves_requests
+    )
+    if not requirement.serves_requests or (
+        egress < CDN_EGRESS_THRESHOLD_GB and not is_media and not public_site
+    ):
         return 0.0, egress, 0.0
     # One HTTPS request per ~2 MB object delivered -- a coarse, stated
     # approximation, like every volume heuristic here.
@@ -780,7 +801,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         ),
         monitored_metrics=30 if stateful else 10,
         waf_rule_count=(
-            WAF_RULE_COUNT if requirement.needs_waf and requirement.serves_requests else None
+            WAF_RULE_COUNT if requirement.needs_waf and requirement.internet_facing else None
         ),
         waf_monthly_requests=(
             WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
@@ -977,7 +998,9 @@ def serverless_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         ),
         tls_certificate=serves,
         waf_rule_count=(
-            WAF_RULE_COUNT if requirement.needs_waf and serves else None
+            WAF_RULE_COUNT
+            if requirement.needs_waf and requirement.internet_facing
+            else None
         ),
         waf_monthly_requests=(
             WAF_MONTHLY_REQUESTS[requirement.traffic_scale] if requirement.needs_waf else 0.0
@@ -1036,7 +1059,7 @@ def _serverless_variants(
     optimized["lambda_memory_mb"] = 1024.0
     optimized["athena_tb_scanned_per_month"] = 2.0
     optimized["glue_dpu_hours_per_month"] = 50.0
-    if requirement.serves_requests:
+    if requirement.internet_facing:
         optimized["waf_rule_count"] = WAF_RULE_COUNT
         optimized["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
 
@@ -1552,9 +1575,16 @@ def _shape_variants(
             "justifies them has arrived yet"
         )
 
-    # Protection at the edge. Priced here even where the description named
-    # no attack surface, because this is the tier that assumes one exists.
-    if requirement.serves_requests:
+    # Protection at the edge, for workloads that HAVE an edge.
+    #
+    # This used to read `serves_requests`, and assumed an attack surface on
+    # the reasoning that the top tier should. But serving requests is not
+    # being on the internet: an HR tool for eighty employees serves requests
+    # too, and it was handed a web firewall -- $368/month of Application
+    # Gateway on Azure, the single largest line on that architecture -- to
+    # defend a network the attacker is not on. Assuming a surface is the
+    # default this now refuses to make.
+    if requirement.internet_facing:
         optimized_delta["waf_rule_count"] = WAF_RULE_COUNT
         optimized_delta["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[
             requirement.traffic_scale

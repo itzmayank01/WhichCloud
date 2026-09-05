@@ -455,6 +455,32 @@ _WAREHOUSE_UNIT_SKU: dict[str, str] = {
 }
 
 
+#: Terabytes a loaded warehouse is queried over in a month when the tier
+#: carries no explicit scan volume. A warehouse exists to be queried; the
+#: alternative to a number here is a $0.00 warehouse, which is worse.
+#: HEURISTIC, stated in one place so it can be argued with.
+_WAREHOUSE_SERVERLESS_TB = 5.0
+
+
+def _warehouse_pool_label(provider: str, unit, node_equivalents: int) -> str:
+    """Name the pool in the unit the provider actually sells it in.
+
+    Azure sizes a dedicated SQL pool in data warehouse units, so N nodes'
+    worth of capacity is DW(N x 100)c -- one pool, one service level. Naming
+    it that way is what lets a reader look the price up.
+    """
+    if provider == "azure":
+        return f"Synapse dedicated SQL pool (DW{node_equivalents * 100}c)"
+    return f"{unit.name} \u00d7 {node_equivalents}"
+
+
+
+#: Internet egress each cloud gives away every month. AWS, Google and
+#: Microsoft all set this at 100 GB, so it is one constant rather than a
+#: per-provider table -- and if one of them moves it, this is the line to
+#: change and the comment that says why it was ever shared.
+EGRESS_FREE_TIER_GB = 100.0
+
 
 def _sku(provider: str, category: str, role: str) -> str | None:
     return PROVIDER_SKUS.get((provider, category, role))
@@ -741,10 +767,19 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.missing.append("object storage")
 
     # ---- egress ----
+    #
+    # All three clouds give the first 100 GB of internet egress each month
+    # free, and this billed from the first byte. On a large workload the
+    # difference is rounding; on a small one it is most of the line, and an
+    # internal tool moving 5 GB was quoted for traffic none of the three
+    # would have charged it for. A free allowance nobody applies is the same
+    # error as a rate that is wrong -- it just looks more defensible.
     if spec.egress_gb > 0:
         point = _preferred(provider, region, "network", dsn)
         if point:
-            result.items.append(_metered_line("Egress", point, spec.egress_gb))
+            billable = max(0.0, spec.egress_gb - EGRESS_FREE_TIER_GB)
+            if billable > 0:
+                result.items.append(_metered_line("Egress", point, billable))
         else:
             result.missing.append("egress")
 
@@ -1345,7 +1380,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             else:
                 result.missing.append("managed search storage")
 
-    # ---- data warehouse (Redshift) ----
+    # ---- data warehouse ----
     if spec.warehouse_node_count:
         point = store.cheapest_compute_like(
             provider=provider,
@@ -1358,7 +1393,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         # Only Redshift sells sized warehouse NODES. Synapse sells DW100c
         # units, and BigQuery sells nothing at all (it is serverless, billed
         # per TiB scanned on the analysis line). Both are published in
-        # `warehouse_unit` and priced one unit per requested node.
+        # `warehouse_unit`.
         unit = (
             None if point
             else store.get_price(provider, region, "warehouse_unit",
@@ -1373,12 +1408,41 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
         elif unit:
+            # ONE POOL, not N of them. Synapse dedicated SQL is a single pool
+            # sized in data warehouse units -- there is no such thing as four
+            # pools serving one warehouse. The arithmetic is unchanged, since
+            # DWU scales linearly, but "x 4" described a purchase nobody can
+            # make and hid the unit that would let anyone check the figure.
             result.items.append(
-                _hourly_line(f"{unit.name} \u00d7 {spec.warehouse_node_count}",
-                             unit, spec.warehouse_node_count)
+                _hourly_line(
+                    _warehouse_pool_label(provider, unit, spec.warehouse_node_count),
+                    unit,
+                    spec.warehouse_node_count,
+                )
             )
         else:
             result.missing.append("data warehouse node")
+
+        # A WAREHOUSE IS NEVER FREE. BigQuery sells no provisioned capacity at
+        # all, so the `warehouse_unit` row for it is a zero-priced placeholder
+        # -- and pricing the tier from it produced a $0.00 data warehouse and
+        # a "Most optimized" that cost LESS than the tier below it, because it
+        # had dropped the scan charge and gained nothing chargeable in return.
+        #
+        # Where a cloud sells no provisioned warehouse, the warehouse IS the
+        # query engine, and the query charge is the warehouse's cost. This is
+        # not a fallback; it is how Google bills a warehouse.
+        if unit is not None and not unit.price_usd:
+            scanned = spec.athena_tb_scanned_per_month or _WAREHOUSE_SERVERLESS_TB
+            analysis = _by_role(provider, region, "athena", "tb", dsn)
+            if analysis:
+                result.items.append(
+                    _tiered_line(
+                        f"{unit.name.split(' (')[0]} analysis", analysis, scanned
+                    )
+                )
+            else:
+                result.missing.append("serverless warehouse query")
 
     # ---- Fargate ----
     # Priced instead of EC2, not alongside it: a task is the compute tier.

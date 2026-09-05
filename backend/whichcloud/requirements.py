@@ -41,6 +41,17 @@ DataShape = Literal[
     "relational", "time-series", "key-value", "document",
     "object", "search", "warehouse", "mixed",
 ]
+#: WHO calls this. The fifth derivation axis, and the one that decides
+#: whether the public internet is on the other side of the front door.
+#:
+#: `serves_requests` was doing this job and cannot: an internal HR tool for
+#: eighty employees serves requests too. Gating edge protection on it put a
+#: web firewall -- $368/month of Application Gateway on Azure -- in front of
+#: a workload with no public surface, on the reasoning that the top tier
+#: "assumes an attack surface exists". Assuming one is exactly the default
+#: this axis exists to stop.
+Audience = Literal["public", "internal", "machine"]
+
 EgressShape = Literal[
     "api",            # JSON/API responses
     "media",          # video/large files served to users
@@ -120,6 +131,10 @@ class Requirement:
     # architecture is derived from these rather than fitted to a template.
     # Defaults are the plain web-app answers, so a prompt that specifies none
     # of them still resolves to the shape it does today.
+    #: Public by default: it is the safer wrong answer. Over-protecting an
+    #: internal tool costs money; under-protecting a public one costs more
+    #: than money.
+    audience: Audience = "public"
     ingress_shape: IngressShape = "requests"
     processing_mode: ProcessingMode = "synchronous"
     data_shape: DataShape = "relational"
@@ -163,6 +178,17 @@ class Requirement:
         made every architecture look the same whatever was described.
         """
         return self.workload_type in ("web", "api", "mixed")
+
+    @property
+    def internet_facing(self) -> bool:
+        """Is the public internet on the other side of the front door?
+
+        The question edge protection and edge caching both actually turn on.
+        A CDN and a web firewall answer threats and traffic that arrive from
+        the open internet; neither earns its cost in front of staff on a
+        corporate network.
+        """
+        return self.serves_requests and self.audience == "public"
 
     @property
     def is_batch(self) -> bool:

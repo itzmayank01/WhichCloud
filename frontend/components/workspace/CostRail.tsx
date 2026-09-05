@@ -543,6 +543,45 @@ export function CostRail({
             option.advisory.length > 0 ||
             (result?.not_applied.length ?? 0) > 0) && (
             <Section title="Why these choices" defaultOpen={false}>
+              {/* WHAT IS HERE, AND WHY IT IS HERE.
+                  Every derived role traces to something the description said.
+                  Before this the panel explained the OPTIMIZATIONS but never
+                  the components, so a reader could see that ARM saved $19 and
+                  still have no way to find out why they were being sold a web
+                  firewall for an internal tool. Baseline roles are grouped at
+                  the end rather than each repeating the same policy line. */}
+              {option.topology.nodes.some((n) => n.because) && (
+                <div className="mb-3">
+                  <p className="text-[11.5px] font-medium text-ink-3">
+                    What this architecture contains
+                  </p>
+                  <ul className="mt-1 space-y-1">
+                    {option.topology.nodes
+                      .filter((n) => n.because && !n.baseline)
+                      .map((n) => (
+                        <li
+                          key={n.id}
+                          className="text-[12px] leading-relaxed text-ink-2"
+                        >
+                          <span className="font-medium text-ink">{n.label}</span>
+                          {" — "}
+                          {n.because}
+                        </li>
+                      ))}
+                  </ul>
+                  {option.topology.nodes.some((n) => n.baseline && n.kind !== "client") && (
+                    <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">
+                      Present on every architecture by policy, not derived from
+                      this workload:{" "}
+                      {option.topology.nodes
+                        .filter((n) => n.baseline && n.kind !== "client")
+                        .map((n) => n.label)
+                        .join(", ")}
+                      .
+                    </p>
+                  )}
+                </div>
+              )}
               {option.applied.length > 0 && (
                 <div className="space-y-2">
                   {option.applied.map((t) => (

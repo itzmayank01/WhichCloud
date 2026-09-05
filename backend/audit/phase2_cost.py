@@ -134,6 +134,11 @@ def check_divisors(option) -> tuple[bool, str]:
             continue
         if not i.quantity:
             continue
+        # A line that costs nothing is inside a free tier, which is a correct
+        # answer rather than a divisor a thousand out. Flagging it made the
+        # check fire the moment notifications started appearing at all.
+        if not i.monthly_usd:
+            continue
         implied = Decimal(str(i.monthly_usd)) / Decimal(str(i.quantity))
         # No cloud charges more than a cent per individual request, nor less
         # than a nanodollar. Outside that, the divisor is wrong.

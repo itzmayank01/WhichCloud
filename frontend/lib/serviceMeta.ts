@@ -6,7 +6,10 @@
 
 /** kind → a label `iconFor` resolves to the official AWS PNG. */
 export const KIND_ICON_LABEL: Record<string, string> = {
-  network: "cloudfront",
+  cdn: "cloudfront",
+  // Plain data transfer, NOT a CDN. These shared one kind, so a design
+  // with an edge cache and one without drew the same CloudFront box.
+  network: "vpc",
   waf: "waf",
   apigateway: "api gateway",
   loadbalancer: "elastic load balanc",
@@ -49,7 +52,8 @@ export const KIND_ICON_LABEL: Record<string, string> = {
 /** kind → the one-line role shown under the service name. */
 export const KIND_ROLE: Record<string, string> = {
   client: "End users",
-  network: "CDN / edge delivery",
+  cdn: "CDN / edge delivery",
+  network: "Data transfer out",
   waf: "Web application firewall",
   apigateway: "Managed API front door",
   loadbalancer: "Distributes traffic",

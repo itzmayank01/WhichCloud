@@ -55,6 +55,11 @@ _KIND_BY_PREFIX = {
     "Search nodes": "search",
     "Search storage": "search",
     "Warehouse nodes": "warehouse",
+    # Azure's pool is a warehouse, not a compute tier. Without this it fell
+    # through to `compute` and the diagram drew a $4,934/month data warehouse
+    # as an application server.
+    "Synapse dedicated SQL": "warehouse",
+    "BigQuery serverless": "warehouse",
     "Threat detection": "threat",
     "Security posture": "posture",
     "Distributed tracing": "tracing",
@@ -74,8 +79,14 @@ _KIND_BY_PREFIX = {
     # Previously unmapped -- fell through to "compute" by default (see
     # _kind_for below), which folded their cost into the compute box and
     # meant these services never appeared on the diagram at all.
-    "CDN data transfer": "network",
-    "CDN requests": "network",
+    # A CDN IS NOT AN EGRESS METER. These shared the "network" kind with
+    # plain egress, so an architecture WITH an edge cache and one without
+    # drew the identical box -- and on GCP and Azure that box is already
+    # named "Cloud CDN" and "Azure Front Door", which put a CDN on the
+    # picture for workloads that had none. Separate kinds, because they are
+    # separate architectural decisions.
+    "CDN data transfer": "cdn",
+    "CDN requests": "cdn",
     "Transactional email": "email",
     "Queue requests": "queue",
     "Notifications": "notification",
@@ -116,6 +127,80 @@ _KIND_BY_PREFIX = {
 }
 
 
+#: Roles present on every design by POLICY rather than because the workload
+#: asked for them. They are exempt from justifying themselves individually --
+#: the policy IS the reason, and repeating it on eleven nodes would drown the
+#: ones that carry real derivation.
+#:
+#: Kept SHORT and explicit. The longer this list, the less the `because`
+#: requirement proves: anything on it is a default that has been blessed
+#: rather than earned.
+BASELINE_KINDS = frozenset(
+    {
+        "client", "dns", "tls", "auth", "kms", "secrets",
+        "monitoring", "tracing", "audit", "threat", "posture",
+        "flowlogs", "backup",
+    }
+)
+
+
+def _because(kind: str, spec: "ArchitectureSpec", requirement=None) -> str:
+    """Why this role is in the architecture, in terms of what was described.
+
+    Traced to the SPEC rather than to the tier, because the spec is what the
+    requirement produced. A reason that said "the top tier adds this" would
+    describe the code rather than the workload, and is exactly the kind of
+    non-answer that let defaults through.
+    """
+    reasons: dict[str, str] = {
+        "compute": (
+            f"{spec.compute_count} instance(s) sized to the stated load; "
+            "something has to serve the requests"
+        ),
+        "compute_fargate": (
+            f"{spec.fargate_task_count} container task(s): work that runs and "
+            "finishes, so nothing is kept warm between runs"
+        ),
+        "lambda": "event-driven work that scales to zero between invocations",
+        "apigateway": "the front door for a serverless backend with no load balancer",
+        "loadbalancer": "more than one instance to distribute across, and a health check to fail out of",
+        "cdn": "public readers of the same content, cached at the edge rather than fetched from the origin each time",
+        "waf": "a public attack surface named in the requirement",
+        "database": "relational records the workload reads and writes transactionally",
+        "database_replica": (
+            f"{spec.database_read_replicas} read replica(s) to take reporting "
+            "load off the primary"
+        ),
+        "dynamodb": "key-value access, so a relational engine would be paid for and not used",
+        "timestream": "append-only time-series data, which does not belong in a relational store",
+        "cache": "repeated reads that would otherwise hit the primary every time",
+        "storage": f"{spec.storage_gb:g} GB of objects to keep",
+        "warehouse": "analytics queried repeatedly, rather than re-scanned from the lake each run",
+        "athena": "ad-hoc queries over the lake, billed per scan rather than by a running cluster",
+        "glue": "the transform step between the raw data and what analysts query",
+        "search": "full-text or faceted search, which a relational LIKE cannot serve at this size",
+        "queue": "bursty arrivals buffered so the processor is not sized for the peak",
+        "streaming": "a continuous event feed rather than discrete requests",
+        "kafka": "a continuous event feed rather than discrete requests",
+        "firehose": "events delivered to storage without a consumer to run",
+        "iot": "devices connecting directly, which need a broker rather than a load balancer",
+        "email": "transactional mail the workload sends",
+        "notification": "the requirement names notifying someone when work completes",
+        "nat": "private instances that still need outbound access",
+        # Egress is a meter rather than a component, but it is on the diagram
+        # and on the bill, so it explains itself like everything else. Making
+        # it baseline would have been the easier answer and the wrong one:
+        # every exemption is a role that stops having to justify its cost.
+        "network": (
+            f"{spec.egress_gb:g} GB leaving the cloud each month, billed per GB "
+            "and not cached at an edge"
+        ),
+        "rekognition": "image analysis named in the requirement",
+        "comprehend": "text analysis named in the requirement",
+    }
+    return reasons.get(kind, "")
+
+
 @dataclass(frozen=True, slots=True)
 class Node:
     id: str
@@ -126,6 +211,19 @@ class Node:
     detail: str = ""  # "t4g.large × 3"
     priced: bool = True
     optimized_by: tuple[str, ...] = ()  # technique ids that touched this node
+    #: WHY this node is in the architecture, traced to what the requirement
+    #: said. Empty only for baseline roles, which are present by policy.
+    #:
+    #: A role that cannot say why it is here is indistinguishable from a
+    #: default that leaked in -- which is how an HR tool for eighty people
+    #: acquired a web firewall. The audit scores an unexplained role as a
+    #: defect for exactly that reason, so this is not documentation, it is
+    #: the thing that makes the derivation checkable.
+    because: str = ""
+    #: True for roles present by POLICY on every design -- identity, keys,
+    #: observability, audit. They are not derived and are not asked to
+    #: justify themselves individually.
+    baseline: bool = False
 
     def share_of(self, total: Decimal) -> float:
         """Fraction of the bill. Drives border weight in the diagram —
@@ -175,7 +273,7 @@ def _detail_for(item: LineItem, spec: ArchitectureSpec, kind: str) -> str:
         )
     if kind in ("database", "database_replica"):
         return item.sku
-    if kind in ("storage", "network"):
+    if kind in ("storage", "network", "cdn"):
         return f"{item.quantity:g} GB"
     if kind == "waf":
         return f"{spec.waf_rule_count} rules, {spec.waf_monthly_requests:,.0f} req/mo"
@@ -206,6 +304,7 @@ _LABELS = {
     "loadbalancer": "Load balancer",
     "storage": "Object storage",
     "network": "Egress",
+    "cdn": "CDN",
     "cache": "Cache",
     "monitoring": "Monitoring",
     "database": "Database",
@@ -367,6 +466,8 @@ def build(
                 if kind != "compute_fargate"
                 else touched.get("compute_fargate", []) + touched.get("compute", [])
             )),
+            because=_because(kind, spec),
+            baseline=kind in BASELINE_KINDS,
         )
         by_kind[kind] = node
 
@@ -382,18 +483,23 @@ def build(
                 monthly_usd=Decimal(0),
                 detail=missing,
                 priced=False,
+                because=_because(kind, spec),
+                baseline=kind in BASELINE_KINDS,
             )
 
     # The client is always present and always free — it anchors the flow.
     topology.nodes.append(
-        Node(id="users", label="Users", kind="client", monthly_usd=Decimal(0))
+        Node(
+            id="users", label="Users", kind="client", monthly_usd=Decimal(0),
+            baseline=True,
+        )
     )
     # The draw order, roughly edge -> compute -> data -> async -> ops. A kind
     # absent from this list is built above but never shown, which is how the
     # serverless and messaging services silently vanished from the diagram
     # while still appearing on the bill -- so every kind the estimator can
     # produce a line for must have an entry here.
-    for kind in ("waf", "network", "apigateway", "loadbalancer",
+    for kind in ("waf", "cdn", "network", "apigateway", "loadbalancer",
                  "compute", "compute_fargate", "lambda", "cache",
                  "iot", "firehose",
                  "database", "database_replica", "dynamodb", "timestream",
@@ -408,22 +514,25 @@ def build(
     # ── edges: request path, then data path ──
     present = set(by_kind)
     entry = _first_present(
-        present, "dns", "waf", "network", "loadbalancer", "compute"
+        present, "dns", "waf", "cdn", "network", "loadbalancer", "compute"
     )
     if entry:
         topology.edges.append(Edge("users", entry))
 
     if "waf" in present:
-        nxt = _first_present(present, "network", "loadbalancer", "compute")
+        nxt = _first_present(present, "cdn", "network", "loadbalancer", "compute")
         if nxt:
             topology.edges.append(Edge("waf", nxt))
 
-    if "network" in present:
+    # The CDN sits in front, and serves static assets itself -- that is what
+    # it is for. Plain egress is a meter on the way out, not a hop.
+    upstream = _first_present(present, "cdn", "network")
+    if upstream:
         nxt = "loadbalancer" if "loadbalancer" in present else "compute"
         if nxt in present:
-            topology.edges.append(Edge("network", nxt))
+            topology.edges.append(Edge(upstream, nxt))
         if "storage" in present:
-            topology.edges.append(Edge("network", "storage", "assets"))
+            topology.edges.append(Edge(upstream, "storage", "assets"))
     elif "storage" in present and "compute" in present:
         topology.edges.append(Edge("compute", "storage", "assets"))
 

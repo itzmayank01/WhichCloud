@@ -130,6 +130,14 @@ class NodeOut(BaseModel):
     detail: str
     priced: bool
     optimized_by: list[str]
+    #: WHY this node is in the architecture, traced to what the description
+    #: said. A role that cannot say why it is here is indistinguishable from
+    #: a default that leaked in -- which is how an HR tool for eighty people
+    #: acquired a web firewall. Empty only on baseline roles.
+    because: str = ""
+    #: Present by POLICY on every design -- identity, keys, observability,
+    #: audit -- rather than derived from this workload.
+    baseline: bool = False
 
 
 class EdgeOut(BaseModel):
@@ -286,6 +294,8 @@ def _topology_out(option: Option) -> TopologyOut:
                 detail=n.detail,
                 priced=n.priced,
                 optimized_by=list(n.optimized_by),
+                because=n.because,
+                baseline=n.baseline,
             )
             for n in graph.nodes
         ],

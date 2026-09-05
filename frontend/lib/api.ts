@@ -90,6 +90,13 @@ export type Node = {
   detail: string;
   priced: boolean;
   optimized_by: string[];
+  /** WHY this node is in the architecture, traced to what the description
+   *  said. A role that cannot say why it is here is indistinguishable from a
+   *  default that leaked in. Empty only on baseline roles. */
+  because?: string;
+  /** Present by policy on every design -- identity, keys, observability,
+   *  audit -- rather than derived from this workload. */
+  baseline?: boolean;
 };
 
 export type Edge = { source: string; target: string; label: string };
