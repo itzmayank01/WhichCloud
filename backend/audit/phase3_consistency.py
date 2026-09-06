@@ -350,6 +350,125 @@ def c7_role_justification(results: Results, reqs: dict) -> None:
             )
 
 
+#: Meters that measure the SAME physical thing on every cloud, so their unit
+#: rates are directly comparable. Bytes are bytes: no cloud moves a gigabyte
+#: for three times what another charges, and one that appears to is a meter
+#: that was read wrong.
+_COMPARABLE_METERS = {
+    "cdn": "CDN data transfer, per GB",
+    "network": "internet egress, per GB",
+}
+
+#: How far apart comparable unit rates may sit before it is a defect rather
+#: than a market. Real spread between the three on egress is well inside 2x;
+#: 2.5 leaves room for genuine regional differences without letting a wrong
+#: meter through.
+_RATE_SPREAD_LIMIT = 2.5
+
+
+def _catalog_rates(skus: tuple[str, ...]) -> dict[str, float]:
+    """The stored per-GB rate for one METER, per provider, in our regions.
+
+    Keyed on the SKU and not the category, because a category holds several
+    unlike meters: AWS publishes cross-AZ ($0.01/GB), inter-region ($0.086)
+    and internet egress ($0.1093) all under "network". Reading the category
+    compared cross-AZ transfer against Azure's internet egress and called it
+    a 12x defect. Comparing unlike meters is not a comparison, which is the
+    same mistake this check exists to catch in the ingest.
+    """
+    from whichcloud.pricing.store import connect
+
+    regions = ("ap-south-1", "asia-south1", "centralindia")
+    out: dict[str, float] = {}
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT provider, sku, price_usd FROM price_points "
+                "WHERE sku = ANY(%s) AND region = ANY(%s) AND unit ILIKE 'GB%%' "
+                "AND price_usd > 0",
+                (list(skus), list(regions)),
+            )
+            for row in cur.fetchall():
+                out[row["provider"]] = float(row["price_usd"])
+    except Exception:
+        return {}
+    return out
+
+
+def c8_comparable_rates(results: Results, reqs: dict) -> None:
+    """A gigabyte costs about the same everywhere. Where it does not, a meter
+    was read wrong.
+
+    This exists because of a specific miss. Azure's CDN was billing $0.34/GB
+    against $0.109 on AWS and $0.09 on Google -- three times the rate, on
+    every Azure architecture with a CDN. Two different products publish an
+    identically named meter, "Standard Data Transfer Out", both with a first
+    tier at zero units: the classic Front Door service at $0.34 and the
+    current one at $0.109. The ingest took whichever the API returned first.
+
+    Nothing caught it. C6 compares TOTALS, where one line at 3x is diluted by
+    twenty that are right; the unit sanity checks in Phase 2 test our own
+    arithmetic, not the rate we started from. A per-unit comparison across
+    providers is the cheapest thing that would have.
+    """
+    from whichcloud import topology
+
+    rates: dict[str, dict[str, float]] = {}
+    for fixture in FIXTURES:
+        for provider in PROVIDERS:
+            for option in _options(reqs[fixture.id], provider).values():
+                for item in option.estimate.items:
+                    kind = topology._kind_for(item)
+                    if kind not in _COMPARABLE_METERS or not item.unit_price:
+                        continue
+                    # KEY ON THE UNIT TOO. A CDN emits a per-GB line and a
+                    # per-request line, both of kind "cdn"; keying on the kind
+                    # alone compared bytes against requests and reported AWS
+                    # as 90,000x cheaper than Azure. A comparison across
+                    # different units is not a comparison.
+                    if (item.unit or "").upper() not in ("GB", "GB-MONTH"):
+                        continue
+                    rates.setdefault(kind, {})[provider] = float(item.unit_price)
+
+    # Fall back to the CATALOG when no fixture happens to exercise a meter.
+    # Egress stopped appearing on any line the moment the 100 GB free tier
+    # was applied correctly, which would have silently retired half this
+    # check -- a guard that quietly stops guarding is worse than none.
+    # Reading the stored rates tests the ingest directly, which is where this
+    # class of error lives anyway.
+    # Each cloud sells the same meter under its own SKU, so the equivalence
+    # is stated here rather than guessed from a shared category.
+    for kind, sku_role in (
+        (
+            "cdn",
+            (
+                "cloudfront:data-transfer-out",
+                "cloudcdn:cache-egress",
+                "frontdoor:data-transfer-out",
+            ),
+        ),
+        ("network", ("egress:internet",)),
+    ):
+        if len(rates.get(kind, {})) >= 2:
+            continue
+        rates.setdefault(kind, {}).update(_catalog_rates(sku_role))
+
+    for kind, label in _COMPARABLE_METERS.items():
+        seen = rates.get(kind, {})
+        if len(seen) < 2:
+            results.record("C8", True, f"{label}: no comparable rates published")
+            continue
+        low, high = min(seen.values()), max(seen.values())
+        spread = high / low if low else float("inf")
+        dearest = max(seen, key=seen.get)
+        results.record(
+            "C8",
+            spread <= _RATE_SPREAD_LIMIT,
+            f"{label}: " + ", ".join(f"{p} ${r:.4f}" for p, r in sorted(seen.items()))
+            + f"  ({spread:.1f}x, {dearest} dearest)",
+        )
+
+
 CHECKS = [
     ("C1", "role diversity", c1_role_diversity),
     ("C2", "budget invariance (no inflation)", c2_budget_invariance),
@@ -359,6 +478,7 @@ CHECKS = [
     ("C5", "node-to-line", c5_node_to_line),
     ("C6", "cross-provider spread", c6_cross_provider_spread),
     ("C7", "role justification", c7_role_justification),
+    ("C8", "comparable unit rates", c8_comparable_rates),
 ]
 
 

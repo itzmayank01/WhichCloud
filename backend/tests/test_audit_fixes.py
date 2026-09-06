@@ -411,3 +411,59 @@ def test_google_functions_are_not_five_times_cheaper_than_everyone_else():
         f"Google is cheaper than AWS for identical serverless work: {totals}"
     )
     assert totals["gcp"] < totals["aws"] * 4, f"overcorrected: {totals}"
+
+
+# ── 10. two products, one meter name ──────────────────────────────────────
+
+
+@needs_db
+def test_a_gigabyte_costs_about_the_same_on_every_cloud():
+    """Bytes are bytes. No cloud moves one for three times what another does.
+
+    Azure's CDN was billing $0.34/GB against $0.109 on AWS and $0.09 on
+    Google -- on every Azure architecture with a CDN. Two different products
+    publish an identically named meter, "Standard Data Transfer Out", both
+    with a first tier at zero units: the classic Front Door service at $0.34
+    and the current one at $0.109. The ingest asked for Standard and took
+    whichever the API returned first.
+
+    Nothing caught it. Comparing TOTALS dilutes one line at 3x among twenty
+    that are right, and the unit checks test our arithmetic rather than the
+    rate we started from.
+    """
+    from whichcloud.pricing.store import connect
+
+    meters = {
+        "CDN egress": (
+            "cloudfront:data-transfer-out",
+            "cloudcdn:cache-egress",
+            "frontdoor:data-transfer-out",
+        ),
+        "internet egress": ("egress:internet",),
+    }
+    regions = ["ap-south-1", "asia-south1", "centralindia"]
+    for label, skus in meters.items():
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT provider, price_usd FROM price_points "
+                "WHERE sku = ANY(%s) AND region = ANY(%s) "
+                "AND unit ILIKE 'GB%%' AND price_usd > 0",
+                (list(skus), regions),
+            )
+            rates = {r["provider"]: float(r["price_usd"]) for r in cur.fetchall()}
+        assert len(rates) == 3, f"{label}: only priced on {sorted(rates)}"
+        low, high = min(rates.values()), max(rates.values())
+        assert high / low <= 2.5, f"{label}: {rates} — {high / low:.1f}x apart"
+
+
+def test_the_front_door_ingest_asks_for_the_product_and_not_just_the_meter():
+    """The meter name alone does not identify the product, and the classic
+    service answers to the same one. Filtering on it is the whole fix."""
+    import inspect
+
+    from whichcloud.pricing import azure
+
+    query = inspect.getsource(azure.fetch_cdn_prices)
+    assert "productName eq 'Azure Front Door'" in query, (
+        "the query no longer excludes the classic Front Door service"
+    )
