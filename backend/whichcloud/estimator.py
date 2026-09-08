@@ -220,6 +220,27 @@ class ArchitectureSpec:
     # All default 0, so no non-AI shape acquires them. Priced per call
     # against the real Rekognition/Comprehend meters -- an AI app's core cost
     # is the inference volume, not a server.
+    # ── PART 4: four billing dimensions that did not exist ──
+    #: EventBridge custom events published per month. The bus an
+    #: event-driven shape routes through; previously unpriceable at any
+    #: rate, so such a shape costed its bus at zero -- which reads as
+    #: "free" rather than "unknown".
+    eventbridge_events_per_month: float = 0.0
+    #: CONNECTIONS, not requests. A chat backend is sized by how many
+    #: sockets are open and for how long; neither figure had a meter, so
+    #: `realtime` could not be priced even in principle. Connection-minutes
+    #: are peak_connections x minutes-held, computed by the caller,
+    #: because how long a connection lasts is a property of the workload
+    #: and not something an estimator can derive.
+    ws_connection_minutes_per_month: float = 0.0
+    ws_messages_per_month: float = 0.0
+    #: Managed model serving. One endpoint instance type, held for
+    #: `inference_hours_per_month` -- which is where the duty cycle lands
+    #: for a model that only serves in business hours.
+    inference_instance: str = ""
+    inference_instance_count: int = 0
+    inference_hours_per_month: float = 0.0
+
     rekognition_images_per_month: float = 0.0
     #: Comprehend units of text (1 unit = 100 characters).
     comprehend_units_per_month: float = 0.0
@@ -373,6 +394,16 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "firehose", "gb"): "firehose:ingest",
     ("aws", "athena", "tb"): "athena:scanned",
     ("aws", "glue", "dpu-hour"): "glue:etl-dpu-hour",
+    # PART 4. The event bus, the connection meters a realtime workload
+    # actually bills on, and managed model-serving hours. AWS only for
+    # now: the equivalent meters exist on the other clouds but have not
+    # been ingested, and a role with no rate must resolve to `missing`
+    # rather than to somebody else's number.
+    ("aws", "eventbridge", "events"): "eventbridge:events",
+    ("aws", "connection", "ws-messages"): "apigateway:ws-messages",
+    ("aws", "connection", "ws-minutes"): "apigateway:ws-connection",
+    ("aws", "connection", "graphql-minutes"): "appsync:connection",
+    ("aws", "connection", "graphql-messages"): "appsync:notifications",
     # ---- Azure / GCP equivalents for the serverless + analytics roles ----
     ("azure", "lambda-requests", "requests"): "functions:executions",
     ("azure", "lambda-duration", "gb-second"): "functions:duration",
@@ -524,6 +555,20 @@ def _by_role(
     """The price point this provider uses for a category's role, if any."""
     sku = _sku(provider, category, role)
     return store.get_price(provider, region, category, sku, dsn=dsn) if sku else None
+
+
+def _by_sku(
+    provider: str, region: str, category: str, sku: str, dsn: str | None
+) -> PricePoint | None:
+    """A named SKU, looked up directly.
+
+    Distinct from _by_role: a role is one canonical choice per category
+    (there is one SQS), whereas an inference endpoint is chosen FROM a
+    catalog of 163 instance types by the sizing rules, so the caller
+    already knows which SKU it wants and needs it fetched rather than
+    re-decided.
+    """
+    return store.get_price(provider, region, category, sku, dsn=dsn)
 
 
 def _preferred(
@@ -1045,6 +1090,64 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
         else:
             result.missing.append("comprehend")
+
+    # ---- PART 4: the event bus ----
+    if spec.eventbridge_events_per_month:
+        point = _by_role(provider, region, "eventbridge", "events", dsn)
+        if point:
+            result.items.append(_tiered_line(
+                "Event bus", point, spec.eventbridge_events_per_month,
+            ))
+        else:
+            result.missing.append("event bus")
+
+    # ---- PART 4: connection metering ----
+    # A realtime workload bills on sockets held open, not on requests. Two
+    # meters because they are two things: holding the connection, and
+    # sending over it. Both must resolve or the workload is reported
+    # incomplete -- a chat backend priced without its connection cost is
+    # not cheaper, it is wrong.
+    if spec.ws_connection_minutes_per_month:
+        point = _by_role(provider, region, "connection", "ws-minutes", dsn)
+        if point:
+            result.items.append(_tiered_line(
+                "Connection minutes", point, spec.ws_connection_minutes_per_month,
+            ))
+        else:
+            result.missing.append("websocket connections")
+
+    if spec.ws_messages_per_month:
+        point = _by_role(provider, region, "connection", "ws-messages", dsn)
+        if point:
+            result.items.append(_tiered_line(
+                "Connection messages", point, spec.ws_messages_per_month,
+            ))
+        else:
+            result.missing.append("websocket messages")
+
+    # ---- PART 4: managed model serving ----
+    # Hours, not months: an endpoint that only serves in business hours is
+    # billed for those hours. This is where the duty cycle lands for
+    # inference, and it is why a model-serving shape does not cost the
+    # same as an always-on API of the same size.
+    if spec.inference_instance and spec.inference_instance_count:
+        point = _by_sku(
+            provider, region, "inference",
+            f"sagemaker:{spec.inference_instance}", dsn,
+        )
+        if point:
+            hours = spec.inference_hours_per_month or HOURS_PER_MONTH
+            quantity = hours * spec.inference_instance_count
+            result.items.append(LineItem(
+                label=f"Model endpoint × {spec.inference_instance_count}",
+                sku=point.sku, unit="hour",
+                unit_price=float(point.price_usd), quantity=quantity,
+                monthly_usd=float(point.price_usd) * quantity,
+            ))
+        else:
+            result.missing.append(
+                f"inference endpoint {spec.inference_instance}"
+            )
 
     # ---- event-driven / IoT ----
     if spec.iot_messages_per_month:

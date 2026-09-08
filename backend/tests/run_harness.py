@@ -722,6 +722,53 @@ def inv_17_tiers_differ_by_service_not_size(fx_id: str, built: Plan) -> list[Res
     return results
 
 
+#: An always-on month. A compute line billed at exactly this while the
+#: spec says the workload only runs part of the day is the PROBE-2 defect.
+HOURS_PER_MONTH = 730
+
+
+def inv_18_duty_cycle_is_actually_billed(fx_id: str, built: Plan) -> list[Result]:
+    """A workload that runs two hours a night is not billed for 730.
+
+    `compute_duty_cycle` existed on the spec from the beginning and
+    nothing ever set it, so PROBE-2's nightly ETL -- explicitly described
+    as idle during the day -- was costed for a full month of compute,
+    overstating it by roughly 12x on the single largest line.
+
+    Checks the QUANTITY on the line item, not the flag on the spec. A
+    duty cycle that is set and then not applied is indistinguishable from
+    one that was never set, and only the line item reaches a bill.
+    """
+    results = []
+    for tier in built.tiers:
+        duty = getattr(tier.spec, "compute_duty_cycle", 1.0)
+        if duty >= 1.0:
+            continue
+        count = tier.spec.compute_count or 1
+        full_month = HOURS_PER_MONTH * count
+        offenders = [
+            f"{i.label} qty={float(i.quantity):g}"
+            for i in tier.estimate.items
+            if i.label.startswith("Compute")
+            and abs(float(i.quantity) - full_month) < 0.5
+        ]
+        results.append(Result(
+            fx_id, f"INV-18:{tier.name}", passed=not offenders,
+            expected=f"compute billed at {duty:.0%} of {full_month:g} hours",
+            actual=(
+                f"billed a full month anyway: {'; '.join(offenders)}"
+                if offenders else f"duty {duty:.0%} applied"
+            ),
+        ))
+    if not results:
+        results.append(Result(
+            fx_id, "INV-18", passed=True,
+            expected="duty cycle applied wherever it is below 1.0",
+            actual="no tier has a duty cycle below 1.0 (always-on workload)",
+        ))
+    return results
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -739,6 +786,7 @@ INVARIANTS = {
     "INV-15": inv_15_no_arm_under_x86_required,
     "INV-16": inv_16_no_stated_quantity_was_dropped,
     "INV-17": inv_17_tiers_differ_by_service_not_size,
+    "INV-18": inv_18_duty_cycle_is_actually_billed,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.

@@ -155,6 +155,14 @@ _KIND_BY_PREFIX = {
     "Gateway endpoints": "vpc_endpoints",
     "Interface endpoints": "vpc_endpoints",
     "Interface endpoint data processing": "vpc_endpoints",
+    # The four billing dimensions that did not exist before. Each is its
+    # own node, because each is its own decision: an event bus is not a
+    # queue, a connection held open is not a request, and a model endpoint
+    # is not an application server.
+    "Event bus": "eventbus",
+    "Connection minutes": "connections",
+    "Connection messages": "connections",
+    "Model endpoint": "inference",
 }
 
 

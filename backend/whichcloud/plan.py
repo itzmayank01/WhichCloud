@@ -503,6 +503,46 @@ def _requires_x86(description: str, constraints: Constraints | None = None) -> b
     return any(hint in text for hint in _X86_REQUIRED)
 
 
+#: Archetypes whose COMPUTE genuinely stops between periods of work, and
+#: is therefore billed for the hours it runs rather than for the month.
+#:
+#: The distinction this encodes is the one that makes duty cycle safe to
+#: apply at all. "Busy during business hours" is a statement about
+#: TRAFFIC; "runs for two hours a night and is switched off in between"
+#: is a statement about CAPACITY. A web application serving office-hours
+#: traffic still needs its servers up at 3am to answer the one request
+#: that arrives, so billing it for nine hours would not be a cheaper
+#: answer -- it would be an answer to a workload nobody described, and
+#: under-billing is no more honest than over-billing.
+#:
+#: A scheduled batch job is the opposite: nothing runs between runs, and
+#: charging it 730 hours for a two-hour nightly job overstates its
+#: compute by 12x. That was the recorded defect on PROBE-2.
+DUTY_CYCLED_ARCHETYPES = frozenset({"batch_etl", "ml_inference"})
+
+#: Never bill below this, however short the stated window. A job that
+#: claims to run for six minutes a night still pays for scheduler
+#: overhead, image pulls and a cold start, and a duty cycle rounding
+#: towards zero would quote a number nobody can achieve.
+MIN_DUTY_CYCLE = 0.01
+
+
+def _duty_cycle_for(archetype: str, constraints: Constraints) -> float:
+    """What fraction of the month this workload's compute actually runs.
+
+    1.0 for anything that has to stay up, which is most things. Only the
+    archetypes in DUTY_CYCLED_ARCHETYPES may go below it, and only on a
+    STATED active window -- an assumed one would be inventing a saving
+    from silence.
+    """
+    if archetype not in DUTY_CYCLED_ARCHETYPES:
+        return 1.0
+    hours = float(getattr(constraints, "active_hours_per_day", 24.0) or 24.0)
+    if hours >= 24.0:
+        return 1.0
+    return max(MIN_DUTY_CYCLE, min(1.0, hours / 24.0))
+
+
 def _database_size_for(load_tier: str) -> tuple[int, float]:
     """vCPU and memory for the database, from the load band -- the same
     "size from the rate, not a default" rule already applied to compute.
@@ -617,6 +657,7 @@ def _spec_for(
     region: str,
     instances: int,
     tier_level: int,
+    archetype: str = "web_app",
     requires_x86: bool,
     endpoints: EndpointPlan,
     posture_resource_count: int,
@@ -693,6 +734,11 @@ def _spec_for(
         fargate_task_memory_gb=fargate_memory if managed else 0.0,
         fargate_arm=not requires_x86,
         arch=None if requires_x86 else "arm64",
+        # Billed for the hours it runs, not for the month -- but only
+        # for the archetypes whose compute genuinely stops. See
+        # DUTY_CYCLED_ARCHETYPES for why a business-hours WEB app is
+        # not one of them.
+        compute_duty_cycle=_duty_cycle_for(archetype, constraints),
         database_vcpu=db_vcpu,
         database_memory_gb=db_memory_gb,
         # Required by availability=high; not a tier upsell -- present on
@@ -1263,7 +1309,8 @@ def plan_from(
         count = instances
         spec = _spec_for(
             name=name, constraints=constraints, load=load, region=region,
-            instances=count, tier_level=level, requires_x86=requires_x86,
+            instances=count, tier_level=level, archetype=detected,
+            requires_x86=requires_x86,
             endpoints=endpoints, posture_resource_count=resource_count,
             topology=topology, flow_logs=flow_logs,
         )
