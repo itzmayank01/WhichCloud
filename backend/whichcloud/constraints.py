@@ -258,6 +258,19 @@ class Constraints:
     cpu_architecture: CPUArchitecture = "unknown"
     forced_x86_reason: str = ""
 
+    #: Hours per day the workload actually runs or serves. 24 means
+    #: continuous. Distinct from peak_shape, which says WHEN the busy
+    #: period is; this says how LONG the thing is switched on at all, and
+    #: it is what stops a nightly two-hour job being billed 730 hours.
+    active_hours_per_day: float = 24.0
+
+    #: The phrase `requests_per_day` was normalised FROM, with its unit.
+    #: A normalised figure is arithmetic on someone's words, and a reader
+    #: who cannot see the words cannot check the arithmetic: "1,728,000 a
+    #: day" is unfalsifiable on its own, while "20 predictions a second
+    #: during business hours" can be argued with.
+    requests_basis: str = ""
+
     #: Quantities the text STATED that extraction could not turn into a
     #: number. Non-empty withholds pricing: a plan built on a figure that
     #: was silently dropped is sized for a workload nobody described, and

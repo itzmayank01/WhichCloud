@@ -118,20 +118,41 @@ def _scale_alternation() -> str:
     return "|".join(re.escape(word) for word, _ in _SCALE)
 
 
+def _all_units() -> frozenset[str]:
+    return frozenset(unit for family in FAMILIES for unit in family.units)
+
+
 def _matches(text: str, unit: str) -> list[tuple[float, str]]:
-    """Every (value, quoted phrase) for this unit in the text."""
+    """Every (value, quoted phrase) for this unit in the text.
+
+    A match whose unit is immediately followed by ANOTHER unit word is
+    discarded, because in English the first noun is then a modifier
+    rather than the thing being counted. "12,000 user sessions" is twelve
+    thousand sessions, not twelve thousand users; "40 customer orders" is
+    forty orders. Without this the audit flagged a correctly-read session
+    count as a dropped user count and refused to price a perfectly
+    readable prompt -- a false refusal, which is cheap but not free.
+    """
+    units = _all_units()
     pattern = (
         rf"(\d[\d,]*(?:\.\d+)?)\s*({_scale_alternation()})?\b{_GAP}"
-        rf"\b{re.escape(unit)}\b"
+        rf"\b{re.escape(unit)}\b(\s+[a-z]+)?"
     )
     out = []
     for match in re.finditer(pattern, text):
         raw = match.group(1).replace(",", "")
         if not raw:
             continue
+        following = (match.group(3) or "").strip()
+        if following in units:
+            continue  # modifier, not the head noun
         word = (match.group(2) or "").lower()
         multiplier = next((m for w, m in _SCALE if w == word), 1.0)
-        out.append((float(raw) * multiplier, match.group(0).strip()))
+        # Trim the lookahead word back off the quoted phrase.
+        phrase = match.group(0).strip()
+        if following:
+            phrase = phrase[: phrase.rfind(following)].strip()
+        out.append((float(raw) * multiplier, phrase))
     return out
 
 

@@ -49,12 +49,19 @@ from whichcloud.pricing import store
 #: describing two workloads can say so. Bumped rather than reused --
 #: a v1 row cannot be read as v2, and serving one silently would answer
 #: a multi-shape prompt with whichever half v1 happened to pick.
+#: v5: active_hours_per_day. Its absence was producing ZEROES -- asked
+#: for a per-day figure on a business-hours workload the model had no
+#: way to say 'eight hours' worth' and returned 0, discarding a rate it
+#: had read correctly.
+#: v4: requests_per_day gained explicit time-basis normalisation and a
+#: `requests_basis` quote; a v3 row was read under rules that dropped
+#: 'predictions a second' and per-clinic multipliers entirely.
 #: v3: the source-estate fields (source_vm_count, source_os, the vCPU/RAM/
 #: disk totals, cpu_architecture). A v2 row has none of them, so a cached
 #: migration would come back with a zero machine count -- which the
 #: quantity audit would correctly refuse to price, but refusing a prompt
 #: we can now read properly is a worse answer than re-reading it.
-SCHEMA_VERSION = "constraints-v3"
+SCHEMA_VERSION = "constraints-v5"
 
 #: THE PINNED PRIMARY. One provider and one model, named, because
 #: different models return different Constraints from the same prompt --
@@ -209,7 +216,50 @@ class Extraction(BaseModel):
                     "NOTHING about data loss")
     users: Field_ = Field(description="people using it, 0 if unstated")
     requests_per_day: Field_ = Field(
-        description="per DAY: 80,000/month->2667; 50/sec->4320000; 0 if none")
+        description=(
+            "Work items per DAY. NORMALISE from whatever basis the text "
+            "uses: /sec x86400, /min x1440, /hour x24, /week /7, "
+            "/month /30, /year /365. "
+            "COUNT AS A WORK ITEM: request, visit, visitor, session, "
+            "pageview, transaction, order, booking, appointment, event, "
+            "lookup, query, message, prediction, submission, application, "
+            "webhook, API call, hit. "
+            "MULTIPLY when the text gives a per-unit rate and a count: "
+            "'40 stores at ~200 transactions each a day'->8000; "
+            "'12 clinics, 150 appointments each per day'->1800. "
+            "If the text says the work happens only part of the day "
+            "('business hours', 'nightly'), multiply the rate by "
+            "active_hours_per_day rather than by 24, and NEVER return 0 "
+            "just because the day is partial: '50/sec in business hours' "
+            "with active_hours_per_day=9 is 1620000, not 0. "
+            "source MUST be 'stated' whenever the text gives ANY figure "
+            "you normalised from, even after arithmetic — it is stated, "
+            "not assumed. 0 and 'assumed' ONLY when no volume is given"
+        ))
+    #: What the figure above was read FROM. Required by the same rule that
+    #: makes `span` required elsewhere: a normalised number is arithmetic
+    #: on someone's words, and a reader who cannot see the words cannot
+    #: check the arithmetic. "1,728,000/day" is unfalsifiable on its own;
+    #: "20 predictions a second in business hours" can be argued with.
+    requests_basis: Field_ = Field(
+        default_factory=lambda: _unstated(""),
+        description="the exact phrase the requests figure came from and "
+                    "its unit, e.g. '30,000 visitors a month' or "
+                    "'40 stores x 200 transactions/day'; '' if unstated")
+    #: The workload's duty cycle, as hours. Added because its ABSENCE was
+    #: producing zeroes: asked for a per-day figure on a workload the text
+    #: said runs only in business hours, the model had no way to say
+    #: "eight hours' worth" and returned 0 instead -- silently discarding
+    #: a rate it had read perfectly well. Measured: "50 predictions a
+    #: second during business hours" -> requests_per_day 0.
+    active_hours_per_day: Field_ = Field(
+        default_factory=lambda: _unstated("24"),
+        description="hours per DAY this workload is actually running or "
+                    "serving. 24 when continuous or unstated. 'business "
+                    "hours'/'office hours'->9, 'nightly batch that takes "
+                    "2 hours'->2, 'weekday evenings'->4. Use it with "
+                    "requests_per_day: a rate given per second/minute "
+                    "applies only during these hours")
     peak_shape: Field_ = Field(description="flat|morning|evening|spiky")
     budget_monthly_usd: Field_ = Field(description="monthly USD, 0 if unstated")
     storage_gb: Field_ = Field(description="GB, 0 if unstated")
@@ -396,6 +446,7 @@ _NON_REQUIRED_FIELDS = (
     "content_storage_gb", "user_data_gb",
     "source_vm_count", "source_os", "source_vcpu_total",
     "source_ram_gb_total", "source_disk_gb_total", "cpu_architecture",
+    "requests_basis", "active_hours_per_day",
 )
 
 #: Operating systems that put x86 beyond argument. Not a phrase table --
@@ -403,6 +454,28 @@ _NON_REQUIRED_FIELDS = (
 #: TIGHTEN a constraint (never loosen one) and therefore cannot invent a
 #: capability the workload does not have.
 _X86_FORCING_OS = frozenset({"windows", "mixed"})
+
+
+def _correct_requests_provenance(c: Constraints) -> None:
+    """A figure quoted from the text is STATED, whatever the model filed it as.
+
+    Measured before this: "roughly 2,000 transactions an hour", "about
+    30,000 visitors a month" and "3.65 million claims submissions a year"
+    were all normalised to the right number and then recorded as
+    `assumed`. That is not a cosmetic mislabel. `assumed` drives
+    assumed_fields(), the confidence map and the "what did we guess"
+    panel, so the interface asked the user to confirm a figure they had
+    just given it -- and, worse, presented their own number back as the
+    engine's guess.
+
+    The model is asked to get this right and is not trusted to: a quoted
+    basis is objective evidence that the figure came from the text, so
+    the basis decides. Only ever promotes assumed -> stated; nothing here
+    can invent a value or claim provenance for a figure nobody gave.
+    """
+    if c.requests_basis and c.requests_per_day > 0:
+        c.stated.add("requests_per_day")
+        c.evidence.setdefault("requests_per_day", c.requests_basis)
 
 
 def _force_x86_where_required(c: Constraints) -> None:
@@ -451,10 +524,13 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
             value = _as_int(raw)
         elif name in ("budget_monthly_usd", "storage_gb", "egress_gb",
                       "content_storage_gb", "user_data_gb",
-                      "source_ram_gb_total", "source_disk_gb_total"):
+                      "source_ram_gb_total", "source_disk_gb_total",
+                      "active_hours_per_day"):
             value = _as_float(raw)
         elif name in ("public_facing", "country_lock", "async_processing"):
             value = _as_bool(raw)
+        elif name == "requests_basis":
+            value = str(raw).strip()
         else:  # country
             value = str(raw).strip().upper()[:2]
 
@@ -478,7 +554,10 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
         if name not in _KEEPS_PROVENANCE:
             c.stated.discard(name)
 
-    # Facts override the model's reading of them. Only ever tightens.
+    # Facts override the model's reading of them. Both of these can
+    # only ever tighten a constraint or strengthen a provenance claim;
+    # neither can invent a value.
+    _correct_requests_provenance(c)
     _force_x86_where_required(c)
 
     # Every shape that clears the bar, strongest first. One is an
