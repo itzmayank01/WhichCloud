@@ -668,6 +668,60 @@ def inv_16_no_stated_quantity_was_dropped(fx_id: str, built: Plan) -> list[Resul
     )]
 
 
+def inv_17_tiers_differ_by_service_not_size(fx_id: str, built: Plan) -> list[Result]:
+    """Three tiers must be three architectures, not one design sold thrice.
+
+    At baseline this failed on 7 of 7 priced fixtures, every one the same
+    way: tier_2 and tier_3 fingerprinted IDENTICALLY. On ecommerce-scale
+    the only thing separating them was capacity -- 6 compute units to 18,
+    same services, same shape, +93% on the bill ($1,787.54 -> $3,444.72)
+    for three times as much of the identical architecture. A size
+    decision sold as a design.
+
+    Two of the seven were hidden by a second bug rather than absent: the
+    warm standby in a second region WAS being priced, but its line items
+    folded onto the primary's service kinds, so a tier carrying a whole
+    extra geography fingerprinted the same as one without it.
+
+    The escape hatch is real and is honoured: a workload whose own
+    description says nobody minds an hour of downtime genuinely has
+    nothing worth selling it at tier 3, and inventing a difference there
+    would be padding. What is forbidden is a thin tier that stays SILENT
+    about being thin, because that is the one a reader cannot tell from a
+    considered upgrade.
+    """
+    from whichcloud.fingerprint import MIN_TIER_SPREAD, fingerprint
+
+    if len(built.tiers) < 2:
+        return [Result(
+            fx_id, "INV-17", passed=True,
+            expected="consecutive tiers differ by architecture",
+            actual=f"{len(built.tiers)} tier(s) — nothing to compare",
+        )]
+
+    results = []
+    prints = [fingerprint(t) for t in built.tiers]
+    for i, (lower, higher) in enumerate(zip(prints, prints[1:])):
+        added, dropped = higher - lower, lower - higher
+        spread = len(added | dropped)
+        upper_tier = built.tiers[i + 1]
+        declared = bool(upper_tier.no_further_improvement)
+        ok = spread >= MIN_TIER_SPREAD or declared
+        results.append(Result(
+            fx_id, f"INV-17:{built.tiers[i].name}->{upper_tier.name}",
+            passed=ok,
+            expected=f">= {MIN_TIER_SPREAD} services different, or an "
+                     f"explicit 'no further improvement' statement",
+            actual=(
+                f"spread={spread} added={sorted(added)} "
+                f"dropped={sorted(dropped)}"
+                + (" (declared no further improvement)" if declared else "")
+            ),
+            reason="; ".join(upper_tier.pattern_diff)[:160],
+        ))
+    return results
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -684,6 +738,7 @@ INVARIANTS = {
     "INV-14": inv_14_composite_never_prices,
     "INV-15": inv_15_no_arm_under_x86_required,
     "INV-16": inv_16_no_stated_quantity_was_dropped,
+    "INV-17": inv_17_tiers_differ_by_service_not_size,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.
@@ -922,10 +977,82 @@ def print_table(runs: list[FixtureRun]) -> None:
               (f"  [{marker}]" if failed == 0 else ""))
 
 
-def write_report(runs: list[FixtureRun], path: Path) -> None:
+def _fingerprint_section(plans: dict) -> list[str]:
+    """The architecture fingerprint matrix, in every report from now on.
+
+    It is the only view that answers "did different requirements actually
+    produce different architectures" without anyone having to read seven
+    bills side by side. At the baseline for this work it failed on 7 of 7
+    priced fixtures -- every one had tier_2 and tier_3 fingerprinting
+    identically -- which is what made the one-shape bug visible as a
+    number rather than an opinion.
+    """
+    from whichcloud.fingerprint import (
+        MIN_TIER_SPREAD, divergence_collisions, plan_fingerprints,
+        tier_spread, thin_spreads,
+    )
+
+    lines = ["## Architecture fingerprint matrix", ""]
+    priced = {n: p for n, p in plans.items() if p.tiers}
+    withheld = {n: p for n, p in plans.items() if not p.tiers}
+
+    lines.append("| fixture | archetype | tier-1 services | tier spread |")
+    lines.append("|---|---|---|---|")
+    thin_now = thin_spreads(plans)
+    for name, plan in sorted(priced.items()):
+        prints = plan_fingerprints(plan)
+        spreads = tier_spread(plan.tiers)
+        # A spread below the floor is only a FAULT when the tier stayed
+        # silent about it. One that says "no further improvement is worth
+        # buying" is a considered answer, and flagging it THIN would
+        # pressure the engine into padding -- the failure in the other
+        # direction. Marked, but not as a violation.
+        if name in thin_now:
+            flag = " **THIN**"
+        elif any(s < MIN_TIER_SPREAD for s in spreads):
+            flag = " _(declared: no further improvement)_"
+        else:
+            flag = ""
+        lines.append(
+            f"| {name} | {plan.archetype} | {len(prints[0])} | {spreads}{flag} |"
+        )
+    for name, plan in sorted(withheld.items()):
+        lines.append(f"| {name} | {plan.archetype} | — | withheld |")
+    lines.append("")
+
+    collisions = divergence_collisions(plans)
+    lines.append(
+        "**Divergence** (different profile, same tier-1 fingerprint — each "
+        "one is the template bug): "
+        + ("; ".join(f"`{a}` == `{b}`" for a, b in collisions) if collisions
+           else "none")
+    )
+    lines.append("")
+    thin = thin_spreads(plans)
+    lines.append(
+        f"**Tier spread** (consecutive tiers must differ by >= "
+        f"{MIN_TIER_SPREAD} services, or say no further improvement is "
+        f"worth buying): "
+        + ("; ".join(f"`{n}` {s}" for n, s in sorted(thin.items())) if thin
+           else "none thin")
+    )
+    lines.append("")
+    lines.append(
+        f"Coverage: **{len(priced)}** fixture(s) priced, "
+        f"**{len(withheld)}** withheld."
+    )
+    lines.append("")
+    return lines
+
+
+def write_report(
+    runs: list[FixtureRun], path: Path, plans: dict | None = None,
+) -> None:
     lines = ["# WhichCloud regression harness report", ""]
     lines.append(f"Run at {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}")
     lines.append("")
+    if plans:
+        lines.extend(_fingerprint_section(plans))
     lines.append("| fixture | passed | failed | status |")
     lines.append("|---|---|---|---|")
     for r in runs:
@@ -1179,7 +1306,7 @@ def main() -> int:
                     print(f"    engine's stated reason: {res.reason}")
 
     if not args.no_report:
-        write_report(runs, REPORT_PATH)
+        write_report(runs, REPORT_PATH, plan_cache)
         append_history(runs, HISTORY_PATH)
         print(f"\nWrote {REPORT_PATH} and appended to {HISTORY_PATH}")
 

@@ -636,6 +636,14 @@ def _spec_for(
     ephemeral = constraints.durability == "ephemeral"
     public_simple = topology.value == PUBLIC_SIMPLE
     managed = tier_level >= 2  # Fargate + the rung 2/3 additions it buys
+    #: What tier 3 buys that tier 2 does not -- and ONLY where the
+    #: workload has said something matters. Surviving the loss of a whole
+    #: region is worth buying for a workload that stated its data cannot
+    #: be lost (durable) or that being down costs it (high availability);
+    #: it is padding for an internal tool whose own description says
+    #: nobody minds an hour of downtime. Being offline and losing the data
+    #: are independent axes, so either one earns it.
+    resilient = tier_level >= 3 and (durable or high_availability)
     storage = constraints.storage_gb or _default_storage_gb(constraints, load)
     #: Total bytes reaching users, however they get there.
     user_traffic_gb = constraints.egress_gb or _default_egress_gb(constraints, load)
@@ -740,16 +748,29 @@ def _spec_for(
         # immutability -- not the existence of a backup at all.
         backup_gb=0.0 if ephemeral else storage,
         backup_retention_days=0 if ephemeral else (35 if durable else 7),
-        backup_copy_gb=storage if durable else 0.0,
+        # A copy in a second region is disaster recovery. durability=high
+        # requires it on every tier; tier 3 buys it for everyone else,
+        # because surviving the loss of a whole region is the thing that
+        # actually distinguishes "the architecture to grow into" from a
+        # production-ready single-region one.
+        backup_copy_gb=storage if (durable or resilient) else 0.0,
         # DEFECT 8: only the changed fraction crosses each month; the
         # full dataset crosses once, at seed, and is reported as a
         # one-off rather than folded into a monthly total.
         backup_transfer_gb=(
-            storage * _monthly_change_rate(constraints) if durable else 0.0
+            storage * _monthly_change_rate(constraints)
+            if (durable or resilient) else 0.0
         ),
-        backup_seed_gb=storage if durable else 0.0,
-        object_lock=durable,
-        lifecycle_gb=storage * 0.4 if durable else 0.0,
+        backup_seed_gb=storage if (durable or resilient) else 0.0,
+        # WORM retention: the control that makes a backup survive an
+        # attacker who holds valid credentials. Required by
+        # durability=high; bought at tier 3 regardless, because a backup
+        # an intruder can delete is not a backup you can grow into.
+        object_lock=durable or resilient,
+        # Tiering cold data to archive storage. A COST optimisation, not a
+        # capability, so it is always correct to apply and never gated on
+        # a requirement being met.
+        lifecycle_gb=storage * 0.4 if (durable or resilient) else 0.0,
         # Only a stated residency requirement earns a guardrail. Naming a
         # city tells us where the business is, not that data may never
         # leave the country -- that needs its own trigger phrase.
@@ -941,16 +962,35 @@ def _pattern_diff(
             "diagnosis-by-guesswork as the only option when something "
             "is slow."
         )
+    if not prev.object_lock and curr.object_lock:
+        diffs.append(
+            "Backups: mutable → Object Lock (WORM) — removes an intruder "
+            "with valid credentials deleting the backups as a risk."
+        )
+    if not prev.backup_copy_gb and curr.backup_copy_gb:
+        diffs.append(
+            "Recovery: backups in one region → a copy in a second region — "
+            "removes losing the backups with the region as a risk."
+        )
+    if not prev.lifecycle_gb and curr.lifecycle_gb:
+        diffs.append(
+            "Storage: one hot class → lifecycle tiering to archive — "
+            "removes paying hot rates for cold data, at the cost of "
+            "slower retrieval on the archived portion."
+        )
     if standby_added:
         diffs.append(
             "Topology: single-region Multi-AZ → warm standby in a second "
             "in-country region — removes a whole-region outage as a risk."
         )
+    # Capacity is deliberately NOT a pattern diff any more: tiers differ by
+    # architecture, and every tier is sized for the same stated peak. The
+    # parameters are kept so callers need not change, and so this stays
+    # able to report a capacity change if one is ever reintroduced.
     if capacity_after > capacity_before:
         diffs.append(
             f"Capacity: {capacity_before} → {capacity_after} compute units, "
-            f"sized for {capacity_rps:.2f} req/sec (3x the stated peak) — "
-            "the only capacity change made, and made last."
+            f"sized for {capacity_rps:.2f} req/sec."
         )
     return diffs
 
@@ -1203,10 +1243,24 @@ def plan_from(
     ]
 
     prev_spec: ArchitectureSpec | None = None
-    capacity_3x = _instances_for(load.peak_rps * 3, high_availability=high_availability)
 
     for name, label, level in tier_meta:
-        count = capacity_3x if level == 3 else instances
+        # CAPACITY IS NOT A TIER. Every tier is sized for the SAME stated
+        # peak, because sizing follows the requirement and the tier
+        # follows the design.
+        #
+        # Tier 3 used to provision 3x the stated peak, and on
+        # ecommerce-scale that was the ONLY thing distinguishing it from
+        # tier 2: same services, same shape, +93% on the bill
+        # ($1,787.54 -> $3,444.72) for three times as much of the
+        # identical architecture. That is a size decision sold as a
+        # design, and it is what makes three tiers one design shown
+        # thrice. What tier 3 buys now is architecture the others do not
+        # have -- immutable backups, a cross-region copy, archive
+        # tiering, and a warm standby where the geography allows one --
+        # each of which stays correct at 10x load rather than being 3x of
+        # it.
+        count = instances
         spec = _spec_for(
             name=name, constraints=constraints, load=load, region=region,
             instances=count, tier_level=level, requires_x86=requires_x86,

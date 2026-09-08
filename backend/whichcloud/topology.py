@@ -125,6 +125,36 @@ _KIND_BY_PREFIX = {
     # dragged a whole VPC in with it. Secrets Manager is a real service; it
     # gets its own node.
     "Secrets": "secrets",
+    # Five more that were falling through to "compute", found by diffing
+    # fingerprints across tier levels. Every one is a distinct
+    # ARCHITECTURAL decision, and folding them into the compute box made
+    # the fingerprint blind to exactly the differences a tier is supposed
+    # to be made of: turning on immutable backups and a cross-region copy
+    # did not move the fingerprint at all, so tiers could differ in
+    # substance and still read as one design.
+    #
+    # Object Lock is WORM retention -- the control that makes a backup
+    # survive an attacker holding valid credentials. It is not storage.
+    "Object Lock": "object_lock",
+    # A copy in another region is disaster recovery, not more backup.
+    # Both meters -- the resting copy and the transfer that fills it --
+    # belong to one decision, so they share one node.
+    "Cross-region backup copy": "backup_dr",
+    "Cross-region backup transfer": "backup_dr",
+    # A cold tier is a different storage class with different retrieval
+    # behaviour and a different failure mode, not a bigger bucket.
+    "Archived retention": "archive",
+    # An organisation-level SCP is a governance control, not a server.
+    "Region-deny guardrail": "guardrail",
+    # VPC endpoints are private routes into AWS services -- the reason a
+    # NAT gateway is not processing that traffic. They were reading as
+    # compute, which put their cost on the application box and hid the
+    # decision that removed it from NAT. Gateway (free) and interface
+    # (hourly + per-GB) endpoints are one architectural choice, so they
+    # share a node.
+    "Gateway endpoints": "vpc_endpoints",
+    "Interface endpoints": "vpc_endpoints",
+    "Interface endpoint data processing": "vpc_endpoints",
 }
 
 
@@ -254,11 +284,45 @@ class Topology:
         return next((n for n in self.nodes if n.id == node_id), None)
 
 
+#: Labels that legitimately reach the `compute` default -- the actual
+#: compute meters, which have no prefix entry because compute IS the
+#: default. Everything else arriving here is an unmapped service, and
+#: `unmapped_labels` below exists so a test can say so rather than
+#: leaving it to be noticed years later on a diagram.
+_LEGITIMATE_COMPUTE = ("Compute", "Instance", "vCPU", "Memory", "Spot")
+
+
 def _kind_for(item: LineItem) -> str:
     for prefix, kind in _KIND_BY_PREFIX.items():
         if item.label.startswith(prefix):
             return kind
     return "compute"
+
+
+def unmapped_labels(items) -> list[str]:
+    """Line items falling through to the `compute` default that are not
+    compute.
+
+    The default is a trap and has been sprung repeatedly: Secrets Manager
+    manufactured an EC2 box on a serverless diagram, a Synapse pool drew
+    a $4,934/month warehouse as an application server, and Object Lock,
+    the cross-region backup copy, the archive tier and the region-deny
+    guardrail all summed silently onto the compute node -- which made the
+    architecture fingerprint blind to them, so a tier could turn on
+    immutable backups and DR and still fingerprint identically to one
+    that had neither.
+
+    Returning the offenders rather than raising keeps this a reporting
+    tool: a new meter should fail a test, not a user's request.
+    """
+    out = []
+    for item in items:
+        if _kind_for(item) != "compute":
+            continue
+        if any(item.label.startswith(p) for p in _LEGITIMATE_COMPUTE):
+            continue
+        out.append(item.label)
+    return out
 
 
 def _detail_for(item: LineItem, spec: ArchitectureSpec, kind: str) -> str:
