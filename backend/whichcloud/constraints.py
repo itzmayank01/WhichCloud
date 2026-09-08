@@ -27,6 +27,20 @@ Sector = Literal[
 PeakShape = Literal["flat", "morning", "evening", "spiky"]
 StaticAssets = Literal["none", "light", "heavy"]
 
+#: What operating systems the machines being moved run. `mixed` is a real
+#: and common answer, not a failure to decide -- "a mix of Windows and
+#: Linux" is the single most common thing an estate actually is.
+SourceOS = Literal["linux", "windows", "mixed", "unknown"]
+
+#: Whether the workload may be moved to ARM.
+#:
+#: Three values, not a boolean, because "we know it must be x86" and "we
+#: have not been told" are different claims and only one of them may be
+#: acted on. The old code had a boolean defaulting to False, which meant
+#: silence read as "ARM is fine" -- and a legacy Windows estate was
+#: recommended Graviton on the strength of nobody having said otherwise.
+CPUArchitecture = Literal["x86_required", "arm_ok", "unknown"]
+
 #: Fields the planner cannot run without. `assumed` is this set minus
 #: whatever extraction actually found -- never a hand-maintained list.
 REQUIRED = (
@@ -221,10 +235,45 @@ class Constraints:
     content_storage_gb: float = 0.0
     user_data_gb: float = 0.0
 
+    # ── the source estate, for a migration ───────────────────────────
+    # A lift-and-shift is sized from an inventory of what already runs,
+    # not from a traffic estimate. None of these existed, so "40 virtual
+    # machines" had nowhere to go and was discarded on the way in -- the
+    # one figure that should have set the entire plan.
+
+    #: How many machines are being moved. 0 means unstated; for the
+    #: migration archetype that is a hard failure, not a small estate.
+    source_vm_count: int = 0
+    source_os: SourceOS = "unknown"
+    #: Totals ACROSS the estate, not per machine. A per-machine average
+    #: is derivable from these and the count; the reverse is not, because
+    #: an estate is rarely uniform.
+    source_vcpu_total: int = 0
+    source_ram_gb_total: float = 0.0
+    source_disk_gb_total: float = 0.0
+
+    #: Whether ARM is permissible. Never inferred as arm_ok -- see
+    #: CPUArchitecture. `forced_x86_reason` records what ruled ARM out, so
+    #: the constraint can be argued with rather than merely obeyed.
+    cpu_architecture: CPUArchitecture = "unknown"
+    forced_x86_reason: str = ""
+
+    #: Quantities the text STATED that extraction could not turn into a
+    #: number. Non-empty withholds pricing: a plan built on a figure that
+    #: was silently dropped is sized for a workload nobody described, and
+    #: a zero that should have been forty is not a small error.
+    unparsed_quantities: list[dict] = field(default_factory=list)
+
     #: Which fields the TEXT supported. Everything in REQUIRED and not in
     #: here is assumed, computed after the fact rather than declared.
     stated: set[str] = field(default_factory=set)
     evidence: dict[str, str] = field(default_factory=dict)
+
+    def requires_x86(self) -> bool:
+        """Whether ARM is ruled out. Only an explicit x86_required does
+        it -- `unknown` is not permission, but it is also not a bar, and
+        the caller decides which side of that to err on per archetype."""
+        return self.cpu_architecture == "x86_required"
 
     def source(self, name: str) -> Source:
         return "stated" if name in self.stated else "assumed"

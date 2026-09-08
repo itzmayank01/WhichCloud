@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from whichcloud import archetype as archetype_module
-from whichcloud import llm_extract
+from whichcloud import llm_extract, quantity_audit
 from whichcloud.constraint_filter import Architecture, check
 from whichcloud.constraints import QUESTIONS as _QUESTIONS, Constraints
 from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
@@ -309,6 +309,11 @@ class Plan:
     #: the archetype's sizing driver, as questions. A refusal that names a
     #: shape and stops there is a dead end; these are the way forward.
     pricing_questions: list[str] = field(default_factory=list)
+    #: Quantities the description stated that extraction did not read.
+    #: Non-empty means pricing was withheld for that reason specifically,
+    #: which is a different failure from an unbuilt archetype and has a
+    #: different fix -- the reader can resolve it in one sentence.
+    unread_quantities: list[dict] = field(default_factory=list)
     #: Whether tiers were priced at all. False means `tiers` is empty by
     #: decision, not by failure -- INV-12's subject.
     priced: bool = True
@@ -477,8 +482,23 @@ def _flow_logs_wanted(
     return False, why
 
 
-def _requires_x86(description: str) -> bool:
-    """Graviton is the default; only explicit evidence rules it out."""
+def _requires_x86(description: str, constraints: Constraints | None = None) -> bool:
+    """Whether ARM is ruled out for this workload.
+
+    The EXTRACTED constraint decides, and the phrase table is only a
+    second opinion that can add to it. That order is the fix for a real
+    defect: `_X86_REQUIRED` needed the literal phrase "windows server",
+    so "a mix of Windows and Linux" did not match, and a lift-and-shift
+    of legacy Windows VMs was recommended Graviton -- not an expensive
+    answer but a non-functional one, since those images do not run on
+    ARM at all.
+
+    The table stays because it catches things the OS field cannot: a
+    greenfield app that names SQL Server or .NET Framework is not a
+    migration and has no `source_os`, but it is still x86.
+    """
+    if constraints is not None and constraints.requires_x86():
+        return True
     text = description.lower()
     return any(hint in text for hint in _X86_REQUIRED)
 
@@ -1006,6 +1026,48 @@ def _withheld_plan(
     )
 
 
+def _unread_quantity_plan(
+    constraints: Constraints, load: Load, detected: str, evidence: str,
+) -> Plan:
+    """The answer when the description stated a figure nothing read.
+
+    A separate state from the archetype refusals, because it is a
+    different claim and has a different fix. "We have not built your
+    shape" is ours to solve; "we could not read your number" is
+    answerable in one sentence by the person who wrote it, and telling
+    them which number is the whole of the help they need.
+    """
+    unparsed = list(constraints.unparsed_quantities)
+    state = (
+        archetype_module.state_for(detected)
+        if detected != archetype_module.COMPOSITE
+        else archetype_module.COMPOSITE
+    )
+    return Plan(
+        constraints=constraints,
+        load=load,
+        compliance=compliance_notes(constraints.country, constraints.sector),
+        archetype=detected,
+        archetype_state=state,
+        archetype_note=(
+            f"Classified as {detected!r} ({evidence}), but not priced: a "
+            "quantity in the description was not read."
+        ),
+        archetype_requirements=archetype_module.requirements_for(detected),
+        priced=False,
+        withheld_reason=quantity_audit.describe(unparsed),
+        unread_quantities=unparsed,
+        # The questions are the figures themselves, phrased back. Nothing
+        # generic: the reader stated something specific and needs to know
+        # which specific thing did not land.
+        pricing_questions=[u["question"] for u in unparsed],
+        covered_archetypes=archetype_module.coverage(),
+        coverage_summary=archetype_module.coverage_summary(),
+        clarifying_questions=[],
+        extraction_confidence=constraints.confidence_map(),
+    )
+
+
 def build(description: str, provider: str = "aws", dsn: str | None = None) -> Plan:
     """The whole contract, in the order the modules are meant to run.
 
@@ -1061,6 +1123,18 @@ def plan_from(
         f"confidence {meta.archetype_confidence:.2f}, "
         f"{len(meta.archetype_spans)} supporting span(s)"
     )
+
+    # A STATED QUANTITY THAT WAS NOT READ WITHHOLDS, WHATEVER THE SHAPE.
+    # Checked before the archetype gate because it outranks it: knowing
+    # the shape is no help when the figure that sizes it was dropped on
+    # the way in. "40 virtual machines" priced as one small instance is
+    # not a cheaper answer to the same question, it is an answer to a
+    # different one.
+    if constraints.unparsed_quantities:
+        plan = _unread_quantity_plan(constraints, load, detected, evidence)
+        _attach_extraction_meta(plan, meta)
+        return plan
+
     if not archetype_module.is_priceable(detected):
         plan = _withheld_plan(
             constraints, load, detected, evidence, meta.composite_of,
@@ -1080,7 +1154,7 @@ def plan_from(
     high_availability = constraints.availability == "high"
     durable = constraints.durability == "high"
     instances = _instances_for(load.peak_rps, high_availability=high_availability)
-    requires_x86 = _requires_x86(description)
+    requires_x86 = _requires_x86(description, constraints)
     aws_region = _aws_region(region)
     az_count = 2 if high_availability else 1
 

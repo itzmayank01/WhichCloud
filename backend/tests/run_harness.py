@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -579,6 +580,94 @@ def inv_14_composite_never_prices(fx_id: str, built: Plan) -> list[Result]:
     )]
 
 
+#: AWS Graviton instance families, from the naming rule rather than a
+#: list: the letters immediately after the generation digit contain a 'g'
+#: (t4g, m7g, c7gn, r8gd, x2gd, im4gn, g5g), and no x86 family does --
+#: t3a's 'a' is AMD, m5's absence is Intel. `db.` prefixed types are RDS
+#: and follow the same rule.
+_ARM_FAMILY = re.compile(r"^(?:db\.)?[a-z]+\d+g[a-z]*\.", re.IGNORECASE)
+
+
+def _arm_skus(tier) -> list[str]:
+    return [
+        item.sku for item in tier.estimate.items
+        if _ARM_FAMILY.match((item.sku or "").split(":", 1)[0])
+    ]
+
+
+def inv_15_no_arm_under_x86_required(fx_id: str, built: Plan) -> list[Result]:
+    """ARM is never recommended for a workload that cannot run on it.
+
+    The failure this guards is not an inflated bill, it is infrastructure
+    that would not start. `_X86_REQUIRED` needed the literal phrase
+    "windows server"; a description reading "a mix of Windows and Linux"
+    did not match it, so a lift-and-shift of legacy Windows images was
+    costed on Graviton -- cheaper, and unable to boot a single one of the
+    forty machines it was standing in for.
+
+    Deliberately checks the SKUs rather than the spec's `arch` flag. The
+    flag is what the planner intended; the SKU is what the estimate
+    actually selected, and only the second one reaches the user.
+    """
+    c = built.constraints
+    if c.cpu_architecture != "x86_required":
+        return [Result(
+            fx_id, "INV-15", passed=True,
+            expected="no ARM instance family when x86 is required",
+            actual=f"cpu_architecture={c.cpu_architecture} (not x86_required)",
+        )]
+
+    results = []
+    for tier in built.tiers:
+        offenders = _arm_skus(tier)
+        results.append(Result(
+            fx_id, f"INV-15:{tier.name}", passed=not offenders,
+            expected="no ARM/Graviton instance family, because the workload "
+                     "is x86-only",
+            actual=(
+                f"{len(offenders)} ARM sku(s): {', '.join(offenders)}"
+                if offenders else "no ARM families selected"
+            ),
+            reason=c.forced_x86_reason,
+        ))
+    if not results:
+        results.append(Result(
+            fx_id, "INV-15", passed=True,
+            expected="no ARM instance family when x86 is required",
+            actual="no tiers priced (withheld)",
+        ))
+    return results
+
+
+def inv_16_no_stated_quantity_was_dropped(fx_id: str, built: Plan) -> list[Result]:
+    """No plan is priced around a figure the description stated and
+    extraction did not read.
+
+    Three were being dropped silently: "40 virtual machines" had no field
+    to land in at all, "500 GB of sensor readings" left storage_gb at
+    zero, and "30,000 visitors a month" was read but filed as an
+    assumption. The first two sized a plan for a workload nobody
+    described -- and a zero that should have been forty is not a rounding
+    error, it is a different question being answered.
+
+    The rule is not "extraction must be perfect". It is that a gap must
+    surface as a REFUSAL rather than as a confident number, which is the
+    same trade the archetype classifier already makes.
+    """
+    unread = list(built.constraints.unparsed_quantities)
+    ok = (not unread) or (not built.priced and not built.tiers)
+    return [Result(
+        fx_id, "INV-16", passed=ok,
+        expected="a stated quantity that was not read withholds pricing",
+        actual=(
+            "every stated quantity was read" if not unread
+            else f"{len(unread)} unread ({'; '.join(u['phrase'] for u in unread)}) "
+                 f"priced={built.priced} tiers={len(built.tiers)}"
+        ),
+        reason=built.withheld_reason,
+    )]
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -593,6 +682,8 @@ INVARIANTS = {
     "INV-12": inv_12_no_priced_tier_when_archetype_unknown,
     "INV-13": inv_13_every_priced_tier_is_backed_up,
     "INV-14": inv_14_composite_never_prices,
+    "INV-15": inv_15_no_arm_under_x86_required,
+    "INV-16": inv_16_no_stated_quantity_was_dropped,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.
