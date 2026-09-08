@@ -38,10 +38,24 @@ ARCHETYPES = (
 )
 UNKNOWN = "unknown"
 
-#: Archetypes with a real, priced service graph in whichcloud.plan.
-#: Grown one at a time -- never edited to include a name whose spec
-#: branch does not exist, however confidently classify() names it.
-IMPLEMENTED_ARCHETYPES = frozenset({"web_app"})
+#: Archetypes with a real, priced service graph.
+#:
+#: DERIVED, never hand-maintained. It used to be a literal set, which
+#: meant a name could be added here with no spec branch behind it and the
+#: engine would confidently price a shape it had never been taught to
+#: build -- exactly the failure the coverage map documented. Now a shape
+#: is priceable if and only if a graph is registered for it, so the two
+#: cannot drift apart.
+#:
+#: web_app predates the archetypes package and is still built by
+#: plan._spec_for; it is named here explicitly until it is moved over.
+def _implemented() -> frozenset[str]:
+    from whichcloud.archetypes import implemented
+
+    return frozenset({"web_app"}) | implemented()
+
+
+IMPLEMENTED_ARCHETYPES = _implemented()
 
 #: The three states a classification can land in. Both non-priced states
 #: withhold pricing, but they are different claims and get different

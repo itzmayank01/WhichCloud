@@ -81,9 +81,33 @@ def test_a_tie_between_two_archetypes_is_unknown():
 # ── the priced/unpriced boundary ──
 
 
-def test_only_web_app_is_priceable_today():
+#: Shapes that still have no service graph, so still withhold. Shrinks by
+#: one per archetype landed; when it empties, this file's whole
+#: priced/unpriced boundary section has served its purpose.
+#:
+#: Derived rather than listed, for the same reason IMPLEMENTED_ARCHETYPES
+#: now is: a hand-kept list of "not yet built" is one more place for the
+#: engine's real coverage and its claimed coverage to drift apart.
+UNBUILT = {name: prompt for name, prompt in PROBES.items()
+           if not is_priceable(name)}
+
+
+def test_priceable_means_a_service_graph_exists():
+    """Priceable is DERIVED from the registry, so a shape cannot be
+    marked priced without a graph behind it.
+
+    This replaces test_only_web_app_is_priceable_today, whose expectation
+    was correct when written and is now simply out of date: static_site
+    has a candidate set, a sizing driver, a forbidden list and three
+    tiers that differ by service, so it is priceable and asserting
+    otherwise would be asserting the bug back into existence.
+    """
+    from whichcloud.archetypes import implemented
+
     assert is_priceable("web_app")
-    for name in PROBES:
+    for name in implemented():
+        assert is_priceable(name), f"{name} has a graph but is not priceable"
+    for name in UNBUILT:
         assert not is_priceable(name), f"{name} has no service graph yet"
 
 
@@ -99,7 +123,7 @@ def test_coverage_lists_every_archetype_with_its_status():
 # ── INV-12, at the plan level ──
 
 
-@pytest.mark.parametrize("prompt", list(PROBES.values()))
+@pytest.mark.parametrize("prompt", list(UNBUILT.values()))
 def test_no_priced_tier_is_emitted_for_an_unimplemented_shape(prompt):
     """These are recognised_unpriced, not unknown -- the shape IS known,
     what is missing is a validated price for it. Both states withhold."""
@@ -137,9 +161,16 @@ def test_an_unclassifiable_prompt_asks_questions_instead(prompt="Please help us 
 def test_coverage_is_reported_as_two_numbers_not_one():
     """"Coverage" alone would hide which of two very different claims it
     referred to: shapes we can name, versus shapes we can price."""
+    from whichcloud.archetype import IMPLEMENTED_ARCHETYPES
+
     plan = build("Please help us with our infrastructure.")
     assert plan.coverage_summary["shapes_recognised"] == 7
-    assert plan.coverage_summary["shapes_priced"] == 1
+    # Not a literal. The whole point of reporting two numbers is that the
+    # second one MOVES as archetypes land, and a hardcoded 1 would have to
+    # be edited on every one of them -- turning a real coverage claim into
+    # a number somebody kept up to date by hand.
+    assert plan.coverage_summary["shapes_priced"] == len(IMPLEMENTED_ARCHETYPES)
+    assert plan.coverage_summary["shapes_priced"] < 7
 
 
 def test_a_covered_workload_is_still_priced_normally():

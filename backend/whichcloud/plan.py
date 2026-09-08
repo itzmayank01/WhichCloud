@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from whichcloud import archetype as archetype_module
+from whichcloud import archetypes as archetype_graphs
 from whichcloud import llm_extract, quantity_audit
 from whichcloud.constraint_filter import Architecture, check
 from whichcloud.constraints import QUESTIONS as _QUESTIONS, Constraints
@@ -309,6 +310,12 @@ class Plan:
     #: the archetype's sizing driver, as questions. A refusal that names a
     #: shape and stops there is a dead end; these are the way forward.
     pricing_questions: list[str] = field(default_factory=list)
+    #: The archetype's own sizing driver, rendered with this workload's
+    #: numbers. "40,000 page views/month against 5 GB of assets" says what
+    #: the bill rests on in a way "0.01 req/sec" cannot -- and sizing every
+    #: shape in requests/sec is what costed a 40-machine estate as one
+    #: small instance.
+    sizing_note: str = ""
     #: Quantities the description stated that extraction did not read.
     #: Non-empty means pricing was withheld for that reason specifically,
     #: which is a different failure from an unbuilt archetype and has a
@@ -1154,6 +1161,115 @@ def _unread_quantity_plan(
     )
 
 
+def _graph_plan(
+    graph, constraints: Constraints, load: Load, detected: str, evidence: str,
+    *, description: str, provider: str, dsn: str | None,
+) -> Plan:
+    """Price a shape that declares its own service graph.
+
+    Deliberately much shorter than the web_app path, and that is the
+    point rather than an omission. The web_app path decides a network
+    topology, an endpoint plan and an instance count from a request rate
+    -- none of which mean anything for a static site, which has no VPC,
+    no private subnet and no origin fleet. Applying them anyway is how a
+    brochure site acquired a NAT gateway.
+
+    The forbidden list is enforced HERE, before anything is priced,
+    rather than checked afterwards: a spec that contains what its own
+    archetype forbids is a bug in the archetype, and it must fail loudly
+    at the point of construction instead of reaching a user as a bill.
+    """
+    regions = COUNTRY_REGIONS.get(constraints.country, ("india",))
+    region = regions[0]
+    compliance = compliance_notes(constraints.country, constraints.sector)
+
+    plan = Plan(
+        constraints=constraints, load=load, compliance=compliance,
+        archetype=detected,
+        archetype_state=archetype_module.PRICED,
+        archetype_note=f"{detected}: {evidence}",
+        priced=True,
+        covered_archetypes=archetype_module.coverage(),
+        coverage_summary=archetype_module.coverage_summary(),
+        provisional=bool(_provisional_reasons(constraints)),
+        provisional_reasons=_provisional_reasons(constraints),
+        extraction_confidence=constraints.confidence_map(),
+        # The shape's own sizing driver, in its own terms. "40,000 page
+        # views/month against 5 GB of assets" says what the bill rests on
+        # in a way "0.01 req/sec" cannot.
+        sizing_note=graph.sizing.describe(constraints, load),
+    )
+
+    tier_meta = [
+        ("tier_1", "Cheapest that meets your requirements", 1),
+        ("tier_2", "Balanced — production-ready", 2),
+        ("tier_3", "The architecture to grow into", 3),
+    ]
+
+    prev_fingerprint: frozenset[str] | None = None
+    for name, label, level in tier_meta:
+        spec = graph.build(
+            tier_level=level, constraints=constraints, load=load,
+            region=region, description=description,
+        )
+        violations = graph.violations(spec)
+        if violations:
+            raise AssertionError(
+                f"{detected} {name} contains components its own archetype "
+                f"forbids: {violations}"
+            )
+
+        est = estimate(spec, provider, dsn=dsn)
+        obj = objectives(
+            multi_instance=spec.compute_count >= 2 or spec.fargate_task_count >= 2,
+            multi_az_database=spec.database_multi_az,
+            cross_region_copy=bool(spec.backup_copy_gb),
+            warm_standby=False,
+        )
+        tier = Tier(
+            name=name, label=label, philosophy=PHILOSOPHY[level],
+            spec=spec, estimate=est,
+            rto=obj["rto"], rpo=obj["rpo"],
+            region_rto=obj["region_rto"], region_rpo=obj["region_rpo"],
+        )
+        note = graph.tier_notes.get(level, "")
+        tier.pattern_diff = [note] if note else []
+
+        # The spread is measured, not asserted. A tier that genuinely has
+        # nothing more to buy says so; one that merely forgot does not get
+        # to look the same.
+        current = frozenset(_fingerprint_kinds(est))
+        if prev_fingerprint is not None:
+            spread = len(
+                (current - prev_fingerprint) | (prev_fingerprint - current)
+            )
+            if spread < 3 and not tier.pattern_diff:
+                tier.no_further_improvement = (
+                    "At this workload size there is no further improvement "
+                    "worth buying."
+                )
+        prev_fingerprint = current
+
+        plan.tiers.append(tier)
+
+    budget = constraints.budget_monthly_usd
+    if budget and plan.tiers[0].monthly_total > budget:
+        plan.over_budget_note = (
+            "Your requirements set a floor above your budget. Cheapest "
+            "compliant design shown."
+        )
+    return plan
+
+
+def _fingerprint_kinds(est) -> set[str]:
+    """Service kinds in one estimate. Imported lazily to keep
+    whichcloud.fingerprint free to import plan-side types."""
+    from whichcloud.fingerprint import fingerprint
+    from types import SimpleNamespace
+
+    return set(fingerprint(SimpleNamespace(estimate=est)))
+
+
 def build(description: str, provider: str = "aws", dsn: str | None = None) -> Plan:
     """The whole contract, in the order the modules are meant to run.
 
@@ -1224,6 +1340,24 @@ def plan_from(
     if not archetype_module.is_priceable(detected):
         plan = _withheld_plan(
             constraints, load, detected, evidence, meta.composite_of,
+        )
+        _attach_extraction_meta(plan, meta)
+        return plan
+
+    # SHAPES WITH THEIR OWN SERVICE GRAPH BUILD THEMSELVES.
+    #
+    # web_app is still built by _spec_for below -- it predates the
+    # archetypes package and moving it is a separate change with its own
+    # golden totals to re-approve. Everything else declares its own
+    # candidate set, sizing driver and forbidden list, and gets none of
+    # the web_app-shaped decisions (topology, endpoint plan, instance
+    # count from request rate) that do not apply to it. A static site has
+    # no VPC to decide a topology for.
+    graph = archetype_graphs.graph_for(detected)
+    if graph is not None:
+        plan = _graph_plan(
+            graph, constraints, load, detected, evidence,
+            description=description, provider=provider, dsn=dsn,
         )
         _attach_extraction_meta(plan, meta)
         return plan

@@ -107,6 +107,24 @@ COMPONENT_CHECKS = {
     "email": lambda t: t.spec.emails_per_month > 0,
     "queue": lambda t: t.spec.queue_requests_per_month > 0,
     "notifications": lambda t: t.spec.notifications_per_month > 0,
+    # Added for the graph archetypes. A static site asserts the
+    # ABSENCE of a relational database, so the check has to exist
+    # for the absence to mean anything.
+    "relational_database": lambda t: bool(t.spec.database_vcpu),
+    "object_storage": lambda t: t.spec.storage_gb > 0,
+    "dns": lambda t: t.spec.dns_hosted_zones > 0,
+    "tls": lambda t: t.spec.tls_certificate,
+    "archive_tier": lambda t: t.spec.lifecycle_gb > 0,
+    "event_bus": lambda t: t.spec.eventbridge_events_per_month > 0,
+    "connections": lambda t: t.spec.ws_connection_minutes_per_month > 0,
+    "search": lambda t: t.spec.search_node_count > 0,
+    "model_endpoint": lambda t: bool(t.spec.inference_instance),
+    "warehouse": lambda t: t.spec.warehouse_node_count > 0,
+    "glue_etl": lambda t: t.spec.glue_dpu_hours_per_month > 0,
+    "athena": lambda t: t.spec.athena_tb_scanned_per_month > 0,
+    "block_storage": lambda t: t.spec.db_storage_gb > 0,
+    "serverless_compute": lambda t: t.spec.fargate_task_count > 0
+        or t.spec.lambda_invocations_per_month > 0,
 }
 
 #: When a must_exclude component is correctly absent, the reason usually
@@ -238,6 +256,59 @@ def _check_compliance(fx: dict, built: Plan) -> list[Result]:
         results.append(Result(
             fx["id"], f"forbidden:{forbidden}", passed=ok,
             expected=f"never cites {forbidden}", actual="; ".join(names) or "(none)",
+        ))
+    return results
+
+
+def _check_complete(fx: dict, built: Plan) -> list[Result]:
+    """Every component in the named tiers resolved to a real rate.
+
+    An archetype declares its candidate set as services it may select,
+    and "may select" has to mean "the catalog can price". A shape whose
+    own CDN lands in `missing` is not a cheap shape, it is an incomplete
+    one -- and an incomplete estimate that still shows a total is the
+    confident-wrong-answer this engine refuses to give.
+    """
+    results = []
+    for tier_name in fx.get("expect", {}).get("complete", []) or []:
+        tier = next((t for t in built.tiers if t.name == tier_name), None)
+        if tier is None:
+            results.append(Result(
+                fx["id"], f"complete:{tier_name}", passed=False,
+                expected="a priced tier", actual="tier not found",
+            ))
+            continue
+        missing = list(tier.estimate.missing)
+        results.append(Result(
+            fx["id"], f"complete:{tier_name}", passed=not missing,
+            expected="every selected component has a catalog rate",
+            actual=(f"missing: {', '.join(missing)}" if missing
+                    else "complete"),
+        ))
+    return results
+
+
+def _check_forbidden(fx: dict, built: Plan) -> list[Result]:
+    """No tier contains a component its own archetype forbids.
+
+    Read from the ARCHETYPE, not from the fixture: a static site forbids
+    a database whether or not a fixture author remembered to say so, and
+    a rule that has to be repeated per fixture is one that will be
+    forgotten on the fixture that needs it.
+    """
+    from whichcloud.archetypes import graph_for
+
+    graph = graph_for(built.archetype)
+    if graph is None:
+        return []
+    results = []
+    for tier in built.tiers:
+        violations = graph.violations(tier.spec)
+        results.append(Result(
+            fx["id"], f"forbidden:{tier.name}", passed=not violations,
+            expected=f"no component forbidden by {built.archetype}",
+            actual=("; ".join(violations) if violations
+                    else f"none of {len(graph.forbidden)} forbidden components"),
         ))
     return results
 
@@ -917,7 +988,11 @@ def constraints_from_fixture(fx: dict) -> tuple[Constraints, str] | None:
             continue
         setattr(c, name, value)
     c.stated.update(block.get("stated", []))
-    return c, block.get("archetype", "web_app")
+    # Top level wins. The archetype is a property of the WORKLOAD,
+    # not of its constraints, and the newer fixtures declare it where
+    # it belongs; the block form is kept for the ones that predate
+    # any archetype existing.
+    return c, fx.get("archetype") or block.get("archetype", "web_app")
 
 
 def build_prompt_fixtures(
@@ -969,6 +1044,8 @@ def run_prompt_fixture(fx: dict, cache: dict[str, Plan | Exception]) -> FixtureR
     run.results.extend(_check_must_include(fx, built))
     run.results.extend(_check_must_exclude(fx, built))
     run.results.extend(_check_compliance(fx, built))
+    run.results.extend(_check_complete(fx, built))
+    run.results.extend(_check_forbidden(fx, built))
     run.results.extend(_check_budget(fx, built))
     run.results.extend(_check_network_topology(fx, built))
     run.results.extend(run_invariants(fx, built, fx["prompt"]))
@@ -1300,7 +1377,14 @@ def main() -> int:
     plan_cache = build_prompt_fixtures(all_fixtures, mode=args.mode)
 
     if args.approve_golden:
-        fixture_ids = sorted(load_golden(GOLDEN_PATH))
+        # Every fixture that PRICED, not merely the ones already in the
+        # golden file. Keying off the existing file meant a newly added
+        # fixture could never acquire a baseline -- it silently stayed
+        # unguarded, which is the opposite of what a golden file is for.
+        fixture_ids = sorted(
+            fx_id for fx_id, built in plan_cache.items()
+            if isinstance(built, Plan) and built.tiers
+        )
         write_golden(plan_cache, fixture_ids, GOLDEN_PATH)
         print(f"Wrote current totals for {len(fixture_ids)} fixture(s) to {GOLDEN_PATH}")
         return 0

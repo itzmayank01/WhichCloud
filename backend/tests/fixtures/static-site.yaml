@@ -1,0 +1,87 @@
+# Promoted from tests/probes/static-site.yaml, which was diagnostic only.
+#
+# What the probe recorded (2026-08-21, before static_site existed):
+#
+#   Tier 1 $73.61 -- Compute x1 ($16.35), DATABASE ($15.33), object
+#   storage, egress, monitoring, WAF, a NAT-less VPC. Verdict WRONG_SHAPE,
+#   severity HIGH.
+#
+# For a prompt that says "no login, no database" in those words. The
+# engine billed $15.33/month for a database and $16.35/month for a
+# compute instance to serve pages and images.
+#
+# Now: $3.65 at tier 1, and both the database and the compute instance
+# are FORBIDDEN COMPONENTS of the archetype rather than merely absent --
+# an assertion, not an accident.
+id: static-site
+prompt: >
+  Marketing site for our design studio. About 30,000 visitors a month,
+  mostly from India. It's just pages and images, no login, no database.
+  We want it cheap.
+
+# Extracted by the pinned primary under schema v5 and recorded verbatim,
+# not hand-written. "30,000 visitors a month" -> 1,000/day is the Part 3
+# unit normalisation working: under the old rules this was 0, and the
+# site was sized at the zero-traffic floor.
+constraints:
+  country: IN
+  sector: public_web
+  availability: low
+  durability: normal
+  users: 0
+  requests_per_day: 1000
+  peak_shape: flat
+  budget_monthly_usd: 0.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: true
+  country_lock: false
+  static_assets: light
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
+  active_hours_per_day: 24.0
+
+archetype: static_site
+
+expect:
+  # The two the probe recorded as present, and the reason they are wrong.
+  # These are declared in the archetype's own `forbidden` list, so the
+  # engine raises at spec-construction time rather than pricing them --
+  # must_exclude here is the belt to that braces.
+  must_exclude:
+    - relational_database
+    - load_balancer
+    - nat_gateway
+    - vpc_flow_logs
+    - cache
+    - read_replica
+
+  must_include:
+    # Tier 1 is the origin serving the internet directly. Cheapest, and
+    # genuinely correct at 1,000 views/day.
+    - component: object_storage
+      tiers: [tier_1, tier_2, tier_3]
+    # A deleted bucket is a deleted site. Not a tier feature.
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+    - component: dns
+      tiers: [tier_1, tier_2, tier_3]
+    - component: tls
+      tiers: [tier_1, tier_2, tier_3]
+    # The edge cache is what tier 2 buys.
+    - component: cdn
+      tiers: [tier_2, tier_3]
+    # Immutability and a second-region copy are what tier 3 buys.
+    - component: object_lock
+      tiers: [tier_3]
+    - component: cross_region_backup_copy
+      tiers: [tier_3]
+
+  # Every service the archetype may select must have a published rate in
+  # the target region. A static site that cannot price its own CDN is not
+  # a cheap static site.
+  complete: [tier_1, tier_2, tier_3]
+
+  invariants: [all]
