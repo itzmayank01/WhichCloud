@@ -880,6 +880,61 @@ def compare_route(body: RecommendIn) -> dict:
     }
 
 
+def _designed_refusal(description: str, evidence: str) -> dict:
+    """The answer when a diagram would have to be invented to exist.
+
+    Shaped like an ArchitectureView with nothing in it -- an empty canvas,
+    no nodes, no edges -- plus the fields that say why. That shape is
+    deliberate: the interface has one renderer for this endpoint, and a
+    refusal it can render as an empty diagram with a panel over it needs
+    no second code path to avoid crashing on missing keys.
+
+    The archetype is classified here so the refusal can name the shape and
+    ask for the figures that would let the deterministic planner price it,
+    rather than stopping at "no".
+    """
+    from whichcloud import archetype as archetype_module
+    from whichcloud import llm_extract
+
+    detected, requirements, questions = archetype_module.UNKNOWN, "", []
+    try:
+        _constraints, meta = llm_extract.extract(description)
+        detected = meta.archetype
+        requirements = archetype_module.requirements_for(detected)
+        questions = archetype_module.pricing_questions_for(detected)
+    except Exception:  # noqa: BLE001 -- a failed read still refuses, just blandly
+        pass
+
+    named = archetype_module.describe(detected)
+    return {
+        "canvas": {"width": 0, "height": 0},
+        "regions": 0, "azs_per_region": 0, "external": [],
+        "counts": {"services": 0, "edges": 0, "groups": 0, "priced": 0},
+        "bands": [], "components": [], "cloud": None, "actor": None,
+        "groups": [], "nodes": [], "edges": [],
+        # ── why there is nothing to draw ──
+        "designed": True,
+        "archetype": detected,
+        "archetype_state": archetype_module.state_for(detected),
+        "withheld_reason": (
+            "This description names no cloud services, so a diagram of it "
+            "could only be one a language model invented. This engine does "
+            "not choose services at request time — a picture nobody can "
+            "check against your words, or against a price, is worse than "
+            "no picture."
+        ),
+        "evidence": evidence,
+        "recognised_as": named if detected != archetype_module.UNKNOWN else "",
+        "archetype_requirements": requirements,
+        "pricing_questions": questions,
+        "next_step": (
+            "Send the same description to /plan. It classifies the workload "
+            "and either prices it from the catalog or says exactly which "
+            "figures it still needs."
+        ),
+    }
+
+
 @app.post("/architecture")
 def architecture_route(body: ArchitectureIn) -> dict:
     """A description, drawn.
@@ -897,6 +952,7 @@ def architecture_route(body: ArchitectureIn) -> dict:
     from .architecture.extract import extract_architecture
     from .architecture.graph import build_graph
     from .architecture.layout import badge_point, build_layout
+    from .architecture.provenance import was_designed
     from .intake import IntakeError
 
     if not body.description.strip():
@@ -910,6 +966,17 @@ def architecture_route(body: ArchitectureIn) -> dict:
         )
     except IntakeError as exc:
         raise HTTPException(503, str(exc)) from exc
+
+    # TRANSCRIPTION ONLY. Drawing back the services someone named is a
+    # reading task and stays. Drawing services the model CHOSE is a
+    # runtime service selection by a language model -- unpriced,
+    # unvalidated, different on every call -- and it is the one thing this
+    # engine refuses to do. The deterministic planner answers that
+    # question instead, either with a priced architecture or with a
+    # refusal that says which figures it still needs.
+    designed, evidence = was_designed(arch, body.description)
+    if designed:
+        return _designed_refusal(body.description, evidence)
 
     graph = build_graph(arch)
     layout = build_layout(graph)
@@ -1002,6 +1069,7 @@ def export_architecture_route(body: ArchitectureIn):
     from .architecture.extract import extract_architecture
     from .architecture.graph import build_graph
     from .architecture.layout import build_layout
+    from .architecture.provenance import was_designed
     from .architecture.svg import render
     from .intake import IntakeError
 
@@ -1014,6 +1082,17 @@ def export_architecture_route(body: ArchitectureIn):
         )
     except IntakeError as exc:
         raise HTTPException(503, str(exc)) from exc
+
+    # Same gate as /architecture. An exported file outlives the session
+    # that made it, so an invented architecture is MORE dangerous here,
+    # not less -- it ends up in a slide deck with no caveat attached.
+    designed, evidence = was_designed(arch, body.description)
+    if designed:
+        raise HTTPException(422, (
+            "This description names no cloud services, so the diagram could "
+            "only be one a language model invented. Send it to /plan "
+            f"instead, which prices what it recognises. ({evidence})"
+        ))
 
     svg = render(build_layout(build_graph(arch)))
     return Response(
@@ -1142,6 +1221,10 @@ def plan_endpoint(body: DescribeIn) -> dict:
         # different copy -- see whichcloud.archetype.
         "archetype_state": result.archetype_state,
         "archetype_requirements": result.archetype_requirements,
+        # The sizing figures this shape would need before it could be
+        # priced. Populated only when pricing was withheld for a shape we
+        # recognised -- the way forward from the refusal.
+        "pricing_questions": result.pricing_questions,
         "coverage_summary": result.coverage_summary,
         # False means the engine declined to price this shape. `tiers` is
         # then empty by decision, not by failure -- the interface must say

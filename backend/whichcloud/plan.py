@@ -305,6 +305,10 @@ class Plan:
     #: What this shape's architecture needs, in words. Populated only for
     #: recognised_unpriced: describing a shape is not pricing it.
     archetype_requirements: str = ""
+    #: What would have to be answered before this shape COULD be priced --
+    #: the archetype's sizing driver, as questions. A refusal that names a
+    #: shape and stops there is a dead end; these are the way forward.
+    pricing_questions: list[str] = field(default_factory=list)
     #: Whether tiers were priced at all. False means `tiers` is empty by
     #: decision, not by failure -- INV-12's subject.
     priced: bool = True
@@ -976,6 +980,10 @@ def _withheld_plan(
         archetype_state=state,
         archetype_note=note,
         archetype_requirements=archetype_module.requirements_for(detected),
+        # A named shape with no way forward is a dead end. These are the
+        # figures that would let it be priced, which is a more useful
+        # answer than the shape's name on its own.
+        pricing_questions=archetype_module.pricing_questions_for(detected),
         priced=False,
         withheld_reason=(
             archetype_module.composite_message(composite_of or []) if composite

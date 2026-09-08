@@ -320,6 +320,25 @@ export type ArchComponent = {
   x: number; y: number; w: number; h: number;
 };
 
+/** Why there is nothing to draw.
+ *
+ *  `/architecture` transcribes an architecture somebody named; it does not
+ *  design one. A description naming no services can only be drawn by a
+ *  model choosing them, which is a runtime service selection — unpriced,
+ *  unvalidated, different on every call — so the endpoint returns an empty
+ *  canvas carrying these fields instead. Present only in that case. */
+export type DesignedRefusal = {
+  designed: true;
+  archetype: string;
+  archetype_state: string;
+  withheld_reason: string;
+  evidence: string;
+  recognised_as: string;
+  archetype_requirements: string;
+  pricing_questions: string[];
+  next_step: string;
+};
+
 export type ArchitectureView = {
   canvas: { width: number; height: number };
   regions: number;
@@ -333,7 +352,11 @@ export type ArchitectureView = {
   groups: ArchGroup[];
   nodes: ArchNode[];
   edges: ArchEdge[];
-};
+  /** Set only when the endpoint refused to invent a diagram. When present,
+   *  every list above is empty and the canvas is 0x0 — render the refusal,
+   *  not an empty drawing. */
+  designed?: boolean;
+} & Partial<DesignedRefusal>;
 
 export type SavedArchitecture = {
   id: string;
@@ -422,6 +445,10 @@ export type Plan = {
   /** priced | recognised_unpriced | unknown */
   archetype_state: string;
   archetype_requirements: string;
+  /** The sizing figures this shape would need before it could be priced.
+   *  Populated only when pricing was withheld for a shape we recognised —
+   *  a refusal that names a shape and stops there is a dead end. */
+  pricing_questions: string[];
   coverage_summary: { shapes_recognised: number; shapes_priced: number };
   /** False means pricing was withheld by decision — `tiers` is empty on
    *  purpose, not because the request failed. */

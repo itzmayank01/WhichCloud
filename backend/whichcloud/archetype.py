@@ -183,6 +183,51 @@ _SIGNALS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: What a RECOGNISED shape still needs before it can be priced -- the
+#: sizing driver for that archetype, phrased as questions.
+#:
+#: Distinct from CLARIFYING_QUESTIONS below, which asks "what shape is
+#: this". These ask "we know the shape, what size is it", and they exist
+#: because a refusal that names a shape and then stops is a dead end: the
+#: reader is told what they described and given no way forward. Each list
+#: is the archetype's sizing_driver stated as things only the user knows.
+#:
+#: Deliberately NOT asked for web_app -- it is priced, so its sizing
+#: questions are already answered by the plan's own assumed_fields.
+PRICING_QUESTIONS: dict[str, tuple[str, ...]] = {
+    "static_site": (
+        "How many page views a month, and from which countries?",
+        "What is the total size of the site's files and images?",
+        "Is there a custom domain that needs a certificate?",
+    ),
+    "batch_etl": (
+        "How often does a run start, and how long does one run take?",
+        "How much data does a single run read and write?",
+        "If a run is interrupted, can it safely be restarted?",
+    ),
+    "event_driven": (
+        "How many events arrive on an average day, and how many in the "
+        "biggest burst?",
+        "How large is one event, and how long must it be retained?",
+        "Must events be processed in the order they arrived?",
+    ),
+    "ml_inference": (
+        "How many predictions per second at peak, and how many at night?",
+        "How large is the model, and does it need a GPU?",
+        "What response time does a prediction have to meet?",
+    ),
+    "realtime": (
+        "How many connections are open at the same time at peak?",
+        "How many messages does one connection send per minute?",
+        "How far back must message history stay searchable?",
+    ),
+    "migration": (
+        "How many machines are you moving?",
+        "For each one: how many vCPUs, how much RAM, and how much disk?",
+        "Which of them run Windows or software licensed to x86?",
+    ),
+}
+
 #: What tells these shapes apart, offered whenever pricing is withheld.
 #: Generic rather than per-archetype: unknown has by definition not
 #: narrowed anything down, so the questions must cover all of them.
@@ -251,6 +296,17 @@ def requirements_for(archetype: str) -> str:
     """What this shape's architecture needs, in words. Empty for shapes
     that are already priced -- there the components speak for themselves."""
     return ARCHETYPE_REQUIREMENTS.get(archetype, "")
+
+
+def pricing_questions_for(archetype: str) -> list[str]:
+    """What would have to be answered before this shape could be priced.
+
+    Empty for a priced archetype (its gaps are ordinary assumed_fields)
+    and for UNKNOWN (which has not narrowed anything down, and gets the
+    generic CLARIFYING_QUESTIONS instead)."""
+    if is_priceable(archetype):
+        return []
+    return list(PRICING_QUESTIONS.get(archetype, ()))
 
 
 def coverage() -> list[dict[str, str]]:

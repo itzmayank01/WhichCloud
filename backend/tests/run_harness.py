@@ -486,17 +486,54 @@ def inv_12_no_priced_tier_when_archetype_unknown(fx_id: str, built: Plan) -> lis
     found the previous `archetype: unknown` note doing.
 
     Covers BOTH withholding states: unknown (nothing matched, or a tie)
-    and recognised_unpriced (shape known, no service graph yet)."""
+    and recognised_unpriced (shape known, no service graph yet).
+
+    Checks the WHOLE contract, not just `tiers`. The earlier version
+    asserted only that the tier list was empty, which a plan can satisfy
+    while still carrying a total, a component list or a topology --
+    every one of which renders as a priced answer in the interface. A
+    withheld plan has to be empty of numbers by every route the
+    interface can reach one, or the refusal is only skin deep.
+    """
     withholding = built.archetype_state in (
         "unknown", "recognised_unpriced", "composite",
     )
-    ok = (not withholding) or (not built.tiers and not built.priced)
+    if not withholding:
+        return [Result(
+            fx_id, "INV-12", passed=True,
+            expected="no priced output when the archetype is not priceable",
+            actual=f"state={built.archetype_state} (priceable, not withheld)",
+        )]
+
+    # Every surface a number could escape through.
+    leaks = []
+    if built.priced:
+        leaks.append("priced=True")
+    if built.tiers:
+        leaks.append(f"{len(built.tiers)} tier(s)")
+    if getattr(built, "total_low", 0) or getattr(built, "total_high", 0):
+        leaks.append(f"totals {built.total_low}-{built.total_high}")
+    if getattr(built, "cost_drivers", None):
+        leaks.append(f"{len(built.cost_drivers)} cost driver(s)")
+    if getattr(built, "unspent_budget", None):
+        leaks.append("unspent_budget")
+
+    # A refusal that says nothing more than "no" is a dead end. For a
+    # shape we RECOGNISED, the way forward is required, not optional.
+    recognised = built.archetype_state == "recognised_unpriced"
+    if recognised and not built.archetype_requirements:
+        leaks.append("no archetype_requirements")
+    if recognised and not built.pricing_questions:
+        leaks.append("no pricing_questions")
+
     return [Result(
-        fx_id, "INV-12", passed=ok,
-        expected="no priced tier when archetype_state is unknown or "
-                 "recognised_unpriced",
-        actual=f"state={built.archetype_state} priced={built.priced} "
-               f"tiers={len(built.tiers)}",
+        fx_id, "INV-12", passed=not leaks,
+        expected="a withheld plan carries no tiers, no total, no cost "
+                 "drivers — and, when the shape was recognised, does say "
+                 "what it needs to price it",
+        actual=f"state={built.archetype_state} " + (
+            "; ".join(leaks) if leaks else "clean"
+        ),
         reason=built.withheld_reason,
     )]
 

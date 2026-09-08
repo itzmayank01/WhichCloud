@@ -147,6 +147,24 @@ function WithheldView({ plan }: { plan: Plan }) {
         </section>
       )}
 
+      {/* The way forward. A recognised shape whose requirements we can
+          describe is one we could price given its sizing driver, so the
+          refusal ends with the specific figures rather than with "no". */}
+      {recognised && plan.pricing_questions?.length > 0 && (
+        <section className="rounded-xl border border-sky-300 bg-sky-50 p-4">
+          <h3 className="text-sm font-semibold text-sky-950">
+            What we would need to price it
+          </h3>
+          <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5">
+            {plan.pricing_questions.map((q) => (
+              <li key={q} className="text-sm leading-relaxed text-sky-900">
+                {q}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="rounded-xl border border-neutral-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-neutral-900">
           What we read from your description
