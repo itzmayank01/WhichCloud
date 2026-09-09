@@ -1,0 +1,48 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: read-replica-only-when-read-heavy
+name: A read replica only where reads actually dominate
+category: database
+summary: >
+  A replica doubles the database line. It earns that on a read-heavy
+  workload and buys nothing on a write-heavy or low-traffic one, where it
+  is a second instance kept warm to serve traffic that never arrives.
+
+applies_when:
+  workload_type: [web, api, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 80
+  requires:
+    - A read/write ratio that actually favours reads
+    - Enough traffic that the primary is the bottleneck
+
+savings:
+  typical_pct: 45
+  confidence: high
+  basis: >
+    A replica is priced as a full second database instance -- the same
+    hourly rate as the primary. Omitting one where the load model does
+    not show read pressure removes that entire line.
+
+    Stated as a percentage OF THE DATABASE LINE, not of the bill. On the
+    hospital fixture the database is roughly a third of tier 1, so the
+    bill-level effect is around 15%.
+
+tradeoffs:
+  - A workload that later becomes read-heavy will need one, and adding it
+    under load is worse than having it.
+  - Replicas also serve as a failover target on some engines, so removing
+    one can lengthen recovery even when it was not needed for capacity.
+
+implemented_by:
+  - name: Amazon RDS read replicas
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.html
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: high

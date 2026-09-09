@@ -31,16 +31,76 @@ DEFAULT_KB = Path(__file__).resolve().parents[2] / "knowledge-base" / "technique
 
 # Effects the engine knows how to apply to an ArchitectureSpec. A technique
 # declaring anything else is a loading error, not a silent no-op.
-KNOWN_EFFECTS = {
-    "arch",
-    "use_spot",
-    "use_commitment",
-    "cold_storage_fraction",
-    "database_multi_az",
-    "database_arch",
-    "compute_duty_cycle",
+#: Spec fields a technique may declare an `effect` on.
+#:
+#: The gate that keeps this knowledge base from becoming a blog. A
+#: technique naming a field outside this set fails to load, loudly --
+#: because a technique the engine cannot EVALUATE is advice, and advice
+#: with a percentage next to it is the thing this project exists not to
+#: produce. Every entry here is a real field on ArchitectureSpec, so the
+#: engine can price the architecture with the effect and without it and
+#: report the measured difference rather than a claimed one.
+#: The subset of ArchitectureSpec fields a technique may declare an
+#: `effect` on.
+#:
+#: INTERSECTED WITH THE REAL DATACLASS, deliberately. This was a literal
+#: set, and I added `block_storage_class` to it before the field existed
+#: -- so a technique loaded cleanly, claimed to be priceable, and then
+#: raised TypeError inside the estimator on 97 tests. A gate that names
+#: fields by hand is a gate that can name one that is not there.
+#:
+#: The names below are the INTENT (these are the levers worth pricing);
+#: the intersection is the GUARANTEE (every one of them exists).
+_INTENDED_EFFECTS = {
+    # SELECTION ONLY. Every name here changes WHICH thing is bought, not
+    # HOW MUCH of it.
+    #
+    # That distinction is load-bearing and I got it wrong first. Effects
+    # are folded into the real architecture by engine.apply_effects, so a
+    # technique declaring `compute_count: 2` does not describe a saving --
+    # it RESIZES THE FLEET, overriding what the load model computed from
+    # the stated rate. `nat_gateway_count: 1` would strip the second
+    # gateway from a workload that stated it must survive a zone failure,
+    # and `egress_gb: 60` would overwrite a figure the user gave. Fifteen
+    # tests caught it; the design was wrong, not the tests.
+    #
+    # A technique whose lever is a QUANTITY is still a real technique and
+    # still carries an applies_when rule the engine evaluates. It is
+    # surfaced as ADVISORY rather than auto-applied, because deciding how
+    # much of something to buy is the engine's job and saying that it can
+    # be reduced is the knowledge base's.
+    #
+    # The seven original entries are unchanged. Three are new, and each
+    # is a like-for-like swap that cannot change the shape of anything:
+    # fargate_arm, forbid_burstable, block_storage_class.
+    "arch",                    # x86 vs ARM instance family
+    "database_arch",           # x86 vs ARM database family
+    "fargate_arm",             # x86 vs ARM Fargate task
+    "use_spot",                # on-demand vs interruptible
+    "use_commitment",          # on-demand vs committed rate
+    "forbid_burstable",        # burstable vs fixed-performance family
+    "block_storage_class",     # gp3 vs gp2 vs st1
+    "cold_storage_fraction",   # hot vs archive class split
+    "compute_duty_cycle",      # always-on vs scaled to zero off-peak
+    "database_multi_az",       # single-AZ vs Multi-AZ SKU
 }
 
+
+def _known_effects() -> frozenset[str]:
+    from dataclasses import fields as _fields
+
+    from whichcloud.estimator import ArchitectureSpec
+
+    real = {f.name for f in _fields(ArchitectureSpec)}
+    unknown = _INTENDED_EFFECTS - real
+    if unknown:
+        raise KnowledgeBaseError(
+            f"these effects name no ArchitectureSpec field: {sorted(unknown)}"
+        )
+    return frozenset(_INTENDED_EFFECTS)
+
+
+KNOWN_EFFECTS = _known_effects()
 REQUIRED_FIELDS = ("id", "name", "category", "summary", "savings", "providers")
 
 

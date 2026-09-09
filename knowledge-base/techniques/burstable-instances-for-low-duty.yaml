@@ -1,0 +1,50 @@
+id: burstable-instances-for-low-duty
+name: Burstable instances for workloads that idle
+category: compute
+summary: >
+  T-family instances cost less per hour than fixed-performance families of
+  the same size, and bank CPU credits while idle. For a workload that is
+  mostly idle with occasional peaks, that is the correct shape.
+
+applies_when:
+  workload_type: [web, api, mixed]
+  traffic_pattern: [spiky, steady]
+  min_monthly_spend_usd: 15
+  requires:
+    - Average CPU well below the instance baseline
+    - Peaks short enough to be covered by banked credits
+
+savings:
+  typical_pct: 18
+  confidence: medium
+  basis: >
+    Measured from the ap-south-1 catalog by comparing the cheapest
+    burstable and cheapest non-burstable instance meeting the same vCPU
+    and memory floor. The engine prices both rather than asserting the
+    figure.
+
+    Confidence is MEDIUM because the saving is real only while the
+    workload stays under its baseline. A sustained-load workload on a
+    T-family instance exhausts its credits and then either throttles or
+    bills unlimited-mode surcharges that can exceed the fixed-performance
+    price it was avoiding.
+
+tradeoffs:
+  - Sustained load exhausts credits. The failure is either throttling or
+    a surcharge, and both are worse than having paid for the right shape.
+  - Credit balance is another thing to monitor.
+  - Not suitable for latency-sensitive work where a throttle is visible
+    to a user.
+
+implemented_by:
+  - name: EC2 burstable performance instances
+    url: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances.html
+    type: managed-service
+
+effect:
+  forbid_burstable: false
+counterfactual:
+  forbid_burstable: true
+
+providers: [aws, gcp, azure]
+obviousness: medium

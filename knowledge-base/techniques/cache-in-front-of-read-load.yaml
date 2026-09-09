@@ -1,0 +1,51 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: cache-in-front-of-read-load
+name: Cache reads instead of growing the database
+category: database
+summary: >
+  A cache node is materially cheaper per read served than the database
+  instance it protects. Where the same rows are read repeatedly, caching
+  them is cheaper than sizing the database for the traffic.
+
+applies_when:
+  workload_type: [web, api, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 80
+  requires:
+    - Repeated reads of the same data
+    - Tolerance for data that is briefly stale
+
+savings:
+  typical_pct: 25
+  confidence: medium
+  basis: >
+    Priced from the ap-south-1 cache catalog against the database instance
+    size it would otherwise require. The engine caps the cache at the
+    database's own memory: a cache larger than what the database could
+    itself buffer buys nothing more, whatever the family's default size
+    suggests.
+
+    MEDIUM confidence because the saving depends on hit ratio, which
+    depends on the access pattern. A workload reading each row once gets
+    no benefit and pays for the node.
+
+tradeoffs:
+  - Stale reads. Every cache is a decision about how wrong you are willing
+    to be, and for how long.
+  - Invalidation is application work, and getting it wrong is a
+    correctness bug rather than a performance one.
+  - Another component to run out of memory, fail over and monitor.
+
+implemented_by:
+  - name: Amazon ElastiCache
+    url: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: high

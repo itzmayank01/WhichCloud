@@ -1,0 +1,49 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: multi-az-database-only-when-stated
+name: Multi-AZ database only where downtime was said to matter
+category: database
+summary: >
+  Multi-AZ is a published SKU at roughly double the single-AZ rate, not a
+  multiplier. It is required by a stated availability need and is pure
+  cost without one.
+
+applies_when:
+  workload_type: [web, api, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 50
+  requires:
+    - No stated requirement to survive an availability-zone failure
+
+savings:
+  typical_pct: 50
+  confidence: high
+  basis: >
+    MEASURED: the catalog carries Multi-AZ as its own SKU
+    (db.*:multi-az), so the engine prices the real published rate rather
+    than doubling a single-AZ figure. In ap-south-1 the Multi-AZ rate is
+    approximately 2x single-AZ across the db.t4g and db.m6g families.
+
+    This is the technique most likely to be applied WRONGLY, which is why
+    the engine gates it on a stated availability requirement and INV-3
+    fails any design that omits it when one exists. A cheaper
+    non-compliant option is not a cheaper option.
+
+tradeoffs:
+  - Losing the zone holding the single instance is an outage lasting as
+    long as a restore. That is the whole trade, and it is only acceptable
+    where the workload said so.
+  - Single-AZ patching windows are user-visible; Multi-AZ ones are not.
+
+implemented_by:
+  - name: Amazon RDS Multi-AZ deployments
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: high

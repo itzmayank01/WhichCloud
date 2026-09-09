@@ -1,0 +1,55 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: vpc-endpoints-instead-of-nat
+name: VPC endpoints instead of NAT data processing
+category: network
+summary: >
+  Traffic from private subnets to S3, DynamoDB and the AWS APIs can take a
+  private route instead of paying a NAT gateway to process every gigabyte.
+
+applies_when:
+  workload_type: [web, api, batch, ml, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 40
+  requires:
+    - Compute in private subnets (a public-subnet design has no NAT to begin with)
+    - Traffic that is actually going to AWS services rather than the internet
+
+savings:
+  typical_pct: 22
+  confidence: high
+  basis: >
+    MEASURED against the ap-south-1 catalog. NAT data processing is
+    $0.045/GB on top of the gateway's own hourly charge. Gateway endpoints
+    for S3 and DynamoDB are FREE and remove that traffic from NAT
+    entirely; interface endpoints cost an hourly rate per AZ plus
+    $0.01/GB, so they pay for themselves above roughly 25 GB/month of
+    diverted traffic per endpoint.
+
+    The percentage is of the NAT line, not of the bill. On a workload
+    where most private-subnet egress is ECR pulls, SSM, CloudWatch Logs
+    and S3 -- which is most workloads -- the majority of NAT data
+    processing is divertible.
+
+tradeoffs:
+  - Interface endpoints bill per AZ per hour whether used or not, so a
+    low-traffic workload can pay more for the endpoint than the NAT data
+    it diverts. The engine's `_endpoint_plan` only adds them where the
+    diverted volume justifies the hourly cost.
+  - Each endpoint is another resource to manage and to get the security
+    group right on.
+  - Gateway endpoints exist only for S3 and DynamoDB. Everything else
+    needs the interface kind.
+
+implemented_by:
+  - name: AWS PrivateLink / VPC endpoints
+    url: https://docs.aws.amazon.com/vpc/latest/privatelink/
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: medium

@@ -110,6 +110,11 @@ class ArchitectureSpec:
     #: ZERO before this existed, silently, because nothing was marked
     #: missing either.
     block_storage_gb: float = 0.0
+    #: Which EBS class the volumes are. gp3 is the default because it is
+    #: the current general-purpose class and cheaper per GB than gp2 at
+    #: the same baseline performance; a technique can price the
+    #: difference by setting this.
+    block_storage_class: str = "gp3"
 
     private_subnets: bool = False
     nat_gateway_count: int = 0
@@ -423,6 +428,9 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     # estate has volumes, not a managed database, and without this
     # role its disks were billed at zero.
     ("aws", "block_storage", "gp3"): "ebs:gp3",
+    ("aws", "block_storage", "gp2"): "ebs:gp2",
+    ("aws", "block_storage", "st1"): "ebs:st1",
+    ("aws", "block_storage", "sc1"): "ebs:sc1",
     ("aws", "connection", "ws-messages"): "apigateway:ws-messages",
     ("aws", "connection", "ws-minutes"): "apigateway:ws-connection",
     ("aws", "connection", "graphql-minutes"): "appsync:connection",
@@ -1710,7 +1718,10 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
 
     # ---- attached block storage (EBS) ----
     if spec.block_storage_gb:
-        point = _by_role(provider, region, "block_storage", "gp3", dsn)
+        point = _by_role(
+            provider, region, "block_storage",
+            spec.block_storage_class or "gp3", dsn,
+        )
         if point:
             result.items.append(
                 _metered_line("Block storage", point, spec.block_storage_gb)
@@ -1905,3 +1916,78 @@ def compare(
     """
     results = [estimate(spec, p, dsn=dsn) for p in providers]
     return sorted(results, key=lambda e: (not e.is_complete, e.total_monthly))
+
+
+def comparable_lines(
+    estimates: list[Estimate], providers: tuple[str, ...],
+) -> tuple[list[str], list[dict], list[dict]]:
+    """Which line items may honestly be compared across these clouds.
+
+    Returns (categories, refusals, caveats).
+
+    The failure this exists to stop: the old comparison summed whatever
+    each cloud happened to price and ranked the totals. AWS priced
+    twenty-one components and the others had adapters for seven, so their
+    totals were lower for a reason that had nothing to do with price --
+    and the ranking put "$336" above "$649" and called it the winner.
+
+    Intersecting line-item labels, which the interface did as a
+    workaround, is a GUESS about equivalence made from label text.
+    knowledge-base/service-mappings is the actual answer, and an
+    unmapped category refuses rather than being assumed equivalent.
+    """
+    from whichcloud import mappings
+
+    categories: list[str] = []
+    refusals: list[dict] = []
+    caveats: list[dict] = []
+    seen: set[str] = set()
+
+    for est in estimates:
+        for item in est.items:
+            mapping = mappings.by_category(est.provider, _category_of(item))
+            category = _category_of(item)
+            if not category or category in seen:
+                continue
+            seen.add(category)
+            verdict = mappings.may_compare(category, providers)
+            if verdict.comparable:
+                categories.append(category)
+                if verdict.caveat:
+                    caveats.append({
+                        "category": category,
+                        "confidence": verdict.confidence,
+                        "caveat": verdict.caveat,
+                    })
+            else:
+                refusals.append({
+                    "category": category,
+                    "confidence": verdict.confidence,
+                    "reason": verdict.reason,
+                })
+    return categories, refusals, caveats
+
+
+def _category_of(item: LineItem) -> str:
+    """The catalog category a line item was priced from.
+
+    Derived from the SKU prefix, which is how every adapter names them --
+    `ebs:gp3` is block_storage, `sagemaker:ml.g5.xlarge` is inference.
+    Returns "" when the SKU carries no prefix, which is the compute
+    families (t4g.medium), handled by the caller.
+    """
+    sku = (item.sku or "")
+    head = sku.split(":", 1)[0]
+    return _SKU_PREFIX_CATEGORY.get(head, "compute" if "." in sku else "")
+
+
+#: SKU prefix -> catalog category. One place, so `comparable_lines` does
+#: not have to re-derive what the adapters already know.
+_SKU_PREFIX_CATEGORY = {
+    "s3": "storage", "ebs": "block_storage", "egress": "network",
+    "cloudfront": "cdn", "sagemaker": "inference",
+    "eventbridge": "eventbridge", "apigateway": "apigateway",
+    "appsync": "connection", "sqs": "queue", "sns": "notification",
+    "lambda": "lambda-requests", "dynamodb": "dynamodb-reads",
+    "opensearch": "search", "db": "database",
+}

@@ -869,6 +869,26 @@ def compare_route(body: RecommendIn) -> dict:
         raise HTTPException(400, str(exc)) from exc
 
     results = recommend_across_clouds(requirement)
+    providers = tuple(results)
+
+    # WHAT MAY HONESTLY BE COMPARED, and what may not.
+    #
+    # The interface used to intersect line-item LABELS to work out which
+    # services all three clouds priced. That is a guess about equivalence
+    # made from text; knowledge-base/service-mappings is the answer, and
+    # it refuses on anything unmapped rather than assuming.
+    from whichcloud import mappings
+    from whichcloud.estimator import comparable_lines
+
+    first = next(iter(results.values()), [])
+    estimates = [
+        options[0].estimate
+        for options in results.values() if options
+    ]
+    categories, refusals, caveats = (
+        comparable_lines(estimates, providers) if estimates else ([], [], [])
+    )
+
     return {
         "goal": requirement.goal,
         "region": requirement.region,
@@ -877,6 +897,18 @@ def compare_route(body: RecommendIn) -> dict:
             provider: [_option_out(o, provider).model_dump() for o in options]
             for provider, options in results.items()
         },
+        # The categories the compared totals actually cover. A total is
+        # only like-for-like over these.
+        "comparable_categories": categories,
+        # Services one cloud prices and another has no equivalent for, or
+        # that nobody has established an equivalence for. Each carries
+        # its reason, because a refusal nobody can check is not much
+        # better than a guess.
+        "not_comparable": refusals,
+        # Services that DO compare, but where the billing models differ
+        # enough that the difference is not purely price.
+        "comparison_caveats": caveats,
+        "mapping_coverage": mappings.coverage(),
     }
 
 

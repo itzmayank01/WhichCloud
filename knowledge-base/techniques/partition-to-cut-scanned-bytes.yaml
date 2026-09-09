@@ -1,0 +1,52 @@
+id: partition-to-cut-scanned-bytes
+name: Partition and compress so queries scan less
+category: storage
+summary: >
+  Query engines that bill per byte scanned charge for the file layout, not
+  for the answer. Columnar format with partitioning cuts the bytes a query
+  touches by an order of magnitude.
+
+applies_when:
+  workload_type: [batch, mixed, storage]
+  traffic_pattern: [steady]
+  min_monthly_spend_usd: 30
+  requires:
+    - A query layer billed per byte scanned (Athena, BigQuery, Synapse
+      serverless)
+    - Queries that filter on a predictable column, usually a date
+
+savings:
+  typical_pct: 80
+  confidence: medium
+  basis: >
+    Athena bills $5 per TB scanned in ap-south-1. Converting raw JSON or
+    CSV to Parquet typically reduces stored bytes by 60-80% through
+    columnar compression, and partitioning by date means a query for one
+    day reads one day rather than the whole table.
+
+    MEDIUM confidence: the multiplier depends on how selective the
+    queries are. A query with no partition predicate scans everything
+    regardless of layout, and the saving is then only the compression.
+
+tradeoffs:
+  - Conversion is a job that has to run, and it costs compute.
+  - Over-partitioning creates many small files, which is its own
+    performance problem and can make queries slower.
+  - Raw data usually has to be retained anyway for reprocessing, so this
+    ADDS storage while removing scan cost.
+
+implemented_by:
+  - name: AWS Glue (Parquet conversion and partitioning)
+    url: https://docs.aws.amazon.com/glue/latest/dg/
+    type: managed-service
+  - name: Apache Parquet
+    url: https://parquet.apache.org/
+    type: tool
+
+effect:
+  cold_storage_fraction: 0.8
+counterfactual:
+  cold_storage_fraction: 0.0
+
+providers: [aws, gcp, azure]
+obviousness: low

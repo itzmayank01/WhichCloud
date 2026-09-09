@@ -1,0 +1,56 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: egress-is-the-bill-nobody-forecasts
+name: Cut egress before cutting compute
+category: network
+summary: >
+  Data leaving a cloud is billed per GB at a rate that does not fall with
+  volume the way compute does. On media and analytics workloads it
+  routinely exceeds the compute it serves, and it is the line least often
+  forecast.
+
+applies_when:
+  workload_type: [web, api, storage, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 60
+  requires:
+    - Meaningful data leaving the provider's network
+    - Content or responses that can be compressed, cached or co-located
+
+savings:
+  typical_pct: 40
+  confidence: medium
+  basis: >
+    ap-south-1 internet egress is $0.1093/GB after the first 100 GB. The
+    engine models the reductions separately and prices each: an edge
+    cache moves most bytes off the origin meter, compression reduces the
+    bytes themselves, and moving a consumer into the same region removes
+    the charge entirely.
+
+    MEDIUM confidence because the achievable reduction depends on
+    content type. Already-compressed media (video, images) does not
+    compress further, and there the only lever is the edge.
+
+tradeoffs:
+  - Compression costs CPU on both ends, and for small responses the
+    overhead exceeds the saving.
+  - Co-locating a consumer to avoid egress may conflict with a data
+    residency requirement, which is a constraint and not a preference.
+  - Egress is the charge most likely to be a surprise, so reducing it
+    also reduces the value of the alarm it would otherwise raise.
+
+implemented_by:
+  - name: CloudFront (edge offload)
+    url: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/
+    type: managed-service
+  - name: S3 Transfer Acceleration / regional co-location
+    url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/transfer-acceleration.html
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: low
