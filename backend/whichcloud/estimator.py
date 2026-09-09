@@ -93,6 +93,15 @@ class ArchitectureSpec:
     # Private subnets need a NAT gateway per zone to reach the internet.
     # One of the largest line items people forget: two gateways is ~$82/mo
     # before a single byte is processed.
+    #: Whether the compute sits in private subnets.
+    #:
+    #: DECLARED, not inferred from nat_gateway_count. A private subnet
+    #: whose only outbound need is S3 and CloudWatch reaches both through
+    #: VPC endpoints and needs no NAT gateway at all -- so inferring
+    #: privacy from NAT presence reported such a design as `public_simple`
+    #: and then failed it for not being private. Two different things:
+    #: where the instance sits, and how it gets out.
+    private_subnets: bool = False
     nat_gateway_count: int = 0
     nat_gb_processed: float = 0.0
     tls_certificate: bool = False
@@ -1136,13 +1145,17 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             f"sagemaker:{spec.inference_instance}", dsn,
         )
         if point:
-            hours = spec.inference_hours_per_month or HOURS_PER_MONTH
-            quantity = hours * spec.inference_instance_count
+            # Decimal throughout. Every other line item in this module
+            # is Decimal, and mixing one float in makes total_monthly --
+            # a plain sum over items -- raise on the addition. Money is
+            # not a float here on purpose.
+            hours = Decimal(str(spec.inference_hours_per_month or HOURS_PER_MONTH))
+            quantity = hours * Decimal(spec.inference_instance_count)
             result.items.append(LineItem(
                 label=f"Model endpoint × {spec.inference_instance_count}",
                 sku=point.sku, unit="hour",
-                unit_price=float(point.price_usd), quantity=quantity,
-                monthly_usd=float(point.price_usd) * quantity,
+                unit_price=point.price_usd, quantity=quantity,
+                monthly_usd=point.price_usd * quantity,
             ))
         else:
             result.missing.append(

@@ -49,6 +49,8 @@ from whichcloud.pricing import store
 #: describing two workloads can say so. Bumped rather than reused --
 #: a v1 row cannot be read as v2, and serving one silently would answer
 #: a multi-shape prompt with whichever half v1 happened to pick.
+#: v7: the shape-specific sizing drivers -- model_size_gb,
+#: peak_concurrent_connections, searchable_history.
 #: v6: `interruptible` -- the gate on Spot, which must be stated.
 #: v5: active_hours_per_day. Its absence was producing ZEROES -- asked
 #: for a per-day figure on a business-hours workload the model had no
@@ -62,7 +64,7 @@ from whichcloud.pricing import store
 #: migration would come back with a zero machine count -- which the
 #: quantity audit would correctly refuse to price, but refusing a prompt
 #: we can now read properly is a worse answer than re-reading it.
-SCHEMA_VERSION = "constraints-v6"
+SCHEMA_VERSION = "constraints-v7"
 
 #: THE PINNED PRIMARY. One provider and one model, named, because
 #: different models return different Constraints from the same prompt --
@@ -247,6 +249,21 @@ class Extraction(BaseModel):
         description="the exact phrase the requests figure came from and "
                     "its unit, e.g. '30,000 visitors a month' or "
                     "'40 stores x 200 transactions/day'; '' if unstated")
+    model_size_gb: Field_ = Field(
+        default_factory=_unstated,
+        description="GB of the trained model artefact being served; 0 if "
+                    "unstated or not a model-serving workload")
+    peak_concurrent_connections: Field_ = Field(
+        default_factory=_unstated,
+        description="sockets/sessions open AT THE SAME TIME at peak, for "
+                    "chat, live feeds or presence. NOT users total and "
+                    "NOT requests: '100,000 users' with no concurrency "
+                    "figure is 0 here. 0 if unstated")
+    searchable_history: Field_ = Field(
+        default_factory=lambda: _unstated("false"),
+        description="true if the text says past messages/events must be "
+                    "searchable or queryable ('history must be "
+                    "searchable'); false if unstated")
     interruptible: Field_ = Field(
         default_factory=lambda: _unstated("false"),
         description="true ONLY if the text says the work can be safely "
@@ -455,6 +472,7 @@ _NON_REQUIRED_FIELDS = (
     "source_vm_count", "source_os", "source_vcpu_total",
     "source_ram_gb_total", "source_disk_gb_total", "cpu_architecture",
     "requests_basis", "active_hours_per_day", "interruptible",
+    "model_size_gb", "peak_concurrent_connections", "searchable_history",
 )
 
 #: Operating systems that put x86 beyond argument. Not a phrase table --
@@ -528,15 +546,16 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
             if value not in _ENUMS[name]:
                 continue  # keep the dataclass default, and leave it 'assumed'
         elif name in ("users", "requests_per_day", "emails_per_month",
-                      "source_vm_count", "source_vcpu_total"):
+                      "source_vm_count", "source_vcpu_total",
+                      "peak_concurrent_connections"):
             value = _as_int(raw)
         elif name in ("budget_monthly_usd", "storage_gb", "egress_gb",
                       "content_storage_gb", "user_data_gb",
                       "source_ram_gb_total", "source_disk_gb_total",
-                      "active_hours_per_day"):
+                      "active_hours_per_day", "model_size_gb"):
             value = _as_float(raw)
         elif name in ("public_facing", "country_lock", "async_processing",
-                      "interruptible"):
+                      "interruptible", "searchable_history"):
             value = _as_bool(raw)
         elif name == "requests_basis":
             value = str(raw).strip()

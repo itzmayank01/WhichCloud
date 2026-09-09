@@ -28,9 +28,11 @@ def _register(module) -> None:
 
 
 def _load() -> None:
-    from whichcloud.archetypes import batch_etl, event_driven, static_site
+    from whichcloud.archetypes import (
+        batch_etl, event_driven, ml_inference, static_site,
+    )
 
-    for module in (static_site, batch_etl, event_driven):
+    for module in (static_site, batch_etl, event_driven, ml_inference):
         _register(module)
 
 

@@ -1291,14 +1291,16 @@ def _graph_plan(
     # `public_simple` would claim a public subnet that does not exist.
     first = plan.tiers[0].spec
     if first.compute_count or first.fargate_task_count:
-        plan.network_topology = (
-            PRIVATE_STANDARD if first.nat_gateway_count else PUBLIC_SIMPLE
-        )
+        private = first.private_subnets
+        plan.network_topology = PRIVATE_STANDARD if private else PUBLIC_SIMPLE
         plan.network_topology_reason = (
-            "instances run in a VPC; "
-            + ("private subnets with NAT egress"
-               if first.nat_gateway_count else
-               "a public subnet, with no private compute to route out of one")
+            "instances run in private subnets, reaching AWS services "
+            + ("through a NAT gateway" if first.nat_gateway_count
+               else "through VPC endpoints — no NAT gateway, because "
+                    "nothing here needs general internet egress")
+            if private else
+            "instances run in a public subnet; nothing about this "
+            "workload requires network isolation"
         )
     else:
         plan.network_topology = NO_VPC

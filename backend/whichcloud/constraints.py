@@ -78,11 +78,25 @@ QUESTIONS: dict[str, str] = {
 # not a stemmed token, because the cost of a false positive here is a
 # constraint invented from nothing.
 
+#: WHEN THE LOAD ARRIVES IS NOT AN UPTIME REQUIREMENT.
+#:
+#: "business hours", "working hours", "opd hours" and "trading hours"
+#: were in this table and are now gone. PROBE-4 -- "about 50 predictions
+#: a second during business hours, almost none at night" -- was read as
+#: availability=high on the strength of that phrase alone. It is a
+#: statement about TRAFFIC TIMING, and reading it as an uptime promise
+#: forced Multi-AZ, a load balancer and a second instance onto a workload
+#: whose own next clause says it is idle at night. The extraction schema
+#: has said "'busiest during business hours' is traffic timing, NOT an
+#: uptime need" since it was written; the phrase table simply disagreed
+#: with it, and the phrase table was wrong.
+#:
+#: "downtime during <period>" stays: that phrasing names a consequence,
+#: not a clock.
 _AVAILABILITY_HIGH = (
     "downtime is unacceptable", "downtime during", "cannot go down",
     "can't go down", "must not go down", "no downtime", "24x7", "24/7",
-    "always available", "critical", "business hours", "opd hours",
-    "working hours", "trading hours", "must stay up", "high availability",
+    "always available", "critical", "must stay up", "high availability",
     "cannot have downtime", "can't have downtime", "must not have downtime",
 )
 
@@ -257,6 +271,26 @@ class Constraints:
     #: the constraint can be argued with rather than merely obeyed.
     cpu_architecture: CPUArchitecture = "unknown"
     forced_x86_reason: str = ""
+
+    # ── shape-specific sizing drivers ────────────────────────────────
+    # Each of these sizes ONE archetype and is meaningless for the rest.
+    # They exist because sizing every shape by requests-per-day is what
+    # costed a 40-machine estate as one small instance: a model endpoint
+    # is sized by predictions and model size, a chat backend by sockets
+    # held open, and neither figure has anywhere else to live.
+
+    #: GB of model artefact. Decides whether an endpoint needs an
+    #: accelerator's memory or fits on CPU, and how long a cold start is.
+    model_size_gb: float = 0.0
+    #: Sockets open AT THE SAME TIME at peak. The figure a realtime
+    #: workload is actually billed on -- connection-minutes are this
+    #: times how long they are held, and no per-request meter can
+    #: express it.
+    peak_concurrent_connections: int = 0
+    #: Whether message or event history has to be searchable. A STATED
+    #: requirement when present: "history must be searchable" names a
+    #: search index, and a design without one does not meet the brief.
+    searchable_history: bool = False
 
     #: Whether the work can be safely restarted if it is interrupted.
     #:

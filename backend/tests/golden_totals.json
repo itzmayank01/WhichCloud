@@ -44,6 +44,11 @@
     "tier_2": 80.81,
     "tier_3": 80.81
   },
+  "ml-inference": {
+    "tier_1": 83.86,
+    "tier_2": 437.5,
+    "tier_3": 560.82
+  },
   "static-site": {
     "tier_1": 3.92,
     "tier_2": 18.73,
