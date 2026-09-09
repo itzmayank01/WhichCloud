@@ -363,6 +363,52 @@ export type ArchitectureView = {
   designed?: boolean;
 } & Partial<DesignedRefusal>;
 
+
+/** P3 AUDIT — a billing export reviewed against the knowledge base.
+ *
+ *  It does not tell you what you spent; your bill already did. Each
+ *  finding names the technique, what it would save, the trade-off it
+ *  carries, and what a billing export CANNOT confirm about it. */
+export type AuditFinding = {
+  service: string;
+  monthly_usd: number;
+  technique_id: string;
+  technique: string;
+  category: string;
+  summary: string;
+  saved_monthly_usd: number;
+  basis: string;
+  /** ESTIMATED from a cited figure, not measured against a catalog swap.
+   *  A billing export gives a service and a total, not the instance
+   *  family the catalog would need to price the swap exactly. */
+  measured: boolean;
+  obviousness: string;
+  tradeoffs: string[];
+  tool: string;
+  tool_url: string;
+  /** Conditions the technique needs that a bill cannot show — whether the
+   *  workload tolerates interruption, whether downtime matters. Naming
+   *  them is the difference between a finding and a guess. */
+  needs_confirmation: string[];
+};
+
+export type AuditReport = {
+  currency: string;
+  total_monthly_usd: number;
+  lines_read: number;
+  /** The BEST technique per service, summed across services — never the
+   *  sum of every finding. Techniques against one service are
+   *  alternatives, not a shopping list. */
+  total_saving_usd: number;
+  saving_pct: number;
+  saving_basis: string;
+  findings: AuditFinding[];
+  /** Services reviewed with nothing found. "We looked and found nothing"
+   *  and "we did not look" are different claims. */
+  reviewed_no_finding: { service: string; monthly_usd: number; why: string }[];
+  warnings: string[];
+};
+
 export type SavedArchitecture = {
   id: string;
   title: string;
@@ -560,6 +606,20 @@ export const api = {
     });
     if (!response.ok) throw new Error(`export failed: ${response.status}`);
     return response.blob();
+  },
+
+  /** Upload a billing export for review. multipart, not JSON — a CUR is
+   *  a file, and base64-ing megabytes through a JSON body to avoid one
+   *  content type is not a simplification. */
+  audit: async (file: File): Promise<AuditReport> => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${BASE}/audit`, { method: "POST", body: form });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new ApiError(detail.detail ?? "Could not read that file", response.status);
+    }
+    return response.json();
   },
 
   saveArchitecture: (body: Record<string, unknown>) =>

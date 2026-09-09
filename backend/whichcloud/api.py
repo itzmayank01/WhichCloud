@@ -20,7 +20,7 @@ import hashlib
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -686,6 +686,7 @@ def health() -> dict:
         raise HTTPException(503, "price catalog is empty — run ingest_prices.py")
 
     from .architecture.readers import configured
+    from .pricing import cache as price_cache
 
     return {
         "status": "ok",
@@ -696,6 +697,9 @@ def health() -> dict:
         # configured" and lets you see a new key took effect without a restart
         # being a matter of faith.
         "readers": configured(),
+        # A cache nobody measures is a cache nobody can tell is broken:
+        # a 0% hit rate and a working cache look identical from outside.
+        "price_cache": price_cache.STATS.as_dict(),
     }
 
 
@@ -1183,6 +1187,76 @@ def delete_architecture_route(architecture_id: str, owner: str = Query(...)) -> 
     except Exception as exc:
         raise HTTPException(503, f"could not delete: {exc}") from exc
     return {"deleted": removed}
+
+
+@app.post("/audit")
+async def audit_route(file: UploadFile = File(...)) -> dict:
+    """P3 AUDIT: a billing export in, a waste report out.
+
+    The PRD's third product. `backend/audit/` is an internal scorecard
+    grading the ENGINE, not this -- nothing in it reads a billing CSV.
+
+    CSV upload only, deliberately. A live account connection is out of
+    scope for v1, and a read-only IAM role is a credential this product
+    has no business holding; a CSV is something the user can look at
+    before they hand it over.
+    """
+    from .billing_audit import BillingParseError, audit as run_audit
+
+    raw = await file.read()
+    if len(raw) > 25 * 1024 * 1024:
+        raise HTTPException(413, "Billing export is larger than 25 MB.")
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "File is not UTF-8 text.") from None
+
+    try:
+        report = run_audit(content)
+    except BillingParseError as exc:
+        # 422, not 500: the file was read fine and is not one we can
+        # reason about, which is the user's problem to fix and needs the
+        # specific reason rather than a stack trace.
+        raise HTTPException(422, str(exc)) from exc
+
+    return {
+        "currency": report.currency,
+        "total_monthly_usd": report.total_monthly_usd,
+        "lines_read": report.lines_read,
+        # BEST PER SERVICE, not the sum of every finding. Techniques
+        # against one service are alternatives, not a shopping list --
+        # summing them produced a 147.9% saving on the first sample bill.
+        "total_saving_usd": report.total_saving_usd,
+        "saving_pct": report.saving_pct,
+        "saving_basis": (
+            "The best single technique per service, summed across "
+            "services. Techniques against the same service are "
+            "alternatives rather than additive, so they are never summed."
+        ),
+        "findings": [
+            {
+                "service": f.service,
+                "monthly_usd": f.monthly_usd,
+                "technique_id": f.technique_id,
+                "technique": f.technique,
+                "category": f.category,
+                "summary": f.summary,
+                "saved_monthly_usd": f.saved_monthly_usd,
+                "basis": f.basis,
+                "measured": f.measured,
+                "obviousness": f.obviousness,
+                "tradeoffs": f.tradeoffs,
+                "tool": f.tool,
+                "tool_url": f.tool_url,
+                "needs_confirmation": f.needs_confirmation,
+            }
+            for f in report.findings
+        ],
+        # "We looked and found nothing" and "we did not look" are
+        # different claims, and only one is honest about coverage.
+        "reviewed_no_finding": report.reviewed_no_finding,
+        "warnings": report.warnings,
+    }
 
 
 @app.post("/plan")

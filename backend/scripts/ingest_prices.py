@@ -51,6 +51,12 @@ def main() -> int:
     providers = ["aws", "azure", "gcp"] if args.provider == "all" else [args.provider]
     total = 0
 
+    # A fresh catalog must never be shadowed by rates from the previous
+    # one. Invalidating AFTER the write rather than before, so a failed
+    # ingest leaves the old (working) cache intact rather than emptying
+    # it and then not refilling it.
+    from whichcloud.pricing import cache as _price_cache
+
     for name in providers:
         started = time.monotonic()
         print(f"{BOLD}{name}{RESET}")
@@ -97,7 +103,10 @@ def main() -> int:
             f"{row['category']:<14}{row['n']:>7,}"
         )
 
-    print(f"\n{GREEN}✓ {total:,} prices written.{RESET}\n")
+    dropped = _price_cache.invalidate_all()
+    print(f"\n{GREEN}✓ {total:,} prices written.{RESET}"
+          f" Cache: {dropped:,} stale entr{'y' if dropped == 1 else 'ies'} "
+          f"dropped.\n")
     return 0
 
 
