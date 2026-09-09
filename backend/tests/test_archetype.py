@@ -134,12 +134,17 @@ def test_no_priced_tier_is_emitted_for_an_unimplemented_shape(prompt):
     assert plan.withheld_reason
 
 
-@pytest.mark.parametrize("prompt", list(PROBES.values()))
+@pytest.mark.parametrize("prompt", list(UNBUILT.values()))
 def test_a_recognised_shape_is_named_and_described_not_just_refused(prompt):
     """Withholding a price must not mean discarding the analysis. For a
     recognised shape the useful answer is what that architecture needs --
     not the clarifying questions, which would be asking the user to
-    re-explain something already understood."""
+    re-explain something already understood.
+
+    Parametrised over UNBUILT rather than every probe: a shape that now
+    HAS a graph is priced, and `archetype_requirements` is by design
+    empty there -- describing an architecture in words is what the engine
+    does INSTEAD of building it, not as well as."""
     plan = build(prompt)
     assert plan.constraints is not None
     assert plan.load.sizing_basis()["load_tier"]

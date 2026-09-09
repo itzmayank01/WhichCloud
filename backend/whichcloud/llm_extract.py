@@ -49,6 +49,7 @@ from whichcloud.pricing import store
 #: describing two workloads can say so. Bumped rather than reused --
 #: a v1 row cannot be read as v2, and serving one silently would answer
 #: a multi-shape prompt with whichever half v1 happened to pick.
+#: v6: `interruptible` -- the gate on Spot, which must be stated.
 #: v5: active_hours_per_day. Its absence was producing ZEROES -- asked
 #: for a per-day figure on a business-hours workload the model had no
 #: way to say 'eight hours' worth' and returned 0, discarding a rate it
@@ -61,7 +62,7 @@ from whichcloud.pricing import store
 #: migration would come back with a zero machine count -- which the
 #: quantity audit would correctly refuse to price, but refusing a prompt
 #: we can now read properly is a worse answer than re-reading it.
-SCHEMA_VERSION = "constraints-v5"
+SCHEMA_VERSION = "constraints-v6"
 
 #: THE PINNED PRIMARY. One provider and one model, named, because
 #: different models return different Constraints from the same prompt --
@@ -246,6 +247,13 @@ class Extraction(BaseModel):
         description="the exact phrase the requests figure came from and "
                     "its unit, e.g. '30,000 visitors a month' or "
                     "'40 stores x 200 transactions/day'; '' if unstated")
+    interruptible: Field_ = Field(
+        default_factory=lambda: _unstated("false"),
+        description="true ONLY if the text says the work can be safely "
+                    "restarted, re-run or resumed after a failure "
+                    "('we can rerun it in the morning', 'a failed batch "
+                    "just runs again'). false when unstated — do not "
+                    "infer it from the work merely looking batch-like")
     #: The workload's duty cycle, as hours. Added because its ABSENCE was
     #: producing zeroes: asked for a per-day figure on a workload the text
     #: said runs only in business hours, the model had no way to say
@@ -446,7 +454,7 @@ _NON_REQUIRED_FIELDS = (
     "content_storage_gb", "user_data_gb",
     "source_vm_count", "source_os", "source_vcpu_total",
     "source_ram_gb_total", "source_disk_gb_total", "cpu_architecture",
-    "requests_basis", "active_hours_per_day",
+    "requests_basis", "active_hours_per_day", "interruptible",
 )
 
 #: Operating systems that put x86 beyond argument. Not a phrase table --
@@ -527,7 +535,8 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
                       "source_ram_gb_total", "source_disk_gb_total",
                       "active_hours_per_day"):
             value = _as_float(raw)
-        elif name in ("public_facing", "country_lock", "async_processing"):
+        elif name in ("public_facing", "country_lock", "async_processing",
+                      "interruptible"):
             value = _as_bool(raw)
         elif name == "requests_basis":
             value = str(raw).strip()
@@ -553,6 +562,15 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
     for name in _NON_REQUIRED_FIELDS:
         if name not in _KEEPS_PROVENANCE:
             c.stated.discard(name)
+
+    # ZERO HOURS MEANS UNSTATED, NOT "NEVER RUNS". The model returns 0
+    # for a field it has nothing to say about, and 0 active hours read
+    # literally would bill a workload for one percent of a month -- an
+    # under-bill, which is no more honest than an over-bill. 24 is the
+    # honest default: something nobody described the schedule of runs all
+    # the time until told otherwise.
+    if c.active_hours_per_day <= 0:
+        c.active_hours_per_day = 24.0
 
     # Facts override the model's reading of them. Both of these can
     # only ever tighten a constraint or strengthen a provenance claim;

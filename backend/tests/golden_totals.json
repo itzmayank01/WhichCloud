@@ -1,4 +1,9 @@
 {
+  "batch-etl": {
+    "tier_1": 693.33,
+    "tier_2": 722.79,
+    "tier_3": 1758.08
+  },
   "budget-floor-conflict": {
     "tier_1": 263.89,
     "tier_2": 330.62,

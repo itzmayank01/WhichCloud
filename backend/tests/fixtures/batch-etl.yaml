@@ -1,0 +1,94 @@
+# Promoted from tests/probes/batch-etl.yaml, which was diagnostic only.
+#
+# What the probe recorded (2026-08-21, before batch_etl existed):
+#
+#   Tier 1 $65.61 -- Compute x1 billed 730 HOURS for a job the prompt
+#   says is idle all day, plus a relational DATABASE holding append-only
+#   sensor readings, plus a load balancer's worth of request-path
+#   scaffolding for a workload that serves no requests.
+#   Verdict WRONG_SHAPE, severity HIGH.
+#
+# Three things the description says plainly and the old engine acted on
+# none of:
+#   "nobody uses it during the day"  -> 730 hours anyway, ~12x
+#   "we can rerun it in the morning" -> on-demand, not spot
+#   "sensor readings"                -> a relational database
+#
+# The third is now a FORBIDDEN component, not merely an absent one:
+# append-only telemetry in an OLTP store is the wrong storage engine, not
+# a costlier one.
+id: batch-etl
+prompt: >
+  Every night we pull about 500 GB of sensor readings off our factory
+  machines and turn them into next-day reports. Nobody uses it during the
+  day. If a night's run fails we can rerun it in the morning.
+
+# NOTE ON storage_gb. Extraction reads "500 GB" from this prompt most of
+# the time but not every time -- measured, not assumed. When it misses,
+# the quantity audit catches it and the plan is WITHHELD rather than
+# priced around a zero, which is the correct behaviour and is asserted
+# separately by INV-16. This block records the correct reading so the
+# DECISION layer can be tested deterministically, which is the whole
+# reason fixtures carry a constraints block.
+constraints:
+  country: ''
+  sector: other
+  availability: low
+  durability: normal
+  users: 0
+  requests_per_day: 0
+  peak_shape: evening
+  budget_monthly_usd: 0.0
+  storage_gb: 500.0
+  egress_gb: 0.0
+  public_facing: false
+  country_lock: false
+  static_assets: none
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
+  interruptible: true
+  active_hours_per_day: 2.0
+  stated: [storage_gb, availability, interruptible]
+
+archetype: batch_etl
+
+expect:
+  must_exclude:
+    # The whole point. Sensor readings are append-only time-series.
+    - relational_database
+    # Nothing serves requests, so none of the request path applies.
+    - load_balancer
+    - cdn
+    - nat_gateway
+    - cache
+    - read_replica
+    - waf
+
+  must_include:
+    - component: object_storage
+      tiers: [tier_1, tier_2, tier_3]
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+    # The schedule that starts the run. A batch job with no trigger is
+    # not a batch job.
+    - component: event_bus
+      tiers: [tier_1, tier_2, tier_3]
+    # Managed ETL replaces the self-managed runner at tier 2, and the
+    # results become queryable in place.
+    - component: glue_etl
+      tiers: [tier_2, tier_3]
+    - component: athena
+      tiers: [tier_2, tier_3]
+    # A purpose-built columnar store is what tier 3 buys.
+    - component: warehouse
+      tiers: [tier_3]
+    - component: archive_tier
+      tiers: [tier_3]
+    - component: object_lock
+      tiers: [tier_3]
+
+  complete: [tier_1, tier_2, tier_3]
+
+  invariants: [all]

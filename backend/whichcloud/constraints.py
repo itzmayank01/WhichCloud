@@ -258,6 +258,16 @@ class Constraints:
     cpu_architecture: CPUArchitecture = "unknown"
     forced_x86_reason: str = ""
 
+    #: Whether the work can be safely restarted if it is interrupted.
+    #:
+    #: The gate on Spot. Only a STATED tolerance earns it: spot capacity
+    #: is reclaimed with two minutes' notice, so assuming a job is
+    #: restartable because it looks like one is how a nightly load that
+    #: cannot be re-run gets recommended interruptible capacity. "If a
+    #: night's run fails we can rerun it in the morning" is the statement
+    #: this field exists to capture.
+    interruptible: bool = False
+
     #: Hours per day the workload actually runs or serves. 24 means
     #: continuous. Distinct from peak_shape, which says WHEN the busy
     #: period is; this says how LONG the thing is switched on at all, and

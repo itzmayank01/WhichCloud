@@ -1252,6 +1252,16 @@ def _graph_plan(
 
         plan.tiers.append(tier)
 
+    # THE BIGGEST LINE, AND WHETHER ANYBODY SAID IT.
+    #
+    # A derived figure that sets most of the bill has to say so. The
+    # batch archetype is the case that forced this: "500 GB a night" is
+    # stated, but "retained for a month" is the engine's own assumption,
+    # and it turns 500 GB into 15 TB -- two thirds of the total. A reader
+    # who cannot see that has no way to know the number turns on a
+    # retention nobody supplied.
+    plan.dominant_driver_note = _graph_dominant_driver(graph, plan, constraints)
+
     budget = constraints.budget_monthly_usd
     if budget and plan.tiers[0].monthly_total > budget:
         plan.over_budget_note = (
@@ -1259,6 +1269,47 @@ def _graph_plan(
             "compliant design shown."
         )
     return plan
+
+
+def _graph_dominant_driver(graph, plan: Plan, constraints: Constraints) -> str:
+    """Name the largest line item when the figure behind it was derived.
+
+    Silent when the biggest line rests on something the user actually
+    stated -- there the number is already theirs to check.
+    """
+    if not plan.tiers:
+        return ""
+    items = plan.tiers[0].estimate.items
+    if not items:
+        return ""
+    largest = max(items, key=lambda i: float(i.monthly_usd))
+    total = float(plan.tiers[0].monthly_total) or 1.0
+    share = float(largest.monthly_usd) / total
+    if share < 0.35:
+        return ""
+
+    derived = [
+        f for f in graph.sizing.fields if f not in constraints.stated
+    ]
+    # Deliberately does NOT claim which input drives which line. The
+    # engine knows the sizing basis and knows what was assumed; it does
+    # not know the derivative of one line item with respect to one field,
+    # and asserting a link it cannot compute would be a confident wrong
+    # answer about its own confidence. Naming the basis and the
+    # assumptions separately is what it can actually defend.
+    basis = graph.sizing.describe(constraints, plan.load)
+    if derived:
+        return (
+            f"{largest.label} is {share:.0%} of this bill. It was sized "
+            f"from: {basis}. Of that basis, "
+            f"{', '.join(derived)} came from the engine's defaults rather "
+            f"than from your description — confirm them before trusting "
+            f"the total."
+        )
+    return (
+        f"{largest.label} is {share:.0%} of this bill. It was sized from: "
+        f"{basis} — all of it from figures you gave."
+    )
 
 
 def _fingerprint_kinds(est) -> set[str]:
