@@ -1,0 +1,95 @@
+# Promoted from tests/probes/realtime-chat.yaml, which was diagnostic only.
+#
+# What the probe recorded (2026-08-21, before realtime existed):
+#
+#   Verdict WRONG_SHAPE, severity CRITICAL. The coverage map was precise
+#   about why: the search index this workload EXPLICITLY ASKS FOR had a
+#   working, tested pricing path -- 213 OpenSearch rows in the catalog,
+#   `search_node_count` on the spec, an estimator branch for it -- that
+#   the decision layer never reached. No WebSocket or connection-billing
+#   concept existed anywhere, so the one figure that describes a chat
+#   backend had nowhere to go. And a Cognito line priced off the stated
+#   user count made the wrong bill look tailored to this workload, which
+#   is the condition under which a generic "review before use" note is
+#   least likely to be heeded.
+#
+# Two assertions here carry the fix:
+#   * `search` on EVERY tier, because "history must be searchable" is a
+#     stated hard requirement. Selling it at tier 3 would offer a tier-1
+#     design that fails the brief and let it be picked on price.
+#   * `connections` on every tier, because that is what this shape bills
+#     on. Requests-per-day cannot express sockets held open.
+id: realtime-chat
+prompt: >
+  In-app chat for our 100,000 users. Messages must arrive instantly and
+  history must be searchable.
+
+# NOTE ON CONCURRENCY. 100,000 registered users is NOT 100,000 open
+# sockets, and the difference is more than an order of magnitude on the
+# connection bill. peak_concurrent_connections is left 0 here because
+# the prompt genuinely does not state it -- the archetype derives 8,000
+# from the user count and SAYS SO through the sizing driver, which is
+# the honest handling of an assumption that load-bearing.
+constraints:
+  country: ''
+  sector: other
+  availability: low
+  durability: normal
+  users: 100000
+  requests_per_day: 0
+  peak_shape: flat
+  budget_monthly_usd: 0.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: false
+  country_lock: false
+  static_assets: none
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
+  interruptible: false
+  active_hours_per_day: 24.0
+  peak_concurrent_connections: 0
+  searchable_history: true
+  stated: [users, searchable_history]
+
+archetype: realtime
+
+expect:
+  must_exclude:
+    # Append-heavy, read by recency, and needs text search. A relational
+    # primary is the wrong engine on both counts.
+    - relational_database
+    # The WebSocket API holds the sockets and IS the endpoint.
+    - load_balancer
+    # Messages are per-recipient over an open socket. Nothing to cache.
+    - cdn
+    - nat_gateway
+    - waf
+
+  must_include:
+    # THE STATED REQUIREMENT. On every tier, not sold as an upgrade.
+    - component: search
+      tiers: [tier_1, tier_2, tier_3]
+    # What this shape is actually billed on.
+    - component: connections
+      tiers: [tier_1, tier_2, tier_3]
+    - component: serverless_compute
+      tiers: [tier_1, tier_2, tier_3]
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+    # Presence and fan-out off the critical path is what tier 2 buys.
+    - component: cache
+      tiers: [tier_2, tier_3]
+    - component: notifications
+      tiers: [tier_2, tier_3]
+    # An ordered log and a cold archive are what tier 3 buys.
+    - component: archive_tier
+      tiers: [tier_3]
+    - component: object_lock
+      tiers: [tier_3]
+
+  complete: [tier_1, tier_2, tier_3]
+
+  invariants: [all]

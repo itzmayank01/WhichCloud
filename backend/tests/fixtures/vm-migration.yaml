@@ -1,0 +1,100 @@
+# Promoted from tests/probes/vm-migration.yaml, which was diagnostic only.
+#
+# What the probe recorded (2026-08-21, before migration existed):
+#
+#   Tier 1 $65.61 -- ONE Graviton instance, sized for near-zero traffic,
+#   standing in for a 40-machine mixed-OS estate. Tiers 2 and 3 moved it
+#   to Fargate. Verdict WRONG_SHAPE, severity CRITICAL, and the only
+#   probe of the six where acting on the output risked infrastructure
+#   that would not RUN rather than a bill that was merely wrong.
+#
+#   Three compounding failures:
+#     "40 virtual machines"  no field existed; the number was DISCARDED,
+#                            not underestimated
+#     "a mix of Windows"     _X86_REQUIRED needed the literal phrase
+#                            "windows server", so ARM64 was recommended
+#                            for images that cannot boot on it
+#     "as-is"                tiers 2/3 moved to Fargate, which cannot run
+#                            Windows or arbitrary legacy VM images at all
+#
+# All three are assertions now. ARM and serverless compute are FORBIDDEN
+# components of this archetype, so a regression fails at spec
+# construction rather than shipping as a plausible-looking bill.
+id: vm-migration
+prompt: >
+  We run 40 virtual machines in our own server room — a mix of Windows
+  and Linux, some with attached storage. We want to move them to the
+  cloud as-is before modernising later.
+
+# Extracted by the pinned primary under schema v7 and recorded verbatim.
+# source_os=mixed FORCES cpu_architecture=x86_required in
+# llm_extract._force_x86_where_required -- the model is asked for the
+# architecture but is not trusted to hold that line, because it returned
+# arm_ok for Windows estates often enough to matter.
+constraints:
+  country: ''
+  sector: other
+  availability: low
+  durability: normal
+  users: 0
+  requests_per_day: 0
+  peak_shape: flat
+  budget_monthly_usd: 0.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: false
+  country_lock: false
+  static_assets: none
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
+  interruptible: false
+  active_hours_per_day: 24.0
+  source_vm_count: 40
+  source_os: mixed
+  source_vcpu_total: 0
+  source_ram_gb_total: 0.0
+  source_disk_gb_total: 0.0
+  cpu_architecture: x86_required
+  stated: [source_vm_count, source_os, cpu_architecture]
+
+archetype: migration
+
+expect:
+  must_exclude:
+    # Fargate cannot run Windows or arbitrary legacy VM images, and
+    # "as-is before modernising later" defers re-platforming explicitly.
+    - serverless_compute
+    # A lift-and-shift keeps its database on a machine. Moving it to a
+    # managed engine is a migration of its own.
+    - relational_database
+    - load_balancer
+    - cdn
+    - cache
+
+  must_include:
+    # One instance per source machine, and the disks they already have.
+    # EBS was billed at ZERO before this archetype existed -- silently,
+    # because nothing was marked missing either.
+    - component: block_storage
+      tiers: [tier_1, tier_2, tier_3]
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+    # An estate in private subnets needs a route out for patching and
+    # licence activation.
+    - component: nat_gateway
+      tiers: [tier_1, tier_2, tier_3]
+    # Knowing what the estate talks to is the prerequisite for
+    # modernising it later, which is what the prompt says it wants.
+    - component: vpc_flow_logs
+      tiers: [tier_2, tier_3]
+    # Posture across forty machines, and archived migration artefacts.
+    - component: archive_tier
+      tiers: [tier_3]
+    - component: object_lock
+      tiers: [tier_3]
+
+  complete: [tier_1, tier_2, tier_3]
+
+  invariants: [all]

@@ -101,6 +101,16 @@ class ArchitectureSpec:
     #: privacy from NAT presence reported such a design as `public_simple`
     #: and then failed it for not being private. Two different things:
     #: where the instance sits, and how it gets out.
+    #: Attached block storage across the estate, in GB.
+    #:
+    #: NOT db_storage_gb, which is RDS-managed storage and is priced only
+    #: when a managed database exists. A lift-and-shift has neither a
+    #: managed database nor object storage standing in for its disks --
+    #: it has volumes -- and a 40-machine estate's 4,000 GB was billed at
+    #: ZERO before this existed, silently, because nothing was marked
+    #: missing either.
+    block_storage_gb: float = 0.0
+
     private_subnets: bool = False
     nat_gateway_count: int = 0
     nat_gb_processed: float = 0.0
@@ -409,6 +419,10 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     # been ingested, and a role with no rate must resolve to `missing`
     # rather than to somebody else's number.
     ("aws", "eventbridge", "events"): "eventbridge:events",
+    # EBS. Distinct from db_storage (RDS-managed): a rehosted
+    # estate has volumes, not a managed database, and without this
+    # role its disks were billed at zero.
+    ("aws", "block_storage", "gp3"): "ebs:gp3",
     ("aws", "connection", "ws-messages"): "apigateway:ws-messages",
     ("aws", "connection", "ws-minutes"): "apigateway:ws-connection",
     ("aws", "connection", "graphql-minutes"): "appsync:connection",
@@ -1693,6 +1707,16 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
         else:
             result.missing.append("container compute")
+
+    # ---- attached block storage (EBS) ----
+    if spec.block_storage_gb:
+        point = _by_role(provider, region, "block_storage", "gp3", dsn)
+        if point:
+            result.items.append(
+                _metered_line("Block storage", point, spec.block_storage_gb)
+            )
+        else:
+            result.missing.append("block storage")
 
     # ---- database storage ----
     if spec.db_storage_gb and spec.database_vcpu:

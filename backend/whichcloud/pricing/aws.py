@@ -2596,6 +2596,7 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_eventbridge_prices,
         load_connection_prices,
         load_inference_prices,
+        load_block_storage_prices,
     ):
         try:
             points.extend(loader(region_key))
@@ -2753,5 +2754,49 @@ def load_inference_prices(region_key: str) -> list[PricePoint]:
             ),
             memory_gb=_memory_gb(attrs.get("memory")),
             attributes={"instance": instance, "hosting": "realtime"},
+        ))
+    return points
+
+
+def load_block_storage_prices(region_key: str) -> list[PricePoint]:
+    """EBS volumes -- the disks attached to instances.
+
+    Distinct from `db_storage`, which is RDS-managed storage and is only
+    priced when a managed database exists. A lift-and-shift has neither a
+    managed database nor object storage standing in for its disks: it has
+    volumes, and without this meter a 40-machine estate's 4,000 GB of
+    attached disk was billed at ZERO -- silently, because nothing was
+    marked missing either.
+
+    gp3 is the default this engine quotes. It is the current
+    general-purpose class, cheaper per GB than gp2 at the same baseline
+    performance, and it is what a rehosted general-purpose volume should
+    land on. st1/sc1 are throughput and cold classes for workloads that
+    have said something about their access pattern; io1/io2 are for
+    stated IOPS requirements. All are ingested so a future shape can
+    select one, but nothing selects them by default -- quoting a cold
+    class for a boot volume would be cheaper and wrong.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk("AmazonEC2", region_key)
+
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        if product.get("productFamily") != "Storage":
+            continue
+        attrs = product.get("attributes", {})
+        usagetype = attrs.get("usagetype", "")
+        volume = attrs.get("volumeApiName", "")
+        if not usagetype.startswith(f"{prefix}EBS:VolumeUsage") or not volume:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers or tiers[0].price_usd <= 0:
+            continue
+        points.append(PricePoint(
+            provider="aws", category="block_storage", sku=f"ebs:{volume}",
+            name=f"EBS {volume} volume", region=region,
+            unit=unit or "GB-Mo", price_usd=tiers[0].price_usd,
+            attributes={"volume_type": volume},
         ))
     return points

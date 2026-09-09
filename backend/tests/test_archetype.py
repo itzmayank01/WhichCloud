@@ -123,7 +123,13 @@ def test_coverage_lists_every_archetype_with_its_status():
 # ── INV-12, at the plan level ──
 
 
-@pytest.mark.parametrize("prompt", list(UNBUILT.values()))
+@pytest.mark.skipif(
+    not UNBUILT,
+    reason="every recognised archetype now has a service graph — the "
+           "recognised_unpriced path is covered by "
+           "test_the_recognised_unpriced_path_still_works_when_it_is_needed",
+)
+@pytest.mark.parametrize("prompt", list(UNBUILT.values()) or [""])
 def test_no_priced_tier_is_emitted_for_an_unimplemented_shape(prompt):
     """These are recognised_unpriced, not unknown -- the shape IS known,
     what is missing is a validated price for it. Both states withhold."""
@@ -134,7 +140,11 @@ def test_no_priced_tier_is_emitted_for_an_unimplemented_shape(prompt):
     assert plan.withheld_reason
 
 
-@pytest.mark.parametrize("prompt", list(UNBUILT.values()))
+@pytest.mark.skipif(
+    not UNBUILT,
+    reason="every recognised archetype now has a service graph",
+)
+@pytest.mark.parametrize("prompt", list(UNBUILT.values()) or [""])
 def test_a_recognised_shape_is_named_and_described_not_just_refused(prompt):
     """Withholding a price must not mean discarding the analysis. For a
     recognised shape the useful answer is what that architecture needs --
@@ -175,7 +185,11 @@ def test_coverage_is_reported_as_two_numbers_not_one():
     # be edited on every one of them -- turning a real coverage claim into
     # a number somebody kept up to date by hand.
     assert plan.coverage_summary["shapes_priced"] == len(IMPLEMENTED_ARCHETYPES)
-    assert plan.coverage_summary["shapes_priced"] < 7
+    # No upper bound any more, and that is the milestone: all seven
+    # recognised shapes have a service graph. The pair of numbers still
+    # earns its place -- they are different claims, and the day an
+    # eighth shape is RECOGNISED they diverge again.
+    assert plan.coverage_summary["shapes_priced"] >= 1
 
 
 def test_a_covered_workload_is_still_priced_normally():
@@ -845,3 +859,40 @@ def test_regression_backstops_stay_silent_on_every_fixture():
         plan = plan_from(c, fx["prompt"], archetype=a)
         fired = {g["name"] for g in plan.guards} & backstops
         assert not fired, f"{fx['id']} tripped a backstop: {fired}"
+
+
+def test_the_recognised_unpriced_path_still_works_when_it_is_needed():
+    """The withholding machinery is not dead code just because every
+    recognised shape now has a graph.
+
+    UNBUILT is empty today, so the two parametrised tests above skip --
+    and a skipped test guards nothing. This one does not depend on there
+    being an unbuilt archetype: it drives `state_for` directly with a
+    name that has no graph, which is exactly the state the engine will
+    re-enter the moment an eighth shape is added to ARCHETYPES before its
+    graph exists. That ordering is the normal one, so this path has to
+    keep working.
+    """
+    from whichcloud.archetype import (
+        RECOGNISED_UNPRICED, is_priceable, pricing_questions_for,
+        requirements_for, state_for,
+    )
+
+    unbuilt = "a_shape_with_no_graph"
+    assert not is_priceable(unbuilt)
+    assert state_for(unbuilt) == RECOGNISED_UNPRICED
+    # And a real archetype still describes itself, which is what makes
+    # the refusal useful rather than merely correct.
+    assert requirements_for("static_site")
+    assert pricing_questions_for(unbuilt) == []
+
+
+def test_an_unclassifiable_prompt_still_withholds():
+    """The permanent withholding path. Unlike recognised_unpriced, this
+    one never goes away: a description that says too little to classify
+    is always possible, however many archetypes exist."""
+    plan = build("Please help us with our infrastructure.")
+    assert plan.archetype == UNKNOWN
+    assert plan.priced is False
+    assert plan.tiers == []
+    assert plan.clarifying_questions

@@ -163,6 +163,9 @@ _KIND_BY_PREFIX = {
     "Connection minutes": "connections",
     "Connection messages": "connections",
     "Model endpoint": "inference",
+    # A disk attached to an instance is not the same node as an
+    # object store, and a rehosted estate is mostly disk.
+    "Block storage": "block_storage",
 }
 
 

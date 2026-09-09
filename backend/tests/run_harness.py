@@ -122,7 +122,9 @@ COMPONENT_CHECKS = {
     "warehouse": lambda t: t.spec.warehouse_node_count > 0,
     "glue_etl": lambda t: t.spec.glue_dpu_hours_per_month > 0,
     "athena": lambda t: t.spec.athena_tb_scanned_per_month > 0,
-    "block_storage": lambda t: t.spec.db_storage_gb > 0,
+    # EBS volumes attached to instances. NOT db_storage_gb, which is
+    # RDS-managed storage and only prices alongside a database.
+    "block_storage": lambda t: t.spec.block_storage_gb > 0,
     "serverless_compute": lambda t: t.spec.fargate_task_count > 0
         or t.spec.lambda_invocations_per_month > 0,
 }
