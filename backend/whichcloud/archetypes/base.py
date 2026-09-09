@@ -130,6 +130,24 @@ class ArchetypeGraph:
     #: by tier level; level 1 has nothing below it.
     tier_notes: dict[int, str] = field(default_factory=dict)
 
+    #: THE DATA-PLANE REQUEST PATH, as (source_kind, target_kind, label).
+    #:
+    #: An edge is drawn only when BOTH ends are present, so one flow
+    #: covers all three tiers -- a tier without a cache simply skips the
+    #: edge into it rather than needing its own list.
+    #:
+    #: This exists because the topology builder knew exactly one request
+    #: path: users -> DNS -> WAF -> load balancer -> compute -> database.
+    #: That is web_app's shape, and running the other six through it left
+    #: their real services unconnected -- an event pipeline's API
+    #: Gateway, queue, consumers and email all floated with no edges,
+    #: because none of them are a load balancer or an EC2 instance.
+    #:
+    #: The archetype is the only thing that knows how a request travels
+    #: through its own shape, so the flow is declared here rather than
+    #: inferred by a renderer from service names.
+    flow: tuple[tuple[str, str, str], ...] = ()
+
     def by_role(self) -> dict[str, list[Candidate]]:
         out: dict[str, list[Candidate]] = {}
         for candidate in self.candidates:

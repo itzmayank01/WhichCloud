@@ -852,6 +852,100 @@ def inv_18_duty_cycle_is_actually_billed(fx_id: str, built: Plan) -> list[Result
     return results
 
 
+def inv_19_the_diagram_is_a_graph_not_a_pile(fx_id: str, built: Plan) -> list[Result]:
+    """Every data-plane node is reachable, and no edge points at nothing.
+
+    THE DISCONNECTED BOTTOM ROW WAS NOT A LAYOUT BUG. On a hospital
+    tier-2, eleven of nineteen nodes had no edge at all -- because three
+    different kinds of thing were being drawn as one kind. A request
+    FLOWS through a load balancer; KMS does not flow anywhere, it is
+    ATTACHED to the database it encrypts; and CloudTrail attaches to
+    nothing at all, because it records the whole account.
+
+    Three planes, and this checks the consequence of getting them right:
+
+      DATA     every node reachable. An unconnected data-plane node is a
+               service nobody can see the purpose of.
+      CONTROL  attached to a real node, or to none -- never to whatever
+               happened to be on the canvas.
+      ACCOUNT  no edges by design, and therefore not counted as orphaned.
+
+    It also catches the second bug the plane split exposed: the node list
+    was built from a hand-maintained tuple that decided MEMBERSHIP as
+    well as order, so nine kinds added since (block storage, the event
+    bus, connection metering, a model endpoint...) were priced and never
+    drawn -- on the bill and not on the picture.
+    """
+    from whichcloud import topology as topo
+
+    results = []
+    for tier in built.tiers:
+        graph = topo.build(tier.spec, tier.estimate, archetype=built.archetype)
+        node_ids = {n.id for n in graph.nodes}
+        linked = {e.source for e in graph.edges} | {e.target for e in graph.edges}
+
+        dangling = sorted(x for x in linked if x not in node_ids)
+        orphans = sorted(
+            n.id for n in graph.nodes
+            if n.plane == topo.DATA_PLANE and n.id not in linked
+        )
+        # An account-plane node with an edge is the opposite failure:
+        # an invented relationship. CloudTrail does not talk to the
+        # database.
+        account_edges = sorted(
+            n.id for n in graph.nodes
+            if n.plane == topo.ACCOUNT_PLANE and n.id in linked
+        )
+
+        problems = []
+        if dangling:
+            problems.append(f"edges point at absent nodes: {dangling}")
+        if orphans:
+            problems.append(f"unreachable data-plane nodes: {orphans}")
+        if account_edges:
+            problems.append(f"account-plane nodes with edges: {account_edges}")
+
+        results.append(Result(
+            fx_id, f"INV-19:{tier.name}", passed=not problems,
+            expected="every data-plane node reachable, every edge endpoint "
+                     "real, no edges on account-plane nodes",
+            actual="; ".join(problems) if problems else (
+                f"{len(graph.nodes)} nodes, {len(graph.edges)} edges, clean"
+            ),
+        ))
+    return results
+
+
+def inv_20_every_priced_line_is_on_the_diagram(fx_id: str, built: Plan) -> list[Result]:
+    """A service on the bill is a service on the picture.
+
+    The comment in topology.py has warned about this since a previous
+    session ("serverless and messaging services silently vanished from
+    the diagram while still appearing on the bill"), and the mechanism
+    meant to prevent it -- a hand-maintained tuple -- reintroduced it for
+    every kind added afterwards. Membership is derived now; this asserts
+    the property rather than trusting the derivation.
+    """
+    from whichcloud import topology as topo
+
+    results = []
+    for tier in built.tiers:
+        graph = topo.build(tier.spec, tier.estimate, archetype=built.archetype)
+        drawn = {n.id for n in graph.nodes}
+        priced = {topo._kind_for(i) for i in tier.estimate.items}
+        priced.discard("client")
+        undrawn = sorted(priced - drawn)
+        results.append(Result(
+            fx_id, f"INV-20:{tier.name}", passed=not undrawn,
+            expected="every priced service kind has a node",
+            actual=(
+                f"priced but never drawn: {undrawn}" if undrawn
+                else f"all {len(priced)} priced kinds drawn"
+            ),
+        ))
+    return results
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -870,6 +964,8 @@ INVARIANTS = {
     "INV-16": inv_16_no_stated_quantity_was_dropped,
     "INV-17": inv_17_tiers_differ_by_service_not_size,
     "INV-18": inv_18_duty_cycle_is_actually_billed,
+    "INV-19": inv_19_the_diagram_is_a_graph_not_a_pile,
+    "INV-20": inv_20_every_priced_line_is_on_the_diagram,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.

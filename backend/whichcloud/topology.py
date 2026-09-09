@@ -177,6 +177,81 @@ _KIND_BY_PREFIX = {
 #: Kept SHORT and explicit. The longer this list, the less the `because`
 #: requirement proves: anything on it is a default that has been blessed
 #: rather than earned.
+#: THE THREE PLANES. Fixing the graph model, before any layout.
+#:
+#: DATA    things a request actually flows through. Directed edges, and
+#:         the only plane worth animating -- a request path is a sequence,
+#:         and animating a security control alongside it implies the
+#:         request passes through GuardDuty, which it does not.
+#: CONTROL services BOUND to a specific data-plane node: the key that
+#:         encrypts that database, the certificate that terminates on
+#:         that load balancer. Attachment lines, not arrows.
+#: ACCOUNT services that watch or govern the whole account and belong to
+#:         no node in particular. CloudTrail does not attach to the
+#:         database; it records every API call in the account. Drawn as a
+#:         labelled band with NO EDGES AT ALL, because any edge drawn
+#:         from them would be an invented relationship.
+#:
+#: The old graph had one plane, so the second and third had nowhere to go
+#: and were rendered as unconnected boxes -- which reads as "we forgot to
+#: join these up" rather than "these do not join up".
+DATA_PLANE = "data"
+CONTROL_PLANE = "control"
+ACCOUNT_PLANE = "account"
+
+PLANES = (DATA_PLANE, CONTROL_PLANE, ACCOUNT_PLANE)
+
+#: Node kind -> plane. Anything absent is DATA, because a service that
+#: carries a request is the default and the exceptions are enumerable.
+_PLANE_BY_KIND: dict[str, str] = {
+    # ── control: attached to one specific node ──
+    "kms": CONTROL_PLANE,
+    "secrets": CONTROL_PLANE,
+    "tls": CONTROL_PLANE,
+    "auth": CONTROL_PLANE,
+    "backup": CONTROL_PLANE,
+    "backup_dr": CONTROL_PLANE,
+    "object_lock": CONTROL_PLANE,
+    "archive": CONTROL_PLANE,
+    "vpc_endpoints": CONTROL_PLANE,
+    # ── account: watches everything, attaches to nothing ──
+    "audit": ACCOUNT_PLANE,
+    "threat": ACCOUNT_PLANE,
+    "posture": ACCOUNT_PLANE,
+    "flowlogs": ACCOUNT_PLANE,
+    "monitoring": ACCOUNT_PLANE,
+    "tracing": ACCOUNT_PLANE,
+    "guardrail": ACCOUNT_PLANE,
+}
+
+#: Which data-plane node a control-plane service attaches to, in order of
+#: preference. The first one PRESENT wins; a control service whose subject
+#: is absent is attached to nothing rather than to something arbitrary.
+_CONTROL_ATTACHES_TO: dict[str, tuple[str, ...]] = {
+    # A key encrypts stored data, so it binds to the store -- not to the
+    # compute that happens to call it.
+    "kms": ("database", "dynamodb", "storage", "search", "block_storage"),
+    # Secrets are read by whatever runs the application.
+    "secrets": ("compute", "compute_fargate", "lambda", "inference"),
+    # A certificate terminates on whatever faces the internet.
+    "tls": ("cdn", "loadbalancer", "apigateway", "connections", "storage"),
+    # Identity sits in front of the thing users reach.
+    "auth": ("apigateway", "loadbalancer", "cdn", "compute", "connections"),
+    # Backups are OF a store.
+    "backup": ("database", "storage", "dynamodb", "block_storage"),
+    "backup_dr": ("backup", "database", "storage", "dynamodb"),
+    "object_lock": ("backup", "storage"),
+    "archive": ("storage",),
+    # Endpoints are the private route OUT of the compute that uses them.
+    "vpc_endpoints": ("compute", "compute_fargate"),
+}
+
+
+def plane_for(kind: str) -> str:
+    """Which plane a node kind belongs to. Data is the default."""
+    return _PLANE_BY_KIND.get(kind, DATA_PLANE)
+
+
 BASELINE_KINDS = frozenset(
     {
         "client", "dns", "tls", "auth", "kms", "secrets",
@@ -266,6 +341,15 @@ class Node:
     #: observability, audit. They are not derived and are not asked to
     #: justify themselves individually.
     baseline: bool = False
+    #: WHICH PLANE THIS BELONGS TO. See PLANES below.
+    #:
+    #: The single most load-bearing field on a diagram, and it did not
+    #: exist: every node was drawn as though it sat in the request path,
+    #: so eleven of nineteen on a hospital tier-2 had no edge at all and
+    #: fell into a disconnected row at the bottom. That row was not a
+    #: layout bug. It was three different kinds of thing being drawn as
+    #: one kind.
+    plane: str = "data"
 
     def share_of(self, total: Decimal) -> float:
         """Fraction of the bill. Drives border weight in the diagram —
@@ -280,6 +364,16 @@ class Edge:
     source: str
     target: str
     label: str = ""
+    #: `flow` for a request travelling through, `attaches` for a control
+    #: plane service bound to the node it serves.
+    #:
+    #: They are drawn differently because they mean different things: a
+    #: request FLOWS from a load balancer to compute, and KMS does not
+    #: flow anywhere -- it is ATTACHED to the database whose volumes it
+    #: encrypts. Drawing the second as an arrow implies a request path
+    #: that does not exist, and is why the previous graph left them
+    #: unconnected rather than connect them wrongly.
+    kind: str = "flow"
 
 
 @dataclass(slots=True)
@@ -494,6 +588,7 @@ def build(
     spec: ArchitectureSpec,
     estimate: Estimate,
     applied: tuple = (),
+    archetype: str = "",
 ) -> Topology:
     """Nodes and edges for one priced option.
 
@@ -544,6 +639,7 @@ def build(
             )),
             because=_because(kind, spec),
             baseline=kind in BASELINE_KINDS,
+            plane=plane_for(kind),
         )
         by_kind[kind] = node
 
@@ -575,20 +671,71 @@ def build(
     # serverless and messaging services silently vanished from the diagram
     # while still appearing on the bill -- so every kind the estimator can
     # produce a line for must have an entry here.
-    for kind in ("waf", "cdn", "network", "apigateway", "loadbalancer",
-                 "compute", "compute_fargate", "lambda", "cache",
-                 "iot", "firehose",
-                 "database", "database_replica", "dynamodb", "timestream",
-                 "rekognition", "comprehend", "athena", "glue", "storage",
-                 "monitoring", "audit", "kms", "secrets", "nat", "tls", "dns", "auth",
-                 "backup", "email", "queue", "notification",
-                 "streaming", "kafka", "search", "warehouse",
-                 "threat", "tracing", "posture", "flowlogs"):
-        if kind in by_kind:
-            topology.nodes.append(by_kind[kind])
+    # ORDER, NOT MEMBERSHIP. The tuple below decides what is drawn FIRST;
+    # everything else follows in a stable order after it.
+    #
+    # This used to decide membership too, and that made it a
+    # hand-maintained list of every kind that exists -- so the nine kinds
+    # added since (block storage, the event bus, connection metering, a
+    # model endpoint, object lock, the DR copy, the archive tier, VPC
+    # endpoints, the region guardrail) were priced, were in `by_kind`,
+    # and were NEVER DRAWN. They appeared on the bill and not on the
+    # picture, which is the exact failure the comment above this warns
+    # about, reintroduced by the mechanism meant to prevent it.
+    #
+    # Same class of bug as _kind_for's `compute` fallback: a list that
+    # must be updated by hand is a list that will not be.
+    _DRAW_FIRST = (
+        "waf", "cdn", "network", "apigateway", "connections",
+        "loadbalancer", "compute", "compute_fargate", "lambda", "inference",
+        "cache", "iot", "firehose",
+        "database", "database_replica", "dynamodb", "timestream",
+        "block_storage", "rekognition", "comprehend", "athena", "glue",
+        "storage", "eventbus", "queue", "notification", "email",
+        "streaming", "kafka", "search", "warehouse",
+        "monitoring", "audit", "kms", "secrets", "nat", "vpc_endpoints",
+        "tls", "dns", "auth", "backup", "backup_dr", "object_lock",
+        "archive", "guardrail", "threat", "tracing", "posture", "flowlogs",
+    )
+    ordered = [k for k in _DRAW_FIRST if k in by_kind]
+    ordered += sorted(k for k in by_kind if k not in _DRAW_FIRST)
+    for kind in ordered:
+        topology.nodes.append(by_kind[kind])
 
-    # ── edges: request path, then data path ──
+    # ── edges: the data plane ──
     present = set(by_kind)
+
+    # AN ARCHETYPE THAT DECLARES ITS OWN REQUEST PATH USES IT.
+    #
+    # Everything below this branch is web_app's path -- users -> DNS ->
+    # WAF -> load balancer -> compute -> database -- and running the
+    # other six shapes through it left their real services unconnected.
+    # An event pipeline's API Gateway, queue, consumers and email all
+    # floated with no edges, because none of them is a load balancer or
+    # an EC2 instance. The archetype is the only thing that knows how a
+    # request travels through its own shape.
+    declared = _declared_flow(archetype)
+    if declared:
+        # `users` is a synthetic node, not a priced kind, so it is never
+        # in `present` -- and requiring it there left it orphaned on
+        # every archetype that does have a requester.
+        reachable = present | {"users"}
+        for source, target, label in declared:
+            if source in reachable and target in reachable:
+                topology.edges.append(Edge(source, target, label))
+
+        # A SHAPE WITH NO REQUESTER GETS NO REQUESTER BOX.
+        #
+        # A nightly batch job has no user in its request path -- a
+        # schedule starts it. Drawing a "Users" box anyway and leaving it
+        # unconnected says the diagram is unfinished; removing it says
+        # the truth, which is that nobody is waiting on this one.
+        if not any(src == "users" for src, _t, _l in declared):
+            topology.nodes = [n for n in topology.nodes if n.id != "users"]
+
+        _attach_control_plane(topology, present)
+        return topology
+
     entry = _first_present(
         present, "dns", "waf", "cdn", "network", "loadbalancer", "compute"
     )
@@ -615,10 +762,16 @@ def build(
     if "loadbalancer" in present and "compute" in present:
         topology.edges.append(Edge("loadbalancer", "compute"))
 
-    if "compute" in present and "cache" in present:
-        topology.edges.append(Edge("compute", "cache"))
-    if "compute" in present and "database" in present:
-        topology.edges.append(Edge("compute", "database"))
+    # Same defect as the NAT edge: keying on "compute" alone orphaned the
+    # cache and the database on every Fargate or serverless tier.
+    app = next(
+        (k for k in ("compute", "compute_fargate", "lambda") if k in present),
+        None,
+    )
+    if app and "cache" in present:
+        topology.edges.append(Edge(app, "cache"))
+    if app and "database" in present:
+        topology.edges.append(Edge(app, "database"))
     if "database" in present and "database_replica" in present:
         topology.edges.append(Edge("database", "database_replica", "replicates"))
     if "database" in present and "kms" in present:
@@ -650,7 +803,90 @@ def build(
     # longest edges on the canvas, up to 606px each, crossing every row
     # between. AWS's own reference diagrams draw Shield and GuardDuty
     # standing alone for the same reason. Their band says what they do.
-    if "compute" in present and "nat" in present:
-        topology.edges.append(Edge("compute", "nat", "outbound"))
+    # web_app's OWN unconnected services. These were priced, drawn, and
+    # joined to nothing -- the same disconnected-row symptom, in the one
+    # shape that already had a request path.
+    if app:
+        for sink, label in (
+            ("queue", "async work"),
+            ("email", "sends"),
+            ("notification", "notifies"),
+        ):
+            if sink in present:
+                topology.edges.append(Edge(app, sink, label))
+    # Egress is what LEAVES, so it hangs off whatever last touches the
+    # user's bytes rather than floating on its own.
+    egress_source = _first_present(
+        present, "cdn", "loadbalancer", "apigateway", "storage",
+    ) or app
+    if "network" in present and egress_source:
+        topology.edges.append(Edge(egress_source, "network", "egress"))
+
+    # NAT is reached by whatever runs in the private subnet, which is not
+    # always `compute`: a Fargate tier has no EC2 node, so keying this on
+    # "compute" alone left the NAT gateway as the last orphaned
+    # data-plane node on every managed tier.
+    outbound_source = next(
+        (k for k in ("compute", "compute_fargate", "lambda") if k in present),
+        None,
+    )
+    if outbound_source and "nat" in present:
+        topology.edges.append(Edge(outbound_source, "nat", "outbound"))
+
+    _attach_control_plane(topology, present)
 
     return topology
+
+
+def _declared_flow(archetype: str) -> tuple:
+    """The archetype's own request path, if it declared one."""
+    if not archetype:
+        return ()
+    from whichcloud.archetypes import graph_for
+
+    graph = graph_for(archetype)
+    return tuple(graph.flow) if graph else ()
+
+
+def _attach_control_plane(topology: "Topology", present: set) -> None:
+    # ── CONTROL PLANE: attach, do not route ──
+    #
+    # The account-plane reasoning above is right and was already here.
+    # What was missing is the middle case: services that DO belong to one
+    # specific node. KMS is not watching the account, it is encrypting
+    # THAT database. A certificate terminates on THAT load balancer.
+    # Those are real relationships, and leaving them unconnected said
+    # "we forgot" when the truth was "this is not a request path".
+    #
+    # `kind="attaches"` so the renderer can draw them as bindings rather
+    # than arrows, and so the request-path animation can skip them: a
+    # request does not travel through a key.
+    for control_kind, subjects in _CONTROL_ATTACHES_TO.items():
+        if control_kind not in present:
+            continue
+        subject = next((s for s in subjects if s in present), None)
+        if subject is None:
+            # Its subject is absent, so there is nothing true to attach
+            # it to. Better unattached than attached to whatever happens
+            # to be on the canvas.
+            continue
+        topology.edges.append(
+            Edge(control_kind, subject, _ATTACHMENT_LABEL.get(control_kind, ""),
+                 kind="attaches")
+        )
+
+
+#: What a control-plane service DOES to the node it attaches to. The verb
+#: is the point: "encrypts" and "backs up" are different relationships,
+#: and an unlabelled binding is just a line.
+_ATTACHMENT_LABEL: dict[str, str] = {
+    "kms": "encrypts",
+    "secrets": "supplies credentials",
+    "tls": "terminates TLS",
+    "auth": "authenticates",
+    "backup": "backs up",
+    "backup_dr": "copies off-region",
+    "object_lock": "makes immutable",
+    "archive": "tiers to archive",
+    "vpc_endpoints": "private route out",
+}

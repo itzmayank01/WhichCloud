@@ -102,9 +102,30 @@ export type Node = {
   /** Present by policy on every design -- identity, keys, observability,
    *  audit -- rather than derived from this workload. */
   baseline?: boolean;
+  /** THE field that decides how this is drawn.
+   *
+   *  `data`    a request flows through it — directed arrows, animatable
+   *  `control` bound to ONE data-plane node (the key that encrypts that
+   *            database) — an attachment line, not an arrow
+   *  `account` watches the whole account and belongs to no node —
+   *            a labelled band with no edges at all
+   *
+   *  Drawing all three the same way is what produced a row of
+   *  unconnected boxes at the bottom of every diagram: eleven of
+   *  nineteen nodes on a hospital tier-2 had no edge, because three
+   *  different kinds of thing were being drawn as one kind. */
+  plane?: "data" | "control" | "account";
 };
 
-export type Edge = { source: string; target: string; label: string };
+export type Edge = {
+  source: string;
+  target: string;
+  label: string;
+  /** `flow` for a request travelling through, `attaches` for a binding.
+   *  The request-path animation follows `flow` only — a request does not
+   *  travel through a key. */
+  kind?: "flow" | "attaches";
+};
 
 export type Topology = { nodes: Node[]; edges: Edge[] };
 

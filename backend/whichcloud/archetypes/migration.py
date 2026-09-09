@@ -318,6 +318,16 @@ GRAPH = ArchetypeGraph(
     candidates=CANDIDATES,
     forbidden=FORBIDDEN,
     build=build,
+    # An estate, not a request path. The only real flows are the disks
+    # attached to the machines and the route out for patching.
+    flow=(
+        ("users", "dns", "resolves"),
+        ("dns", "compute", ""),
+        ("compute", "block_storage", "attached disks"),
+        ("compute", "nat", "patching, licensing"),
+        ("compute", "storage", "migration staging"),
+        ("compute", "network", "egress"),
+    ),
     tier_notes={
         2: "Operability: machines moved and left alone → volume "
            "encryption, credentials out of config files, flow logs "

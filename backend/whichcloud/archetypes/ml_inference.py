@@ -318,6 +318,22 @@ GRAPH = ArchetypeGraph(
     candidates=CANDIDATES,
     forbidden=FORBIDDEN,
     build=build,
+    flow=(
+        ("users", "apigateway", "scoring call"),
+        # Tier 1 has no gateway -- the self-managed host serves callers
+        # directly, and without this edge the requester floated.
+        ("users", "compute", "scoring call"),
+        ("apigateway", "lambda", "shapes request"),
+        ("lambda", "cache", "hot features"),
+        ("lambda", "dynamodb", "feature lookup"),
+        ("lambda", "inference", "predicts"),
+        ("apigateway", "compute", "predicts"),
+        ("apigateway", "inference", "predicts"),
+        ("storage", "inference", "loads model"),
+        ("storage", "compute", "loads model"),
+        ("inference", "dynamodb", "logs prediction"),
+        ("dynamodb", "athena", "drift review"),
+    ),
     tier_notes={
         2: "Serving: a host you patch and restart → a managed real-time "
            "endpoint behind API Gateway, with tracing — removes the "

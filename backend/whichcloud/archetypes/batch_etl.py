@@ -312,6 +312,21 @@ GRAPH = ArchetypeGraph(
     candidates=CANDIDATES,
     forbidden=FORBIDDEN,
     build=build,
+    # No user in the request path at all -- a schedule starts it. The
+    # "users" node is the operator reading the result, not a requester.
+    flow=(
+        ("eventbus", "compute", "starts the run"),
+        ("eventbus", "glue", "starts the run"),
+        ("storage", "compute", "reads raw"),
+        ("storage", "glue", "reads raw"),
+        ("compute", "storage", "writes curated"),
+        ("glue", "storage", "writes curated"),
+        ("storage", "athena", "queried in place"),
+        ("storage", "warehouse", "loads"),
+        ("compute", "notification", "run failed"),
+        ("glue", "notification", "run failed"),
+        ("storage", "network", "reports out"),
+    ),
     tier_notes={
         2: "Execution: a self-managed runner you keep alive → AWS Glue "
            "billed per DPU-hour, with Athena querying the curated zone in "

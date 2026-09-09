@@ -143,12 +143,22 @@ class NodeOut(BaseModel):
     #: Present by POLICY on every design -- identity, keys, observability,
     #: audit -- rather than derived from this workload.
     baseline: bool = False
+    #: data | control | account. THE field that decides how this is drawn.
+    #: A request flows through the data plane; the control plane attaches
+    #: to one node; the account plane watches everything and connects to
+    #: nothing. Drawing all three the same way is what produced a row of
+    #: unconnected boxes at the bottom of every diagram.
+    plane: str = "data"
 
 
 class EdgeOut(BaseModel):
     source: str
     target: str
     label: str
+    #: `flow` for a request travelling through, `attaches` for a binding.
+    #: A request does not travel through a key, so the animation follows
+    #: `flow` edges only.
+    kind: str = "flow"
 
 
 class TopologyOut(BaseModel):
@@ -301,10 +311,14 @@ def _topology_out(option: Option) -> TopologyOut:
                 optimized_by=list(n.optimized_by),
                 because=n.because,
                 baseline=n.baseline,
+                plane=n.plane,
             )
             for n in graph.nodes
         ],
-        edges=[EdgeOut(source=e.source, target=e.target, label=e.label) for e in graph.edges],
+        edges=[
+            EdgeOut(source=e.source, target=e.target, label=e.label, kind=e.kind)
+            for e in graph.edges
+        ],
     )
 
 

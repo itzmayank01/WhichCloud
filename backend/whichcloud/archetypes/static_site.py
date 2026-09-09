@@ -273,6 +273,18 @@ GRAPH = ArchetypeGraph(
     candidates=CANDIDATES,
     forbidden=FORBIDDEN,
     build=build,
+    # Viewers reach the edge cache where there is one, and the origin
+    # bucket otherwise. The origin is still drawn behind the CDN, because
+    # a cache miss really does go there.
+    flow=(
+        ("users", "dns", "resolves"),
+        ("users", "cdn", ""),
+        ("users", "waf", ""),
+        ("waf", "cdn", ""),
+        ("cdn", "storage", "origin fetch"),
+        ("users", "storage", ""),
+        ("storage", "network", "egress"),
+    ),
     tier_notes={
         2: "Delivery: origin serves every byte → CloudFront caches at the "
            "edge — removes the origin paying per-GB for every viewer, and "

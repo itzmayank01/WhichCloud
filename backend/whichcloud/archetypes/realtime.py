@@ -322,6 +322,21 @@ GRAPH = ArchetypeGraph(
     candidates=CANDIDATES,
     forbidden=FORBIDDEN,
     build=build,
+    # Sized and drawn by CONNECTIONS. The socket layer is the entry
+    # point, not a load balancer.
+    flow=(
+        ("users", "connections", "opens socket"),
+        ("connections", "lambda", "connect/message"),
+        ("lambda", "dynamodb", "stores message"),
+        ("lambda", "cache", "presence"),
+        ("lambda", "notification", "push when offline"),
+        ("lambda", "streaming", "ordered log"),
+        ("streaming", "search", "indexes history"),
+        ("dynamodb", "search", "indexes history"),
+        ("users", "apigateway", "history + search"),
+        ("apigateway", "search", "queries"),
+        ("streaming", "storage", "cold archive"),
+    ),
     tier_notes={
         2: "State: a table lookup per recipient per message → presence and "
            "fan-out in a cache, with push for recipients who are not "

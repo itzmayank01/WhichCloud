@@ -295,6 +295,23 @@ GRAPH = ArchetypeGraph(
     candidates=CANDIDATES,
     forbidden=FORBIDDEN,
     build=build,
+    # The queue is ON the path, between the endpoint and the consumers.
+    # That is the whole shape: providers POST, the queue holds, consumers
+    # drain at their own rate.
+    flow=(
+        ("users", "apigateway", "webhook POST"),
+        ("apigateway", "queue", "enqueued"),
+        ("apigateway", "eventbus", "routed"),
+        ("eventbus", "queue", "by provider"),
+        ("queue", "lambda", "drains"),
+        ("lambda", "dynamodb", "writes"),
+        ("lambda", "email", "notifies"),
+        ("lambda", "notification", "dead letter"),
+        ("lambda", "streaming", "ordered log"),
+        ("streaming", "firehose", "delivers"),
+        ("firehose", "storage", "raw archive"),
+        ("storage", "athena", "queried on dispute"),
+    ),
     tier_notes={
         2: "Routing: consumers wired directly to the queue → EventBridge "
            "routing by provider and event type, with signing secrets and "
