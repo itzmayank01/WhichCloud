@@ -540,10 +540,20 @@ def inv_11_topology_forced_private_when_it_must_be(fx_id: str, built: Plan) -> l
         n.get("requires_network_isolation") for n in built.compliance
     )
     must_be_private = c.availability == "high" or c.durability == "high" or isolation_required
-    ok = (not must_be_private) or built.network_topology == "private_standard"
+    # `no_vpc` satisfies this, and is not a loophole. The invariant exists
+    # to stop sensitive compute sitting in a PUBLIC subnet; a design with
+    # no subnets at all -- regional managed services throughout -- has no
+    # public subnet to sit in. Isolation there is IAM and resource policy,
+    # and demanding private_standard of it would mean billing a NAT
+    # gateway for an empty VPC to satisfy a checkbox.
+    ok = (
+        (not must_be_private)
+        or built.network_topology in ("private_standard", "no_vpc")
+    )
     return [Result(
         fx_id, "INV-11", passed=ok,
-        expected="private_standard whenever availability=high, durability=high, "
+        expected="private_standard (or no_vpc, for a design with no network "
+                 "of your own) whenever availability=high, durability=high, "
                  "or a compliance obligation requires network isolation",
         actual=f"topology={built.network_topology} "
                f"(availability={c.availability}, durability={c.durability}, "

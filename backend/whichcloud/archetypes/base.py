@@ -149,6 +149,41 @@ class ArchetypeGraph:
         ]
 
 
+def resilience_wanted(constraints, tier_level: int) -> bool:
+    """Whether this tier buys immutability and a second-region copy.
+
+    One rule, shared, because every archetype faces the same question and
+    three slightly different answers to it is how one shape ends up
+    quietly failing a requirement the others honour.
+
+    Two ways to earn it:
+
+      STATED    durability == "high" means the text said the data cannot
+                be lost. That is a requirement, so it applies on EVERY
+                tier including the cheapest -- a design that fails it is
+                not a cheaper option, it is a non-compliant one, and
+                offering it beside two compliant tiers invites picking it
+                on price.
+
+      GROWN     tier 3 buys it regardless, because surviving the loss of
+                a region is what "the architecture to grow into" means.
+
+    Availability counts as well as durability: being unable to serve and
+    losing the data are independent axes, and a workload that said either
+    one matters has said enough.
+    """
+    stated = (
+        constraints.durability == "high"
+        or constraints.availability == "high"
+    )
+    return stated or tier_level >= 3
+
+
+def serves_no_requests(spec: ArchitectureSpec) -> bool:
+    """Whether this spec runs nothing that answers a request path."""
+    return not (spec.compute_count or spec.fargate_task_count)
+
+
 # ── forbidden-component probes, shared across archetypes ─────────────
 # Written once because several shapes forbid the same things for
 # different reasons, and duplicating the predicate is how two archetypes

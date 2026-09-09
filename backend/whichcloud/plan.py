@@ -35,7 +35,9 @@ from whichcloud.constraint_filter import Architecture, check
 from whichcloud.constraints import QUESTIONS as _QUESTIONS, Constraints
 from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
 from whichcloud.load_model import Load, build_load
-from whichcloud.network_topology import PUBLIC_SIMPLE, TopologyDecision
+from whichcloud.network_topology import (
+    NO_VPC, PRIVATE_STANDARD, PUBLIC_SIMPLE, TopologyDecision,
+)
 from whichcloud.network_topology import decide as decide_topology
 from whichcloud.objectives import compliance_notes, objectives
 from whichcloud.planner import RPS_PER_VCPU, in_country_regions
@@ -884,6 +886,15 @@ def _architecture_from(spec: ArchitectureSpec, region_code: str) -> Architecture
         object_lock=spec.object_lock,
         regions=(region_code,) + (("ap-south-2",) if spec.backup_copy_gb else ()),
         region_deny_guardrail=spec.region_deny_guardrail,
+        # Availability comes from the SERVICE when nothing is provisioned
+        # by the hour. Lambda, API Gateway, SQS, DynamoDB and S3 are
+        # regional services already replicated across availability zones,
+        # so "how many instances, in how many zones, behind what
+        # balancer" has no answer for them -- and failing the design for
+        # not answering it would push it towards an always-on fleet that
+        # is genuinely less available. Durability is unaffected: every
+        # backup and immutability check still applies in full.
+        serverless=not (spec.compute_count or spec.fargate_task_count),
     )
 
 
@@ -1183,6 +1194,9 @@ def _graph_plan(
     region = regions[0]
     compliance = compliance_notes(constraints.country, constraints.sector)
 
+    # The topology is decided per TIER (a shape can be serverless at
+    # tier 1 and have instances at tier 3), so it is read off the first
+    # spec below rather than guessed here.
     plan = Plan(
         constraints=constraints, load=load, compliance=compliance,
         archetype=detected,
@@ -1219,6 +1233,26 @@ def _graph_plan(
                 f"forbids: {violations}"
             )
 
+        # FILTER BEFORE PRICE, exactly as the web_app path does. A design
+        # that fails a STATED requirement is not a cheaper version of the
+        # same thing; it is a different thing, and offering it beside two
+        # compliant tiers invites picking it on price.
+        verdict = check(
+            _architecture_from(spec, _aws_region(region)),
+            availability=constraints.availability,
+            durability=constraints.durability,
+            country=_country_name(constraints.country),
+            country_regions=_aws_regions(
+                in_country_regions(_country_name(constraints.country))
+                if constraints.country_lock else ()
+            ),
+        )
+        if not verdict.valid:
+            raise AssertionError(
+                f"{detected} {name} was generated non-compliant: "
+                f"{verdict.violations}"
+            )
+
         est = estimate(spec, provider, dsn=dsn)
         obj = objectives(
             multi_instance=spec.compute_count >= 2 or spec.fargate_task_count >= 2,
@@ -1251,6 +1285,28 @@ def _graph_plan(
         prev_fingerprint = current
 
         plan.tiers.append(tier)
+
+    # Reported from what was actually built. A design made entirely of
+    # regional managed services has no VPC to describe, and saying
+    # `public_simple` would claim a public subnet that does not exist.
+    first = plan.tiers[0].spec
+    if first.compute_count or first.fargate_task_count:
+        plan.network_topology = (
+            PRIVATE_STANDARD if first.nat_gateway_count else PUBLIC_SIMPLE
+        )
+        plan.network_topology_reason = (
+            "instances run in a VPC; "
+            + ("private subnets with NAT egress"
+               if first.nat_gateway_count else
+               "a public subnet, with no private compute to route out of one")
+        )
+    else:
+        plan.network_topology = NO_VPC
+        plan.network_topology_reason = (
+            "nothing runs in a network you own — this design is regional "
+            "managed services throughout, so isolation is IAM and resource "
+            "policy rather than subnets, and there is no NAT gateway to buy"
+        )
 
     # THE BIGGEST LINE, AND WHETHER ANYBODY SAID IT.
     #

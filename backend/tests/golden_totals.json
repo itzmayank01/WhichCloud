@@ -19,6 +19,11 @@
     "tier_2": 1966.98,
     "tier_3": 1966.98
   },
+  "event-webhook": {
+    "tier_1": 137.5,
+    "tier_2": 146.4,
+    "tier_3": 180.17
+  },
   "fintech-bengaluru": {
     "tier_1": 139.66,
     "tier_2": 176.69,

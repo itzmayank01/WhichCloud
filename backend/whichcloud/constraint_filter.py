@@ -26,6 +26,25 @@ class Architecture:
     regions: tuple[str, ...] = ()
     region_deny_guardrail: bool = False
 
+    #: True when availability comes from the SERVICE rather than from
+    #: instances you arranged.
+    #:
+    #: The four availability checks below are written in instance terms --
+    #: count them, spread them across zones, put a balancer in front,
+    #: replicate the database. Every one of those is the right question
+    #: for EC2 and a meaningless one for Lambda, API Gateway, SQS, S3 and
+    #: DynamoDB, which are regional services already replicated across
+    #: availability zones. Demanding "two instances and a load balancer"
+    #: of a Lambda function asks for something that does not exist, and
+    #: failing the design for not having it would push it towards an
+    #: always-on fleet that is genuinely LESS available.
+    #:
+    #: Deliberately scoped to availability only. Every durability check
+    #: still applies in full: serverless says nothing about whether your
+    #: backups survive losing a region, and this flag must never become a
+    #: way to skip one.
+    serverless: bool = False
+
 
 @dataclass
 class FilterResult:
@@ -44,7 +63,10 @@ def check(
     """Every violation, named in the user's terms rather than the system's."""
     violations: list[str] = []
 
-    if availability == "high":
+    # A regional managed service is already spread across zones, so the
+    # instance-shaped questions below have no answer for it. See
+    # Architecture.serverless.
+    if availability == "high" and not architecture.serverless:
         if architecture.compute_instance_count < 2:
             violations.append(
                 "runs a single instance, so any restart is an outage — you "

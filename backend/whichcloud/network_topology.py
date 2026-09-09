@@ -24,6 +24,19 @@ from whichcloud.load_model import Load
 PUBLIC_SIMPLE = "public_simple"
 PRIVATE_STANDARD = "private_standard"
 
+#: NO VPC AT ALL. Not a weaker private_standard -- a different answer to
+#: a question that does not arise.
+#:
+#: A design built entirely from regional managed services (Lambda, API
+#: Gateway, SQS, DynamoDB, S3) has no subnets, no route tables and no NAT
+#: gateway, because nothing of yours is running in a network you own.
+#: Isolation there is IAM and resource policy, not CIDR ranges. Reporting
+#: `public_simple` for such a design would claim a public subnet exists;
+#: reporting `private_standard` would bill a NAT gateway for an empty VPC.
+#: Both were wrong in different directions, so the honest answer is its
+#: own value.
+NO_VPC = "no_vpc"
+
 #: Naming any of these is a stated architectural requirement, independent
 #: of availability/durability/load -- a workload that asks for network
 #: isolation gets it even if nothing else about it looks demanding.
