@@ -138,5 +138,18 @@ GCP_ARM_FAMILIES = ("t2a", "c4a")
 
 
 def gcp_arch_for(instance_type: str) -> str:
+    """ARM or x86, inferred from the machine family name.
+
+    INFERENCE, AND CONFIRMED TO BE THE ONLY OPTION. Checked against the
+    cached GCP machine catalog on 2026-09-09: its records carry `family`,
+    `generation`, `vCPU`, `memory`, `shared_cpu`, GPU fields and pricing,
+    and NO ARCHITECTURE FIELD OF ANY KIND. So there is nothing to read
+    this from, and naming is the only signal the source offers.
+
+    That makes it the one inference left in the pricing layer, and it is
+    labelled as such on every GCP ARM line item rather than only here --
+    see estimator.caveats_for. AWS and Azure both publish the
+    architecture explicitly and are not inferred.
+    """
     family = instance_type.split("-", 1)[0].lower()
     return "arm64" if family in GCP_ARM_FAMILIES else "x86_64"

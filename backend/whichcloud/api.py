@@ -102,6 +102,11 @@ class LineItemOut(BaseModel):
     #: What that node is called on this provider, so the sheet can head the
     #: group with "Cloud SQL" rather than the kind.
     group_label: str = ""
+    #: Approximations behind THIS figure. An approximation disclosed in a
+    #: README is not disclosed -- the reader of a bill sees a line and a
+    #: number, so that is where a derived, single-sourced or
+    #: ranking-only rate has to say so.
+    caveats: list[str] = Field(default_factory=list)
 
 
 class TechniqueOut(BaseModel):
@@ -520,6 +525,7 @@ def _option_out(option: Option, provider: str) -> OptionOut:
                 monthly_usd=float(i.monthly_usd),
                 group=_topo._kind_for(i),
                 group_label=node_label.get(_topo._kind_for(i), i.label),
+                caveats=list(i.caveats),
             )
             for i in option.estimate.items
         ],
@@ -1223,6 +1229,8 @@ def plan_endpoint(body: DescribeIn) -> dict:
                         "sku": item.sku,
                         "unit": item.unit,
                         "monthly_usd": float(item.monthly_usd),
+                        # Where an approximation actually reaches a reader.
+                        "caveats": list(item.caveats),
                     }
                     for item in tier.estimate.items
                 ],

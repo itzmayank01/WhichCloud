@@ -815,6 +815,11 @@ def fetch_storage_tier_prices(region_key: str) -> list[PricePoint]:
     out: list[PricePoint] = []
     for term, sku, name, role in (
         ("nearline storage", "gcs:nearline", "Nearline storage", "infrequent"),
+        # Coldline was missing, which left GCP with three of its four real
+        # storage classes and no equivalent for the 90-day tier AWS
+        # prices as Glacier Instant Retrieval. A lifecycle comparison
+        # that skips a class is not a cheaper cloud, it is a shorter list.
+        ("coldline storage", "gcs:coldline", "Coldline storage", "cold"),
         ("archive storage", "gcs:archive", "Archive storage", "archive"),
     ):
         price = _loc_rate(skus, region, place, term, exclude=excl)

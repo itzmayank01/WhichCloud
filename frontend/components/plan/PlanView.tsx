@@ -393,14 +393,30 @@ export function PlanView({
         </div>
         <div className="divide-y divide-neutral-100">
           {tier.components.map((c) => (
-            <div key={c.label + c.sku} className="flex items-baseline justify-between gap-4 px-4 py-2">
-              <div className="min-w-0">
-                <div className="truncate text-sm text-neutral-900">{c.label}</div>
-                <div className="truncate font-mono text-xs text-neutral-500">{c.sku}</div>
+            <div key={c.label + c.sku} className="px-4 py-2">
+              <div className="flex items-baseline justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-neutral-900">{c.label}</div>
+                  <div className="truncate font-mono text-xs text-neutral-500">{c.sku}</div>
+                </div>
+                <div className="shrink-0 font-mono text-sm tabular-nums text-neutral-900">
+                  {money(c.monthly_usd)}
+                </div>
               </div>
-              <div className="shrink-0 font-mono text-sm tabular-nums text-neutral-900">
-                {money(c.monthly_usd)}
-              </div>
+              {/* THE APPROXIMATION, WHERE THE NUMBER IS.
+                  A derived rate, a single-sourced one, or a spot price
+                  good for ranking but not for billing — disclosed on the
+                  line rather than in a README, because the reader of a
+                  bill sees a line and a figure and nothing else. */}
+              {c.caveats && c.caveats.length > 0 && (
+                <ul className="mt-1.5 flex flex-col gap-1 border-l-2 border-amber-300 pl-3">
+                  {c.caveats.map((caveat) => (
+                    <li key={caveat} className="text-xs leading-relaxed text-amber-800">
+                      {caveat}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
         </div>

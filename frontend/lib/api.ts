@@ -59,6 +59,11 @@ export type LineItem = {
    *  find its node without a second mapping to keep in step. */
   group: string;
   group_label: string;
+  /** Approximations behind THIS figure — a derived rate, a single-sourced
+   *  one, a spot price good for ranking but not for billing. Rendered on
+   *  the line, because an approximation disclosed in a README is not
+   *  disclosed: the reader of a bill sees a line and a number. */
+  caveats?: string[];
 };
 
 export type Technique = {
@@ -388,6 +393,8 @@ export type PlanComponent = {
   sku: string;
   unit: string;
   monthly_usd: number;
+  /** See LineItem.caveats — the same disclosure, on the plan path. */
+  caveats?: string[];
 };
 
 export type PlanTier = {

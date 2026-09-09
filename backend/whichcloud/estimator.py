@@ -306,6 +306,21 @@ class LineItem:
     quantity: Decimal
     monthly_usd: Decimal
 
+    #: Approximations behind THIS number, in the reader's terms.
+    #:
+    #: An approximation disclosed in a README is not disclosed. The
+    #: reader of a bill sees a line and a figure; if the figure is
+    #: derived rather than published, or single-sourced rather than
+    #: cross-checked, or good for ranking but not for billing, the place
+    #: that has to say so is the line itself.
+    #:
+    #: Three of these were previously recorded only in provider adapters
+    #: or in backend/README.md: Azure's HA standby is billed as a second
+    #: instance because Azure publishes no HA meter, AWS's spot feed
+    #: carries no timestamp, and GCP has no second credential-free source
+    #: to validate against.
+    caveats: tuple[str, ...] = ()
+
     @property
     def detail(self) -> str:
         return f"{self.quantity:g} × ${self.unit_price:.4f}/{self.unit}"
@@ -613,11 +628,63 @@ def _preferred(
     return store.cheapest_in_category(provider, region, category, dsn=dsn)
 
 
+#: GCP is the only provider in this catalog with no independent
+#: credential-free second source. AWS is cross-checked against the AWS
+#: Price List CSV (100% agreement on 807 instance types) and Azure
+#: against the Vantage catalog (99.5% on 928); scripts/validate_pricing.py
+#: runs both. Nothing comparable exists for GCP, so its figures are
+#: single-sourced and say so here rather than only in a README.
+SINGLE_SOURCED_PROVIDERS = frozenset({"gcp"})
+
+
+def caveats_for(point: PricePoint, provider: str) -> tuple[str, ...]:
+    """Approximations behind one rate, in the reader's terms.
+
+    Read from the PricePoint the adapter produced, so a provider that
+    knows its figure is derived only has to say so once.
+    """
+    out: list[str] = []
+    attrs = getattr(point, "attributes", None) or {}
+
+    derived = attrs.get("derived")
+    if derived:
+        out.append(f"Derived, not published by the provider: {derived}")
+
+    if attrs.get("purchase") == "spot":
+        out.append(
+            "Spot rate from a public feed that carries NO TIMESTAMP. Good "
+            "for ranking spot against on-demand; not billing-grade, and "
+            "spot capacity is reclaimed with two minutes' notice."
+        )
+
+    if attrs.get("purchase") in ("commit1yr", "commit3yr"):
+        out.append(
+            "Assumes a commitment you have not made. The on-demand price "
+            "is what you pay today."
+        )
+
+    if provider in SINGLE_SOURCED_PROVIDERS:
+        out.append(
+            "Single-sourced: no independent credential-free feed exists "
+            "to cross-check GCP against, unlike AWS (100% agreement on "
+            "807 types) and Azure (99.5% on 928)."
+        )
+
+    if provider == "gcp" and getattr(point, "arch", None) == "arm64":
+        out.append(
+            "ARM is INFERRED from Google's machine-family naming "
+            "(t2a/c4a), not read from published machine metadata."
+        )
+
+    return tuple(out)
+
+
 def _hourly_line(
     label: str, point: PricePoint, count: int, duty_cycle: float = 1.0
 ) -> LineItem:
     quantity = Decimal(count) * HOURS_PER_MONTH * Decimal(str(duty_cycle))
     return LineItem(
+        caveats=caveats_for(point, point.provider),
         label=label,
         sku=point.sku,
         unit=point.unit,
@@ -630,6 +697,7 @@ def _hourly_line(
 def _metered_line(label: str, point: PricePoint, amount: float) -> LineItem:
     quantity = Decimal(str(amount))
     return LineItem(
+        caveats=caveats_for(point, point.provider),
         label=label,
         sku=point.sku,
         unit=point.unit,
@@ -651,6 +719,7 @@ def _tiered_line(label: str, point: PricePoint, amount: float) -> LineItem:
     total = point.cost_for(quantity)
     effective = (total / quantity) if quantity else Decimal(0)
     return LineItem(
+        caveats=caveats_for(point, point.provider),
         label=label,
         sku=point.sku,
         unit=point.unit,
@@ -692,6 +761,12 @@ def _sustained_use_discount(provider, point, spec, compute_line):
         unit_price=-saving,
         quantity=Decimal(1),
         monthly_usd=-saving,
+        # A synthesised line still carries the provenance of the rate it
+        # was computed from. It is a GCP figure like any other, and a
+        # discount that quietly escaped the single-sourced label would be
+        # the one number on the bill claiming more confidence than the
+        # rate it is a percentage of.
+        caveats=caveats_for(point, provider),
     )
 
 
