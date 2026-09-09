@@ -50,9 +50,9 @@
     "tier_3": 560.82
   },
   "realtime-chat": {
-    "tier_1": 786.94,
-    "tier_2": 885.33,
-    "tier_3": 946.75
+    "tier_1": 386.78,
+    "tier_2": 485.18,
+    "tier_3": 546.6
   },
   "static-site": {
     "tier_1": 3.92,

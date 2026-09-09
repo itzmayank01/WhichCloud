@@ -75,6 +75,23 @@ MESSAGE_KB = 1.0
 SEARCH_NODE_FLOOR = 2
 MESSAGES_PER_SEARCH_NODE = 40_000_000.0
 
+#: MONTHS OF HISTORY HELD IN THE SEARCH INDEX.
+#:
+#: This was 12, and it was the single worst assumption in the file. The
+#: prompt says "history must be searchable" and says nothing about how
+#: far back -- so a year of full-text-indexed chat was invented, and it
+#: sized the domain at NINE nodes, $551.88, seventy percent of the whole
+#: bill, on a figure nobody supplied.
+#:
+#: Three months is the defensible default: it is the window people
+#: actually search in a chat product, and it is what makes tier 3's cold
+#: archive mean something -- older conversations go there, retrievable,
+#: rather than being held in a search index at index prices forever.
+#:
+#: Surfaced through the sizing driver, so the reader can see the figure
+#: their bill turns on rather than discovering it.
+SEARCHABLE_MONTHS = 3
+
 
 def _peak_connections(constraints) -> int:
     """Sockets open at the same time at peak.
@@ -111,7 +128,9 @@ def _history_gb(constraints) -> float:
 
 def _search_nodes(constraints) -> int:
     needed = math.ceil(
-        _messages_per_month(constraints) * 12 / MESSAGES_PER_SEARCH_NODE
+        _messages_per_month(constraints)
+        * SEARCHABLE_MONTHS
+        / MESSAGES_PER_SEARCH_NODE
     )
     return max(SEARCH_NODE_FLOOR, needed)
 
@@ -125,7 +144,8 @@ def _describe(constraints, load) -> str:
         f"{_peak_connections(constraints):,} peak concurrent connections "
         f"({basis}), {_connection_minutes(constraints):,.0f} "
         f"connection-minutes/month, {_messages_per_month(constraints):,.0f} "
-        f"messages/month"
+        f"messages/month, {SEARCHABLE_MONTHS} months held searchable "
+        f"(assumed — the text does not say how far back)"
     )
 
 
@@ -271,7 +291,9 @@ def build(*, tier_level, constraints, load, region, **_) -> ArchitectureSpec:
         search_node_count=nodes,
         search_node_vcpu=2 if nodes else None,
         search_node_memory_gb=8.0 if nodes else None,
-        search_storage_gb=max(10.0, history_gb * 12) if nodes else 0.0,
+        search_storage_gb=(
+            max(10.0, history_gb * SEARCHABLE_MONTHS) if nodes else 0.0
+        ),
         # ── ops and resilience on every tier ──
         monitored_metrics=25,
         audit_logging=True,
