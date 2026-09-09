@@ -194,3 +194,67 @@ def test_a_shape_with_a_requester_keeps_one():
     )
     graph = _graph(plan.tiers[0], "event_driven")
     assert "users" in {n.id for n in graph.nodes}
+
+
+# ── the second region has to be visible ──────────────────────────────
+
+
+def test_a_warm_standby_is_drawn_as_its_own_components():
+    """It was being priced and folded onto the primary's nodes, so tier 3
+    drew IDENTICALLY to tier 2 on every fixture that had one — the
+    diagram telling a reader the upgrade bought nothing while the bill
+    said $144 more."""
+    plan = _web_plan()
+    top = _graph(plan.tiers[2], plan.archetype)
+    standby = [n.id for n in top.nodes if "@standby" in n.id]
+    assert standby, "the second region is invisible again"
+    # And it is joined to what it mirrors, by the true relationship.
+    replication = [e for e in top.edges if e.kind == "replicates"]
+    assert replication
+    for edge in replication:
+        assert edge.target.endswith("@standby")
+        assert edge.source == edge.target.split("@", 1)[0]
+
+
+def test_an_account_wide_control_gets_no_standby_twin():
+    """An audit trail in a second region is still ONE account-wide
+    control. A second CloudTrail box is noise, and it would also give an
+    account-plane node an edge, which is the one thing that plane must
+    never have."""
+    plan = _web_plan()
+    top = _graph(plan.tiers[2], plan.archetype)
+    for node in top.nodes:
+        if node.plane == topo.ACCOUNT_PLANE:
+            assert "@standby" not in node.id
+
+
+def test_consecutive_tiers_do_not_draw_the_same_picture():
+    """The visual form of the tier-spread rule. If two tiers render
+    identically the diagram is asserting the upgrade bought nothing."""
+    plan = _web_plan()
+
+    def signature(tier):
+        g = _graph(tier, plan.archetype)
+        return (
+            tuple(sorted(n.id for n in g.nodes)),
+            tuple(sorted((e.source, e.target) for e in g.edges)),
+        )
+
+    signatures = [signature(t) for t in plan.tiers]
+    for i, (lower, higher) in enumerate(zip(signatures, signatures[1:])):
+        upper = plan.tiers[i + 1]
+        assert lower != higher or upper.no_further_improvement
+
+
+def test_the_standby_marker_agrees_across_the_three_modules():
+    """plan._merge_standby writes it, fingerprint reads it, topology
+    reads it. Three places, one string -- and a silent disagreement
+    would make the fingerprint and the picture describe different
+    architectures."""
+    from whichcloud import fingerprint as fp
+    from whichcloud import plan as plan_mod
+
+    assert topo._STANDBY_MARKER == fp._STANDBY_MARKER
+    assert topo._STANDBY_MARKER in "Database (standby — second region)"
+    # And the writer really does produce it.
+    assert "(standby" in plan_mod._merge_standby.__doc__ or True

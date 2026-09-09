@@ -946,6 +946,54 @@ def inv_20_every_priced_line_is_on_the_diagram(fx_id: str, built: Plan) -> list[
     return results
 
 
+def inv_21_each_tier_draws_a_different_picture(fx_id: str, built: Plan) -> list[Result]:
+    """Two tiers rendering identically is the tier-spread bug, visually.
+
+    INV-17 asserts the spread in service terms. This asserts the
+    consequence a reader actually meets: if tier 2 and tier 3 produce the
+    same graph, the diagram is telling them the upgrade bought nothing --
+    and it would be, because it did.
+
+    Honours the same escape hatch as INV-17: a tier that says outright
+    that no further improvement is worth buying is allowed to look like
+    the one below it, because it IS the one below it.
+    """
+    from whichcloud import topology as topo
+
+    if len(built.tiers) < 2:
+        return [Result(
+            fx_id, "INV-21", passed=True,
+            expected="each tier draws its own graph",
+            actual=f"{len(built.tiers)} tier(s)",
+        )]
+
+    def signature(tier) -> tuple:
+        graph = topo.build(tier.spec, tier.estimate, archetype=built.archetype)
+        return (
+            tuple(sorted(n.id for n in graph.nodes)),
+            tuple(sorted((e.source, e.target) for e in graph.edges)),
+        )
+
+    results = []
+    signatures = [signature(t) for t in built.tiers]
+    for i, (lower, higher) in enumerate(zip(signatures, signatures[1:])):
+        upper = built.tiers[i + 1]
+        declared = bool(upper.no_further_improvement)
+        ok = lower != higher or declared
+        results.append(Result(
+            fx_id, f"INV-21:{built.tiers[i].name}->{upper.name}", passed=ok,
+            expected="a different graph, or an explicit 'no further "
+                     "improvement' statement",
+            actual=(
+                "identical graph"
+                + (" (declared)" if declared else "")
+                if lower == higher
+                else f"{len(set(higher[0]) ^ set(lower[0]))} node(s) differ"
+            ),
+        ))
+    return results
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -966,6 +1014,7 @@ INVARIANTS = {
     "INV-18": inv_18_duty_cycle_is_actually_billed,
     "INV-19": inv_19_the_diagram_is_a_graph_not_a_pile,
     "INV-20": inv_20_every_priced_line_is_on_the_diagram,
+    "INV-21": inv_21_each_tier_draws_a_different_picture,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.

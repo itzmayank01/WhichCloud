@@ -1273,6 +1273,37 @@ async def audit_route(file: UploadFile = File(...)) -> dict:
     }
 
 
+def _plan_topology(tier, archetype: str) -> dict:
+    """One tier's graph, planes and all.
+
+    Built from the PRICED ESTIMATE, never from the request: a component
+    that could not be priced does not appear as a confident node. And
+    built per tier rather than once per plan, because the tiers really
+    are different architectures now.
+    """
+    graph = topo.build(tier.spec, tier.estimate, archetype=archetype)
+    total = graph.total_monthly
+    return {
+        "nodes": [
+            {
+                "id": n.id, "label": n.label, "kind": n.kind,
+                "monthly_usd": float(n.monthly_usd),
+                "share": n.share_of(total),
+                "sku": n.sku, "detail": n.detail, "priced": n.priced,
+                "because": n.because, "baseline": n.baseline,
+                # data | control | account -- what decides how it is drawn.
+                "plane": n.plane,
+            }
+            for n in graph.nodes
+        ],
+        "edges": [
+            {"source": e.source, "target": e.target, "label": e.label,
+             "kind": e.kind}
+            for e in graph.edges
+        ],
+    }
+
+
 @app.post("/plan")
 def plan_endpoint(body: DescribeIn) -> dict:
     """The reasoning-layer contract: a description in, three compliant tiers out.
@@ -1324,6 +1355,18 @@ def plan_endpoint(body: DescribeIn) -> dict:
                 ],
                 "complete": tier.estimate.is_complete,
                 "missing": tier.estimate.missing,
+                # EACH TIER RENDERS FROM ITS OWN GRAPH.
+                #
+                # Not one diagram reused across three tiers: if two tiers
+                # draw identically that is the tier-spread bug surfacing
+                # visually, and it should be VISIBLE rather than hidden by
+                # sharing one picture. INV-17 asserts the spread; this is
+                # what lets a reader see it.
+                #
+                # The plan path had no diagram at all before -- so the six
+                # archetypes built in Part 5 were priced, explained and
+                # invisible.
+                "topology": _plan_topology(tier, result.archetype),
             }
             for tier in result.tiers
         ],

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { TierDiagram } from "@/components/plan/TierDiagram";
 import type { Plan, PlanTier } from "@/lib/api";
 import { api, money } from "@/lib/api";
 
@@ -384,6 +385,19 @@ export function PlanView({
       </section>
 
       {/* ── the selected tier's bill ── */}
+      {tier.topology && tier.topology.nodes.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            {tier.label} — architecture
+          </h3>
+          <TierDiagram
+            nodes={tier.topology.nodes}
+            edges={tier.topology.edges}
+            tierName={tier.name}
+          />
+        </section>
+      )}
+
       <section className="rounded-xl border border-neutral-200 bg-white">
         <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
           <h3 className="text-sm font-semibold text-neutral-900">

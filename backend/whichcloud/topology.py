@@ -247,9 +247,21 @@ _CONTROL_ATTACHES_TO: dict[str, tuple[str, ...]] = {
 }
 
 
+#: How a standby region's line items are marked when merged into a
+#: tier's bill. Mirrors plan._merge_standby and fingerprint._STANDBY_MARKER
+#: -- three places that must agree on one string, so it is written once
+#: in each and asserted equal by a test.
+_STANDBY_MARKER = "(standby"
+
+
 def plane_for(kind: str) -> str:
-    """Which plane a node kind belongs to. Data is the default."""
-    return _PLANE_BY_KIND.get(kind, DATA_PLANE)
+    """Which plane a node kind belongs to. Data is the default.
+
+    A standby node sits in the same plane as the primary it mirrors: a
+    standby database is still a database.
+    """
+    base = kind.split("@", 1)[0]
+    return _PLANE_BY_KIND.get(base, DATA_PLANE)
 
 
 BASELINE_KINDS = frozenset(
@@ -615,6 +627,23 @@ def build(
     by_kind: dict[str, Node] = {}
     for item in estimate.items:
         kind = _kind_for(item)
+        # THE SECOND REGION IS A SECOND SET OF BOXES.
+        #
+        # A warm standby was being priced -- real instances, a real
+        # database, in another geography -- and folded onto the primary's
+        # nodes, so tier 3 drew IDENTICALLY to tier 2 on every fixture
+        # that had one. The diagram was telling the reader the upgrade
+        # bought nothing, while the bill said $144 more.
+        #
+        # The fingerprint already counts these separately (Part 6);
+        # this is the same fix one layer down, so the picture and the
+        # fingerprint agree about what the architecture is.
+        # ...but NOT for account-plane services. An audit trail in a
+        # second region is still one account-wide control, and a second
+        # CloudTrail box is noise rather than information -- its cost
+        # folds onto the primary, where a reader expects to find it.
+        if _STANDBY_MARKER in item.label and plane_for(kind) != ACCOUNT_PLANE:
+            kind = f"{kind}@standby"
         if kind in by_kind:
             existing = by_kind[kind]
             by_kind[kind] = replace(
@@ -734,6 +763,7 @@ def build(
             topology.nodes = [n for n in topology.nodes if n.id != "users"]
 
         _attach_control_plane(topology, present)
+        _link_standby(topology)
         return topology
 
     entry = _first_present(
@@ -834,6 +864,7 @@ def build(
         topology.edges.append(Edge(outbound_source, "nat", "outbound"))
 
     _attach_control_plane(topology, present)
+    _link_standby(topology)
 
     return topology
 
@@ -846,6 +877,26 @@ def _declared_flow(archetype: str) -> tuple:
 
     graph = graph_for(archetype)
     return tuple(graph.flow) if graph else ()
+
+
+def _link_standby(topology: "Topology") -> None:
+    """Join each standby component to the primary it mirrors.
+
+    The relationship is REPLICATION, and saying so is the point: a
+    standby database is not a second database somebody also runs, it is
+    a copy of the first one kept warm in another region. Drawn as its own
+    edge kind so the request-path animation skips it -- a request does
+    not travel to the standby, which is exactly why it is a standby.
+    """
+    ids = {n.id for n in topology.nodes}
+    for node in list(topology.nodes):
+        if "@standby" not in node.id:
+            continue
+        primary = node.id.split("@", 1)[0]
+        if primary in ids:
+            topology.edges.append(
+                Edge(primary, node.id, "replicates", kind="replicates")
+            )
 
 
 def _attach_control_plane(topology: "Topology", present: set) -> None:

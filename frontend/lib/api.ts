@@ -466,6 +466,13 @@ export type PlanComponent = {
 
 export type PlanTier = {
   name: string;
+  /** THIS TIER'S OWN GRAPH, not one shared across three.
+   *
+   *  Two tiers drawing identically is the tier-spread bug surfacing
+   *  visually, and it should be visible rather than hidden by sharing a
+   *  picture. The plan path had no diagram at all before, so the six
+   *  archetypes were priced, explained and invisible. */
+  topology?: { nodes: Node[]; edges: Edge[] };
   label: string;
   philosophy: string;
   monthly_total: number;
