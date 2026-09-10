@@ -105,4 +105,26 @@ export const ToolIcons = {
       <path d="M10 3v9M6.5 8.5L10 12l3.5-3.5M4 15.5h12" />
     </svg>
   ),
+  /** Enters sketch mode: a box with a handle, the shape of "rearrange this". */
+  edit: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" {...stroke} aria-hidden>
+      <path d="M4 13.2V16h2.8l8-8-2.8-2.8z" />
+      <path d="M12.6 4.4l1.4-1.4 2.8 2.8-1.4 1.4" />
+    </svg>
+  ),
+  plus: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" {...stroke} aria-hidden>
+      <path d="M10 4.5v11M4.5 10h11" />
+    </svg>
+  ),
+  box: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" {...stroke} aria-hidden>
+      <rect x="3.5" y="3.5" width="13" height="13" rx="1.5" strokeDasharray="3 2" />
+    </svg>
+  ),
+  text: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" {...stroke} aria-hidden>
+      <path d="M4.5 5.5V4h11v1.5M10 4v12M7.5 16h5" />
+    </svg>
+  ),
 };

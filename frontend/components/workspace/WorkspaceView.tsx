@@ -17,6 +17,12 @@ import { CostRail } from "@/components/workspace/CostRail";
 import { AskPanel } from "@/components/workspace/AskPanel";
 import { Inspector } from "@/components/workspace/Inspector";
 import { ToolIcons, ToolRail } from "@/components/workspace/ToolRail";
+import { ServicePalette } from "@/components/workspace/ServicePalette";
+import {
+  SketchCanvas,
+  type SketchTool,
+} from "@/components/workspace/SketchCanvas";
+import type { IconEntry } from "@/lib/iconCatalog";
 
 /**
  * The workspace, canvas-first.
@@ -176,6 +182,14 @@ export function WorkspaceView({ name }: { name: string | null }) {
   /** The component whose box was last clicked, or null for none. */
   const [inspected, setInspected] = useState<SelectedNode | null>(null);
   const [asking, setAsking] = useState(false);
+  /* Sketch mode. Separate from `asking` because they are not alternatives:
+     rearranging the diagram and asking about it are both things a person does
+     while looking at the same architecture. */
+  const [sketching, setSketching] = useState(false);
+  const [palette, setPalette] = useState(false);
+  const [pending, setPending] = useState<IconEntry | null>(null);
+  const [tool, setTool] = useState<SketchTool>("select");
+  const [seedToken, setSeedToken] = useState(0);
 
   // NOTE the guard on `overrideCloud`. This is passed to onAsk, and a click
   // handler receives the event as its first argument -- so an unguarded
@@ -387,7 +401,107 @@ export function WorkspaceView({ name }: { name: string | null }) {
             reads that outer rectangle as part of the architecture. Reference
             architecture diagrams are published on white for the same reason. */}
         <main className="relative min-h-0 flex-1 bg-surface">
-          {shown?.topology?.nodes?.length ? (
+          {shown?.topology?.nodes?.length && sketching ? (
+            /* ── sketch mode ── */
+            <>
+              <div className="h-full overflow-hidden">
+                <SketchCanvas
+                  nodes={shown.topology.nodes}
+                  edges={shown.topology.edges}
+                  cloud={cloud ?? "aws"}
+                  pending={pending}
+                  onPendingConsumed={() => setPending(null)}
+                  tool={tool}
+                  onToolDone={() => setTool("select")}
+                  seedToken={seedToken}
+                />
+              </div>
+
+              {/* Says what this picture is, and it has to. Every other number
+                  on this screen is measured, so a diagram that has been moved
+                  around by hand sitting silently beside them would inherit
+                  their authority -- someone could add a Redis box and read the
+                  unchanged total underneath as the price of it. */}
+              <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-3">
+                <div className="pointer-events-auto flex items-center gap-3 rounded-lg border border-caution/30 bg-caution-wash px-3 py-1.5 shadow-sm">
+                  <span className="text-[12.5px] text-caution">
+                    Sketch — your changes are not priced.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSketching(false);
+                      setPalette(false);
+                      setTool("select");
+                    }}
+                    className="rounded-md border border-caution/40 px-2 py-0.5 text-[11.5px] font-medium text-caution transition-colors hover:bg-caution/10"
+                  >
+                    Back to the priced diagram
+                  </button>
+                </div>
+              </div>
+
+              {/* sketch tools */}
+              <div className="pointer-events-none absolute left-0 top-0 flex h-full items-center p-3">
+                <ToolRail
+                  tools={[
+                    {
+                      id: "select",
+                      label: "Select and move",
+                      icon: ToolIcons.cursor,
+                      active: tool === "select",
+                      onSelect: () => setTool("select"),
+                    },
+                    {
+                      id: "add",
+                      label: "Add a service",
+                      icon: ToolIcons.plus,
+                      active: palette,
+                      onSelect: () => setPalette((open) => !open),
+                    },
+                    {
+                      id: "box",
+                      label: "Draw a boundary",
+                      icon: ToolIcons.box,
+                      active: tool === "box",
+                      onSelect: () => setTool(tool === "box" ? "select" : "box"),
+                    },
+                    {
+                      id: "text",
+                      label: "Add a label",
+                      icon: ToolIcons.text,
+                      active: tool === "text",
+                      onSelect: () => setTool(tool === "text" ? "select" : "text"),
+                    },
+                    "divider",
+                    {
+                      id: "reset",
+                      label: "Start again from the priced layout",
+                      icon: ToolIcons.replay,
+                      onSelect: () => setSeedToken((n) => n + 1),
+                    },
+                  ]}
+                />
+              </div>
+
+              {palette && (
+                <div className="pointer-events-none absolute bottom-0 right-0 top-0 p-3">
+                  <ServicePalette
+                    cloud={cloud ?? "aws"}
+                    onPick={setPending}
+                    onClose={() => setPalette(false)}
+                  />
+                </div>
+              )}
+
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
+                <span className="pointer-events-auto rounded-lg border border-line bg-surface/95 px-3 py-1.5 font-mono text-[11.5px] text-ink-3 shadow-sm backdrop-blur">
+                  drag to move · double-click to rename · ⌫ to delete · drag a
+                  handle to connect
+                </span>
+              </div>
+            </>
+          ) : shown?.topology?.nodes?.length ? (
             <>
               <div className="h-full overflow-hidden">
                 {/* Keyed on option + replay counter so switching tiers or
@@ -451,6 +565,16 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       icon: ToolIcons.ask,
                       active: asking,
                       onSelect: () => setAsking((open) => !open),
+                    },
+                    {
+                      id: "sketch",
+                      label: "Rearrange this diagram",
+                      icon: ToolIcons.edit,
+                      onSelect: () => {
+                        setSketching(true);
+                        setAsking(false);
+                        setInspected(null);
+                      },
                     },
                     "divider",
                     {
