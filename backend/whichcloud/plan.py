@@ -29,12 +29,15 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from whichcloud import archetype as archetype_module
-from whichcloud import llm_extract
+from whichcloud import archetypes as archetype_graphs
+from whichcloud import llm_extract, quantity_audit
 from whichcloud.constraint_filter import Architecture, check
 from whichcloud.constraints import QUESTIONS as _QUESTIONS, Constraints
 from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
 from whichcloud.load_model import Load, build_load
-from whichcloud.network_topology import PUBLIC_SIMPLE, TopologyDecision
+from whichcloud.network_topology import (
+    NO_VPC, PRIVATE_STANDARD, PUBLIC_SIMPLE, TopologyDecision,
+)
 from whichcloud.network_topology import decide as decide_topology
 from whichcloud.objectives import compliance_notes, objectives
 from whichcloud.planner import RPS_PER_VCPU, in_country_regions
@@ -305,6 +308,21 @@ class Plan:
     #: What this shape's architecture needs, in words. Populated only for
     #: recognised_unpriced: describing a shape is not pricing it.
     archetype_requirements: str = ""
+    #: What would have to be answered before this shape COULD be priced --
+    #: the archetype's sizing driver, as questions. A refusal that names a
+    #: shape and stops there is a dead end; these are the way forward.
+    pricing_questions: list[str] = field(default_factory=list)
+    #: The archetype's own sizing driver, rendered with this workload's
+    #: numbers. "40,000 page views/month against 5 GB of assets" says what
+    #: the bill rests on in a way "0.01 req/sec" cannot -- and sizing every
+    #: shape in requests/sec is what costed a 40-machine estate as one
+    #: small instance.
+    sizing_note: str = ""
+    #: Quantities the description stated that extraction did not read.
+    #: Non-empty means pricing was withheld for that reason specifically,
+    #: which is a different failure from an unbuilt archetype and has a
+    #: different fix -- the reader can resolve it in one sentence.
+    unread_quantities: list[dict] = field(default_factory=list)
     #: Whether tiers were priced at all. False means `tiers` is empty by
     #: decision, not by failure -- INV-12's subject.
     priced: bool = True
@@ -473,10 +491,65 @@ def _flow_logs_wanted(
     return False, why
 
 
-def _requires_x86(description: str) -> bool:
-    """Graviton is the default; only explicit evidence rules it out."""
+def _requires_x86(description: str, constraints: Constraints | None = None) -> bool:
+    """Whether ARM is ruled out for this workload.
+
+    The EXTRACTED constraint decides, and the phrase table is only a
+    second opinion that can add to it. That order is the fix for a real
+    defect: `_X86_REQUIRED` needed the literal phrase "windows server",
+    so "a mix of Windows and Linux" did not match, and a lift-and-shift
+    of legacy Windows VMs was recommended Graviton -- not an expensive
+    answer but a non-functional one, since those images do not run on
+    ARM at all.
+
+    The table stays because it catches things the OS field cannot: a
+    greenfield app that names SQL Server or .NET Framework is not a
+    migration and has no `source_os`, but it is still x86.
+    """
+    if constraints is not None and constraints.requires_x86():
+        return True
     text = description.lower()
     return any(hint in text for hint in _X86_REQUIRED)
+
+
+#: Archetypes whose COMPUTE genuinely stops between periods of work, and
+#: is therefore billed for the hours it runs rather than for the month.
+#:
+#: The distinction this encodes is the one that makes duty cycle safe to
+#: apply at all. "Busy during business hours" is a statement about
+#: TRAFFIC; "runs for two hours a night and is switched off in between"
+#: is a statement about CAPACITY. A web application serving office-hours
+#: traffic still needs its servers up at 3am to answer the one request
+#: that arrives, so billing it for nine hours would not be a cheaper
+#: answer -- it would be an answer to a workload nobody described, and
+#: under-billing is no more honest than over-billing.
+#:
+#: A scheduled batch job is the opposite: nothing runs between runs, and
+#: charging it 730 hours for a two-hour nightly job overstates its
+#: compute by 12x. That was the recorded defect on PROBE-2.
+DUTY_CYCLED_ARCHETYPES = frozenset({"batch_etl", "ml_inference"})
+
+#: Never bill below this, however short the stated window. A job that
+#: claims to run for six minutes a night still pays for scheduler
+#: overhead, image pulls and a cold start, and a duty cycle rounding
+#: towards zero would quote a number nobody can achieve.
+MIN_DUTY_CYCLE = 0.01
+
+
+def _duty_cycle_for(archetype: str, constraints: Constraints) -> float:
+    """What fraction of the month this workload's compute actually runs.
+
+    1.0 for anything that has to stay up, which is most things. Only the
+    archetypes in DUTY_CYCLED_ARCHETYPES may go below it, and only on a
+    STATED active window -- an assumed one would be inventing a saving
+    from silence.
+    """
+    if archetype not in DUTY_CYCLED_ARCHETYPES:
+        return 1.0
+    hours = float(getattr(constraints, "active_hours_per_day", 24.0) or 24.0)
+    if hours >= 24.0:
+        return 1.0
+    return max(MIN_DUTY_CYCLE, min(1.0, hours / 24.0))
 
 
 def _database_size_for(load_tier: str) -> tuple[int, float]:
@@ -593,6 +666,7 @@ def _spec_for(
     region: str,
     instances: int,
     tier_level: int,
+    archetype: str = "web_app",
     requires_x86: bool,
     endpoints: EndpointPlan,
     posture_resource_count: int,
@@ -612,6 +686,14 @@ def _spec_for(
     ephemeral = constraints.durability == "ephemeral"
     public_simple = topology.value == PUBLIC_SIMPLE
     managed = tier_level >= 2  # Fargate + the rung 2/3 additions it buys
+    #: What tier 3 buys that tier 2 does not -- and ONLY where the
+    #: workload has said something matters. Surviving the loss of a whole
+    #: region is worth buying for a workload that stated its data cannot
+    #: be lost (durable) or that being down costs it (high availability);
+    #: it is padding for an internal tool whose own description says
+    #: nobody minds an hour of downtime. Being offline and losing the data
+    #: are independent axes, so either one earns it.
+    resilient = tier_level >= 3 and (durable or high_availability)
     storage = constraints.storage_gb or _default_storage_gb(constraints, load)
     #: Total bytes reaching users, however they get there.
     user_traffic_gb = constraints.egress_gb or _default_egress_gb(constraints, load)
@@ -661,6 +743,11 @@ def _spec_for(
         fargate_task_memory_gb=fargate_memory if managed else 0.0,
         fargate_arm=not requires_x86,
         arch=None if requires_x86 else "arm64",
+        # Billed for the hours it runs, not for the month -- but only
+        # for the archetypes whose compute genuinely stops. See
+        # DUTY_CYCLED_ARCHETYPES for why a business-hours WEB app is
+        # not one of them.
+        compute_duty_cycle=_duty_cycle_for(archetype, constraints),
         database_vcpu=db_vcpu,
         database_memory_gb=db_memory_gb,
         # Required by availability=high; not a tier upsell -- present on
@@ -716,16 +803,29 @@ def _spec_for(
         # immutability -- not the existence of a backup at all.
         backup_gb=0.0 if ephemeral else storage,
         backup_retention_days=0 if ephemeral else (35 if durable else 7),
-        backup_copy_gb=storage if durable else 0.0,
+        # A copy in a second region is disaster recovery. durability=high
+        # requires it on every tier; tier 3 buys it for everyone else,
+        # because surviving the loss of a whole region is the thing that
+        # actually distinguishes "the architecture to grow into" from a
+        # production-ready single-region one.
+        backup_copy_gb=storage if (durable or resilient) else 0.0,
         # DEFECT 8: only the changed fraction crosses each month; the
         # full dataset crosses once, at seed, and is reported as a
         # one-off rather than folded into a monthly total.
         backup_transfer_gb=(
-            storage * _monthly_change_rate(constraints) if durable else 0.0
+            storage * _monthly_change_rate(constraints)
+            if (durable or resilient) else 0.0
         ),
-        backup_seed_gb=storage if durable else 0.0,
-        object_lock=durable,
-        lifecycle_gb=storage * 0.4 if durable else 0.0,
+        backup_seed_gb=storage if (durable or resilient) else 0.0,
+        # WORM retention: the control that makes a backup survive an
+        # attacker who holds valid credentials. Required by
+        # durability=high; bought at tier 3 regardless, because a backup
+        # an intruder can delete is not a backup you can grow into.
+        object_lock=durable or resilient,
+        # Tiering cold data to archive storage. A COST optimisation, not a
+        # capability, so it is always correct to apply and never gated on
+        # a requirement being met.
+        lifecycle_gb=storage * 0.4 if (durable or resilient) else 0.0,
         # Only a stated residency requirement earns a guardrail. Naming a
         # city tells us where the business is, not that data may never
         # leave the country -- that needs its own trigger phrase.
@@ -786,6 +886,15 @@ def _architecture_from(spec: ArchitectureSpec, region_code: str) -> Architecture
         object_lock=spec.object_lock,
         regions=(region_code,) + (("ap-south-2",) if spec.backup_copy_gb else ()),
         region_deny_guardrail=spec.region_deny_guardrail,
+        # Availability comes from the SERVICE when nothing is provisioned
+        # by the hour. Lambda, API Gateway, SQS, DynamoDB and S3 are
+        # regional services already replicated across availability zones,
+        # so "how many instances, in how many zones, behind what
+        # balancer" has no answer for them -- and failing the design for
+        # not answering it would push it towards an always-on fleet that
+        # is genuinely less available. Durability is unaffected: every
+        # backup and immutability check still applies in full.
+        serverless=not (spec.compute_count or spec.fargate_task_count),
     )
 
 
@@ -917,16 +1026,35 @@ def _pattern_diff(
             "diagnosis-by-guesswork as the only option when something "
             "is slow."
         )
+    if not prev.object_lock and curr.object_lock:
+        diffs.append(
+            "Backups: mutable → Object Lock (WORM) — removes an intruder "
+            "with valid credentials deleting the backups as a risk."
+        )
+    if not prev.backup_copy_gb and curr.backup_copy_gb:
+        diffs.append(
+            "Recovery: backups in one region → a copy in a second region — "
+            "removes losing the backups with the region as a risk."
+        )
+    if not prev.lifecycle_gb and curr.lifecycle_gb:
+        diffs.append(
+            "Storage: one hot class → lifecycle tiering to archive — "
+            "removes paying hot rates for cold data, at the cost of "
+            "slower retrieval on the archived portion."
+        )
     if standby_added:
         diffs.append(
             "Topology: single-region Multi-AZ → warm standby in a second "
             "in-country region — removes a whole-region outage as a risk."
         )
+    # Capacity is deliberately NOT a pattern diff any more: tiers differ by
+    # architecture, and every tier is sized for the same stated peak. The
+    # parameters are kept so callers need not change, and so this stays
+    # able to report a capacity change if one is ever reintroduced.
     if capacity_after > capacity_before:
         diffs.append(
             f"Capacity: {capacity_before} → {capacity_after} compute units, "
-            f"sized for {capacity_rps:.2f} req/sec (3x the stated peak) — "
-            "the only capacity change made, and made last."
+            f"sized for {capacity_rps:.2f} req/sec."
         )
     return diffs
 
@@ -976,6 +1104,10 @@ def _withheld_plan(
         archetype_state=state,
         archetype_note=note,
         archetype_requirements=archetype_module.requirements_for(detected),
+        # A named shape with no way forward is a dead end. These are the
+        # figures that would let it be priced, which is a more useful
+        # answer than the shape's name on its own.
+        pricing_questions=archetype_module.pricing_questions_for(detected),
         priced=False,
         withheld_reason=(
             archetype_module.composite_message(composite_of or []) if composite
@@ -996,6 +1128,255 @@ def _withheld_plan(
         ),
         extraction_confidence=constraints.confidence_map(),
     )
+
+
+def _unread_quantity_plan(
+    constraints: Constraints, load: Load, detected: str, evidence: str,
+) -> Plan:
+    """The answer when the description stated a figure nothing read.
+
+    A separate state from the archetype refusals, because it is a
+    different claim and has a different fix. "We have not built your
+    shape" is ours to solve; "we could not read your number" is
+    answerable in one sentence by the person who wrote it, and telling
+    them which number is the whole of the help they need.
+    """
+    unparsed = list(constraints.unparsed_quantities)
+    state = (
+        archetype_module.state_for(detected)
+        if detected != archetype_module.COMPOSITE
+        else archetype_module.COMPOSITE
+    )
+    return Plan(
+        constraints=constraints,
+        load=load,
+        compliance=compliance_notes(constraints.country, constraints.sector),
+        archetype=detected,
+        archetype_state=state,
+        archetype_note=(
+            f"Classified as {detected!r} ({evidence}), but not priced: a "
+            "quantity in the description was not read."
+        ),
+        archetype_requirements=archetype_module.requirements_for(detected),
+        priced=False,
+        withheld_reason=quantity_audit.describe(unparsed),
+        unread_quantities=unparsed,
+        # The questions are the figures themselves, phrased back. Nothing
+        # generic: the reader stated something specific and needs to know
+        # which specific thing did not land.
+        pricing_questions=[u["question"] for u in unparsed],
+        covered_archetypes=archetype_module.coverage(),
+        coverage_summary=archetype_module.coverage_summary(),
+        clarifying_questions=[],
+        extraction_confidence=constraints.confidence_map(),
+    )
+
+
+def _graph_plan(
+    graph, constraints: Constraints, load: Load, detected: str, evidence: str,
+    *, description: str, provider: str, dsn: str | None,
+) -> Plan:
+    """Price a shape that declares its own service graph.
+
+    Deliberately much shorter than the web_app path, and that is the
+    point rather than an omission. The web_app path decides a network
+    topology, an endpoint plan and an instance count from a request rate
+    -- none of which mean anything for a static site, which has no VPC,
+    no private subnet and no origin fleet. Applying them anyway is how a
+    brochure site acquired a NAT gateway.
+
+    The forbidden list is enforced HERE, before anything is priced,
+    rather than checked afterwards: a spec that contains what its own
+    archetype forbids is a bug in the archetype, and it must fail loudly
+    at the point of construction instead of reaching a user as a bill.
+    """
+    regions = COUNTRY_REGIONS.get(constraints.country, ("india",))
+    region = regions[0]
+    compliance = compliance_notes(constraints.country, constraints.sector)
+
+    # The topology is decided per TIER (a shape can be serverless at
+    # tier 1 and have instances at tier 3), so it is read off the first
+    # spec below rather than guessed here.
+    plan = Plan(
+        constraints=constraints, load=load, compliance=compliance,
+        archetype=detected,
+        archetype_state=archetype_module.PRICED,
+        archetype_note=f"{detected}: {evidence}",
+        priced=True,
+        covered_archetypes=archetype_module.coverage(),
+        coverage_summary=archetype_module.coverage_summary(),
+        provisional=bool(_provisional_reasons(constraints)),
+        provisional_reasons=_provisional_reasons(constraints),
+        extraction_confidence=constraints.confidence_map(),
+        # The shape's own sizing driver, in its own terms. "40,000 page
+        # views/month against 5 GB of assets" says what the bill rests on
+        # in a way "0.01 req/sec" cannot.
+        sizing_note=graph.sizing.describe(constraints, load),
+    )
+
+    tier_meta = [
+        ("tier_1", "Cheapest that meets your requirements", 1),
+        ("tier_2", "Balanced — production-ready", 2),
+        ("tier_3", "The architecture to grow into", 3),
+    ]
+
+    prev_fingerprint: frozenset[str] | None = None
+    for name, label, level in tier_meta:
+        spec = graph.build(
+            tier_level=level, constraints=constraints, load=load,
+            region=region, description=description,
+        )
+        violations = graph.violations(spec)
+        if violations:
+            raise AssertionError(
+                f"{detected} {name} contains components its own archetype "
+                f"forbids: {violations}"
+            )
+
+        # FILTER BEFORE PRICE, exactly as the web_app path does. A design
+        # that fails a STATED requirement is not a cheaper version of the
+        # same thing; it is a different thing, and offering it beside two
+        # compliant tiers invites picking it on price.
+        verdict = check(
+            _architecture_from(spec, _aws_region(region)),
+            availability=constraints.availability,
+            durability=constraints.durability,
+            country=_country_name(constraints.country),
+            country_regions=_aws_regions(
+                in_country_regions(_country_name(constraints.country))
+                if constraints.country_lock else ()
+            ),
+        )
+        if not verdict.valid:
+            raise AssertionError(
+                f"{detected} {name} was generated non-compliant: "
+                f"{verdict.violations}"
+            )
+
+        est = estimate(spec, provider, dsn=dsn)
+        obj = objectives(
+            multi_instance=spec.compute_count >= 2 or spec.fargate_task_count >= 2,
+            multi_az_database=spec.database_multi_az,
+            cross_region_copy=bool(spec.backup_copy_gb),
+            warm_standby=False,
+        )
+        tier = Tier(
+            name=name, label=label, philosophy=PHILOSOPHY[level],
+            spec=spec, estimate=est,
+            rto=obj["rto"], rpo=obj["rpo"],
+            region_rto=obj["region_rto"], region_rpo=obj["region_rpo"],
+        )
+        note = graph.tier_notes.get(level, "")
+        tier.pattern_diff = [note] if note else []
+
+        # The spread is measured, not asserted. A tier that genuinely has
+        # nothing more to buy says so; one that merely forgot does not get
+        # to look the same.
+        current = frozenset(_fingerprint_kinds(est))
+        if prev_fingerprint is not None:
+            spread = len(
+                (current - prev_fingerprint) | (prev_fingerprint - current)
+            )
+            if spread < 3 and not tier.pattern_diff:
+                tier.no_further_improvement = (
+                    "At this workload size there is no further improvement "
+                    "worth buying."
+                )
+        prev_fingerprint = current
+
+        plan.tiers.append(tier)
+
+    # Reported from what was actually built. A design made entirely of
+    # regional managed services has no VPC to describe, and saying
+    # `public_simple` would claim a public subnet that does not exist.
+    first = plan.tiers[0].spec
+    if first.compute_count or first.fargate_task_count:
+        private = first.private_subnets
+        plan.network_topology = PRIVATE_STANDARD if private else PUBLIC_SIMPLE
+        plan.network_topology_reason = (
+            "instances run in private subnets, reaching AWS services "
+            + ("through a NAT gateway" if first.nat_gateway_count
+               else "through VPC endpoints — no NAT gateway, because "
+                    "nothing here needs general internet egress")
+            if private else
+            "instances run in a public subnet; nothing about this "
+            "workload requires network isolation"
+        )
+    else:
+        plan.network_topology = NO_VPC
+        plan.network_topology_reason = (
+            "nothing runs in a network you own — this design is regional "
+            "managed services throughout, so isolation is IAM and resource "
+            "policy rather than subnets, and there is no NAT gateway to buy"
+        )
+
+    # THE BIGGEST LINE, AND WHETHER ANYBODY SAID IT.
+    #
+    # A derived figure that sets most of the bill has to say so. The
+    # batch archetype is the case that forced this: "500 GB a night" is
+    # stated, but "retained for a month" is the engine's own assumption,
+    # and it turns 500 GB into 15 TB -- two thirds of the total. A reader
+    # who cannot see that has no way to know the number turns on a
+    # retention nobody supplied.
+    plan.dominant_driver_note = _graph_dominant_driver(graph, plan, constraints)
+
+    budget = constraints.budget_monthly_usd
+    if budget and plan.tiers[0].monthly_total > budget:
+        plan.over_budget_note = (
+            "Your requirements set a floor above your budget. Cheapest "
+            "compliant design shown."
+        )
+    return plan
+
+
+def _graph_dominant_driver(graph, plan: Plan, constraints: Constraints) -> str:
+    """Name the largest line item when the figure behind it was derived.
+
+    Silent when the biggest line rests on something the user actually
+    stated -- there the number is already theirs to check.
+    """
+    if not plan.tiers:
+        return ""
+    items = plan.tiers[0].estimate.items
+    if not items:
+        return ""
+    largest = max(items, key=lambda i: float(i.monthly_usd))
+    total = float(plan.tiers[0].monthly_total) or 1.0
+    share = float(largest.monthly_usd) / total
+    if share < 0.35:
+        return ""
+
+    derived = [
+        f for f in graph.sizing.fields if f not in constraints.stated
+    ]
+    # Deliberately does NOT claim which input drives which line. The
+    # engine knows the sizing basis and knows what was assumed; it does
+    # not know the derivative of one line item with respect to one field,
+    # and asserting a link it cannot compute would be a confident wrong
+    # answer about its own confidence. Naming the basis and the
+    # assumptions separately is what it can actually defend.
+    basis = graph.sizing.describe(constraints, plan.load)
+    if derived:
+        return (
+            f"{largest.label} is {share:.0%} of this bill. It was sized "
+            f"from: {basis}. Of that basis, "
+            f"{', '.join(derived)} came from the engine's defaults rather "
+            f"than from your description — confirm them before trusting "
+            f"the total."
+        )
+    return (
+        f"{largest.label} is {share:.0%} of this bill. It was sized from: "
+        f"{basis} — all of it from figures you gave."
+    )
+
+
+def _fingerprint_kinds(est) -> set[str]:
+    """Service kinds in one estimate. Imported lazily to keep
+    whichcloud.fingerprint free to import plan-side types."""
+    from whichcloud.fingerprint import fingerprint
+    from types import SimpleNamespace
+
+    return set(fingerprint(SimpleNamespace(estimate=est)))
 
 
 def build(description: str, provider: str = "aws", dsn: str | None = None) -> Plan:
@@ -1053,9 +1434,39 @@ def plan_from(
         f"confidence {meta.archetype_confidence:.2f}, "
         f"{len(meta.archetype_spans)} supporting span(s)"
     )
+
+    # A STATED QUANTITY THAT WAS NOT READ WITHHOLDS, WHATEVER THE SHAPE.
+    # Checked before the archetype gate because it outranks it: knowing
+    # the shape is no help when the figure that sizes it was dropped on
+    # the way in. "40 virtual machines" priced as one small instance is
+    # not a cheaper answer to the same question, it is an answer to a
+    # different one.
+    if constraints.unparsed_quantities:
+        plan = _unread_quantity_plan(constraints, load, detected, evidence)
+        _attach_extraction_meta(plan, meta)
+        return plan
+
     if not archetype_module.is_priceable(detected):
         plan = _withheld_plan(
             constraints, load, detected, evidence, meta.composite_of,
+        )
+        _attach_extraction_meta(plan, meta)
+        return plan
+
+    # SHAPES WITH THEIR OWN SERVICE GRAPH BUILD THEMSELVES.
+    #
+    # web_app is still built by _spec_for below -- it predates the
+    # archetypes package and moving it is a separate change with its own
+    # golden totals to re-approve. Everything else declares its own
+    # candidate set, sizing driver and forbidden list, and gets none of
+    # the web_app-shaped decisions (topology, endpoint plan, instance
+    # count from request rate) that do not apply to it. A static site has
+    # no VPC to decide a topology for.
+    graph = archetype_graphs.graph_for(detected)
+    if graph is not None:
+        plan = _graph_plan(
+            graph, constraints, load, detected, evidence,
+            description=description, provider=provider, dsn=dsn,
         )
         _attach_extraction_meta(plan, meta)
         return plan
@@ -1072,7 +1483,7 @@ def plan_from(
     high_availability = constraints.availability == "high"
     durable = constraints.durability == "high"
     instances = _instances_for(load.peak_rps, high_availability=high_availability)
-    requires_x86 = _requires_x86(description)
+    requires_x86 = _requires_x86(description, constraints)
     aws_region = _aws_region(region)
     az_count = 2 if high_availability else 1
 
@@ -1121,13 +1532,28 @@ def plan_from(
     ]
 
     prev_spec: ArchitectureSpec | None = None
-    capacity_3x = _instances_for(load.peak_rps * 3, high_availability=high_availability)
 
     for name, label, level in tier_meta:
-        count = capacity_3x if level == 3 else instances
+        # CAPACITY IS NOT A TIER. Every tier is sized for the SAME stated
+        # peak, because sizing follows the requirement and the tier
+        # follows the design.
+        #
+        # Tier 3 used to provision 3x the stated peak, and on
+        # ecommerce-scale that was the ONLY thing distinguishing it from
+        # tier 2: same services, same shape, +93% on the bill
+        # ($1,787.54 -> $3,444.72) for three times as much of the
+        # identical architecture. That is a size decision sold as a
+        # design, and it is what makes three tiers one design shown
+        # thrice. What tier 3 buys now is architecture the others do not
+        # have -- immutable backups, a cross-region copy, archive
+        # tiering, and a warm standby where the geography allows one --
+        # each of which stays correct at 10x load rather than being 3x of
+        # it.
+        count = instances
         spec = _spec_for(
             name=name, constraints=constraints, load=load, region=region,
-            instances=count, tier_level=level, requires_x86=requires_x86,
+            instances=count, tier_level=level, archetype=detected,
+            requires_x86=requires_x86,
             endpoints=endpoints, posture_resource_count=resource_count,
             topology=topology, flow_logs=flow_logs,
         )

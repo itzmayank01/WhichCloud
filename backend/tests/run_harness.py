@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -106,6 +107,26 @@ COMPONENT_CHECKS = {
     "email": lambda t: t.spec.emails_per_month > 0,
     "queue": lambda t: t.spec.queue_requests_per_month > 0,
     "notifications": lambda t: t.spec.notifications_per_month > 0,
+    # Added for the graph archetypes. A static site asserts the
+    # ABSENCE of a relational database, so the check has to exist
+    # for the absence to mean anything.
+    "relational_database": lambda t: bool(t.spec.database_vcpu),
+    "object_storage": lambda t: t.spec.storage_gb > 0,
+    "dns": lambda t: t.spec.dns_hosted_zones > 0,
+    "tls": lambda t: t.spec.tls_certificate,
+    "archive_tier": lambda t: t.spec.lifecycle_gb > 0,
+    "event_bus": lambda t: t.spec.eventbridge_events_per_month > 0,
+    "connections": lambda t: t.spec.ws_connection_minutes_per_month > 0,
+    "search": lambda t: t.spec.search_node_count > 0,
+    "model_endpoint": lambda t: bool(t.spec.inference_instance),
+    "warehouse": lambda t: t.spec.warehouse_node_count > 0,
+    "glue_etl": lambda t: t.spec.glue_dpu_hours_per_month > 0,
+    "athena": lambda t: t.spec.athena_tb_scanned_per_month > 0,
+    # EBS volumes attached to instances. NOT db_storage_gb, which is
+    # RDS-managed storage and only prices alongside a database.
+    "block_storage": lambda t: t.spec.block_storage_gb > 0,
+    "serverless_compute": lambda t: t.spec.fargate_task_count > 0
+        or t.spec.lambda_invocations_per_month > 0,
 }
 
 #: When a must_exclude component is correctly absent, the reason usually
@@ -237,6 +258,59 @@ def _check_compliance(fx: dict, built: Plan) -> list[Result]:
         results.append(Result(
             fx["id"], f"forbidden:{forbidden}", passed=ok,
             expected=f"never cites {forbidden}", actual="; ".join(names) or "(none)",
+        ))
+    return results
+
+
+def _check_complete(fx: dict, built: Plan) -> list[Result]:
+    """Every component in the named tiers resolved to a real rate.
+
+    An archetype declares its candidate set as services it may select,
+    and "may select" has to mean "the catalog can price". A shape whose
+    own CDN lands in `missing` is not a cheap shape, it is an incomplete
+    one -- and an incomplete estimate that still shows a total is the
+    confident-wrong-answer this engine refuses to give.
+    """
+    results = []
+    for tier_name in fx.get("expect", {}).get("complete", []) or []:
+        tier = next((t for t in built.tiers if t.name == tier_name), None)
+        if tier is None:
+            results.append(Result(
+                fx["id"], f"complete:{tier_name}", passed=False,
+                expected="a priced tier", actual="tier not found",
+            ))
+            continue
+        missing = list(tier.estimate.missing)
+        results.append(Result(
+            fx["id"], f"complete:{tier_name}", passed=not missing,
+            expected="every selected component has a catalog rate",
+            actual=(f"missing: {', '.join(missing)}" if missing
+                    else "complete"),
+        ))
+    return results
+
+
+def _check_forbidden(fx: dict, built: Plan) -> list[Result]:
+    """No tier contains a component its own archetype forbids.
+
+    Read from the ARCHETYPE, not from the fixture: a static site forbids
+    a database whether or not a fixture author remembered to say so, and
+    a rule that has to be repeated per fixture is one that will be
+    forgotten on the fixture that needs it.
+    """
+    from whichcloud.archetypes import graph_for
+
+    graph = graph_for(built.archetype)
+    if graph is None:
+        return []
+    results = []
+    for tier in built.tiers:
+        violations = graph.violations(tier.spec)
+        results.append(Result(
+            fx["id"], f"forbidden:{tier.name}", passed=not violations,
+            expected=f"no component forbidden by {built.archetype}",
+            actual=("; ".join(violations) if violations
+                    else f"none of {len(graph.forbidden)} forbidden components"),
         ))
     return results
 
@@ -468,10 +542,20 @@ def inv_11_topology_forced_private_when_it_must_be(fx_id: str, built: Plan) -> l
         n.get("requires_network_isolation") for n in built.compliance
     )
     must_be_private = c.availability == "high" or c.durability == "high" or isolation_required
-    ok = (not must_be_private) or built.network_topology == "private_standard"
+    # `no_vpc` satisfies this, and is not a loophole. The invariant exists
+    # to stop sensitive compute sitting in a PUBLIC subnet; a design with
+    # no subnets at all -- regional managed services throughout -- has no
+    # public subnet to sit in. Isolation there is IAM and resource policy,
+    # and demanding private_standard of it would mean billing a NAT
+    # gateway for an empty VPC to satisfy a checkbox.
+    ok = (
+        (not must_be_private)
+        or built.network_topology in ("private_standard", "no_vpc")
+    )
     return [Result(
         fx_id, "INV-11", passed=ok,
-        expected="private_standard whenever availability=high, durability=high, "
+        expected="private_standard (or no_vpc, for a design with no network "
+                 "of your own) whenever availability=high, durability=high, "
                  "or a compliance obligation requires network isolation",
         actual=f"topology={built.network_topology} "
                f"(availability={c.availability}, durability={c.durability}, "
@@ -486,17 +570,54 @@ def inv_12_no_priced_tier_when_archetype_unknown(fx_id: str, built: Plan) -> lis
     found the previous `archetype: unknown` note doing.
 
     Covers BOTH withholding states: unknown (nothing matched, or a tie)
-    and recognised_unpriced (shape known, no service graph yet)."""
+    and recognised_unpriced (shape known, no service graph yet).
+
+    Checks the WHOLE contract, not just `tiers`. The earlier version
+    asserted only that the tier list was empty, which a plan can satisfy
+    while still carrying a total, a component list or a topology --
+    every one of which renders as a priced answer in the interface. A
+    withheld plan has to be empty of numbers by every route the
+    interface can reach one, or the refusal is only skin deep.
+    """
     withholding = built.archetype_state in (
         "unknown", "recognised_unpriced", "composite",
     )
-    ok = (not withholding) or (not built.tiers and not built.priced)
+    if not withholding:
+        return [Result(
+            fx_id, "INV-12", passed=True,
+            expected="no priced output when the archetype is not priceable",
+            actual=f"state={built.archetype_state} (priceable, not withheld)",
+        )]
+
+    # Every surface a number could escape through.
+    leaks = []
+    if built.priced:
+        leaks.append("priced=True")
+    if built.tiers:
+        leaks.append(f"{len(built.tiers)} tier(s)")
+    if getattr(built, "total_low", 0) or getattr(built, "total_high", 0):
+        leaks.append(f"totals {built.total_low}-{built.total_high}")
+    if getattr(built, "cost_drivers", None):
+        leaks.append(f"{len(built.cost_drivers)} cost driver(s)")
+    if getattr(built, "unspent_budget", None):
+        leaks.append("unspent_budget")
+
+    # A refusal that says nothing more than "no" is a dead end. For a
+    # shape we RECOGNISED, the way forward is required, not optional.
+    recognised = built.archetype_state == "recognised_unpriced"
+    if recognised and not built.archetype_requirements:
+        leaks.append("no archetype_requirements")
+    if recognised and not built.pricing_questions:
+        leaks.append("no pricing_questions")
+
     return [Result(
-        fx_id, "INV-12", passed=ok,
-        expected="no priced tier when archetype_state is unknown or "
-                 "recognised_unpriced",
-        actual=f"state={built.archetype_state} priced={built.priced} "
-               f"tiers={len(built.tiers)}",
+        fx_id, "INV-12", passed=not leaks,
+        expected="a withheld plan carries no tiers, no total, no cost "
+                 "drivers — and, when the shape was recognised, does say "
+                 "what it needs to price it",
+        actual=f"state={built.archetype_state} " + (
+            "; ".join(leaks) if leaks else "clean"
+        ),
         reason=built.withheld_reason,
     )]
 
@@ -542,6 +663,337 @@ def inv_14_composite_never_prices(fx_id: str, built: Plan) -> list[Result]:
     )]
 
 
+#: AWS Graviton instance families, from the naming rule rather than a
+#: list: the letters immediately after the generation digit contain a 'g'
+#: (t4g, m7g, c7gn, r8gd, x2gd, im4gn, g5g), and no x86 family does --
+#: t3a's 'a' is AMD, m5's absence is Intel. `db.` prefixed types are RDS
+#: and follow the same rule.
+_ARM_FAMILY = re.compile(r"^(?:db\.)?[a-z]+\d+g[a-z]*\.", re.IGNORECASE)
+
+
+def _arm_skus(tier) -> list[str]:
+    return [
+        item.sku for item in tier.estimate.items
+        if _ARM_FAMILY.match((item.sku or "").split(":", 1)[0])
+    ]
+
+
+def inv_15_no_arm_under_x86_required(fx_id: str, built: Plan) -> list[Result]:
+    """ARM is never recommended for a workload that cannot run on it.
+
+    The failure this guards is not an inflated bill, it is infrastructure
+    that would not start. `_X86_REQUIRED` needed the literal phrase
+    "windows server"; a description reading "a mix of Windows and Linux"
+    did not match it, so a lift-and-shift of legacy Windows images was
+    costed on Graviton -- cheaper, and unable to boot a single one of the
+    forty machines it was standing in for.
+
+    Deliberately checks the SKUs rather than the spec's `arch` flag. The
+    flag is what the planner intended; the SKU is what the estimate
+    actually selected, and only the second one reaches the user.
+    """
+    c = built.constraints
+    if c.cpu_architecture != "x86_required":
+        return [Result(
+            fx_id, "INV-15", passed=True,
+            expected="no ARM instance family when x86 is required",
+            actual=f"cpu_architecture={c.cpu_architecture} (not x86_required)",
+        )]
+
+    results = []
+    for tier in built.tiers:
+        offenders = _arm_skus(tier)
+        results.append(Result(
+            fx_id, f"INV-15:{tier.name}", passed=not offenders,
+            expected="no ARM/Graviton instance family, because the workload "
+                     "is x86-only",
+            actual=(
+                f"{len(offenders)} ARM sku(s): {', '.join(offenders)}"
+                if offenders else "no ARM families selected"
+            ),
+            reason=c.forced_x86_reason,
+        ))
+    if not results:
+        results.append(Result(
+            fx_id, "INV-15", passed=True,
+            expected="no ARM instance family when x86 is required",
+            actual="no tiers priced (withheld)",
+        ))
+    return results
+
+
+def inv_16_no_stated_quantity_was_dropped(fx_id: str, built: Plan) -> list[Result]:
+    """No plan is priced around a figure the description stated and
+    extraction did not read.
+
+    Three were being dropped silently: "40 virtual machines" had no field
+    to land in at all, "500 GB of sensor readings" left storage_gb at
+    zero, and "30,000 visitors a month" was read but filed as an
+    assumption. The first two sized a plan for a workload nobody
+    described -- and a zero that should have been forty is not a rounding
+    error, it is a different question being answered.
+
+    The rule is not "extraction must be perfect". It is that a gap must
+    surface as a REFUSAL rather than as a confident number, which is the
+    same trade the archetype classifier already makes.
+    """
+    unread = list(built.constraints.unparsed_quantities)
+    ok = (not unread) or (not built.priced and not built.tiers)
+    return [Result(
+        fx_id, "INV-16", passed=ok,
+        expected="a stated quantity that was not read withholds pricing",
+        actual=(
+            "every stated quantity was read" if not unread
+            else f"{len(unread)} unread ({'; '.join(u['phrase'] for u in unread)}) "
+                 f"priced={built.priced} tiers={len(built.tiers)}"
+        ),
+        reason=built.withheld_reason,
+    )]
+
+
+def inv_17_tiers_differ_by_service_not_size(fx_id: str, built: Plan) -> list[Result]:
+    """Three tiers must be three architectures, not one design sold thrice.
+
+    At baseline this failed on 7 of 7 priced fixtures, every one the same
+    way: tier_2 and tier_3 fingerprinted IDENTICALLY. On ecommerce-scale
+    the only thing separating them was capacity -- 6 compute units to 18,
+    same services, same shape, +93% on the bill ($1,787.54 -> $3,444.72)
+    for three times as much of the identical architecture. A size
+    decision sold as a design.
+
+    Two of the seven were hidden by a second bug rather than absent: the
+    warm standby in a second region WAS being priced, but its line items
+    folded onto the primary's service kinds, so a tier carrying a whole
+    extra geography fingerprinted the same as one without it.
+
+    The escape hatch is real and is honoured: a workload whose own
+    description says nobody minds an hour of downtime genuinely has
+    nothing worth selling it at tier 3, and inventing a difference there
+    would be padding. What is forbidden is a thin tier that stays SILENT
+    about being thin, because that is the one a reader cannot tell from a
+    considered upgrade.
+    """
+    from whichcloud.fingerprint import MIN_TIER_SPREAD, fingerprint
+
+    if len(built.tiers) < 2:
+        return [Result(
+            fx_id, "INV-17", passed=True,
+            expected="consecutive tiers differ by architecture",
+            actual=f"{len(built.tiers)} tier(s) — nothing to compare",
+        )]
+
+    results = []
+    prints = [fingerprint(t) for t in built.tiers]
+    for i, (lower, higher) in enumerate(zip(prints, prints[1:])):
+        added, dropped = higher - lower, lower - higher
+        spread = len(added | dropped)
+        upper_tier = built.tiers[i + 1]
+        declared = bool(upper_tier.no_further_improvement)
+        ok = spread >= MIN_TIER_SPREAD or declared
+        results.append(Result(
+            fx_id, f"INV-17:{built.tiers[i].name}->{upper_tier.name}",
+            passed=ok,
+            expected=f">= {MIN_TIER_SPREAD} services different, or an "
+                     f"explicit 'no further improvement' statement",
+            actual=(
+                f"spread={spread} added={sorted(added)} "
+                f"dropped={sorted(dropped)}"
+                + (" (declared no further improvement)" if declared else "")
+            ),
+            reason="; ".join(upper_tier.pattern_diff)[:160],
+        ))
+    return results
+
+
+#: An always-on month. A compute line billed at exactly this while the
+#: spec says the workload only runs part of the day is the PROBE-2 defect.
+HOURS_PER_MONTH = 730
+
+
+def inv_18_duty_cycle_is_actually_billed(fx_id: str, built: Plan) -> list[Result]:
+    """A workload that runs two hours a night is not billed for 730.
+
+    `compute_duty_cycle` existed on the spec from the beginning and
+    nothing ever set it, so PROBE-2's nightly ETL -- explicitly described
+    as idle during the day -- was costed for a full month of compute,
+    overstating it by roughly 12x on the single largest line.
+
+    Checks the QUANTITY on the line item, not the flag on the spec. A
+    duty cycle that is set and then not applied is indistinguishable from
+    one that was never set, and only the line item reaches a bill.
+    """
+    results = []
+    for tier in built.tiers:
+        duty = getattr(tier.spec, "compute_duty_cycle", 1.0)
+        if duty >= 1.0:
+            continue
+        count = tier.spec.compute_count or 1
+        full_month = HOURS_PER_MONTH * count
+        offenders = [
+            f"{i.label} qty={float(i.quantity):g}"
+            for i in tier.estimate.items
+            if i.label.startswith("Compute")
+            and abs(float(i.quantity) - full_month) < 0.5
+        ]
+        results.append(Result(
+            fx_id, f"INV-18:{tier.name}", passed=not offenders,
+            expected=f"compute billed at {duty:.0%} of {full_month:g} hours",
+            actual=(
+                f"billed a full month anyway: {'; '.join(offenders)}"
+                if offenders else f"duty {duty:.0%} applied"
+            ),
+        ))
+    if not results:
+        results.append(Result(
+            fx_id, "INV-18", passed=True,
+            expected="duty cycle applied wherever it is below 1.0",
+            actual="no tier has a duty cycle below 1.0 (always-on workload)",
+        ))
+    return results
+
+
+def inv_19_the_diagram_is_a_graph_not_a_pile(fx_id: str, built: Plan) -> list[Result]:
+    """Every data-plane node is reachable, and no edge points at nothing.
+
+    THE DISCONNECTED BOTTOM ROW WAS NOT A LAYOUT BUG. On a hospital
+    tier-2, eleven of nineteen nodes had no edge at all -- because three
+    different kinds of thing were being drawn as one kind. A request
+    FLOWS through a load balancer; KMS does not flow anywhere, it is
+    ATTACHED to the database it encrypts; and CloudTrail attaches to
+    nothing at all, because it records the whole account.
+
+    Three planes, and this checks the consequence of getting them right:
+
+      DATA     every node reachable. An unconnected data-plane node is a
+               service nobody can see the purpose of.
+      CONTROL  attached to a real node, or to none -- never to whatever
+               happened to be on the canvas.
+      ACCOUNT  no edges by design, and therefore not counted as orphaned.
+
+    It also catches the second bug the plane split exposed: the node list
+    was built from a hand-maintained tuple that decided MEMBERSHIP as
+    well as order, so nine kinds added since (block storage, the event
+    bus, connection metering, a model endpoint...) were priced and never
+    drawn -- on the bill and not on the picture.
+    """
+    from whichcloud import topology as topo
+
+    results = []
+    for tier in built.tiers:
+        graph = topo.build(tier.spec, tier.estimate, archetype=built.archetype)
+        node_ids = {n.id for n in graph.nodes}
+        linked = {e.source for e in graph.edges} | {e.target for e in graph.edges}
+
+        dangling = sorted(x for x in linked if x not in node_ids)
+        orphans = sorted(
+            n.id for n in graph.nodes
+            if n.plane == topo.DATA_PLANE and n.id not in linked
+        )
+        # An account-plane node with an edge is the opposite failure:
+        # an invented relationship. CloudTrail does not talk to the
+        # database.
+        account_edges = sorted(
+            n.id for n in graph.nodes
+            if n.plane == topo.ACCOUNT_PLANE and n.id in linked
+        )
+
+        problems = []
+        if dangling:
+            problems.append(f"edges point at absent nodes: {dangling}")
+        if orphans:
+            problems.append(f"unreachable data-plane nodes: {orphans}")
+        if account_edges:
+            problems.append(f"account-plane nodes with edges: {account_edges}")
+
+        results.append(Result(
+            fx_id, f"INV-19:{tier.name}", passed=not problems,
+            expected="every data-plane node reachable, every edge endpoint "
+                     "real, no edges on account-plane nodes",
+            actual="; ".join(problems) if problems else (
+                f"{len(graph.nodes)} nodes, {len(graph.edges)} edges, clean"
+            ),
+        ))
+    return results
+
+
+def inv_20_every_priced_line_is_on_the_diagram(fx_id: str, built: Plan) -> list[Result]:
+    """A service on the bill is a service on the picture.
+
+    The comment in topology.py has warned about this since a previous
+    session ("serverless and messaging services silently vanished from
+    the diagram while still appearing on the bill"), and the mechanism
+    meant to prevent it -- a hand-maintained tuple -- reintroduced it for
+    every kind added afterwards. Membership is derived now; this asserts
+    the property rather than trusting the derivation.
+    """
+    from whichcloud import topology as topo
+
+    results = []
+    for tier in built.tiers:
+        graph = topo.build(tier.spec, tier.estimate, archetype=built.archetype)
+        drawn = {n.id for n in graph.nodes}
+        priced = {topo._kind_for(i) for i in tier.estimate.items}
+        priced.discard("client")
+        undrawn = sorted(priced - drawn)
+        results.append(Result(
+            fx_id, f"INV-20:{tier.name}", passed=not undrawn,
+            expected="every priced service kind has a node",
+            actual=(
+                f"priced but never drawn: {undrawn}" if undrawn
+                else f"all {len(priced)} priced kinds drawn"
+            ),
+        ))
+    return results
+
+
+def inv_21_each_tier_draws_a_different_picture(fx_id: str, built: Plan) -> list[Result]:
+    """Two tiers rendering identically is the tier-spread bug, visually.
+
+    INV-17 asserts the spread in service terms. This asserts the
+    consequence a reader actually meets: if tier 2 and tier 3 produce the
+    same graph, the diagram is telling them the upgrade bought nothing --
+    and it would be, because it did.
+
+    Honours the same escape hatch as INV-17: a tier that says outright
+    that no further improvement is worth buying is allowed to look like
+    the one below it, because it IS the one below it.
+    """
+    from whichcloud import topology as topo
+
+    if len(built.tiers) < 2:
+        return [Result(
+            fx_id, "INV-21", passed=True,
+            expected="each tier draws its own graph",
+            actual=f"{len(built.tiers)} tier(s)",
+        )]
+
+    def signature(tier) -> tuple:
+        graph = topo.build(tier.spec, tier.estimate, archetype=built.archetype)
+        return (
+            tuple(sorted(n.id for n in graph.nodes)),
+            tuple(sorted((e.source, e.target) for e in graph.edges)),
+        )
+
+    results = []
+    signatures = [signature(t) for t in built.tiers]
+    for i, (lower, higher) in enumerate(zip(signatures, signatures[1:])):
+        upper = built.tiers[i + 1]
+        declared = bool(upper.no_further_improvement)
+        ok = lower != higher or declared
+        results.append(Result(
+            fx_id, f"INV-21:{built.tiers[i].name}->{upper.name}", passed=ok,
+            expected="a different graph, or an explicit 'no further "
+                     "improvement' statement",
+            actual=(
+                "identical graph"
+                + (" (declared)" if declared else "")
+                if lower == higher
+                else f"{len(set(higher[0]) ^ set(lower[0]))} node(s) differ"
+            ),
+        ))
+    return results
+
+
 INVARIANTS = {
     "INV-1": inv_1_no_rung4_without_rung1,
     "INV-2": inv_2_nat_within_az_count,
@@ -556,6 +1008,13 @@ INVARIANTS = {
     "INV-12": inv_12_no_priced_tier_when_archetype_unknown,
     "INV-13": inv_13_every_priced_tier_is_backed_up,
     "INV-14": inv_14_composite_never_prices,
+    "INV-15": inv_15_no_arm_under_x86_required,
+    "INV-16": inv_16_no_stated_quantity_was_dropped,
+    "INV-17": inv_17_tiers_differ_by_service_not_size,
+    "INV-18": inv_18_duty_cycle_is_actually_billed,
+    "INV-19": inv_19_the_diagram_is_a_graph_not_a_pile,
+    "INV-20": inv_20_every_priced_line_is_on_the_diagram,
+    "INV-21": inv_21_each_tier_draws_a_different_picture,
 }
 # INV-4 takes the prompt as well as the plan, so it is dispatched separately
 # in run_prompt_fixture rather than living in this table.
@@ -686,7 +1145,11 @@ def constraints_from_fixture(fx: dict) -> tuple[Constraints, str] | None:
             continue
         setattr(c, name, value)
     c.stated.update(block.get("stated", []))
-    return c, block.get("archetype", "web_app")
+    # Top level wins. The archetype is a property of the WORKLOAD,
+    # not of its constraints, and the newer fixtures declare it where
+    # it belongs; the block form is kept for the ones that predate
+    # any archetype existing.
+    return c, fx.get("archetype") or block.get("archetype", "web_app")
 
 
 def build_prompt_fixtures(
@@ -738,6 +1201,8 @@ def run_prompt_fixture(fx: dict, cache: dict[str, Plan | Exception]) -> FixtureR
     run.results.extend(_check_must_include(fx, built))
     run.results.extend(_check_must_exclude(fx, built))
     run.results.extend(_check_compliance(fx, built))
+    run.results.extend(_check_complete(fx, built))
+    run.results.extend(_check_forbidden(fx, built))
     run.results.extend(_check_budget(fx, built))
     run.results.extend(_check_network_topology(fx, built))
     run.results.extend(run_invariants(fx, built, fx["prompt"]))
@@ -794,10 +1259,82 @@ def print_table(runs: list[FixtureRun]) -> None:
               (f"  [{marker}]" if failed == 0 else ""))
 
 
-def write_report(runs: list[FixtureRun], path: Path) -> None:
+def _fingerprint_section(plans: dict) -> list[str]:
+    """The architecture fingerprint matrix, in every report from now on.
+
+    It is the only view that answers "did different requirements actually
+    produce different architectures" without anyone having to read seven
+    bills side by side. At the baseline for this work it failed on 7 of 7
+    priced fixtures -- every one had tier_2 and tier_3 fingerprinting
+    identically -- which is what made the one-shape bug visible as a
+    number rather than an opinion.
+    """
+    from whichcloud.fingerprint import (
+        MIN_TIER_SPREAD, divergence_collisions, plan_fingerprints,
+        tier_spread, thin_spreads,
+    )
+
+    lines = ["## Architecture fingerprint matrix", ""]
+    priced = {n: p for n, p in plans.items() if p.tiers}
+    withheld = {n: p for n, p in plans.items() if not p.tiers}
+
+    lines.append("| fixture | archetype | tier-1 services | tier spread |")
+    lines.append("|---|---|---|---|")
+    thin_now = thin_spreads(plans)
+    for name, plan in sorted(priced.items()):
+        prints = plan_fingerprints(plan)
+        spreads = tier_spread(plan.tiers)
+        # A spread below the floor is only a FAULT when the tier stayed
+        # silent about it. One that says "no further improvement is worth
+        # buying" is a considered answer, and flagging it THIN would
+        # pressure the engine into padding -- the failure in the other
+        # direction. Marked, but not as a violation.
+        if name in thin_now:
+            flag = " **THIN**"
+        elif any(s < MIN_TIER_SPREAD for s in spreads):
+            flag = " _(declared: no further improvement)_"
+        else:
+            flag = ""
+        lines.append(
+            f"| {name} | {plan.archetype} | {len(prints[0])} | {spreads}{flag} |"
+        )
+    for name, plan in sorted(withheld.items()):
+        lines.append(f"| {name} | {plan.archetype} | — | withheld |")
+    lines.append("")
+
+    collisions = divergence_collisions(plans)
+    lines.append(
+        "**Divergence** (different profile, same tier-1 fingerprint — each "
+        "one is the template bug): "
+        + ("; ".join(f"`{a}` == `{b}`" for a, b in collisions) if collisions
+           else "none")
+    )
+    lines.append("")
+    thin = thin_spreads(plans)
+    lines.append(
+        f"**Tier spread** (consecutive tiers must differ by >= "
+        f"{MIN_TIER_SPREAD} services, or say no further improvement is "
+        f"worth buying): "
+        + ("; ".join(f"`{n}` {s}" for n, s in sorted(thin.items())) if thin
+           else "none thin")
+    )
+    lines.append("")
+    lines.append(
+        f"Coverage: **{len(priced)}** fixture(s) priced, "
+        f"**{len(withheld)}** withheld."
+    )
+    lines.append("")
+    return lines
+
+
+def write_report(
+    runs: list[FixtureRun], path: Path, plans: dict | None = None,
+) -> None:
     lines = ["# WhichCloud regression harness report", ""]
     lines.append(f"Run at {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}")
     lines.append("")
+    if plans:
+        lines.extend(_fingerprint_section(plans))
     lines.append("| fixture | passed | failed | status |")
     lines.append("|---|---|---|---|")
     for r in runs:
@@ -997,7 +1534,14 @@ def main() -> int:
     plan_cache = build_prompt_fixtures(all_fixtures, mode=args.mode)
 
     if args.approve_golden:
-        fixture_ids = sorted(load_golden(GOLDEN_PATH))
+        # Every fixture that PRICED, not merely the ones already in the
+        # golden file. Keying off the existing file meant a newly added
+        # fixture could never acquire a baseline -- it silently stayed
+        # unguarded, which is the opposite of what a golden file is for.
+        fixture_ids = sorted(
+            fx_id for fx_id, built in plan_cache.items()
+            if isinstance(built, Plan) and built.tiers
+        )
         write_golden(plan_cache, fixture_ids, GOLDEN_PATH)
         print(f"Wrote current totals for {len(fixture_ids)} fixture(s) to {GOLDEN_PATH}")
         return 0
@@ -1051,7 +1595,7 @@ def main() -> int:
                     print(f"    engine's stated reason: {res.reason}")
 
     if not args.no_report:
-        write_report(runs, REPORT_PATH)
+        write_report(runs, REPORT_PATH, plan_cache)
         append_history(runs, HISTORY_PATH)
         print(f"\nWrote {REPORT_PATH} and appended to {HISTORY_PATH}")
 

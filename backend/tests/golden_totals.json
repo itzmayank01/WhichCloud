@@ -1,37 +1,67 @@
 {
+  "batch-etl": {
+    "tier_1": 693.33,
+    "tier_2": 722.79,
+    "tier_3": 1758.08
+  },
   "budget-floor-conflict": {
-    "tier_1": 264.98,
-    "tier_2": 331.71,
-    "tier_3": 475.83
+    "tier_1": 263.89,
+    "tier_2": 330.62,
+    "tier_3": 474.74
   },
   "coaching-platform": {
-    "tier_1": 1213.24,
-    "tier_2": 1279.97,
-    "tier_3": 1424.09
+    "tier_1": 1202.31,
+    "tier_2": 1269.04,
+    "tier_3": 1413.16
   },
   "ecommerce-scale": {
-    "tier_1": 1551.37,
-    "tier_2": 1971.07,
-    "tier_3": 3628.26
+    "tier_1": 1547.27,
+    "tier_2": 1966.98,
+    "tier_3": 1966.98
+  },
+  "event-webhook": {
+    "tier_1": 137.5,
+    "tier_2": 146.4,
+    "tier_3": 180.17
   },
   "fintech-bengaluru": {
-    "tier_1": 140.76,
-    "tier_2": 177.78,
-    "tier_3": 321.9
+    "tier_1": 139.66,
+    "tier_2": 176.69,
+    "tier_3": 320.8
   },
   "hospital-pune": {
-    "tier_1": 287.02,
-    "tier_2": 353.75,
-    "tier_3": 497.87
+    "tier_1": 281.01,
+    "tier_2": 347.74,
+    "tier_3": 491.86
   },
   "hospital-pune-public": {
-    "tier_1": 295.02,
-    "tier_2": 347.19,
-    "tier_3": 491.31
+    "tier_1": 289.01,
+    "tier_2": 346.29,
+    "tier_3": 490.41
   },
   "internal-low-stakes": {
-    "tier_1": 45.01,
-    "tier_2": 82.03,
-    "tier_3": 82.03
+    "tier_1": 43.79,
+    "tier_2": 80.81,
+    "tier_3": 80.81
+  },
+  "ml-inference": {
+    "tier_1": 83.86,
+    "tier_2": 437.5,
+    "tier_3": 560.82
+  },
+  "realtime-chat": {
+    "tier_1": 386.78,
+    "tier_2": 485.18,
+    "tier_3": 546.6
+  },
+  "static-site": {
+    "tier_1": 3.92,
+    "tier_2": 18.73,
+    "tier_3": 19.39
+  },
+  "vm-migration": {
+    "tier_1": 2028.32,
+    "tier_2": 2217.99,
+    "tier_3": 2443.79
   }
 }

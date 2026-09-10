@@ -20,7 +20,7 @@ import hashlib
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -102,6 +102,11 @@ class LineItemOut(BaseModel):
     #: What that node is called on this provider, so the sheet can head the
     #: group with "Cloud SQL" rather than the kind.
     group_label: str = ""
+    #: Approximations behind THIS figure. An approximation disclosed in a
+    #: README is not disclosed -- the reader of a bill sees a line and a
+    #: number, so that is where a derived, single-sourced or
+    #: ranking-only rate has to say so.
+    caveats: list[str] = Field(default_factory=list)
 
 
 class TechniqueOut(BaseModel):
@@ -130,12 +135,30 @@ class NodeOut(BaseModel):
     detail: str
     priced: bool
     optimized_by: list[str]
+    #: WHY this node is in the architecture, traced to what the description
+    #: said. A role that cannot say why it is here is indistinguishable from
+    #: a default that leaked in -- which is how an HR tool for eighty people
+    #: acquired a web firewall. Empty only on baseline roles.
+    because: str = ""
+    #: Present by POLICY on every design -- identity, keys, observability,
+    #: audit -- rather than derived from this workload.
+    baseline: bool = False
+    #: data | control | account. THE field that decides how this is drawn.
+    #: A request flows through the data plane; the control plane attaches
+    #: to one node; the account plane watches everything and connects to
+    #: nothing. Drawing all three the same way is what produced a row of
+    #: unconnected boxes at the bottom of every diagram.
+    plane: str = "data"
 
 
 class EdgeOut(BaseModel):
     source: str
     target: str
     label: str
+    #: `flow` for a request travelling through, `attaches` for a binding.
+    #: A request does not travel through a key, so the animation follows
+    #: `flow` edges only.
+    kind: str = "flow"
 
 
 class TopologyOut(BaseModel):
@@ -195,6 +218,15 @@ class OptionOut(BaseModel):
     applied: list[TechniqueOut]
     advisory: list[TechniqueOut]
     tradeoffs: list[str]
+    #: Does this shape meet what the requirement actually ASKED for? A
+    #: tradeoff is a consequence to weigh; an unmet requirement is a promise
+    #: broken. Without this the cheapest option arrives looking like a peer of
+    #: the other two, when on an availability-critical workload it is the one
+    #: that fails the brief.
+    compliant: bool = True
+    #: The specific promises this shape breaks, in the requirement's own
+    #: terms. Empty when `compliant`.
+    unmet: list[str] = Field(default_factory=list)
     topology: TopologyOut
     #: The option as a laid-out AWS architecture, priced. None on the other
     #: clouds until a service-equivalence table exists -- drawing a GCP option
@@ -222,6 +254,20 @@ class RecommendationOut(BaseModel):
     #: AWS -- so the answer has to say which cloud it is describing rather than
     #: leaving the interface to assume.
     provider: str = "aws"
+    #: LOW | MEDIUM | HIGH | CRITICAL, derived from what the description SAYS
+    #: rather than asked for as a field. It is the reason any option is marked
+    #: non-compliant, and a warning without its reason is noise.
+    criticality: str = "MEDIUM"
+    #: Label of the cheapest option that actually meets the brief. Equal to
+    #: the cheapest option's label when that one is compliant; different, and
+    #: dearer, when it is not. Null when nothing on offer meets it -- which is
+    #: a real answer, and the one a $500 budget on a must-not-go-down workload
+    #: deserves.
+    #:
+    #: A LABEL rather than a relabelling: `label` is the key the export and
+    #: diff routes look options up by, so renaming "Cheapest" to "Cheapest
+    #: compliant" would break the download the user just asked for.
+    cheapest_compliant: str | None = None
 
 
 def _technique_out(
@@ -263,10 +309,16 @@ def _topology_out(option: Option) -> TopologyOut:
                 detail=n.detail,
                 priced=n.priced,
                 optimized_by=list(n.optimized_by),
+                because=n.because,
+                baseline=n.baseline,
+                plane=n.plane,
             )
             for n in graph.nodes
         ],
-        edges=[EdgeOut(source=e.source, target=e.target, label=e.label) for e in graph.edges],
+        edges=[
+            EdgeOut(source=e.source, target=e.target, label=e.label, kind=e.kind)
+            for e in graph.edges
+        ],
     )
 
 
@@ -487,6 +539,7 @@ def _option_out(option: Option, provider: str) -> OptionOut:
                 monthly_usd=float(i.monthly_usd),
                 group=_topo._kind_for(i),
                 group_label=node_label.get(_topo._kind_for(i), i.label),
+                caveats=list(i.caveats),
             )
             for i in option.estimate.items
         ],
@@ -499,8 +552,21 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         ],
         advisory=[_technique_out(m.technique, reasons=m.reasons) for m in option.advisory],
         tradeoffs=list(option.tradeoffs),
+        compliant=option.compliant,
+        unmet=list(option.unmet),
         topology=_topology_out(option),
     )
+
+
+def _cheapest_compliant(options: list[Option]) -> str | None:
+    """Label of the cheapest option that actually meets the brief.
+
+    Cheapest by PRICE, not by position: the tiers are ordered by posture and
+    a budget ladder can reorder them by cost, so picking the first compliant
+    one in the list would sometimes name a dearer option than necessary.
+    """
+    meets = [o for o in options if o.compliant]
+    return min(meets, key=lambda o: o.monthly).label if meets else None
 
 
 # ── requests ────────────────────────────────────────────────────────────
@@ -569,6 +635,10 @@ class DescribeIn(BaseModel):
 class PlanExportIn(BaseModel):
     description: str
     tier: Literal["tier_1", "tier_2", "tier_3"] = "tier_2"
+    #: Which cloud to price AND to generate for. One field, because the two
+    #: cannot disagree: exporting a cloud the tier was not priced on would
+    #: hand out resources nobody costed.
+    provider: Literal["aws", "gcp", "azure"] = "aws"
 
 
 class DescribeExportIn(BaseModel):
@@ -576,6 +646,15 @@ class DescribeExportIn(BaseModel):
     reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
     #: One of the labels `/describe` returned, e.g. "Cheapest".
     option: str
+    #: Which cloud the caller is looking at. WITHOUT THIS the route fell back
+    #: to the description's stated preference, which is almost always unset,
+    #: so it resolved to AWS and handed out AWS resources to someone viewing a
+    #: Google Cloud or Azure architecture. The guard below existed the whole
+    #: time; it simply never fired, because nothing told it what was on screen.
+    #: That is worse than an unsupported-export error: a plausible-looking
+    #: main.tf full of aws_instance and aws_db_instance is something a person
+    #: can run.
+    provider: Literal["aws", "gcp", "azure"] | None = None
 
 
 class SaveArchitectureIn(BaseModel):
@@ -621,6 +700,7 @@ def health() -> dict:
         raise HTTPException(503, "price catalog is empty — run ingest_prices.py")
 
     from .architecture.readers import configured
+    from .pricing import cache as price_cache
 
     return {
         "status": "ok",
@@ -631,6 +711,9 @@ def health() -> dict:
         # configured" and lets you see a new key took effect without a restart
         # being a matter of faith.
         "readers": configured(),
+        # A cache nobody measures is a cache nobody can tell is broken:
+        # a 0% hit rate and a working cache look identical from outside.
+        "price_cache": price_cache.STATS.as_dict(),
     }
 
 
@@ -785,6 +868,8 @@ def recommend_route(body: RecommendIn) -> RecommendationOut:
         goal=requirement.goal,
         region=requirement.region,
         options=[_option_out(o, provider) for o in options],
+        criticality=options[0].criticality if options else "MEDIUM",
+        cheapest_compliant=_cheapest_compliant(options),
         diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
         not_applied=[
             {"id": t.id, "name": t.name, "reason": why}
@@ -808,6 +893,26 @@ def compare_route(body: RecommendIn) -> dict:
         raise HTTPException(400, str(exc)) from exc
 
     results = recommend_across_clouds(requirement)
+    providers = tuple(results)
+
+    # WHAT MAY HONESTLY BE COMPARED, and what may not.
+    #
+    # The interface used to intersect line-item LABELS to work out which
+    # services all three clouds priced. That is a guess about equivalence
+    # made from text; knowledge-base/service-mappings is the answer, and
+    # it refuses on anything unmapped rather than assuming.
+    from whichcloud import mappings
+    from whichcloud.estimator import comparable_lines
+
+    first = next(iter(results.values()), [])
+    estimates = [
+        options[0].estimate
+        for options in results.values() if options
+    ]
+    categories, refusals, caveats = (
+        comparable_lines(estimates, providers) if estimates else ([], [], [])
+    )
+
     return {
         "goal": requirement.goal,
         "region": requirement.region,
@@ -816,6 +921,73 @@ def compare_route(body: RecommendIn) -> dict:
             provider: [_option_out(o, provider).model_dump() for o in options]
             for provider, options in results.items()
         },
+        # The categories the compared totals actually cover. A total is
+        # only like-for-like over these.
+        "comparable_categories": categories,
+        # Services one cloud prices and another has no equivalent for, or
+        # that nobody has established an equivalence for. Each carries
+        # its reason, because a refusal nobody can check is not much
+        # better than a guess.
+        "not_comparable": refusals,
+        # Services that DO compare, but where the billing models differ
+        # enough that the difference is not purely price.
+        "comparison_caveats": caveats,
+        "mapping_coverage": mappings.coverage(),
+    }
+
+
+def _designed_refusal(description: str, evidence: str) -> dict:
+    """The answer when a diagram would have to be invented to exist.
+
+    Shaped like an ArchitectureView with nothing in it -- an empty canvas,
+    no nodes, no edges -- plus the fields that say why. That shape is
+    deliberate: the interface has one renderer for this endpoint, and a
+    refusal it can render as an empty diagram with a panel over it needs
+    no second code path to avoid crashing on missing keys.
+
+    The archetype is classified here so the refusal can name the shape and
+    ask for the figures that would let the deterministic planner price it,
+    rather than stopping at "no".
+    """
+    from whichcloud import archetype as archetype_module
+    from whichcloud import llm_extract
+
+    detected, requirements, questions = archetype_module.UNKNOWN, "", []
+    try:
+        _constraints, meta = llm_extract.extract(description)
+        detected = meta.archetype
+        requirements = archetype_module.requirements_for(detected)
+        questions = archetype_module.pricing_questions_for(detected)
+    except Exception:  # noqa: BLE001 -- a failed read still refuses, just blandly
+        pass
+
+    named = archetype_module.describe(detected)
+    return {
+        "canvas": {"width": 0, "height": 0},
+        "regions": 0, "azs_per_region": 0, "external": [],
+        "counts": {"services": 0, "edges": 0, "groups": 0, "priced": 0},
+        "bands": [], "components": [], "cloud": None, "actor": None,
+        "groups": [], "nodes": [], "edges": [],
+        # ── why there is nothing to draw ──
+        "designed": True,
+        "archetype": detected,
+        "archetype_state": archetype_module.state_for(detected),
+        "withheld_reason": (
+            "This description names no cloud services, so a diagram of it "
+            "could only be one a language model invented. This engine does "
+            "not choose services at request time — a picture nobody can "
+            "check against your words, or against a price, is worse than "
+            "no picture."
+        ),
+        "evidence": evidence,
+        "recognised_as": named if detected != archetype_module.UNKNOWN else "",
+        "archetype_requirements": requirements,
+        "pricing_questions": questions,
+        "next_step": (
+            "Send the same description to /plan. It classifies the workload "
+            "and either prices it from the catalog or says exactly which "
+            "figures it still needs."
+        ),
     }
 
 
@@ -836,6 +1008,7 @@ def architecture_route(body: ArchitectureIn) -> dict:
     from .architecture.extract import extract_architecture
     from .architecture.graph import build_graph
     from .architecture.layout import badge_point, build_layout
+    from .architecture.provenance import was_designed
     from .intake import IntakeError
 
     if not body.description.strip():
@@ -849,6 +1022,17 @@ def architecture_route(body: ArchitectureIn) -> dict:
         )
     except IntakeError as exc:
         raise HTTPException(503, str(exc)) from exc
+
+    # TRANSCRIPTION ONLY. Drawing back the services someone named is a
+    # reading task and stays. Drawing services the model CHOSE is a
+    # runtime service selection by a language model -- unpriced,
+    # unvalidated, different on every call -- and it is the one thing this
+    # engine refuses to do. The deterministic planner answers that
+    # question instead, either with a priced architecture or with a
+    # refusal that says which figures it still needs.
+    designed, evidence = was_designed(arch, body.description)
+    if designed:
+        return _designed_refusal(body.description, evidence)
 
     graph = build_graph(arch)
     layout = build_layout(graph)
@@ -941,6 +1125,7 @@ def export_architecture_route(body: ArchitectureIn):
     from .architecture.extract import extract_architecture
     from .architecture.graph import build_graph
     from .architecture.layout import build_layout
+    from .architecture.provenance import was_designed
     from .architecture.svg import render
     from .intake import IntakeError
 
@@ -953,6 +1138,17 @@ def export_architecture_route(body: ArchitectureIn):
         )
     except IntakeError as exc:
         raise HTTPException(503, str(exc)) from exc
+
+    # Same gate as /architecture. An exported file outlives the session
+    # that made it, so an invented architecture is MORE dangerous here,
+    # not less -- it ends up in a slide deck with no caveat attached.
+    designed, evidence = was_designed(arch, body.description)
+    if designed:
+        raise HTTPException(422, (
+            "This description names no cloud services, so the diagram could "
+            "only be one a language model invented. Send it to /plan "
+            f"instead, which prices what it recognises. ({evidence})"
+        ))
 
     svg = render(build_layout(build_graph(arch)))
     return Response(
@@ -1007,6 +1203,107 @@ def delete_architecture_route(architecture_id: str, owner: str = Query(...)) -> 
     return {"deleted": removed}
 
 
+@app.post("/audit")
+async def audit_route(file: UploadFile = File(...)) -> dict:
+    """P3 AUDIT: a billing export in, a waste report out.
+
+    The PRD's third product. `backend/audit/` is an internal scorecard
+    grading the ENGINE, not this -- nothing in it reads a billing CSV.
+
+    CSV upload only, deliberately. A live account connection is out of
+    scope for v1, and a read-only IAM role is a credential this product
+    has no business holding; a CSV is something the user can look at
+    before they hand it over.
+    """
+    from .billing_audit import BillingParseError, audit as run_audit
+
+    raw = await file.read()
+    if len(raw) > 25 * 1024 * 1024:
+        raise HTTPException(413, "Billing export is larger than 25 MB.")
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "File is not UTF-8 text.") from None
+
+    try:
+        report = run_audit(content)
+    except BillingParseError as exc:
+        # 422, not 500: the file was read fine and is not one we can
+        # reason about, which is the user's problem to fix and needs the
+        # specific reason rather than a stack trace.
+        raise HTTPException(422, str(exc)) from exc
+
+    return {
+        "currency": report.currency,
+        "total_monthly_usd": report.total_monthly_usd,
+        "lines_read": report.lines_read,
+        # BEST PER SERVICE, not the sum of every finding. Techniques
+        # against one service are alternatives, not a shopping list --
+        # summing them produced a 147.9% saving on the first sample bill.
+        "total_saving_usd": report.total_saving_usd,
+        "saving_pct": report.saving_pct,
+        "saving_basis": (
+            "The best single technique per service, summed across "
+            "services. Techniques against the same service are "
+            "alternatives rather than additive, so they are never summed."
+        ),
+        "findings": [
+            {
+                "service": f.service,
+                "monthly_usd": f.monthly_usd,
+                "technique_id": f.technique_id,
+                "technique": f.technique,
+                "category": f.category,
+                "summary": f.summary,
+                "saved_monthly_usd": f.saved_monthly_usd,
+                "basis": f.basis,
+                "measured": f.measured,
+                "obviousness": f.obviousness,
+                "tradeoffs": f.tradeoffs,
+                "tool": f.tool,
+                "tool_url": f.tool_url,
+                "needs_confirmation": f.needs_confirmation,
+            }
+            for f in report.findings
+        ],
+        # "We looked and found nothing" and "we did not look" are
+        # different claims, and only one is honest about coverage.
+        "reviewed_no_finding": report.reviewed_no_finding,
+        "warnings": report.warnings,
+    }
+
+
+def _plan_topology(tier, archetype: str) -> dict:
+    """One tier's graph, planes and all.
+
+    Built from the PRICED ESTIMATE, never from the request: a component
+    that could not be priced does not appear as a confident node. And
+    built per tier rather than once per plan, because the tiers really
+    are different architectures now.
+    """
+    graph = topo.build(tier.spec, tier.estimate, archetype=archetype)
+    total = graph.total_monthly
+    return {
+        "nodes": [
+            {
+                "id": n.id, "label": n.label, "kind": n.kind,
+                "monthly_usd": float(n.monthly_usd),
+                "share": n.share_of(total),
+                "sku": n.sku, "detail": n.detail, "priced": n.priced,
+                "because": n.because, "baseline": n.baseline,
+                # data | control | account -- what decides how it is drawn.
+                "plane": n.plane,
+            }
+            for n in graph.nodes
+        ],
+        "edges": [
+            {"source": e.source, "target": e.target, "label": e.label,
+             "kind": e.kind}
+            for e in graph.edges
+        ],
+    }
+
+
 @app.post("/plan")
 def plan_endpoint(body: DescribeIn) -> dict:
     """The reasoning-layer contract: a description in, three compliant tiers out.
@@ -1051,11 +1348,25 @@ def plan_endpoint(body: DescribeIn) -> dict:
                         "sku": item.sku,
                         "unit": item.unit,
                         "monthly_usd": float(item.monthly_usd),
+                        # Where an approximation actually reaches a reader.
+                        "caveats": list(item.caveats),
                     }
                     for item in tier.estimate.items
                 ],
                 "complete": tier.estimate.is_complete,
                 "missing": tier.estimate.missing,
+                # EACH TIER RENDERS FROM ITS OWN GRAPH.
+                #
+                # Not one diagram reused across three tiers: if two tiers
+                # draw identically that is the tier-spread bug surfacing
+                # visually, and it should be VISIBLE rather than hidden by
+                # sharing one picture. INV-17 asserts the spread; this is
+                # what lets a reader see it.
+                #
+                # The plan path had no diagram at all before -- so the six
+                # archetypes built in Part 5 were priced, explained and
+                # invisible.
+                "topology": _plan_topology(tier, result.archetype),
             }
             for tier in result.tiers
         ],
@@ -1081,6 +1392,10 @@ def plan_endpoint(body: DescribeIn) -> dict:
         # different copy -- see whichcloud.archetype.
         "archetype_state": result.archetype_state,
         "archetype_requirements": result.archetype_requirements,
+        # The sizing figures this shape would need before it could be
+        # priced. Populated only when pricing was withheld for a shape we
+        # recognised -- the way forward from the refusal.
+        "pricing_questions": result.pricing_questions,
         "coverage_summary": result.coverage_summary,
         # False means the engine declined to price this shape. `tiers` is
         # then empty by decision, not by failure -- the interface must say
@@ -1128,13 +1443,13 @@ def plan_export_terraform_route(body: PlanExportIn):
     from fastapi.responses import Response
 
     from . import plan as planning
-    from . import terraform_export
+    from . import terraform_export, terraform_export_azure, terraform_export_gcp
 
     if not body.description.strip():
         raise HTTPException(400, "description is empty")
 
     try:
-        result = planning.build(body.description)
+        result = planning.build(body.description, provider=body.provider)
     except AssertionError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -1142,7 +1457,12 @@ def plan_export_terraform_route(body: PlanExportIn):
     if tier is None:
         raise HTTPException(404, f"no priced tier named {body.tier!r}")
 
-    files = terraform_export.generate(tier.spec, tier.estimate)
+    generator = {
+        "aws": terraform_export,
+        "gcp": terraform_export_gcp,
+        "azure": terraform_export_azure,
+    }[body.provider]
+    files = generator.generate(tier.spec, tier.estimate)
     archive = terraform_export.zip_bytes(files)
     return Response(
         content=archive,
@@ -1179,6 +1499,8 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
         goal=requirement.goal,
         region=requirement.region,
         options=[_option_out(o, provider) for o in options],
+        criticality=options[0].criticality if options else "MEDIUM",
+        cheapest_compliant=_cheapest_compliant(options),
         diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
         not_applied=[
             {"id": t.id, "name": t.name, "reason": why}
@@ -1210,7 +1532,7 @@ def describe_export_terraform_route(body: DescribeExportIn):
     """
     from fastapi.responses import Response
 
-    from . import terraform_export
+    from . import terraform_export, terraform_export_azure, terraform_export_gcp
     from .intake import IntakeError
 
     try:
@@ -1219,12 +1541,22 @@ def describe_export_terraform_route(body: DescribeExportIn):
         raise HTTPException(400, str(exc)) from exc
 
     requirement = intake.requirement
-    provider = requirement.provider_preference or "aws"
-    if provider != "aws":
+    provider = body.provider or requirement.provider_preference or "aws"
+    # One generator per cloud, because the resource graphs differ in shape and
+    # not merely in resource names -- a global network, one regional Cloud NAT
+    # and an anycast load balancer are different FILES, not renamed ones.
+    generators = {
+        "aws": terraform_export,
+        "gcp": terraform_export_gcp,
+        "azure": terraform_export_azure,
+    }
+    generator = generators.get(provider)
+    if generator is None:
         raise HTTPException(
             400,
-            "Terraform export only generates AWS resources for now — this "
-            f"description priced on {provider}.",
+            f"No Terraform generator for {provider!r}. Emitting another "
+            f"cloud's resources for it would produce a plan that applies "
+            f"cleanly and builds the wrong thing.",
         )
     options = recommend(requirement, provider)
 
@@ -1232,7 +1564,7 @@ def describe_export_terraform_route(body: DescribeExportIn):
     if option is None:
         raise HTTPException(404, f"no priced option named {body.option!r}")
 
-    files = terraform_export.generate(option.spec, option.estimate)
+    files = generator.generate(option.spec, option.estimate)
     archive = terraform_export.zip_bytes(files)
     return Response(
         content=archive,

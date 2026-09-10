@@ -1,0 +1,49 @@
+id: fargate-graviton-tasks
+name: ARM Fargate tasks
+category: compute
+summary: >
+  Fargate bills per vCPU-hour and per GB-hour, and the ARM rates are lower
+  than the x86 ones for the same task size.
+
+applies_when:
+  workload_type: [web, api, batch, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 25
+  requires:
+    - Container images built for arm64 (a multi-arch build)
+    - No x86-only binaries in the image
+
+savings:
+  typical_pct: 12
+  confidence: high
+  basis: >
+    MEASURED from the ap-south-1 Fargate rates in this catalog: the ARM
+    vCPU-hour and GB-hour rates are below the x86 equivalents, and the
+    engine prices the same task envelope both ways rather than asserting
+    a figure.
+
+    Distinct from graviton-arm-compute, which is about EC2 instance
+    families. Fargate is billed on a different meter and the discount is
+    not the same size, so quoting one figure for both would be wrong in
+    one of the two cases.
+
+tradeoffs:
+  - Requires a multi-arch image build; a single-arch x86 image simply
+    will not start.
+  - Some sidecars and agents still ship x86-only.
+
+implemented_by:
+  - name: docker buildx (multi-arch images)
+    url: https://github.com/docker/buildx
+    type: tool
+  - name: AWS Fargate on Graviton
+    url: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-arm64.html
+    type: managed-service
+
+effect:
+  fargate_arm: true
+counterfactual:
+  fargate_arm: false
+
+providers: [aws, gcp, azure]
+obviousness: medium

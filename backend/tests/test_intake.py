@@ -51,6 +51,8 @@ def draft(**overrides) -> RequirementDraft:
         ai_language=False,
         event_driven=False,
         telemetry=False,
+        audience="public",
+        read_write_mix="balanced",
         ingress_shape="requests",
         processing_mode="synchronous",
         data_shape="relational",

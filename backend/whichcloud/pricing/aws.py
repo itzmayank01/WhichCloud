@@ -77,6 +77,23 @@ BULK_SERVICES = {
     "firehose": "AmazonKinesisFirehose",
     "athena": "AmazonAthena",
     "glue": "AWSGlue",
+    # PART 4's four missing billing dimensions. Every one verified against
+    # the ap-south-1 offer index before a component was allowed to select
+    # it -- a meter nobody publishes a rate for is a meter this engine
+    # must not quote.
+    #
+    # EventBridge is the event bus an event-driven shape routes through;
+    # it bills per 64KB chunk PUT, and nothing else in this catalog priced
+    # a bus at all.
+    "eventbridge": "AWSEvents",
+    # AppSync is where CONNECTION-MINUTES come from: a realtime workload
+    # is sized by how many sockets are open and for how long, which no
+    # per-request meter can express.
+    "appsync": "AWSAppSync",
+    # SageMaker real-time endpoint hours -- the managed way to serve a
+    # model, and the alternative the GPU instance families are compared
+    # against.
+    "sagemaker": "AmazonSageMaker",
 }
 
 #: CloudFront bills by the VIEWER's edge location group, not the origin
@@ -2575,9 +2592,211 @@ def load_all(region_key: str, path: Path | None = None) -> list[PricePoint]:
         load_firehose_prices,
         load_athena_prices,
         load_glue_prices,
+        # PART 4's four missing dimensions.
+        load_eventbridge_prices,
+        load_connection_prices,
+        load_inference_prices,
+        load_block_storage_prices,
     ):
         try:
             points.extend(loader(region_key))
         except Exception as exc:  # one bad feed must not sink the ingest
             print(f"  ! aws {loader.__name__} failed: {exc}")
+    return points
+
+
+# ── PART 4: the four billing dimensions that did not exist ───────────
+# Four archetypes could not be priced correctly even once their service
+# graphs existed, because the meters they bill on were not in the
+# catalog. Each fetcher below was written only after confirming the
+# usagetype actually appears in the ap-south-1 offer index -- an
+# unpublished rate is one this engine must never quote.
+
+
+def load_eventbridge_prices(region_key: str) -> list[PricePoint]:
+    """EventBridge custom events, billed per 64KB chunk published.
+
+    The bus an event-driven architecture routes through, and previously
+    unpriced at any rate -- so an event-driven shape could name a bus and
+    then cost it at zero, which reads as "free" rather than "unknown".
+
+    PutEvents only. The partner-event and cross-account invocation meters
+    on the same usagetype are different products: a workload publishing
+    its own events does not pay them, and folding them in would inflate
+    every event pipeline by charges it does not incur.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["eventbridge"], region_key)
+
+    wanted = f"{prefix}Event-64K-Chunks"
+    for sku, product in doc.get("products", {}).items():
+        attrs = product.get("attributes", {})
+        if attrs.get("usagetype") != wanted or attrs.get("operation") != "PutEvents":
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers:
+            continue
+        return [PricePoint(
+            provider="aws", category="eventbridge", sku="eventbridge:events",
+            name="EventBridge custom events", region=region,
+            unit=unit or "Events", price_usd=tiers[0].price_usd, tiers=tiers,
+        )]
+    return []
+
+
+def load_connection_prices(region_key: str) -> list[PricePoint]:
+    """Connection-oriented metering: what a realtime workload actually bills on.
+
+    A chat backend is sized by how many sockets are open and for how long,
+    not by requests per day. Neither figure had a meter, so `realtime` had
+    no way to be priced even in principle -- the coverage map recorded it
+    as a structural gap rather than a wiring one, and it was right.
+
+    Three meters from two products, kept separate because they are three
+    decisions:
+
+      apigateway:ws-messages     per message over a WebSocket API
+      apigateway:ws-connection   per connection-MINUTE held open
+      appsync:connection         AppSync's equivalent, for GraphQL
+                                 subscriptions rather than raw sockets
+
+    API Gateway's own docstring above notes the WebSocket meters were
+    deliberately not ingested when only HTTP was modelled. They are now,
+    because something selects them.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    points: list[PricePoint] = []
+
+    gw = _load_bulk(BULK_SERVICES["apigateway"], region_key)
+    for usagetype, sku_name, label, default_unit in (
+        (f"{prefix}ApiGatewayMessage", "apigateway:ws-messages",
+         "API Gateway WebSocket messages", "Messages"),
+        (f"{prefix}ApiGatewayMinute", "apigateway:ws-connection",
+         "API Gateway WebSocket connection-minutes", "Minutes"),
+    ):
+        for sku, product in gw.get("products", {}).items():
+            if product.get("attributes", {}).get("usagetype") != usagetype:
+                continue
+            tiers, unit = _tiers_for(gw, sku)
+            if not tiers:
+                continue
+            points.append(PricePoint(
+                provider="aws", category="connection", sku=sku_name,
+                name=label, region=region, unit=unit or default_unit,
+                price_usd=tiers[0].price_usd, tiers=tiers,
+            ))
+            break
+
+    sync = _load_bulk(BULK_SERVICES["appsync"], region_key)
+    for usagetype, sku_name, label, default_unit in (
+        (f"{prefix}ConnectionDuration", "appsync:connection",
+         "AppSync connection-minutes", "Minutes"),
+        (f"{prefix}GraphQLNotification", "appsync:notifications",
+         "AppSync real-time messages", "Notifications"),
+    ):
+        for sku, product in sync.get("products", {}).items():
+            if product.get("attributes", {}).get("usagetype") != usagetype:
+                continue
+            tiers, unit = _tiers_for(sync, sku)
+            if not tiers:
+                continue
+            points.append(PricePoint(
+                provider="aws", category="connection", sku=sku_name,
+                name=label, region=region, unit=unit or default_unit,
+                price_usd=tiers[0].price_usd, tiers=tiers,
+            ))
+            break
+
+    return points
+
+
+def load_inference_prices(region_key: str) -> list[PricePoint]:
+    """SageMaker real-time endpoint hours, per instance type.
+
+    The managed way to serve a model, and the alternative the raw GPU
+    instance families are compared against. Real-time hosting only
+    (`Host`): async and serverless inference bill on different shapes
+    (per-invocation, per-GB-second) and answer a different question, so
+    quoting their rates for an always-on endpoint would price a design
+    nobody chose.
+
+    vCPU and memory come from the instance name via the EC2 catalog where
+    the family exists there, so an endpoint can be sized by the same
+    "smallest that fits" rule as everything else rather than by a
+    hand-picked default.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk(BULK_SERVICES["sagemaker"], region_key)
+
+    points: list[PricePoint] = []
+    wanted = f"{prefix}Host:"
+    for sku, product in doc.get("products", {}).items():
+        attrs = product.get("attributes", {})
+        usagetype = attrs.get("usagetype", "")
+        if not usagetype.startswith(wanted):
+            continue
+        instance = attrs.get("instanceName", "")
+        if not instance:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers or tiers[0].price_usd <= 0:
+            continue
+        points.append(PricePoint(
+            provider="aws", category="inference", sku=f"sagemaker:{instance}",
+            name=f"SageMaker endpoint {instance}", region=region,
+            unit=unit or "Hrs", price_usd=tiers[0].price_usd,
+            vcpu=(
+                int(attrs["vCpu"]) if str(attrs.get("vCpu", "")).isdigit()
+                else None
+            ),
+            memory_gb=_memory_gb(attrs.get("memory")),
+            attributes={"instance": instance, "hosting": "realtime"},
+        ))
+    return points
+
+
+def load_block_storage_prices(region_key: str) -> list[PricePoint]:
+    """EBS volumes -- the disks attached to instances.
+
+    Distinct from `db_storage`, which is RDS-managed storage and is only
+    priced when a managed database exists. A lift-and-shift has neither a
+    managed database nor object storage standing in for its disks: it has
+    volumes, and without this meter a 40-machine estate's 4,000 GB of
+    attached disk was billed at ZERO -- silently, because nothing was
+    marked missing either.
+
+    gp3 is the default this engine quotes. It is the current
+    general-purpose class, cheaper per GB than gp2 at the same baseline
+    performance, and it is what a rehosted general-purpose volume should
+    land on. st1/sc1 are throughput and cold classes for workloads that
+    have said something about their access pattern; io1/io2 are for
+    stated IOPS requirements. All are ingested so a future shape can
+    select one, but nothing selects them by default -- quoting a cold
+    class for a boot volume would be cheaper and wrong.
+    """
+    region = provider_region(region_key, "aws")
+    prefix = _regional_prefix(region)
+    doc = _load_bulk("AmazonEC2", region_key)
+
+    points: list[PricePoint] = []
+    for sku, product in doc.get("products", {}).items():
+        if product.get("productFamily") != "Storage":
+            continue
+        attrs = product.get("attributes", {})
+        usagetype = attrs.get("usagetype", "")
+        volume = attrs.get("volumeApiName", "")
+        if not usagetype.startswith(f"{prefix}EBS:VolumeUsage") or not volume:
+            continue
+        tiers, unit = _tiers_for(doc, sku)
+        if not tiers or tiers[0].price_usd <= 0:
+            continue
+        points.append(PricePoint(
+            provider="aws", category="block_storage", sku=f"ebs:{volume}",
+            name=f"EBS {volume} volume", region=region,
+            unit=unit or "GB-Mo", price_usd=tiers[0].price_usd,
+            attributes={"volume_type": volume},
+        ))
     return points

@@ -14,7 +14,7 @@ Rules it follows:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from .pricing.models import HOURS_PER_MONTH, ComputeQuery, PricePoint, provider_region
@@ -93,6 +93,30 @@ class ArchitectureSpec:
     # Private subnets need a NAT gateway per zone to reach the internet.
     # One of the largest line items people forget: two gateways is ~$82/mo
     # before a single byte is processed.
+    #: Whether the compute sits in private subnets.
+    #:
+    #: DECLARED, not inferred from nat_gateway_count. A private subnet
+    #: whose only outbound need is S3 and CloudWatch reaches both through
+    #: VPC endpoints and needs no NAT gateway at all -- so inferring
+    #: privacy from NAT presence reported such a design as `public_simple`
+    #: and then failed it for not being private. Two different things:
+    #: where the instance sits, and how it gets out.
+    #: Attached block storage across the estate, in GB.
+    #:
+    #: NOT db_storage_gb, which is RDS-managed storage and is priced only
+    #: when a managed database exists. A lift-and-shift has neither a
+    #: managed database nor object storage standing in for its disks --
+    #: it has volumes -- and a 40-machine estate's 4,000 GB was billed at
+    #: ZERO before this existed, silently, because nothing was marked
+    #: missing either.
+    block_storage_gb: float = 0.0
+    #: Which EBS class the volumes are. gp3 is the default because it is
+    #: the current general-purpose class and cheaper per GB than gp2 at
+    #: the same baseline performance; a technique can price the
+    #: difference by setting this.
+    block_storage_class: str = "gp3"
+
+    private_subnets: bool = False
     nat_gateway_count: int = 0
     nat_gb_processed: float = 0.0
     tls_certificate: bool = False
@@ -220,6 +244,27 @@ class ArchitectureSpec:
     # All default 0, so no non-AI shape acquires them. Priced per call
     # against the real Rekognition/Comprehend meters -- an AI app's core cost
     # is the inference volume, not a server.
+    # ── PART 4: four billing dimensions that did not exist ──
+    #: EventBridge custom events published per month. The bus an
+    #: event-driven shape routes through; previously unpriceable at any
+    #: rate, so such a shape costed its bus at zero -- which reads as
+    #: "free" rather than "unknown".
+    eventbridge_events_per_month: float = 0.0
+    #: CONNECTIONS, not requests. A chat backend is sized by how many
+    #: sockets are open and for how long; neither figure had a meter, so
+    #: `realtime` could not be priced even in principle. Connection-minutes
+    #: are peak_connections x minutes-held, computed by the caller,
+    #: because how long a connection lasts is a property of the workload
+    #: and not something an estimator can derive.
+    ws_connection_minutes_per_month: float = 0.0
+    ws_messages_per_month: float = 0.0
+    #: Managed model serving. One endpoint instance type, held for
+    #: `inference_hours_per_month` -- which is where the duty cycle lands
+    #: for a model that only serves in business hours.
+    inference_instance: str = ""
+    inference_instance_count: int = 0
+    inference_hours_per_month: float = 0.0
+
     rekognition_images_per_month: float = 0.0
     #: Comprehend units of text (1 unit = 100 characters).
     comprehend_units_per_month: float = 0.0
@@ -260,6 +305,21 @@ class LineItem:
     unit_price: Decimal
     quantity: Decimal
     monthly_usd: Decimal
+
+    #: Approximations behind THIS number, in the reader's terms.
+    #:
+    #: An approximation disclosed in a README is not disclosed. The
+    #: reader of a bill sees a line and a figure; if the figure is
+    #: derived rather than published, or single-sourced rather than
+    #: cross-checked, or good for ranking but not for billing, the place
+    #: that has to say so is the line itself.
+    #:
+    #: Three of these were previously recorded only in provider adapters
+    #: or in backend/README.md: Azure's HA standby is billed as a second
+    #: instance because Azure publishes no HA meter, AWS's spot feed
+    #: carries no timestamp, and GCP has no second credential-free source
+    #: to validate against.
+    caveats: tuple[str, ...] = ()
 
     @property
     def detail(self) -> str:
@@ -373,6 +433,23 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("aws", "firehose", "gb"): "firehose:ingest",
     ("aws", "athena", "tb"): "athena:scanned",
     ("aws", "glue", "dpu-hour"): "glue:etl-dpu-hour",
+    # PART 4. The event bus, the connection meters a realtime workload
+    # actually bills on, and managed model-serving hours. AWS only for
+    # now: the equivalent meters exist on the other clouds but have not
+    # been ingested, and a role with no rate must resolve to `missing`
+    # rather than to somebody else's number.
+    ("aws", "eventbridge", "events"): "eventbridge:events",
+    # EBS. Distinct from db_storage (RDS-managed): a rehosted
+    # estate has volumes, not a managed database, and without this
+    # role its disks were billed at zero.
+    ("aws", "block_storage", "gp3"): "ebs:gp3",
+    ("aws", "block_storage", "gp2"): "ebs:gp2",
+    ("aws", "block_storage", "st1"): "ebs:st1",
+    ("aws", "block_storage", "sc1"): "ebs:sc1",
+    ("aws", "connection", "ws-messages"): "apigateway:ws-messages",
+    ("aws", "connection", "ws-minutes"): "apigateway:ws-connection",
+    ("aws", "connection", "graphql-minutes"): "appsync:connection",
+    ("aws", "connection", "graphql-messages"): "appsync:notifications",
     # ---- Azure / GCP equivalents for the serverless + analytics roles ----
     ("azure", "lambda-requests", "requests"): "functions:executions",
     ("azure", "lambda-duration", "gb-second"): "functions:duration",
@@ -455,6 +532,53 @@ _WAREHOUSE_UNIT_SKU: dict[str, str] = {
 }
 
 
+#: Terabytes a loaded warehouse is queried over in a month when the tier
+#: carries no explicit scan volume. A warehouse exists to be queried; the
+#: alternative to a number here is a $0.00 warehouse, which is worse.
+#: HEURISTIC, stated in one place so it can be argued with.
+_WAREHOUSE_SERVERLESS_TB = 5.0
+
+
+def _warehouse_pool_label(provider: str, unit, node_equivalents: int) -> str:
+    """Name the pool in the unit the provider actually sells it in.
+
+    Azure sizes a dedicated SQL pool in data warehouse units, so N nodes'
+    worth of capacity is DW(N x 100)c -- one pool, one service level. Naming
+    it that way is what lets a reader look the price up.
+    """
+    if provider == "azure":
+        return f"Synapse dedicated SQL pool (DW{node_equivalents * 100}c)"
+    return f"{unit.name} \u00d7 {node_equivalents}"
+
+
+
+#: Internet egress each cloud gives away every month. AWS, Google and
+#: Microsoft all set this at 100 GB, so it is one constant rather than a
+#: per-provider table -- and if one of them moves it, this is the line to
+#: change and the comment that says why it was ever shared.
+#: Cloud Run's memory-to-vCPU allocation. Google sizes CPU from the memory
+#: you ask for, so a 512 MiB function does not get a whole core -- and
+#: charging it for one is a 70% overstatement on the meter that dominates a
+#: serverless bill. Published breakpoints, smallest first.
+_CLOUD_RUN_VCPU_BY_MEMORY_MB: tuple[tuple[float, float], ...] = (
+    (512.0, 0.583),
+    (1024.0, 1.0),
+    (2048.0, 1.0),
+    (4096.0, 2.0),
+    (8192.0, 4.0),
+)
+
+
+def _cloud_run_vcpu(memory_mb: float) -> float:
+    """vCPU allocated to a Cloud Run function of this size."""
+    for ceiling, vcpu in _CLOUD_RUN_VCPU_BY_MEMORY_MB:
+        if memory_mb <= ceiling:
+            return vcpu
+    return 8.0
+
+
+EGRESS_FREE_TIER_GB = 100.0
+
 
 def _sku(provider: str, category: str, role: str) -> str | None:
     return PROVIDER_SKUS.get((provider, category, role))
@@ -479,6 +603,20 @@ def _by_role(
     return store.get_price(provider, region, category, sku, dsn=dsn) if sku else None
 
 
+def _by_sku(
+    provider: str, region: str, category: str, sku: str, dsn: str | None
+) -> PricePoint | None:
+    """A named SKU, looked up directly.
+
+    Distinct from _by_role: a role is one canonical choice per category
+    (there is one SQS), whereas an inference endpoint is chosen FROM a
+    catalog of 163 instance types by the sizing rules, so the caller
+    already knows which SKU it wants and needs it fetched rather than
+    re-decided.
+    """
+    return store.get_price(provider, region, category, sku, dsn=dsn)
+
+
 def _preferred(
     provider: str, region: str, category: str, dsn: str | None
 ) -> PricePoint | None:
@@ -490,11 +628,63 @@ def _preferred(
     return store.cheapest_in_category(provider, region, category, dsn=dsn)
 
 
+#: GCP is the only provider in this catalog with no independent
+#: credential-free second source. AWS is cross-checked against the AWS
+#: Price List CSV (100% agreement on 807 instance types) and Azure
+#: against the Vantage catalog (99.5% on 928); scripts/validate_pricing.py
+#: runs both. Nothing comparable exists for GCP, so its figures are
+#: single-sourced and say so here rather than only in a README.
+SINGLE_SOURCED_PROVIDERS = frozenset({"gcp"})
+
+
+def caveats_for(point: PricePoint, provider: str) -> tuple[str, ...]:
+    """Approximations behind one rate, in the reader's terms.
+
+    Read from the PricePoint the adapter produced, so a provider that
+    knows its figure is derived only has to say so once.
+    """
+    out: list[str] = []
+    attrs = getattr(point, "attributes", None) or {}
+
+    derived = attrs.get("derived")
+    if derived:
+        out.append(f"Derived, not published by the provider: {derived}")
+
+    if attrs.get("purchase") == "spot":
+        out.append(
+            "Spot rate from a public feed that carries NO TIMESTAMP. Good "
+            "for ranking spot against on-demand; not billing-grade, and "
+            "spot capacity is reclaimed with two minutes' notice."
+        )
+
+    if attrs.get("purchase") in ("commit1yr", "commit3yr"):
+        out.append(
+            "Assumes a commitment you have not made. The on-demand price "
+            "is what you pay today."
+        )
+
+    if provider in SINGLE_SOURCED_PROVIDERS:
+        out.append(
+            "Single-sourced: no independent credential-free feed exists "
+            "to cross-check GCP against, unlike AWS (100% agreement on "
+            "807 types) and Azure (99.5% on 928)."
+        )
+
+    if provider == "gcp" and getattr(point, "arch", None) == "arm64":
+        out.append(
+            "ARM is INFERRED from Google's machine-family naming "
+            "(t2a/c4a), not read from published machine metadata."
+        )
+
+    return tuple(out)
+
+
 def _hourly_line(
     label: str, point: PricePoint, count: int, duty_cycle: float = 1.0
 ) -> LineItem:
     quantity = Decimal(count) * HOURS_PER_MONTH * Decimal(str(duty_cycle))
     return LineItem(
+        caveats=caveats_for(point, point.provider),
         label=label,
         sku=point.sku,
         unit=point.unit,
@@ -507,6 +697,7 @@ def _hourly_line(
 def _metered_line(label: str, point: PricePoint, amount: float) -> LineItem:
     quantity = Decimal(str(amount))
     return LineItem(
+        caveats=caveats_for(point, point.provider),
         label=label,
         sku=point.sku,
         unit=point.unit,
@@ -528,6 +719,7 @@ def _tiered_line(label: str, point: PricePoint, amount: float) -> LineItem:
     total = point.cost_for(quantity)
     effective = (total / quantity) if quantity else Decimal(0)
     return LineItem(
+        caveats=caveats_for(point, point.provider),
         label=label,
         sku=point.sku,
         unit=point.unit,
@@ -569,6 +761,12 @@ def _sustained_use_discount(provider, point, spec, compute_line):
         unit_price=-saving,
         quantity=Decimal(1),
         monthly_usd=-saving,
+        # A synthesised line still carries the provenance of the rate it
+        # was computed from. It is a GCP figure like any other, and a
+        # discount that quietly escaped the single-sourced label would be
+        # the one number on the bill claiming more confidence than the
+        # rate it is a percentage of.
+        caveats=caveats_for(point, provider),
     )
 
 
@@ -741,10 +939,19 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             result.missing.append("object storage")
 
     # ---- egress ----
+    #
+    # All three clouds give the first 100 GB of internet egress each month
+    # free, and this billed from the first byte. On a large workload the
+    # difference is rounding; on a small one it is most of the line, and an
+    # internal tool moving 5 GB was quoted for traffic none of the three
+    # would have charged it for. A free allowance nobody applies is the same
+    # error as a rate that is wrong -- it just looks more defensible.
     if spec.egress_gb > 0:
         point = _preferred(provider, region, "network", dsn)
         if point:
-            result.items.append(_metered_line("Egress", point, spec.egress_gb))
+            billable = max(0.0, spec.egress_gb - EGRESS_FREE_TIER_GB)
+            if billable > 0:
+                result.items.append(_metered_line("Egress", point, billable))
         else:
             result.missing.append("egress")
 
@@ -869,23 +1076,68 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
             # GB-seconds = invocations x (avg duration in seconds) x (memory in GB).
-            gb_seconds = (
-                spec.lambda_invocations_per_month
-                * (spec.lambda_avg_ms / 1000.0)
-                * (spec.lambda_memory_mb / 1024.0)
+            # Kept apart from the warm-instance term below, because the two
+            # are billed on ONE meter by AWS and Azure and on TWO by Google.
+            running_seconds = (
+                spec.lambda_invocations_per_month * (spec.lambda_avg_ms / 1000.0)
             )
+            memory_gb = spec.lambda_memory_mb / 1024.0
+            gb_seconds = running_seconds * memory_gb
             # Provisioned concurrency keeps N environments warm every second of
             # the month, on the same GB-second meter -- an always-on cost the
             # reliability tier opts into, priced for real, not a multiplier.
-            if spec.lambda_provisioned_concurrency > 0:
-                gb_seconds += (
-                    spec.lambda_provisioned_concurrency
-                    * (spec.lambda_memory_mb / 1024.0)
-                    * float(HOURS_PER_MONTH)
-                    * 3600.0
-                )
+            warm_seconds = (
+                spec.lambda_provisioned_concurrency
+                * float(HOURS_PER_MONTH)
+                * 3600.0
+            )
+            gb_seconds += warm_seconds * memory_gb
             if gb_seconds:
                 result.items.append(_tiered_line("Lambda duration", dur, gb_seconds))
+
+                # CLOUD RUN BILLS CPU SEPARATELY, AND WE WERE NOT CHARGING IT.
+                #
+                # Lambda and Azure Functions fold CPU into one GB-second rate.
+                # Google does not: vCPU-seconds and GiB-seconds are two meters,
+                # and CPU is the larger of the two. Pricing only memory put
+                # Google's serverless at $17 against $98 on AWS and $107 on
+                # Azure for identical work -- a 5x lead it does not have, on a
+                # meter nobody had charged.
+                #
+                # The ingest already recorded the vCPU rate on the point
+                # "rather than silently folded in"; this is the half of that
+                # sentence the estimator was not keeping.
+                vcpu_rate = (dur.attributes or {}).get("vcpu_second_usd")
+                if vcpu_rate:
+                    # EXECUTION ONLY, at the ACTIVE rate. Warm instances are
+                    # billed on Google's min-instance meter, which is a
+                    # different and much cheaper rate -- the ingest excludes
+                    # those SKUs deliberately. Charging idle warm capacity at
+                    # the active vCPU rate made Google 3.8x DEARER than AWS
+                    # for identical work, which is the same error as the
+                    # under-price it replaced, pointing the other way.
+                    if warm_seconds:
+                        result.missing.append("serverless warm-instance CPU")
+                    # Cloud Run allocates CPU IN PROPORTION TO MEMORY rather
+                    # than one vCPU per instance: 512 MiB gets 0.583 vCPU, and
+                    # a full vCPU arrives at 1 GiB. Assuming a whole one for
+                    # every function size overstated a small handler by 70%.
+                    vcpu_seconds = running_seconds * _cloud_run_vcpu(
+                        spec.lambda_memory_mb
+                    )
+                    result.items.append(
+                        _metered_line(
+                            "Lambda vCPU time",
+                            replace(
+                                dur,
+                                sku=dur.sku.replace("memory-time", "cpu-time"),
+                                name=dur.name.replace("memory time", "vCPU time"),
+                                unit="vCPU-second",
+                                price_usd=Decimal(str(vcpu_rate)),
+                            ),
+                            vcpu_seconds,
+                        )
+                    )
         else:
             result.missing.append("lambda")
 
@@ -944,6 +1196,68 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
         else:
             result.missing.append("comprehend")
+
+    # ---- PART 4: the event bus ----
+    if spec.eventbridge_events_per_month:
+        point = _by_role(provider, region, "eventbridge", "events", dsn)
+        if point:
+            result.items.append(_tiered_line(
+                "Event bus", point, spec.eventbridge_events_per_month,
+            ))
+        else:
+            result.missing.append("event bus")
+
+    # ---- PART 4: connection metering ----
+    # A realtime workload bills on sockets held open, not on requests. Two
+    # meters because they are two things: holding the connection, and
+    # sending over it. Both must resolve or the workload is reported
+    # incomplete -- a chat backend priced without its connection cost is
+    # not cheaper, it is wrong.
+    if spec.ws_connection_minutes_per_month:
+        point = _by_role(provider, region, "connection", "ws-minutes", dsn)
+        if point:
+            result.items.append(_tiered_line(
+                "Connection minutes", point, spec.ws_connection_minutes_per_month,
+            ))
+        else:
+            result.missing.append("websocket connections")
+
+    if spec.ws_messages_per_month:
+        point = _by_role(provider, region, "connection", "ws-messages", dsn)
+        if point:
+            result.items.append(_tiered_line(
+                "Connection messages", point, spec.ws_messages_per_month,
+            ))
+        else:
+            result.missing.append("websocket messages")
+
+    # ---- PART 4: managed model serving ----
+    # Hours, not months: an endpoint that only serves in business hours is
+    # billed for those hours. This is where the duty cycle lands for
+    # inference, and it is why a model-serving shape does not cost the
+    # same as an always-on API of the same size.
+    if spec.inference_instance and spec.inference_instance_count:
+        point = _by_sku(
+            provider, region, "inference",
+            f"sagemaker:{spec.inference_instance}", dsn,
+        )
+        if point:
+            # Decimal throughout. Every other line item in this module
+            # is Decimal, and mixing one float in makes total_monthly --
+            # a plain sum over items -- raise on the addition. Money is
+            # not a float here on purpose.
+            hours = Decimal(str(spec.inference_hours_per_month or HOURS_PER_MONTH))
+            quantity = hours * Decimal(spec.inference_instance_count)
+            result.items.append(LineItem(
+                label=f"Model endpoint × {spec.inference_instance_count}",
+                sku=point.sku, unit="hour",
+                unit_price=point.price_usd, quantity=quantity,
+                monthly_usd=point.price_usd * quantity,
+            ))
+        else:
+            result.missing.append(
+                f"inference endpoint {spec.inference_instance}"
+            )
 
     # ---- event-driven / IoT ----
     if spec.iot_messages_per_month:
@@ -1156,9 +1470,19 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         # Google's Cloud NAT is not that. It is a REGIONAL configuration on a
         # Cloud Router, one per region per VPC, serving every zone in the
         # region. There is no such thing as a per-zone Cloud NAT, so quoting
-        # three was inventing two resources that cannot be bought. The count
-        # travels with the provider's model rather than with the zone count.
-        count = 1 if provider == "gcp" else spec.nat_gateway_count
+        # three was inventing two resources that cannot be bought.
+        #
+        # Azure lands in the same place by a different route. A zonal NAT
+        # gateway does exist there, so the per-zone pattern is buildable --
+        # but it is buildable only with a subnet per zone, and an Azure
+        # subnet is regional, so these architectures have one. A subnet
+        # accepts at most one NAT gateway. Quoting more prices a second
+        # gateway that the deployed design has nowhere to attach.
+        #
+        # The count travels with the provider's model rather than with the
+        # zone count. `terraform_export_*` builds exactly this many, and a
+        # test holds the two together.
+        count = 1 if provider in ("gcp", "azure") else spec.nat_gateway_count
         if hourly:
             result.items.append(
                 _hourly_line(
@@ -1335,7 +1659,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             else:
                 result.missing.append("managed search storage")
 
-    # ---- data warehouse (Redshift) ----
+    # ---- data warehouse ----
     if spec.warehouse_node_count:
         point = store.cheapest_compute_like(
             provider=provider,
@@ -1348,7 +1672,7 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         # Only Redshift sells sized warehouse NODES. Synapse sells DW100c
         # units, and BigQuery sells nothing at all (it is serverless, billed
         # per TiB scanned on the analysis line). Both are published in
-        # `warehouse_unit` and priced one unit per requested node.
+        # `warehouse_unit`.
         unit = (
             None if point
             else store.get_price(provider, region, "warehouse_unit",
@@ -1363,12 +1687,41 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
         elif unit:
+            # ONE POOL, not N of them. Synapse dedicated SQL is a single pool
+            # sized in data warehouse units -- there is no such thing as four
+            # pools serving one warehouse. The arithmetic is unchanged, since
+            # DWU scales linearly, but "x 4" described a purchase nobody can
+            # make and hid the unit that would let anyone check the figure.
             result.items.append(
-                _hourly_line(f"{unit.name} \u00d7 {spec.warehouse_node_count}",
-                             unit, spec.warehouse_node_count)
+                _hourly_line(
+                    _warehouse_pool_label(provider, unit, spec.warehouse_node_count),
+                    unit,
+                    spec.warehouse_node_count,
+                )
             )
         else:
             result.missing.append("data warehouse node")
+
+        # A WAREHOUSE IS NEVER FREE. BigQuery sells no provisioned capacity at
+        # all, so the `warehouse_unit` row for it is a zero-priced placeholder
+        # -- and pricing the tier from it produced a $0.00 data warehouse and
+        # a "Most optimized" that cost LESS than the tier below it, because it
+        # had dropped the scan charge and gained nothing chargeable in return.
+        #
+        # Where a cloud sells no provisioned warehouse, the warehouse IS the
+        # query engine, and the query charge is the warehouse's cost. This is
+        # not a fallback; it is how Google bills a warehouse.
+        if unit is not None and not unit.price_usd:
+            scanned = spec.athena_tb_scanned_per_month or _WAREHOUSE_SERVERLESS_TB
+            analysis = _by_role(provider, region, "athena", "tb", dsn)
+            if analysis:
+                result.items.append(
+                    _tiered_line(
+                        f"{unit.name.split(' (')[0]} analysis", analysis, scanned
+                    )
+                )
+            else:
+                result.missing.append("serverless warehouse query")
 
     # ---- Fargate ----
     # Priced instead of EC2, not alongside it: a task is the compute tier.
@@ -1437,6 +1790,19 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             )
         else:
             result.missing.append("container compute")
+
+    # ---- attached block storage (EBS) ----
+    if spec.block_storage_gb:
+        point = _by_role(
+            provider, region, "block_storage",
+            spec.block_storage_class or "gp3", dsn,
+        )
+        if point:
+            result.items.append(
+                _metered_line("Block storage", point, spec.block_storage_gb)
+            )
+        else:
+            result.missing.append("block storage")
 
     # ---- database storage ----
     if spec.db_storage_gb and spec.database_vcpu:
@@ -1625,3 +1991,78 @@ def compare(
     """
     results = [estimate(spec, p, dsn=dsn) for p in providers]
     return sorted(results, key=lambda e: (not e.is_complete, e.total_monthly))
+
+
+def comparable_lines(
+    estimates: list[Estimate], providers: tuple[str, ...],
+) -> tuple[list[str], list[dict], list[dict]]:
+    """Which line items may honestly be compared across these clouds.
+
+    Returns (categories, refusals, caveats).
+
+    The failure this exists to stop: the old comparison summed whatever
+    each cloud happened to price and ranked the totals. AWS priced
+    twenty-one components and the others had adapters for seven, so their
+    totals were lower for a reason that had nothing to do with price --
+    and the ranking put "$336" above "$649" and called it the winner.
+
+    Intersecting line-item labels, which the interface did as a
+    workaround, is a GUESS about equivalence made from label text.
+    knowledge-base/service-mappings is the actual answer, and an
+    unmapped category refuses rather than being assumed equivalent.
+    """
+    from whichcloud import mappings
+
+    categories: list[str] = []
+    refusals: list[dict] = []
+    caveats: list[dict] = []
+    seen: set[str] = set()
+
+    for est in estimates:
+        for item in est.items:
+            mapping = mappings.by_category(est.provider, _category_of(item))
+            category = _category_of(item)
+            if not category or category in seen:
+                continue
+            seen.add(category)
+            verdict = mappings.may_compare(category, providers)
+            if verdict.comparable:
+                categories.append(category)
+                if verdict.caveat:
+                    caveats.append({
+                        "category": category,
+                        "confidence": verdict.confidence,
+                        "caveat": verdict.caveat,
+                    })
+            else:
+                refusals.append({
+                    "category": category,
+                    "confidence": verdict.confidence,
+                    "reason": verdict.reason,
+                })
+    return categories, refusals, caveats
+
+
+def _category_of(item: LineItem) -> str:
+    """The catalog category a line item was priced from.
+
+    Derived from the SKU prefix, which is how every adapter names them --
+    `ebs:gp3` is block_storage, `sagemaker:ml.g5.xlarge` is inference.
+    Returns "" when the SKU carries no prefix, which is the compute
+    families (t4g.medium), handled by the caller.
+    """
+    sku = (item.sku or "")
+    head = sku.split(":", 1)[0]
+    return _SKU_PREFIX_CATEGORY.get(head, "compute" if "." in sku else "")
+
+
+#: SKU prefix -> catalog category. One place, so `comparable_lines` does
+#: not have to re-derive what the adapters already know.
+_SKU_PREFIX_CATEGORY = {
+    "s3": "storage", "ebs": "block_storage", "egress": "network",
+    "cloudfront": "cdn", "sagemaker": "inference",
+    "eventbridge": "eventbridge", "apigateway": "apigateway",
+    "appsync": "connection", "sqs": "queue", "sns": "notification",
+    "lambda": "lambda-requests", "dynamodb": "dynamodb-reads",
+    "opensearch": "search", "db": "database",
+}

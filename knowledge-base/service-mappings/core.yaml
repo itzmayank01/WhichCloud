@@ -1,0 +1,205 @@
+# The services all three clouds genuinely offer, and the ones they do not.
+#
+# Ordered by how load-bearing they are in a typical estimate, not
+# alphabetically: compute, storage and the database are most of every
+# bill, and the mappings that matter most are the ones a comparison
+# leans on hardest.
+
+mappings:
+
+  # ── compute ───────────────────────────────────────────────────────
+  - id: virtual-machines
+    role: A machine you run your own operating system on, billed hourly.
+    aws:   { service: Amazon EC2, sku_category: compute }
+    gcp:   { service: Compute Engine, sku_category: compute }
+    azure: { service: Azure Virtual Machines, sku_category: compute }
+    confidence: close
+    maps_cleanly: >
+      vCPU and memory per hour, on-demand, with ARM families available on
+      all three (Graviton, Axion/Tau T2A, Ampere Altra). Sizing a
+      workload by vCPU/RAM floor and taking the cheapest match is a fair
+      comparison.
+    does_not_map: >
+      DISCOUNT MECHANICS DIFFER STRUCTURALLY AND DO NOT COMPARE.
+      Google applies sustained-use discounts automatically with no
+      commitment; AWS requires a Savings Plan or Reserved Instance;
+      Azure requires a Reservation. An on-demand-to-on-demand comparison
+      therefore understates GCP, and this engine prices the sustained-use
+      discount as its own line rather than folding it into the rate.
+      Burstable credit models also differ enough that t3/e2/B-series are
+      not interchangeable under sustained load.
+
+  - id: serverless-containers
+    role: Containers billed per vCPU-second, with no host to manage.
+    aws:   { service: AWS Fargate, sku_category: fargate }
+    gcp:   { service: Cloud Run, sku_category: fargate }
+    azure: { service: Azure Container Instances, sku_category: fargate }
+    confidence: partial
+    maps_cleanly: >
+      Per-vCPU-hour and per-GB-hour billing for a container with no host
+      to patch, on all three.
+    does_not_map: >
+      Cloud Run SCALES TO ZERO and bills per request; Fargate and ACI
+      hold the task and bill for the whole time it exists. For a
+      request-driven workload with idle periods that is not a price
+      difference, it is a different service, and comparing their hourly
+      rates answers a question nobody asked. Cloud Run also caps request
+      duration in ways Fargate does not.
+
+  - id: functions
+    role: Code invoked per event, billed per request and per GB-second.
+    aws:   { service: AWS Lambda, sku_category: lambda-requests }
+    gcp:   { service: Cloud Run functions, sku_category: lambda-requests }
+    azure: { service: Azure Functions, sku_category: lambda-requests }
+    confidence: close
+    maps_cleanly: >
+      Per-invocation and per-GB-second charges, with a real free tier on
+      all three.
+    does_not_map: >
+      Maximum execution duration, cold-start behaviour and concurrency
+      limits differ materially, and provisioned-concurrency pricing has
+      no common shape. A workload near any of those limits is not
+      portable at the same price.
+
+  # ── storage ───────────────────────────────────────────────────────
+  - id: object-storage
+    role: Durable object storage, billed per GB-month plus requests.
+    aws:   { service: Amazon S3, sku_category: storage }
+    gcp:   { service: Cloud Storage, sku_category: storage }
+    azure: { service: Azure Blob Storage, sku_category: storage }
+    confidence: exact
+    maps_cleanly: >
+      Per-GB-month for a standard hot class, plus per-request charges,
+      plus lifecycle transition to colder classes. The billing model is
+      the same on all three and the comparison is sound.
+    does_not_map: >
+      Minimum storage durations and retrieval charges on the cold classes
+      differ, so a lifecycle-heavy workload should be compared on its
+      specific classes rather than on the standard rate.
+
+  - id: block-storage
+    role: A disk attached to one machine.
+    aws:   { service: Amazon EBS, sku_category: block_storage }
+    gcp:   { service: Persistent Disk, sku_category: block_storage }
+    azure: { service: Azure Managed Disks, sku_category: block_storage }
+    confidence: close
+    maps_cleanly: >
+      Per-GB-month for provisioned capacity, with distinct SSD and HDD
+      classes on all three.
+    does_not_map: >
+      IOPS provisioning differs: EBS gp3 includes a baseline and bills
+      excess separately, GCP scales IOPS with size, Azure sells discrete
+      performance tiers. A volume with a stated IOPS requirement cannot be
+      compared on the per-GB rate alone.
+
+  # ── database ──────────────────────────────────────────────────────
+  - id: managed-relational
+    role: A managed PostgreSQL or MySQL instance.
+    aws:   { service: Amazon RDS, sku_category: database }
+    gcp:   { service: Cloud SQL, sku_category: database }
+    azure: { service: Azure Database for PostgreSQL, sku_category: database }
+    confidence: close
+    maps_cleanly: >
+      An instance sized by vCPU and memory, billed hourly, with managed
+      backups and a high-availability option.
+    does_not_map: >
+      HIGH AVAILABILITY IS NOT PRICED THE SAME WAY. AWS publishes
+      Multi-AZ as its own SKU. Azure publishes no HA meter at all, so
+      this engine bills the standby as a second instance and LABELS that
+      as derived. Comparing a published rate against a derived one is a
+      comparison of two different kinds of number, and the interface says
+      so on the line item.
+
+  - id: key-value
+    role: A key-value store billed per request rather than per hour.
+    aws:   { service: Amazon DynamoDB, sku_category: dynamodb-reads }
+    gcp:   { service: Firestore, sku_category: dynamodb-reads }
+    azure: { service: Azure Cosmos DB, sku_category: dynamodb-reads }
+    confidence: partial
+    maps_cleanly: >
+      Per-read, per-write and per-GB-month billing with no instance to
+      size, on all three.
+    does_not_map: >
+      The unit of billing is genuinely different. DynamoDB bills read and
+      write REQUEST UNITS sized by item size; Cosmos DB bills Request
+      Units that fold in consistency level and indexing; Firestore bills
+      document operations. Converting between them requires assumptions
+      about item size and consistency that no catalog contains, so this
+      is a comparison to make with the assumptions stated, not silently.
+
+  # ── network ───────────────────────────────────────────────────────
+  - id: cdn
+    role: An edge cache in front of an origin.
+    aws:   { service: Amazon CloudFront, sku_category: cdn }
+    gcp:   { service: Cloud CDN, sku_category: cdn }
+    azure: { service: Azure Front Door, sku_category: cdn }
+    confidence: partial
+    maps_cleanly: >
+      Per-GB egress from the edge and per-request charges.
+    does_not_map: >
+      Azure Front Door is a global load balancer AND a CDN, and its
+      standard tier carries a base monthly fee the other two do not. Its
+      classic CDN rate is a different product. Billing Front Door's rate
+      as though it were CloudFront's overstates a small workload
+      substantially -- a defect this catalog previously had.
+
+  - id: internet-egress
+    role: Data leaving the provider's network.
+    aws:   { service: AWS Data Transfer Out, sku_category: network }
+    gcp:   { service: Network Egress, sku_category: network }
+    azure: { service: Azure Bandwidth, sku_category: network }
+    confidence: close
+    maps_cleanly: >
+      Per-GB after a free allowance, with rates that vary by destination
+      region on all three.
+    does_not_map: >
+      Free-tier sizes differ, and the tier boundaries fall at different
+      volumes, so two workloads either side of a boundary can rank
+      differently from their headline rates.
+
+  # ── where NO equivalent exists ────────────────────────────────────
+  # These are the honest gaps. The comparison layer must REFUSE on
+  # these rather than substitute, because substituting is how a total
+  # ends up lower for a reason that has nothing to do with price.
+
+  - id: managed-inference-endpoint
+    role: A managed endpoint serving a trained model, billed per hour.
+    aws:   { service: Amazon SageMaker, sku_category: inference }
+    gcp:   null
+    azure: null
+    confidence: none
+    maps_cleanly: ""
+    does_not_map: >
+      Vertex AI Endpoints and Azure ML Managed Endpoints both exist and
+      are genuine equivalents, but NEITHER IS INGESTED IN THIS CATALOG.
+      Until they are, a cross-cloud comparison of a model-serving
+      workload would compare a real AWS figure against nothing. It
+      refuses instead.
+
+  - id: connection-metering
+    role: Billing for sockets held open, per connection-minute.
+    aws:   { service: API Gateway WebSocket / AppSync, sku_category: connection }
+    gcp:   null
+    azure: null
+    confidence: none
+    maps_cleanly: ""
+    does_not_map: >
+      GCP has no per-connection-minute meter in this catalog; a
+      comparable design there is Cloud Run with WebSockets billed as
+      request time, which is a different billing model rather than a
+      different rate. Azure SignalR Service bills per unit per day.
+      Neither converts to connection-minutes without assumptions this
+      catalog does not hold, so a realtime workload is not compared
+      across clouds.
+
+  - id: event-bus
+    role: A routed event bus billed per event published.
+    aws:   { service: Amazon EventBridge, sku_category: eventbridge }
+    gcp:   null
+    azure: null
+    confidence: none
+    maps_cleanly: ""
+    does_not_map: >
+      Pub/Sub and Azure Event Grid are the equivalents and are not
+      ingested here. Pub/Sub also bills per GB rather than per event,
+      so even once ingested the mapping would be `partial` at best.

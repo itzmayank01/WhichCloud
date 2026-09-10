@@ -1,0 +1,50 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: single-nat-when-availability-not-stated
+name: One NAT gateway unless a zone failure has to be survived
+category: network
+summary: >
+  A NAT gateway per availability zone is the right answer for a workload
+  that stated it cannot go down. For one that did not, the second gateway
+  is $41/month of standby nobody asked for.
+
+applies_when:
+  workload_type: [web, api, batch, ml, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 40
+  requires:
+    - Private subnets that need outbound access
+    - No stated requirement to survive the loss of an availability zone
+
+savings:
+  typical_pct: 50
+  confidence: high
+  basis: >
+    MEASURED: the ap-south-1 NAT gateway hourly rate is $0.056, so
+    $40.88/month per gateway before any data processing. Two gateways are
+    $81.76 and one is $40.88 -- exactly half, because the hourly charge
+    does not vary with use.
+
+    On the internal-tools fixture this is the single largest avoidable
+    line, and it is avoidable only because that workload's own
+    description says an hour of downtime is survivable.
+
+tradeoffs:
+  - Losing the AZ holding the gateway takes outbound connectivity with
+    it. Inbound traffic and anything already established survives, but
+    patching, agent check-in and third-party API calls stop.
+  - Cross-AZ traffic to reach the single gateway is billed, which claws
+    back a little of the saving on chatty workloads.
+
+implemented_by:
+  - name: VPC NAT gateway placement
+    url: https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: medium

@@ -292,7 +292,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
               )}
             </button>
 
-            {view && (
+            {view && !view.designed && (
               <>
                 <button
                   onClick={downloadSvg}
@@ -312,7 +312,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
           </div>
 
           {/* Layer Filter Pills */}
-          {view && (
+          {view && !view.designed && (
             <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
               {(
                 [
@@ -347,8 +347,64 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
         </div>
       )}
 
+      {/* ─── Refused: the diagram would have to be invented ───
+          Not an error and not an empty drawing. This endpoint draws back
+          the services somebody named; a description naming none could only
+          be drawn by a model choosing them, and a picture nobody can check
+          against the words — or against a price — is worse than none. */}
+      {view?.designed && (
+        <div className="space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-5">
+          <div>
+            <h3 className="text-[15px] font-bold text-amber-900">
+              Nothing here can be drawn from what you wrote
+              {view.recognised_as ? ` — this reads as ${view.recognised_as}` : ""}
+            </h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-amber-900/90">
+              {view.withheld_reason}
+            </p>
+            {view.evidence && (
+              <p className="mt-2 text-[13px] leading-relaxed text-amber-900/70">
+                {view.evidence}
+              </p>
+            )}
+          </div>
+
+          {view.archetype_requirements && (
+            <div className="rounded-lg border border-amber-200 bg-white p-4">
+              <h4 className="text-[13.5px] font-bold text-neutral-900">
+                What this shape actually needs
+              </h4>
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-neutral-700">
+                {view.archetype_requirements}
+              </p>
+            </div>
+          )}
+
+          {view.pricing_questions && view.pricing_questions.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-white p-4">
+              <h4 className="text-[13.5px] font-bold text-neutral-900">
+                What we would need to price it
+              </h4>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5">
+                {view.pricing_questions.map((q) => (
+                  <li key={q} className="text-[13.5px] leading-relaxed text-neutral-700">
+                    {q}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {view.next_step && (
+            <p className="text-[13px] leading-relaxed text-amber-900/80">
+              {view.next_step}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ─── Interactive Playback Bar & Step Inspector ─── */}
-      {view && (
+      {view && !view.designed && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3.5 shadow-sm">
             {/* Playback Controls */}

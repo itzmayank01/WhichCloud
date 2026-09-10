@@ -1,0 +1,92 @@
+# Promoted from tests/probes/event-webhook.yaml, which was diagnostic only.
+#
+# What the probe recorded (2026-08-21, before event_driven existed):
+#
+#   Tier 1 $65.61 -- a synchronous compute-and-database stack with NO
+#   QUEUE ANYWHERE. Verdict WRONG_SHAPE, severity CRITICAL.
+#
+# Critical not because the bill was large -- it was $65 -- but because
+# the prompt makes an explicit reliability promise, "we cannot drop a
+# single one", and the architecture returned had nothing in it that keeps
+# that promise. A webhook arriving during a consumer restart was simply
+# gone, and the plan said nothing about it.
+#
+# The queue is asserted on EVERY tier here, deliberately. A durable
+# buffer is not a production nicety to be sold at tier 2: it is the
+# single component that makes the stated requirement true, and a design
+# without it fails the brief at any price.
+id: event-webhook
+prompt: >
+  We receive payment webhooks from three providers, roughly 40,000 a day
+  in unpredictable bursts. Each one triggers a few database writes and an
+  email. We cannot drop a single one.
+
+# Extracted by the pinned primary under schema v6 and recorded verbatim.
+# "We cannot drop a single one" reads as durability=high AND
+# availability=high, which is correct: it is a promise about both losing
+# data and being unable to accept it.
+constraints:
+  country: ''
+  sector: fintech
+  availability: high
+  durability: high
+  users: 0
+  requests_per_day: 40000
+  peak_shape: spiky
+  budget_monthly_usd: 0.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: false
+  country_lock: false
+  static_assets: none
+  emails_per_month: 1200000
+  async_processing: true
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
+  interruptible: false
+  active_hours_per_day: 24.0
+  stated: [availability, durability, requests_per_day, peak_shape]
+
+archetype: event_driven
+
+expect:
+  must_exclude:
+    # API Gateway is the endpoint; a balancer balances across nothing.
+    - load_balancer
+    # Providers POST here, nobody browses it.
+    - cdn
+    # 0.5 events/second with bursts. Instances sized for the burst idle
+    # for the other 23 hours -- the exact cost shape a queue plus
+    # scaling consumers exists to avoid.
+    - autoscaling_compute
+    - nat_gateway
+    - read_replica
+
+  must_include:
+    # THE PROMISE. On every tier, because a design without it does not
+    # meet the stated requirement at any price.
+    - component: queue
+      tiers: [tier_1, tier_2, tier_3]
+    - component: serverless_compute
+      tiers: [tier_1, tier_2, tier_3]
+    # The email the prompt names, and the writes it names.
+    - component: email
+      tiers: [tier_1, tier_2, tier_3]
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+    # Routing by provider is what tier 2 buys.
+    - component: event_bus
+      tiers: [tier_2, tier_3]
+    - component: notifications
+      tiers: [tier_2, tier_3]
+    # Ordering, replay and a queryable raw archive are what tier 3 buys.
+    - component: object_lock
+      tiers: [tier_3]
+    - component: athena
+      tiers: [tier_3]
+    - component: archive_tier
+      tiers: [tier_3]
+
+  complete: [tier_1, tier_2, tier_3]
+
+  invariants: [all]

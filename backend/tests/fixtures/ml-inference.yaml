@@ -1,0 +1,92 @@
+# Promoted from tests/probes/ml-inference.yaml, which was diagnostic only.
+#
+# What the probe recorded (2026-08-21, before ml_inference existed):
+#
+#   A web application with a relational database, priced as though the
+#   model were a CRUD app. Verdict WRONG_SHAPE, severity CRITICAL, for
+#   two independent reasons:
+#
+#     * No GPU or inference-instance concept existed ANYWHERE in the
+#       engine, and no managed endpoint. Structural, not wiring.
+#     * "during business hours" was matched by the availability phrase
+#       table as an UPTIME requirement, forcing Multi-AZ, a load balancer
+#       and a second instance onto a workload whose own next clause says
+#       it is idle at night.
+#
+# The second one is fixed in constraints.py: "business hours", "working
+# hours", "opd hours" and "trading hours" are out of _AVAILABILITY_HIGH.
+# They say when the load arrives, not that downtime is unacceptable.
+id: ml-inference
+prompt: >
+  We have a trained model that scores loan applications. About 50
+  predictions a second during business hours, almost none at night.
+
+# requests_per_day is 50/sec x 9 business hours x 3600 = 1,620,000 --
+# normalised over the ACTIVE window, not over a 24-hour day. Dividing by
+# a full day would report 19 predictions/sec and size the endpoint for a
+# load that never arrives.
+#
+# availability stays LOW and that is the point: nothing in this prompt
+# says downtime is unacceptable. It says when the traffic is.
+constraints:
+  country: ''
+  sector: fintech
+  availability: low
+  durability: high
+  users: 0
+  requests_per_day: 1620000
+  peak_shape: flat
+  budget_monthly_usd: 0.0
+  storage_gb: 0.0
+  egress_gb: 0.0
+  public_facing: false
+  country_lock: false
+  static_assets: none
+  emails_per_month: 0
+  async_processing: false
+  content_storage_gb: 0.0
+  user_data_gb: 0.0
+  interruptible: false
+  active_hours_per_day: 9.0
+  model_size_gb: 2.0
+  stated: [requests_per_day, durability, active_hours_per_day]
+
+archetype: ml_inference
+
+expect:
+  must_exclude:
+    # A model artefact is a large binary read whole on load, not rows.
+    - relational_database
+    # A managed endpoint fronts its own fleet; API Gateway fronts that.
+    - load_balancer
+    # Predictions depend on the features supplied. Nothing is cacheable
+    # at an edge.
+    - cdn
+    - nat_gateway
+    - waf
+
+  must_include:
+    - component: object_storage
+      tiers: [tier_1, tier_2, tier_3]
+    - component: backup
+      tiers: [tier_1, tier_2, tier_3]
+    # durability=high is STATED, so immutability and a second-region copy
+    # apply on the cheapest tier too. A design that fails a stated
+    # requirement is not a cheaper option, it is a non-compliant one.
+    - component: object_lock
+      tiers: [tier_1, tier_2, tier_3]
+    - component: cross_region_backup_copy
+      tiers: [tier_1, tier_2, tier_3]
+    # The managed endpoint replaces the self-managed host at tier 2.
+    - component: model_endpoint
+      tiers: [tier_2, tier_3]
+    # Features off the critical path, and a queryable prediction log,
+    # are what tier 3 buys.
+    - component: cache
+      tiers: [tier_3]
+    - component: athena
+      tiers: [tier_3]
+
+  complete: [tier_1, tier_2, tier_3]
+
+  invariants: [all]

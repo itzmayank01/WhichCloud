@@ -41,6 +41,26 @@ DataShape = Literal[
     "relational", "time-series", "key-value", "document",
     "object", "search", "warehouse", "mixed",
 ]
+#: WHO calls this. The fifth derivation axis, and the one that decides
+#: whether the public internet is on the other side of the front door.
+#:
+#: `serves_requests` was doing this job and cannot: an internal HR tool for
+#: eighty employees serves requests too. Gating edge protection on it put a
+#: web firewall -- $368/month of Application Gateway on Azure -- in front of
+#: a workload with no public surface, on the reasoning that the top tier
+#: "assumes an attack surface exists". Assuming one is exactly the default
+#: this axis exists to stop.
+Audience = Literal["public", "internal", "machine"]
+
+#: HOW the store is used. The sixth derivation axis, and the one read
+#: replicas and a fronting cache actually turn on.
+#:
+#: Both were derived from traffic_scale alone, which cannot tell a catalogue
+#: read five million times from a ledger written to five million times. They
+#: are the same size and want opposite architectures: the first wants copies
+#: to read from, the second wants a primary that can take the writes.
+ReadWriteMix = Literal["read-heavy", "write-heavy", "balanced"]
+
 EgressShape = Literal[
     "api",            # JSON/API responses
     "media",          # video/large files served to users
@@ -120,6 +140,13 @@ class Requirement:
     # architecture is derived from these rather than fitted to a template.
     # Defaults are the plain web-app answers, so a prompt that specifies none
     # of them still resolves to the shape it does today.
+    #: Public by default: it is the safer wrong answer. Over-protecting an
+    #: internal tool costs money; under-protecting a public one costs more
+    #: than money.
+    audience: Audience = "public"
+    #: Balanced by default: it buys neither the replicas nor the cache, so an
+    #: unstated mix does not spend money on a guess.
+    read_write_mix: ReadWriteMix = "balanced"
     ingress_shape: IngressShape = "requests"
     processing_mode: ProcessingMode = "synchronous"
     data_shape: DataShape = "relational"
@@ -163,6 +190,71 @@ class Requirement:
         made every architecture look the same whatever was described.
         """
         return self.workload_type in ("web", "api", "mixed")
+
+    @property
+    def internet_facing(self) -> bool:
+        """Is the public internet on the other side of the front door?
+
+        The question edge protection and edge caching both actually turn on.
+        A CDN and a web firewall answer threats and traffic that arrive from
+        the open internet; neither earns its cost in front of staff on a
+        corporate network.
+        """
+        return self.serves_requests and self.audience == "public"
+
+    @property
+    def is_event_driven(self) -> bool:
+        """A pipeline reacting to arrivals, not a fleet answering calls.
+
+        The `event_driven` flag alone was not enough, and the axes are the
+        reason: they exist to DRIVE the architecture, so a description whose
+        input is FILES arriving and whose processing is NEAR-REAL-TIME is an
+        event pipeline whatever a separate yes/no field happened to say.
+
+        Documents uploaded and classified at two thousand an hour came back
+        with the flag false and were handed a load-balanced fleet of
+        always-on servers -- for work that is bursty, arrives as uploads, and
+        is idle between them. The axes said all three of those things.
+
+        `batch` is deliberately NOT here. Batches accumulated and run on a
+        schedule are the batch shape, which has its own graph.
+        """
+        if self.event_driven:
+            return True
+        return (
+            self.ingress_shape in ("events", "streams", "connections")
+            and self.processing_mode == "near-real-time"
+        )
+
+    @property
+    def is_serverless(self) -> bool:
+        """Work that runs when something arrives, and costs nothing between.
+
+        FILES are the distinguishing case, and the reason this is separate
+        from `is_event_driven`. Both react to arrivals, but a continuous
+        stream and a file landing want different architectures: a stream
+        wants a processor kept running to consume it, a file wants a function
+        invoked per object. Two thousand documents an hour is not a stream --
+        it is two thousand discrete triggers with idle time between them, and
+        every vendor's reference for it is object-store-event to function.
+        """
+        if self.serverless:
+            return True
+        return (
+            self.ingress_shape == "files"
+            and self.processing_mode == "near-real-time"
+            and not self.telemetry
+        )
+
+    @property
+    def is_read_heavy(self) -> bool:
+        """Are the same things read far more often than they are written?
+
+        What makes a read replica and a fronting cache worth their cost: both
+        pay off by serving a repeated read, and both are dead weight on a
+        write-heavy store.
+        """
+        return self.read_write_mix == "read-heavy"
 
     @property
     def is_batch(self) -> bool:

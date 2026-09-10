@@ -1400,20 +1400,40 @@ def fetch_keyvalue_prices(region_key: str) -> list[PricePoint]:
 
 def fetch_cdn_prices(region_key: str) -> list[PricePoint]:
     """Azure Front Door Standard data transfer out, per GB, for the region's
-    zone. The modern CDN equivalent of CloudFront/Cloud CDN egress."""
+    zone. The modern CDN equivalent of CloudFront/Cloud CDN egress.
+
+    "Modern" is load-bearing: the classic service publishes an identically
+    named meter at three times the rate. See the query below.
+    """
     region = provider_region(region_key, "azure")
     zone = _AZURE_FRONTDOOR_ZONE.get(region_key)
     if not zone:
         return []
+    # TWO PRODUCTS SHARE THIS METER NAME, and one of them is the old one.
+    #
+    # `serviceName` "Azure Front Door Service" covers both the classic service
+    # and the modern Standard/Premium tiers, and both publish a meter called
+    # "Standard Data Transfer Out" with a first tier at zero units. They are
+    # told apart only by productName: "Azure Front Door Service" is classic at
+    # $0.34/GB, "Azure Front Door" is the current one at $0.109/GB. Taking
+    # whichever the API returned first picked the legacy rate -- a 3.1x
+    # overcharge on every Azure CDN line, against a docstring that already
+    # said Standard was the intent.
     query = (
         "serviceName eq 'Azure Front Door Service' and priceType eq 'Consumption' "
         f"and armRegionName eq '{zone}' "
-        "and meterName eq 'Standard Data Transfer Out'"
+        "and meterName eq 'Standard Data Transfer Out' "
+        "and productName eq 'Azure Front Door'"
     )
     best: tuple[float, Decimal] | None = None
     for item in _paged(query, max_pages=4):
         price = _decimal(item.get("retailPrice"))
         if price is None:
+            continue
+        # Belt and braces: the filter above should already exclude classic,
+        # but a productName that is not an exact match must not slip through
+        # on a rate this far off.
+        if item.get("productName") != "Azure Front Door":
             continue
         tier = float(item.get("tierMinimumUnits") or 0)
         if best is None or tier < best[0]:

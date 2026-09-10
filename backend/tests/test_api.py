@@ -252,10 +252,100 @@ def test_architecture_rejects_an_empty_description(client):
     assert client.post("/architecture", json={"description": "   "}).status_code == 400
 
 
+def test_architecture_refuses_to_draw_what_it_would_have_to_invent(
+    client, monkeypatch,
+):
+    """A description naming no services can only be drawn by a model
+    CHOOSING them, and a runtime service selection by a language model is
+    the one thing this engine does not do: it is unpriced, unvalidated and
+    different on every call. The refusal has to be a real one -- no nodes,
+    no edges, no canvas -- and it has to say what to do instead."""
+    from whichcloud.architecture.schema import Architecture, Service
+
+    def fake(description, reader="gemini", client=None, **kw):
+        return Architecture(services=[
+            Service(name="Amazon S3", tier="data", flow="sync",
+                    connects_to=["Amazon CloudFront"]),
+            Service(name="Amazon CloudFront", tier="edge", flow="sync"),
+        ])
+
+    monkeypatch.setattr(
+        "whichcloud.architecture.extract.extract_architecture", fake
+    )
+    body = client.post("/architecture", json={
+        "description": "A marketing site for our design studio, just pages "
+                       "and images, no login and no database.",
+    }).json()
+
+    assert body["designed"] is True
+    assert body["nodes"] == [] and body["edges"] == []
+    assert body["counts"]["services"] == 0
+    assert body["canvas"] == {"width": 0, "height": 0}
+    # A refusal that cannot say what it wanted is barely better than a guess.
+    assert body["evidence"]
+    assert body["next_step"]
+
+
+def test_architecture_still_draws_what_the_description_actually_names(
+    client, monkeypatch,
+):
+    """The gate is on INVENTION, not on drawing. Transcribing services
+    somebody spelled out is a reading task and stays -- the output is
+    checkable word by word against the input."""
+    from whichcloud.architecture.schema import Architecture, Service
+
+    def fake(description, reader="gemini", client=None, **kw):
+        return Architecture(services=[
+            Service(name="Amazon S3", tier="data", flow="sync",
+                    connects_to=["Amazon CloudFront"]),
+            Service(name="Amazon CloudFront", tier="edge", flow="sync"),
+        ])
+
+    monkeypatch.setattr(
+        "whichcloud.architecture.extract.extract_architecture", fake
+    )
+    body = client.post("/architecture", json={
+        "description": "CloudFront sits in front of an S3 bucket.",
+    }).json()
+
+    assert not body.get("designed")
+    assert len(body["nodes"]) == 2
+
+
+def test_architecture_svg_export_refuses_an_invented_diagram(
+    client, monkeypatch,
+):
+    """An exported file outlives the session that made it, so an invented
+    architecture is MORE dangerous here, not less -- it ends up in a slide
+    deck with no caveat attached."""
+    from whichcloud.architecture.schema import Architecture, Service
+
+    def fake(description, reader="gemini", client=None, **kw):
+        return Architecture(services=[
+            Service(name="Amazon Neptune", tier="data", flow="sync"),
+        ])
+
+    monkeypatch.setattr(
+        "whichcloud.architecture.extract.extract_architecture", fake
+    )
+    response = client.post("/architecture/export.svg", json={
+        "description": "somewhere to keep our customer notes",
+    })
+    assert response.status_code == 422
+
+
 def test_architecture_geometry_is_self_consistent(client, monkeypatch):
     """Whatever the reader returns, the drawn result has to be coherent:
     every edge endpoint must name a node that exists, and nothing may be
-    positioned outside the canvas the response declares."""
+    positioned outside the canvas the response declares.
+
+    The description NAMES the three services on purpose. /architecture
+    transcribes an architecture somebody described and refuses to invent
+    one, so a prompt reading "a shop" that comes back as Route 53 + EKS +
+    Aurora is a designed architecture and is now declined -- correctly.
+    This test is about geometry, not about the gate, so it supplies the
+    transcription input it always meant to.
+    """
     from whichcloud.architecture.schema import Architecture, Boundary, Service
 
     def fake(description, reader="gemini", client=None, **kw):
@@ -274,7 +364,9 @@ def test_architecture_geometry_is_self_consistent(client, monkeypatch):
     monkeypatch.setattr(
         "whichcloud.architecture.extract.extract_architecture", fake
     )
-    body = client.post("/architecture", json={"description": "a shop"}).json()
+    body = client.post("/architecture", json={
+        "description": "Route 53 in front of Amazon EKS, backed by Aurora.",
+    }).json()
 
     ids = {n["id"] for n in body["nodes"]}
     assert body["counts"]["services"] == len(body["nodes"]) == 3

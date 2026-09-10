@@ -1,0 +1,49 @@
+id: gp3-over-gp2-volumes
+name: gp3 block storage instead of gp2
+category: storage
+summary: >
+  gp3 is the current general-purpose EBS class. It costs less per GB than
+  gp2 and decouples IOPS from volume size, so performance no longer has to
+  be bought as capacity.
+
+applies_when:
+  workload_type: [web, api, batch, ml, storage, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 20
+  requires:
+    - Block storage attached to instances (not object storage)
+
+savings:
+  typical_pct: 20
+  confidence: high
+  basis: >
+    MEASURED from the ap-south-1 catalog on 2026-09-09:
+    gp3 $0.0912/GB-month vs gp2 $0.1140/GB-month = 20.0% cheaper for the
+    same capacity.
+
+    The real saving is usually larger than that. gp2 grants IOPS in
+    proportion to size (3 IOPS/GB), so a volume needing 3,000 IOPS had to
+    be provisioned at 1,000 GB whether or not it held 1,000 GB. gp3
+    includes 3,000 IOPS at any size, so those volumes can shrink to what
+    they actually store -- a capacity reduction the per-GB comparison
+    above does not capture.
+
+tradeoffs:
+  - Volumes above 3,000 IOPS or 125 MB/s pay separately for the excess on
+    gp3, where gp2 bundled it into the size. Above roughly 16,000 IOPS
+    gp2 can still win.
+  - Conversion is online but throughput is reduced while it runs, and a
+    volume cannot be modified again for six hours afterwards.
+
+implemented_by:
+  - name: EBS volume modification (online, no snapshot required)
+    url: https://docs.aws.amazon.com/ebs/latest/userguide/requesting-ebs-volume-modifications.html
+    type: managed-service
+
+effect:
+  block_storage_class: gp3
+counterfactual:
+  block_storage_class: gp2
+
+providers: [aws, gcp, azure]
+obviousness: medium

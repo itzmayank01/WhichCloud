@@ -133,6 +133,26 @@ DB_SIZING: dict[str, tuple[int, float]] = {
 # tier pays for. HEURISTIC, like the rest of this table.
 DB_READ_REPLICAS: dict[str, int] = {"low": 0, "medium": 0, "high": 2}
 
+
+def _wants_cache(requirement: "Requirement", has_rds: bool) -> bool:
+    """Does this workload earn a node in front of its store?
+
+    Three ways to earn one, and a small workload earns none of them: a cache
+    billing $38/month to memoise queries a site serving two hundred visitors
+    a day does not repeat often enough is the failure this still guards.
+    """
+    if requirement.traffic_scale == "low":
+        return False
+    # A relational primary under load, which is the original case.
+    if has_rds:
+        return True
+    # A stated latency target, whatever the store. The requirement asked for
+    # a number; a managed store scaling on its own does not deliver it.
+    if requirement.latency_target_ms:
+        return True
+    # Reads repeated often enough that serving them twice is waste.
+    return requirement.is_read_heavy
+
 # WAF is a security control, not a reliability tier -- a workload that named
 # an attack surface needs protecting on Cheapest as much as on Most reliable,
 # so unlike read replicas this applies to the base shape every tier inherits.
@@ -250,6 +270,28 @@ TRACING_MONTHLY_TRACES: dict[str, float] = {
     "medium": 2_000_000.0,
     "high": 20_000_000.0,
 }
+
+
+def tracing_traces_for(requirement: "Requirement") -> float:
+    """Monthly traces. A TRACE IS A REQUEST THROUGH THE SYSTEM.
+
+    Read straight off traffic_scale, which is right for a workload that
+    serves requests and meaningless for one that does not: `traffic_scale`
+    on a batch job measures DATA volume, so a nightly ETL over 2 TB landed
+    in the `high` bucket and was billed for twenty million traces --
+    $99.50/month of X-Ray for a job that runs thirty times. It was the
+    largest single line on that architecture and the biggest driver of its
+    cross-provider gap.
+
+    A job that serves nothing traces its RUNS.
+    """
+    if requirement.serves_requests:
+        return TRACING_MONTHLY_TRACES[requirement.traffic_scale]
+    # ~30 runs a month, a few thousand spans each. Inside every provider's
+    # free allowance, which is the honest answer for this shape.
+    return TRACING_MONTHLY_TRACES["low"]
+
+
 #: Security Hub evaluates each enabled control against each resource,
 #: continuously. Scales with estate size rather than with traffic.
 POSTURE_MONTHLY_CHECKS: dict[str, float] = {
@@ -349,6 +391,25 @@ class Option:
     #: Which resources the committed price depends on. "1-year commitment"
     #: with no object is not something a user can act on.
     commitment_covers: tuple[str, ...] = ()
+    #: LOW | MEDIUM | HIGH | CRITICAL, from what the requirement SAYS. Carried
+    #: on the option rather than left in the engine because it is the reason
+    #: `unmet` is not empty, and a warning without its reason is noise.
+    criticality: str = "MEDIUM"
+    #: Stated requirements this shape does not meet. Empty on a compliant
+    #: option. See `unmet_requirements` for why these are not tradeoffs.
+    unmet: tuple[str, ...] = ()
+
+    @property
+    def compliant(self) -> bool:
+        """Does this shape meet what the requirement actually asked for?
+
+        The cheapest option and the cheapest option that MEETS THE BRIEF are
+        different architectures whenever availability was asked for, because
+        the cheapest way to serve traffic is always one machine and one
+        database. Presenting the first as though it were the second is the
+        failure this exists to make visible.
+        """
+        return not self.unmet
 
     @property
     def commitment_saving(self) -> "Decimal":
@@ -561,10 +622,31 @@ def _delivery(requirement: Requirement) -> tuple[float, float, float]:
     egress = requirement.egress_gb
     # A media/object workload is served THROUGH CloudFront by definition --
     # that is what an object primary means -- so it goes behind a CDN whatever
-    # the byte count. Other shapes only earn a CDN once egress is large enough
-    # to be real content delivery rather than API responses.
+    # the byte count.
     is_media = requirement.serves_requests and requirement.data_shape == "object"
-    if not requirement.serves_requests or (egress < CDN_EGRESS_THRESHOLD_GB and not is_media):
+
+    # A PUBLIC SITE EARNS A CDN ON READERS, NOT ON BYTES.
+    #
+    # The byte threshold alone was the wrong test, and a product catalogue
+    # showed why: five million page views a month, read almost exclusively,
+    # visitors across a country -- the textbook CDN case, and every vendor's
+    # published reference for it puts CloudFront, Cloud CDN or Front Door in
+    # front. It came out at 500 GB of egress, under the one-terabyte bar, and
+    # got none. What a CDN buys a site like that is latency at the reader and
+    # load off the origin; neither is a function of the byte count.
+    #
+    # `web` and not `api` on purpose. The threshold exists to keep a CDN off
+    # an API returning a different JSON body to every caller, and that is
+    # still the right answer -- there is nothing to cache. A public SITE
+    # serves the same pages to everyone, which is the whole premise.
+    public_site = (
+        requirement.audience == "public"
+        and requirement.workload_type in ("web", "mixed")
+        and requirement.serves_requests
+    )
+    if not requirement.serves_requests or (
+        egress < CDN_EGRESS_THRESHOLD_GB and not is_media and not public_site
+    ):
         return 0.0, egress, 0.0
     # One HTTPS request per ~2 MB object delivered -- a coarse, stated
     # approximation, like every volume heuristic here.
@@ -753,15 +835,18 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # OpenSearch store scales on its own and does not take an ElastiCache
         # in front. Held out of the Cheapest tier (see _shape_variants), which
         # accepts hitting the database directly to save the node.
-        cache_vcpu=(
-            2 if has_rds and requirement.traffic_scale != "low" else None
-        ),
-        cache_memory_gb=(
-            2.0 if has_rds and requirement.traffic_scale != "low" else None
-        ),
+        # A cache fronts a RELATIONAL primary under load -- or ANY store the
+        # requirement gave a latency target for. Gating on `has_rds` alone
+        # meant a public API asking for p99 under 100ms over a key-value store
+        # got no cache at all, which is the exact case every vendor reference
+        # answers with one (DAX, Memorystore, Azure Cache for Redis). A
+        # managed key-value store scales on its own; it does not thereby meet
+        # a stated latency target.
+        cache_vcpu=(2 if _wants_cache(requirement, has_rds) else None),
+        cache_memory_gb=(2.0 if _wants_cache(requirement, has_rds) else None),
         monitored_metrics=30 if stateful else 10,
         waf_rule_count=(
-            WAF_RULE_COUNT if requirement.needs_waf and requirement.serves_requests else None
+            WAF_RULE_COUNT if requirement.needs_waf and requirement.internet_facing else None
         ),
         waf_monthly_requests=(
             WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
@@ -865,7 +950,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # base and peak counts; see scripts/ for the selecting call.
         secret_count=BASE_SECRET_COUNT if stateful else 0,
         threat_detection=True,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         # Security Hub is a compliance product, and it was being billed on
         # every architecture regardless. On a bakery's marketing site with
         # no compliance requirement it was $50/mo -- the largest line after
@@ -958,7 +1043,9 @@ def serverless_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         ),
         tls_certificate=serves,
         waf_rule_count=(
-            WAF_RULE_COUNT if requirement.needs_waf and serves else None
+            WAF_RULE_COUNT
+            if requirement.needs_waf and requirement.internet_facing
+            else None
         ),
         waf_monthly_requests=(
             WAF_MONTHLY_REQUESTS[requirement.traffic_scale] if requirement.needs_waf else 0.0
@@ -966,7 +1053,7 @@ def serverless_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # Production hygiene that is not server-specific: metrics, tracing,
         # audit, a key, secrets. Priced the same way every tier prices them.
         monitored_metrics=20,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         audit_logging=True,
         kms_key_count=1,
         secret_count=BASE_SECRET_COUNT,
@@ -1017,7 +1104,7 @@ def _serverless_variants(
     optimized["lambda_memory_mb"] = 1024.0
     optimized["athena_tb_scanned_per_month"] = 2.0
     optimized["glue_dpu_hours_per_month"] = 50.0
-    if requirement.serves_requests:
+    if requirement.internet_facing:
         optimized["waf_rule_count"] = WAF_RULE_COUNT
         optimized["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[requirement.traffic_scale]
 
@@ -1182,7 +1269,7 @@ def event_driven_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # An event pipeline is fronted by an API for control/queries.
         apigateway_requests_per_month=events if requirement.serves_requests else 0.0,
         monitored_metrics=30,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         audit_logging=True,
         kms_key_count=1,
         s3_put_requests=events,
@@ -1335,7 +1422,7 @@ def batch_etl_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         storage_gb=requirement.storage_gb,   # the S3 data lake
         egress_gb=requirement.egress_gb,
         monitored_metrics=20,
-        tracing_monthly_traces=TRACING_MONTHLY_TRACES[requirement.traffic_scale],
+        tracing_monthly_traces=tracing_traces_for(requirement),
         audit_logging=True,
         kms_key_count=1,
         s3_put_requests=rows,
@@ -1455,6 +1542,15 @@ def _shape_variants(
     # `serves_requests` still gates the balancer, which fronts any app tier.
     has_rds = _store_for(requirement).has_rds
     replicas = DB_READ_REPLICAS[requirement.traffic_scale] if has_rds else 0
+    # A READ REPLICA IS EARNED BY READS, NOT BY SIZE.
+    #
+    # This came only from traffic_scale, which cannot tell a catalogue read
+    # five million times from a ledger written to five million times: same
+    # bucket, opposite architectures. A public product catalogue with "almost
+    # no writes" landed on `medium` and got none, which is the one workload
+    # every vendor reference puts replicas in front of.
+    if has_rds and requirement.is_read_heavy and requirement.traffic_scale != "low":
+        replicas = max(replicas, 2)
     # A balancer only where something is being balanced. The base shape
     # already gates this on the workload serving requests; setting it True
     # here regardless put an Elastic Load Balancing box in front of a
@@ -1533,9 +1629,16 @@ def _shape_variants(
             "justifies them has arrived yet"
         )
 
-    # Protection at the edge. Priced here even where the description named
-    # no attack surface, because this is the tier that assumes one exists.
-    if requirement.serves_requests:
+    # Protection at the edge, for workloads that HAVE an edge.
+    #
+    # This used to read `serves_requests`, and assumed an attack surface on
+    # the reasoning that the top tier should. But serving requests is not
+    # being on the internet: an HR tool for eighty employees serves requests
+    # too, and it was handed a web firewall -- $368/month of Application
+    # Gateway on Azure, the single largest line on that architecture -- to
+    # defend a network the attacker is not on. Assuming a surface is the
+    # default this now refuses to make.
+    if requirement.internet_facing:
         optimized_delta["waf_rule_count"] = WAF_RULE_COUNT
         optimized_delta["waf_monthly_requests"] = WAF_MONTHLY_REQUESTS[
             requirement.traffic_scale
@@ -1723,6 +1826,76 @@ def _trades_availability(technique: Technique) -> bool:
 #: which is the bug they were built to contain rather than prevent.
 
 
+#: Business criticality, derived from what the requirement SAYS rather than
+#: asked for as a field. It is the input that decides which parts of a design
+#: the budget is allowed to take away.
+#:
+#: The distinction matters because "cheapest" and "cheapest that meets the
+#: requirement" are different architectures, and only one of them is honest to
+#: recommend for a workload whose owner said it must not go down.
+def business_criticality(requirement: Requirement) -> str:
+    """LOW | MEDIUM | HIGH | CRITICAL."""
+    # An explicit availability requirement is the strongest signal there is:
+    # the person writing it has told us downtime costs them something.
+    if requirement.high_availability:
+        # Money stops moving when these stop, so an outage is not an
+        # inconvenience, it is lost revenue or a compliance event.
+        if requirement.workload_type in ("web", "api") and (
+            requirement.daily_transactions or 0
+        ) > 0:
+            return "CRITICAL"
+        return "HIGH"
+    if requirement.workload_type in ("batch", "ml"):
+        return "LOW"
+    return "MEDIUM"
+
+
+#: What a CRITICAL workload's budget may never buy its way out of. These are
+#: HARD CONSTRAINTS: the optimizer can spend less on anything else, but it
+#: cannot deliver a single-instance, single-zone design to someone who said
+#: billing must not stop and still call it a recommendation.
+PROTECTED_WHEN_CRITICAL = ("database_multi_az", "min_two_instances")
+
+
+def unmet_requirements(
+    spec: "ArchitectureSpec", requirement: Requirement
+) -> tuple[str, ...]:
+    """Which STATED requirements this shape does not meet.
+
+    Distinct from `tradeoffs`, which every option has: a tradeoff is a
+    consequence the reader should weigh, an unmet requirement is a promise
+    the design breaks. "No cache -- reads hit the primary" is a tradeoff on
+    any workload. "Single-zone database" is a tradeoff on most workloads and
+    an unmet requirement on one whose owner wrote that it cannot go down.
+
+    Only the requirement's own words can tell the two apart, which is why
+    this takes the requirement and `tradeoffs` does not. The engine already
+    knew the difference -- `_fit_within_budget` refuses to trade these away
+    on a CRITICAL workload -- but nothing carried it out to the caller, so
+    the Cheapest option arrived looking like a peer of the other two rather
+    than one that fails the brief.
+    """
+    if not requirement.high_availability:
+        return ()
+
+    gaps: list[str] = []
+    # Serverless and managed shapes have no instance count to speak of; the
+    # platform handles the spreading. Only assert this where the design is
+    # actually a fleet of machines we chose the size of.
+    if spec.compute_count == 1:
+        gaps.append(
+            "you asked for high availability, and this runs a single "
+            "application instance -- a restart, a crash or a deploy is "
+            "downtime"
+        )
+    if spec.database_vcpu and not spec.database_multi_az:
+        gaps.append(
+            "you asked for high availability, and this database has no "
+            "standby -- losing its zone takes the system down with it"
+        )
+    return tuple(gaps)
+
+
 def _fit_within_budget(
     spec: "ArchitectureSpec",
     requirement: Requirement,
@@ -1759,47 +1932,109 @@ def _fit_within_budget(
         # Headroom, not an opportunity. Nothing to do.
         return spec, True, ()
 
-    # Over budget. Give up capacity in reliability order -- the cheapest
-    # promise to break first -- and stop as soon as it fits. Each step names
-    # itself so the option can say what it gave up rather than presenting a
-    # smaller design as though it were the one that was asked for.
-    given_up: list[str] = []
-    steps: list[tuple[str, "ArchitectureSpec"]] = []
-    if spec.database_read_replicas:
-        steps.append((
-            f"dropped {spec.database_read_replicas} read "
-            f"replica{'s' if spec.database_read_replicas > 1 else ''} to fit the budget",
-            replace(spec, database_read_replicas=0),
-        ))
-    if spec.cache_vcpu:
-        steps.append((
-            "dropped the cache to fit the budget",
-            replace(spec, cache_vcpu=None, cache_memory_gb=None),
-        ))
-    if spec.compute_count > 1:
-        steps.append((
-            "reduced the application tier to a single instance to fit the budget",
-            replace(spec, compute_count=1),
-        ))
-    if spec.database_multi_az:
-        steps.append((
-            "dropped the standby database -- a zone failure now takes the "
-            "system down -- to fit the budget",
-            replace(spec, database_multi_az=False),
-        ))
+    # Over budget. WHAT GETS GIVEN UP, AND IN WHAT ORDER, IS THE WHOLE
+    # QUESTION.
+    #
+    # This ladder used to run in reliability order -- replicas, cache,
+    # compute, then the standby database -- which is exactly backwards. On a
+    # retail billing workload whose owner wrote "it must not go down", a $500
+    # budget against a $1,434 design stripped the standby database, cut the
+    # application tier to one instance, and STILL did not fit, because the
+    # thing actually blowing the budget was a $632 analytics warehouse the
+    # ladder never touched. It sacrificed the one requirement stated as
+    # mandatory in order to protect an optional reporting cluster.
+    #
+    # So optional CAPABILITY goes first -- an analytics warehouse, a search
+    # cluster, an event stream are all things a workload can do without and
+    # still take payments -- and availability goes last, or not at all. On a
+    # CRITICAL workload the standby database and a second instance are
+    # off-limits at any price: if the design cannot fit the budget without
+    # them, the honest output is that the budget does not fit the
+    # requirement, not a cheaper thing that fails the requirement silently.
+    criticality = business_criticality(requirement)
+    protect_availability = criticality == "CRITICAL"
 
-    for why, candidate in steps:
-        spec = candidate
-        given_up.append(why)
+    # THE STEPS COMPOUND. Each one is applied to the running spec, not to the
+    # original -- built the other way round, taking step two silently restored
+    # whatever step one removed, so the ladder reported dropping a warehouse
+    # AND replicas AND a cache while pricing an architecture that still had
+    # all three. The tradeoffs described a design that was thrown away.
+    given_up: list[str] = []
+    ladder: list[tuple[str, object, object]] = [
+        (
+            "dropped the analytics warehouse -- reporting now runs against "
+            "the database rather than its own cluster",
+            lambda sp: sp.warehouse_node_count > 0,
+            lambda sp: replace(sp, warehouse_node_count=0),
+        ),
+        (
+            "dropped the read replicas",
+            lambda sp: sp.database_read_replicas > 0,
+            lambda sp: replace(sp, database_read_replicas=0),
+        ),
+        (
+            "dropped the cache -- reads now go to the primary",
+            lambda sp: bool(sp.cache_vcpu),
+            lambda sp: replace(sp, cache_vcpu=None, cache_memory_gb=None),
+        ),
+        (
+            "reduced the application tier to two instances",
+            lambda sp: sp.compute_count > 2,
+            lambda sp: replace(sp, compute_count=2),
+        ),
+        # Below this line the design stops meeting a stated availability
+        # requirement, so these are only ever offered when none was made.
+        (
+            "reduced the application tier to a single instance -- a restart "
+            "is now downtime",
+            lambda sp: sp.compute_count > 1 and not protect_availability,
+            lambda sp: replace(sp, compute_count=1),
+        ),
+        (
+            "dropped the standby database -- a zone failure now takes the "
+            "system down",
+            lambda sp: sp.database_multi_az and not protect_availability,
+            lambda sp: replace(sp, database_multi_az=False),
+        ),
+    ]
+
+    for why, applies, apply in ladder:
+        if not applies(spec):  # type: ignore[operator]
+            continue
+        spec = apply(spec)  # type: ignore[operator]
+        given_up.append(f"{why} to fit the budget")
         if estimate(spec, provider, dsn=dsn).total_monthly <= ceiling:
             return spec, False, tuple(given_up)
 
-    # Nothing left to give up and it still does not fit. Say so plainly: this
-    # requirement cannot be met at this budget, which is a real answer.
-    given_up.append(
-        "still over budget with nothing further to give up -- this "
-        "requirement cannot be met at this budget"
-    )
+    # Only claim to have KEPT what this shape actually has. The Cheapest
+    # variant is built without a standby and without a second instance by
+    # definition, so this message went out attached to an option that had
+    # neither -- telling a reader their single-instance, single-zone design
+    # had been protected. The ladder was right; the sentence was a lie.
+    kept = []
+    if spec.database_multi_az:
+        kept.append("the standby database")
+    if spec.compute_count > 1:
+        kept.append("a second instance")
+    if protect_availability and kept:
+        given_up.append(
+            f"kept {' and '.join(kept)}: this workload was described as one "
+            "that cannot go down, and that is what keeps it up. The budget "
+            "does not stretch to a design that meets that requirement -- "
+            "which is a fact about the budget, not a reason to quietly ship "
+            "a single point of failure"
+        )
+    elif protect_availability:
+        given_up.append(
+            "this workload was described as one that cannot go down, and "
+            "this shape does not deliver that at any budget -- see what it "
+            "does not meet, above"
+        )
+    else:
+        given_up.append(
+            "still over budget with nothing further to give up -- this "
+            "requirement cannot be met at this budget"
+        )
     return spec, False, tuple(given_up)
 
 
@@ -1842,9 +2077,16 @@ def _has_application_tier(requirement: Requirement) -> bool:
     # Deliberately NOT needs_analytics: an IoT telemetry pipeline wants
     # analytics because analysing the telemetry is the whole job, so it says
     # nothing about whether an application tier exists.
+    #
+    # And deliberately NOT needs_queue, for exactly the same reason. A queue
+    # is the DEFINING component of an event pipeline -- buffering bursty
+    # arrivals so the processor is not sized for the peak IS the job -- so
+    # reading one as evidence of a full application inverted the test. A
+    # document pipeline that asked for a queue was handed a load-balanced
+    # fleet of always-on servers BECAUSE it asked for the one component that
+    # says it does not need them.
     return bool(
         requirement.needs_search
-        or requirement.needs_queue
         or requirement.needs_notifications
         or requirement.needs_email
         or requirement.high_availability
@@ -1909,8 +2151,11 @@ def recommend(
     ai = getattr(requirement, "ai", False) and (
         requirement.ai_vision or requirement.ai_language
     )
-    event_driven = getattr(requirement, "event_driven", False)
-    serverless = getattr(requirement, "serverless", False)
+    # Read the DERIVED property, not the raw flag: the axes carry this too,
+    # and a shape chosen from one field while five others describe a
+    # different architecture is the template problem in miniature.
+    event_driven = requirement.is_event_driven
+    serverless = requirement.is_serverless
     # A batch/ETL run is its own shape too: an object lake, reclaimable
     # workers and a query engine, with no edge, LB, cache or relational OLTP.
     # Lower priority than event_driven (a streaming pipeline that also happens
@@ -2124,9 +2369,17 @@ def recommend(
                 tradeoffs=tuple(tradeoffs) + budget_given_up,
                 spec_budget=requirement.budget_monthly_usd,
                 steady_monthly=steady_monthly,
-                budget_saturated=budget_saturated,
+                # "A higher budget won't add useful capacity" is only true of
+                # a shape that already delivers what was asked for. On one
+                # that does not, a higher budget buys exactly the thing it is
+                # missing -- so claiming saturation there told a reader with
+                # a single point of failure that spending more would not help.
+                budget_saturated=budget_saturated
+                and not unmet_requirements(current if applied else spec, requirement),
                 ondemand_monthly=ondemand_monthly,
                 commitment_covers=commitment_covers,
+                criticality=business_criticality(requirement),
+                unmet=unmet_requirements(current if applied else spec, requirement),
             )
         )
 

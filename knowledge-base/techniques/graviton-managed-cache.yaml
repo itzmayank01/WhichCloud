@@ -1,0 +1,49 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: graviton-managed-cache
+name: ARM-based managed cache nodes
+category: memory
+summary: >
+  ElastiCache and its equivalents publish lower rates for Graviton node
+  families than for the x86 ones at the same size, and a cache is a
+  workload with no binary compatibility question at all.
+
+applies_when:
+  workload_type: [web, api, mixed, ml]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 40
+  requires:
+    - A managed cache node (this does not apply to self-run Redis on an
+      instance, which graviton-arm-compute already covers)
+
+savings:
+  typical_pct: 10
+  confidence: high
+  basis: >
+    Priced from the 160 cache rows in the ap-south-1 catalog by comparing
+    the cheapest ARM and x86 nodes meeting the same memory floor. The
+    engine prices both rather than asserting the figure.
+
+    Unusually safe among ARM techniques: the cache runs the provider's
+    own build of Redis or Memcached, so there is no image to rebuild and
+    no dependency that might be x86-only. The usual ARM trade-off simply
+    does not arise.
+
+tradeoffs:
+  - Node family availability varies by region; some smaller ARM sizes are
+    not offered everywhere.
+  - Changing node family is a replacement, so it needs a maintenance
+    window or a warm secondary.
+
+implemented_by:
+  - name: ElastiCache on Graviton
+    url: https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/CacheNodes.SupportedTypes.html
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: low

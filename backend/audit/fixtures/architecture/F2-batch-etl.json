@@ -1,0 +1,43 @@
+{
+  "requirement": "Nightly ETL over 2 TB of sales data. No user-facing component. Results land in a warehouse for analysts.",
+  "class": "scheduled batch ETL, no request-serving surface",
+  "expected": {
+    "aws": {
+      "roles": [
+        "object-store",
+        "etl",
+        "warehouse",
+        "container-compute"
+      ],
+      "source": "https://docs.aws.amazon.com/whitepapers/latest/big-data-analytics-options/welcome.html",
+      "verified": "url",
+      "note": "S3 as the landing zone, Glue for ETL, Redshift as the warehouse. Athena over S3 is the lakehouse alternative to Redshift and serves the same analyst role."
+    },
+    "gcp": {
+      "roles": [
+        "object-store",
+        "etl",
+        "warehouse"
+      ],
+      "source": "https://docs.cloud.google.com/architecture/application-development/three-tier-web-app",
+      "verified": "url",
+      "note": "Cloud Storage -> Dataflow/Dataproc -> BigQuery is the documented GCP ETL shape. BigQuery is both warehouse and query engine."
+    },
+    "azure": {
+      "roles": [
+        "object-store",
+        "etl",
+        "warehouse"
+      ],
+      "source": "https://learn.microsoft.com/en-us/azure/architecture/example-scenario/data/small-medium-data-warehouse",
+      "verified": "url",
+      "note": "Data Lake Storage -> Data Factory -> Synapse/SQL warehouse."
+    }
+  },
+  "forbidden": {
+    "edge-cache": "no user-facing component",
+    "ingress-lb": "nothing serves requests",
+    "waf": "no public surface",
+    "app-compute": "no always-on request tier; batch runs on a schedule"
+  }
+}

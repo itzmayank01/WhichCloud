@@ -59,6 +59,11 @@ export type LineItem = {
    *  find its node without a second mapping to keep in step. */
   group: string;
   group_label: string;
+  /** Approximations behind THIS figure — a derived rate, a single-sourced
+   *  one, a spot price good for ranking but not for billing. Rendered on
+   *  the line, because an approximation disclosed in a README is not
+   *  disclosed: the reader of a bill sees a line and a number. */
+  caveats?: string[];
 };
 
 export type Technique = {
@@ -90,9 +95,37 @@ export type Node = {
   detail: string;
   priced: boolean;
   optimized_by: string[];
+  /** WHY this node is in the architecture, traced to what the description
+   *  said. A role that cannot say why it is here is indistinguishable from a
+   *  default that leaked in. Empty only on baseline roles. */
+  because?: string;
+  /** Present by policy on every design -- identity, keys, observability,
+   *  audit -- rather than derived from this workload. */
+  baseline?: boolean;
+  /** THE field that decides how this is drawn.
+   *
+   *  `data`    a request flows through it — directed arrows, animatable
+   *  `control` bound to ONE data-plane node (the key that encrypts that
+   *            database) — an attachment line, not an arrow
+   *  `account` watches the whole account and belongs to no node —
+   *            a labelled band with no edges at all
+   *
+   *  Drawing all three the same way is what produced a row of
+   *  unconnected boxes at the bottom of every diagram: eleven of
+   *  nineteen nodes on a hospital tier-2 had no edge, because three
+   *  different kinds of thing were being drawn as one kind. */
+  plane?: "data" | "control" | "account";
 };
 
-export type Edge = { source: string; target: string; label: string };
+export type Edge = {
+  source: string;
+  target: string;
+  label: string;
+  /** `flow` for a request travelling through, `attaches` for a binding.
+   *  The request-path animation follows `flow` only — a request does not
+   *  travel through a key. */
+  kind?: "flow" | "attaches";
+};
 
 export type Topology = { nodes: Node[]; edges: Edge[] };
 
@@ -132,6 +165,14 @@ export type Option = {
   applied: Technique[];
   advisory: Technique[];
   tradeoffs: string[];
+  /** Does this shape meet what the requirement ASKED for? A tradeoff is a
+   *  consequence to weigh; an unmet requirement is a promise broken. Without
+   *  this the cheapest option renders as a peer of the other two, when on an
+   *  availability-critical workload it is the one that fails the brief. */
+  compliant: boolean;
+  /** The specific promises this shape breaks, in the requirement's own terms.
+   *  Empty when `compliant`. */
+  unmet: string[];
   topology: { nodes: Node[]; edges: Edge[] };
   /** The option as a laid-out, priced AWS architecture. Null on other clouds
       until a service-equivalence table exists. */
@@ -168,6 +209,14 @@ export type Recommendation = {
    *  AWS -- so the answer says which cloud it describes rather than leaving
    *  the interface to assume. */
   provider: CloudId;
+  /** LOW | MEDIUM | HIGH | CRITICAL, derived from what the description says.
+   *  It is the reason an option is marked non-compliant, and a warning
+   *  without its reason is noise. */
+  criticality: string;
+  /** Label of the cheapest option that actually meets the brief. Equal to the
+   *  cheapest option's label when that one is compliant; dearer when it is
+   *  not. Null when nothing on offer meets it. */
+  cheapest_compliant: string | null;
 };
 
 /** The three clouds the catalog prices. */
@@ -297,6 +346,25 @@ export type ArchComponent = {
   x: number; y: number; w: number; h: number;
 };
 
+/** Why there is nothing to draw.
+ *
+ *  `/architecture` transcribes an architecture somebody named; it does not
+ *  design one. A description naming no services can only be drawn by a
+ *  model choosing them, which is a runtime service selection — unpriced,
+ *  unvalidated, different on every call — so the endpoint returns an empty
+ *  canvas carrying these fields instead. Present only in that case. */
+export type DesignedRefusal = {
+  designed: true;
+  archetype: string;
+  archetype_state: string;
+  withheld_reason: string;
+  evidence: string;
+  recognised_as: string;
+  archetype_requirements: string;
+  pricing_questions: string[];
+  next_step: string;
+};
+
 export type ArchitectureView = {
   canvas: { width: number; height: number };
   regions: number;
@@ -310,6 +378,56 @@ export type ArchitectureView = {
   groups: ArchGroup[];
   nodes: ArchNode[];
   edges: ArchEdge[];
+  /** Set only when the endpoint refused to invent a diagram. When present,
+   *  every list above is empty and the canvas is 0x0 — render the refusal,
+   *  not an empty drawing. */
+  designed?: boolean;
+} & Partial<DesignedRefusal>;
+
+
+/** P3 AUDIT — a billing export reviewed against the knowledge base.
+ *
+ *  It does not tell you what you spent; your bill already did. Each
+ *  finding names the technique, what it would save, the trade-off it
+ *  carries, and what a billing export CANNOT confirm about it. */
+export type AuditFinding = {
+  service: string;
+  monthly_usd: number;
+  technique_id: string;
+  technique: string;
+  category: string;
+  summary: string;
+  saved_monthly_usd: number;
+  basis: string;
+  /** ESTIMATED from a cited figure, not measured against a catalog swap.
+   *  A billing export gives a service and a total, not the instance
+   *  family the catalog would need to price the swap exactly. */
+  measured: boolean;
+  obviousness: string;
+  tradeoffs: string[];
+  tool: string;
+  tool_url: string;
+  /** Conditions the technique needs that a bill cannot show — whether the
+   *  workload tolerates interruption, whether downtime matters. Naming
+   *  them is the difference between a finding and a guess. */
+  needs_confirmation: string[];
+};
+
+export type AuditReport = {
+  currency: string;
+  total_monthly_usd: number;
+  lines_read: number;
+  /** The BEST technique per service, summed across services — never the
+   *  sum of every finding. Techniques against one service are
+   *  alternatives, not a shopping list. */
+  total_saving_usd: number;
+  saving_pct: number;
+  saving_basis: string;
+  findings: AuditFinding[];
+  /** Services reviewed with nothing found. "We looked and found nothing"
+   *  and "we did not look" are different claims. */
+  reviewed_no_finding: { service: string; monthly_usd: number; why: string }[];
+  warnings: string[];
 };
 
 export type SavedArchitecture = {
@@ -342,10 +460,19 @@ export type PlanComponent = {
   sku: string;
   unit: string;
   monthly_usd: number;
+  /** See LineItem.caveats — the same disclosure, on the plan path. */
+  caveats?: string[];
 };
 
 export type PlanTier = {
   name: string;
+  /** THIS TIER'S OWN GRAPH, not one shared across three.
+   *
+   *  Two tiers drawing identically is the tier-spread bug surfacing
+   *  visually, and it should be visible rather than hidden by sharing a
+   *  picture. The plan path had no diagram at all before, so the six
+   *  archetypes were priced, explained and invisible. */
+  topology?: { nodes: Node[]; edges: Edge[] };
   label: string;
   philosophy: string;
   monthly_total: number;
@@ -399,6 +526,10 @@ export type Plan = {
   /** priced | recognised_unpriced | unknown */
   archetype_state: string;
   archetype_requirements: string;
+  /** The sizing figures this shape would need before it could be priced.
+   *  Populated only when pricing was withheld for a shape we recognised —
+   *  a refusal that names a shape and stops there is a dead end. */
+  pricing_questions: string[];
   coverage_summary: { shapes_recognised: number; shapes_priced: number };
   /** False means pricing was withheld by decision — `tiers` is empty on
    *  purpose, not because the request failed. */
@@ -503,6 +634,20 @@ export const api = {
     });
     if (!response.ok) throw new Error(`export failed: ${response.status}`);
     return response.blob();
+  },
+
+  /** Upload a billing export for review. multipart, not JSON — a CUR is
+   *  a file, and base64-ing megabytes through a JSON body to avoid one
+   *  content type is not a simplification. */
+  audit: async (file: File): Promise<AuditReport> => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${BASE}/audit`, { method: "POST", body: form });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new ApiError(detail.detail ?? "Could not read that file", response.status);
+    }
+    return response.json();
   },
 
   saveArchitecture: (body: Record<string, unknown>) =>

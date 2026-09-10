@@ -1,0 +1,49 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: rightsize-from-measured-load
+name: Size the fleet from the rate, not from a round number
+category: compute
+summary: >
+  Instance counts chosen by habit -- three, or four, or "one per
+  environment" -- are usually above what the stated rate needs. Sizing
+  from the rate removes the difference.
+
+applies_when:
+  workload_type: [web, api, batch, ml, mixed]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 50
+  requires:
+    - A known or estimable request rate
+    - Horizontal scaling, so the count is actually adjustable
+
+savings:
+  typical_pct: 30
+  confidence: medium
+  basis: >
+    Priced by the engine as the difference between a count derived from
+    the stated peak rate and a conventional fixed count. MEDIUM
+    confidence because the baseline it is measured against is a habit
+    rather than a published figure -- the saving is real, but "what you
+    would otherwise have picked" is not something a catalog can confirm.
+
+    Distinct from over-provisioning a TIER: this engine sizes every tier
+    for the same stated peak, because capacity is not an architecture.
+
+tradeoffs:
+  - Sizing to the stated peak leaves no headroom for a peak that was
+    understated, and traffic figures given from memory usually are.
+  - An availability floor of two instances applies regardless, so this
+    cannot take a highly available workload below that.
+
+implemented_by:
+  - name: AWS Compute Optimizer
+    url: https://docs.aws.amazon.com/compute-optimizer/latest/ug/
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: high

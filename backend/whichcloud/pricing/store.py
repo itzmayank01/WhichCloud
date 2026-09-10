@@ -16,6 +16,7 @@ from decimal import Decimal
 import psycopg
 from psycopg.rows import dict_row
 
+from . import cache
 from .models import ComputeQuery, PricePoint, PriceTier
 
 DSN = os.getenv(
@@ -217,7 +218,24 @@ def cheapest_compute(
 def get_price(
     provider: str, region: str, category: str, sku: str, dsn: str | None = None
 ) -> PricePoint | None:
-    """Exact lookup for a known SKU."""
+    """Exact lookup for a known SKU.
+
+    Read-through cached. The cache is not a second source of truth --
+    every value in it came from this query, and a cold cache produces a
+    byte-identical answer to a warm one, which
+    tests/test_price_cache.py asserts rather than assumes.
+
+    A MISS AND AN ABSENT SKU ARE DIFFERENT THINGS. "Not in the cache" and
+    "no such price" both look like None, so the negative is cached as a
+    sentinel: without that, every lookup for a SKU the catalog genuinely
+    lacks would hit Postgres forever, which is exactly the path a
+    partially-ingested region takes most often.
+    """
+    cache_key = cache.key("get", provider, region, category, sku)
+    hit = cache.get(cache_key)
+    if hit is not None:
+        return None if hit == _CACHED_ABSENT else _from_cached(hit)
+
     with connect(dsn) as conn, conn.cursor() as cur:
         cur.execute(
             """SELECT * FROM price_points
@@ -226,7 +244,50 @@ def get_price(
             (provider, region, category, sku),
         )
         row = cur.fetchone()
-    return _to_point(row) if row else None
+
+    point = _to_point(row) if row else None
+    cache.put(cache_key, _to_cached(point) if point else _CACHED_ABSENT)
+    return point
+
+
+#: Distinguishes "we looked and there is no such price" from "we have not
+#: looked". Both are None to the caller; only one should stop us asking
+#: Postgres again.
+_CACHED_ABSENT = {"__absent__": True}
+
+
+def _to_cached(point: PricePoint) -> dict:
+    """A PricePoint as JSON. Every field, so a cached read reconstructs
+    the same object -- a cache that drops `attributes` would silently
+    drop the provenance caveats that ride on it."""
+    return {
+        "provider": point.provider, "category": point.category,
+        "sku": point.sku, "name": point.name, "region": point.region,
+        "unit": point.unit, "price_usd": str(point.price_usd),
+        "vcpu": point.vcpu, "memory_gb": point.memory_gb,
+        "arch": point.arch, "attributes": dict(point.attributes or {}),
+        "tiers": [t.as_dict() for t in (point.tiers or ())],
+    }
+
+
+def _from_cached(data: dict) -> PricePoint:
+    from decimal import Decimal as _D
+
+    return PricePoint(
+        provider=data["provider"], category=data["category"],
+        sku=data["sku"], name=data["name"], region=data["region"],
+        unit=data["unit"], price_usd=_D(data["price_usd"]),
+        vcpu=data.get("vcpu"), memory_gb=data.get("memory_gb"),
+        arch=data.get("arch"), attributes=data.get("attributes") or {},
+        tiers=tuple(
+            PriceTier(
+                begin=_D(t["begin"]),
+                end=(_D(t["end"]) if t.get("end") is not None else None),
+                price_usd=_D(t["price_usd"]),
+            )
+            for t in data.get("tiers") or ()
+        ),
+    )
 
 
 def cheapest_database(

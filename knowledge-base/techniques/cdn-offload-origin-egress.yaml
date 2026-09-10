@@ -1,0 +1,52 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: cdn-offload-origin-egress
+name: Serve repeat bytes from the edge, not the origin
+category: network
+summary: >
+  Origin egress is billed per GB at full rate. A CDN in front of it serves
+  cache hits at a lower rate and stops the origin paying for the same
+  object twice.
+
+applies_when:
+  workload_type: [web, api, mixed, storage]
+  traffic_pattern: [steady, spiky]
+  min_monthly_spend_usd: 30
+  requires:
+    - Content that is the same for more than one viewer
+    - Public-facing traffic (an internal API has no edge to cache at)
+
+savings:
+  typical_pct: 35
+  confidence: medium
+  basis: >
+    Origin egress in ap-south-1 is $0.1093/GB. CloudFront's India rate is
+    lower per GB AND the origin only serves cache misses -- the engine
+    models a 15% origin fill share for static content, which is the
+    conservative end of published cache-hit ratios.
+
+    Confidence is MEDIUM, not high, because the saving depends entirely
+    on cacheability. Per-user API responses cache at close to 0% and the
+    CDN then adds cost rather than removing it, which is why the engine
+    gates this on `static_assets` and public exposure rather than
+    applying it everywhere.
+
+tradeoffs:
+  - Personalised or per-user responses cache poorly; a CDN in front of
+    them is pure added cost.
+  - Invalidations cost money and take minutes, so deploys need a
+    cache-busting strategy rather than a purge habit.
+  - Another hop to debug when something is stale.
+
+implemented_by:
+  - name: Amazon CloudFront
+    url: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: high

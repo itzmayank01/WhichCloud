@@ -27,6 +27,20 @@ Sector = Literal[
 PeakShape = Literal["flat", "morning", "evening", "spiky"]
 StaticAssets = Literal["none", "light", "heavy"]
 
+#: What operating systems the machines being moved run. `mixed` is a real
+#: and common answer, not a failure to decide -- "a mix of Windows and
+#: Linux" is the single most common thing an estate actually is.
+SourceOS = Literal["linux", "windows", "mixed", "unknown"]
+
+#: Whether the workload may be moved to ARM.
+#:
+#: Three values, not a boolean, because "we know it must be x86" and "we
+#: have not been told" are different claims and only one of them may be
+#: acted on. The old code had a boolean defaulting to False, which meant
+#: silence read as "ARM is fine" -- and a legacy Windows estate was
+#: recommended Graviton on the strength of nobody having said otherwise.
+CPUArchitecture = Literal["x86_required", "arm_ok", "unknown"]
+
 #: Fields the planner cannot run without. `assumed` is this set minus
 #: whatever extraction actually found -- never a hand-maintained list.
 REQUIRED = (
@@ -64,11 +78,25 @@ QUESTIONS: dict[str, str] = {
 # not a stemmed token, because the cost of a false positive here is a
 # constraint invented from nothing.
 
+#: WHEN THE LOAD ARRIVES IS NOT AN UPTIME REQUIREMENT.
+#:
+#: "business hours", "working hours", "opd hours" and "trading hours"
+#: were in this table and are now gone. PROBE-4 -- "about 50 predictions
+#: a second during business hours, almost none at night" -- was read as
+#: availability=high on the strength of that phrase alone. It is a
+#: statement about TRAFFIC TIMING, and reading it as an uptime promise
+#: forced Multi-AZ, a load balancer and a second instance onto a workload
+#: whose own next clause says it is idle at night. The extraction schema
+#: has said "'busiest during business hours' is traffic timing, NOT an
+#: uptime need" since it was written; the phrase table simply disagreed
+#: with it, and the phrase table was wrong.
+#:
+#: "downtime during <period>" stays: that phrasing names a consequence,
+#: not a clock.
 _AVAILABILITY_HIGH = (
     "downtime is unacceptable", "downtime during", "cannot go down",
     "can't go down", "must not go down", "no downtime", "24x7", "24/7",
-    "always available", "critical", "business hours", "opd hours",
-    "working hours", "trading hours", "must stay up", "high availability",
+    "always available", "critical", "must stay up", "high availability",
     "cannot have downtime", "can't have downtime", "must not have downtime",
 )
 
@@ -221,10 +249,88 @@ class Constraints:
     content_storage_gb: float = 0.0
     user_data_gb: float = 0.0
 
+    # ── the source estate, for a migration ───────────────────────────
+    # A lift-and-shift is sized from an inventory of what already runs,
+    # not from a traffic estimate. None of these existed, so "40 virtual
+    # machines" had nowhere to go and was discarded on the way in -- the
+    # one figure that should have set the entire plan.
+
+    #: How many machines are being moved. 0 means unstated; for the
+    #: migration archetype that is a hard failure, not a small estate.
+    source_vm_count: int = 0
+    source_os: SourceOS = "unknown"
+    #: Totals ACROSS the estate, not per machine. A per-machine average
+    #: is derivable from these and the count; the reverse is not, because
+    #: an estate is rarely uniform.
+    source_vcpu_total: int = 0
+    source_ram_gb_total: float = 0.0
+    source_disk_gb_total: float = 0.0
+
+    #: Whether ARM is permissible. Never inferred as arm_ok -- see
+    #: CPUArchitecture. `forced_x86_reason` records what ruled ARM out, so
+    #: the constraint can be argued with rather than merely obeyed.
+    cpu_architecture: CPUArchitecture = "unknown"
+    forced_x86_reason: str = ""
+
+    # ── shape-specific sizing drivers ────────────────────────────────
+    # Each of these sizes ONE archetype and is meaningless for the rest.
+    # They exist because sizing every shape by requests-per-day is what
+    # costed a 40-machine estate as one small instance: a model endpoint
+    # is sized by predictions and model size, a chat backend by sockets
+    # held open, and neither figure has anywhere else to live.
+
+    #: GB of model artefact. Decides whether an endpoint needs an
+    #: accelerator's memory or fits on CPU, and how long a cold start is.
+    model_size_gb: float = 0.0
+    #: Sockets open AT THE SAME TIME at peak. The figure a realtime
+    #: workload is actually billed on -- connection-minutes are this
+    #: times how long they are held, and no per-request meter can
+    #: express it.
+    peak_concurrent_connections: int = 0
+    #: Whether message or event history has to be searchable. A STATED
+    #: requirement when present: "history must be searchable" names a
+    #: search index, and a design without one does not meet the brief.
+    searchable_history: bool = False
+
+    #: Whether the work can be safely restarted if it is interrupted.
+    #:
+    #: The gate on Spot. Only a STATED tolerance earns it: spot capacity
+    #: is reclaimed with two minutes' notice, so assuming a job is
+    #: restartable because it looks like one is how a nightly load that
+    #: cannot be re-run gets recommended interruptible capacity. "If a
+    #: night's run fails we can rerun it in the morning" is the statement
+    #: this field exists to capture.
+    interruptible: bool = False
+
+    #: Hours per day the workload actually runs or serves. 24 means
+    #: continuous. Distinct from peak_shape, which says WHEN the busy
+    #: period is; this says how LONG the thing is switched on at all, and
+    #: it is what stops a nightly two-hour job being billed 730 hours.
+    active_hours_per_day: float = 24.0
+
+    #: The phrase `requests_per_day` was normalised FROM, with its unit.
+    #: A normalised figure is arithmetic on someone's words, and a reader
+    #: who cannot see the words cannot check the arithmetic: "1,728,000 a
+    #: day" is unfalsifiable on its own, while "20 predictions a second
+    #: during business hours" can be argued with.
+    requests_basis: str = ""
+
+    #: Quantities the text STATED that extraction could not turn into a
+    #: number. Non-empty withholds pricing: a plan built on a figure that
+    #: was silently dropped is sized for a workload nobody described, and
+    #: a zero that should have been forty is not a small error.
+    unparsed_quantities: list[dict] = field(default_factory=list)
+
     #: Which fields the TEXT supported. Everything in REQUIRED and not in
     #: here is assumed, computed after the fact rather than declared.
     stated: set[str] = field(default_factory=set)
     evidence: dict[str, str] = field(default_factory=dict)
+
+    def requires_x86(self) -> bool:
+        """Whether ARM is ruled out. Only an explicit x86_required does
+        it -- `unknown` is not permission, but it is also not a bar, and
+        the caller decides which side of that to err on per archetype."""
+        return self.cpu_architecture == "x86_required"
 
     def source(self, name: str) -> Source:
         return "stated" if name in self.stated else "assumed"

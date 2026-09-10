@@ -1,0 +1,55 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: duty-cycle-scheduled-compute
+name: Bill scheduled compute for the hours it runs
+category: compute
+summary: >
+  A job that runs two hours a night occupies 60 hours a month, not 730.
+  Leaving the instance up between runs pays for 670 idle hours.
+
+applies_when:
+  workload_type: [batch, ml, mixed]
+  traffic_pattern: [steady]
+  min_monthly_spend_usd: 20
+  requires:
+    - Work that genuinely stops between runs
+    - A schedule, so capacity can be started and stopped around it
+
+savings:
+  typical_pct: 91
+  confidence: high
+  basis: >
+    MEASURED arithmetic on the compute line, not an estimate: 2 hours x
+    30 runs = 60 hours against 730 in a month, so 91.8% of the compute
+    line is idle time. On PROBE-2's nightly ETL the engine previously
+    billed the full 730 hours -- roughly 12x the real figure -- because
+    `compute_duty_cycle` existed on the spec and nothing ever set it.
+
+    Applies ONLY to archetypes whose compute genuinely stops. A web
+    application busy during business hours still needs its servers up at
+    3am to answer the one request that arrives; billing it nine hours
+    would be an under-bill, which is no more honest than an over-bill.
+
+tradeoffs:
+  - >-
+    Cold start on every run: image pull, dependency load, warm-up. A job
+    shorter than its own start-up time saves nothing.
+  - Something has to do the starting and stopping, and that scheduler is
+    a component that can fail silently.
+  - Debugging is harder when the host does not exist between runs.
+
+implemented_by:
+  - name: EventBridge Scheduler
+    url: https://docs.aws.amazon.com/scheduler/latest/UserGuide/
+    type: managed-service
+  - name: AWS Batch managed compute environments
+    url: https://docs.aws.amazon.com/batch/latest/userguide/
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: low

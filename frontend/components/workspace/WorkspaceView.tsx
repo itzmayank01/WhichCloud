@@ -52,16 +52,28 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
     };
   }
 
-  const affordable = usable.filter((o) => o.within_budget !== false);
+  // A recommendation that does not meet the brief is not a recommendation.
+  // The cheapest way to serve traffic is always one machine and one database,
+  // so on a workload whose owner wrote that it cannot go down, the cheapest
+  // option is both the lowest number here AND the one that fails the
+  // requirement. Without this filter it could be put forward as the pick,
+  // with "it fits the budget with room to spare" written underneath.
+  const meets = usable.filter((o) => o.compliant);
+  const candidates = meets.length ? meets : usable;
+
+  const affordable = candidates.filter((o) => o.within_budget !== false);
   if (affordable.length === 0) {
-    const cheapest = usable.reduce((a, b) =>
+    const cheapest = candidates.reduce((a, b) =>
       a.monthly_usd <= b.monthly_usd ? a : b,
     );
     return {
       pick: cheapest,
-      because:
-        "Nothing here fits the budget given. This is the least expensive " +
-        "option that still runs the workload.",
+      because: meets.length
+        ? "Nothing here fits the budget given. This is the least expensive " +
+          "option that still meets what you asked for."
+        : "Nothing here both fits the budget and meets what you asked for. " +
+          "This is the least expensive option that runs the workload — see " +
+          "what it does not meet, below.",
     };
   }
 
@@ -80,9 +92,11 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
 function DownloadTerraformButton({
   description,
   option,
+  cloud,
 }: {
   description: string;
   option: string;
+  cloud: CloudId;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -91,7 +105,11 @@ function DownloadTerraformButton({
     setBusy(true);
     setError("");
     try {
-      const blob = await api.describeExportTf({ description, option });
+      // The provider travels with the request. Without it the route fell
+      // back to the description's stated preference -- almost always unset --
+      // and handed out AWS resources to someone looking at a Google Cloud or
+      // Azure architecture.
+      const blob = await api.describeExportTf({ description, option, provider: cloud });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -107,17 +125,25 @@ function DownloadTerraformButton({
 
   return (
     <>
+      {/* Disabled off AWS rather than left to fail on click. The export
+          generates AWS resources only, and a button that looks available and
+          then errors is a worse answer than one that says up front what it
+          can do. */}
       <button
         type="button"
         onClick={download}
-        disabled={busy}
-        title="Download this architecture as a Terraform project"
+        disabled={busy || cloud !== "aws"}
+        title={
+          cloud === "aws"
+            ? "Download this architecture as a Terraform project"
+            : `Terraform export generates AWS resources only — this architecture is priced on ${cloud.toUpperCase()}`
+        }
         className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-sunk disabled:opacity-60"
       >
         <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
         </svg>
-        {busy ? "Generating…" : "Terraform"}
+        {busy ? "Generating…" : cloud === "aws" ? "Terraform" : "Terraform (AWS only)"}
       </button>
       {error && <span className="text-[12px] text-spend">{error}</span>}
     </>
@@ -206,7 +232,11 @@ export function WorkspaceView({ name }: { name: string | null }) {
         Replay
       </button>
       <span className="h-4 w-px bg-line" aria-hidden />
-      <DownloadTerraformButton description={asked} option={shown.label} />
+      <DownloadTerraformButton
+        description={asked}
+        option={shown.label}
+        cloud={cloud ?? "aws"}
+      />
       <span className="h-4 w-px bg-line" aria-hidden />
       <span className="px-1 font-mono text-[11.5px] text-ink-3">
         {shown.topology.nodes.length} services · {shown.region}
@@ -278,6 +308,20 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       pick
                     </span>
                   )}
+                  {/* An option that does not meet the brief must not read as a
+                      peer of the ones that do. The cheapest architecture is
+                      always one machine and one database, so on a workload
+                      whose owner wrote "it must not go down" this tab was the
+                      cheapest number on screen with nothing to say it fails
+                      the requirement. */}
+                  {!option.compliant && (
+                    <span
+                      className="rounded-full bg-caution px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-white"
+                      title={option.unmet.join("\n\n")}
+                    >
+                      ⚠ unmet
+                    </span>
+                  )}
                   {!option.complete && (
                     <span
                       className="h-1.5 w-1.5 rounded-full bg-caution"
@@ -307,7 +351,15 @@ export function WorkspaceView({ name }: { name: string | null }) {
           error={error}
           result={result}
           option={shown}
-          because={advice?.because ?? null}
+          // Only under the option it is ABOUT. This sentence explains why
+          // the pick was put forward; shown under every tier it read as a
+          // verdict on whichever one was selected, so the cheapest option
+          // carried "it fits the budget with room to spare" directly above
+          // the notice saying it fails the requirement.
+          because={
+            advice && shown?.label === advice.pick.label ? advice.because : null
+          }
+          onSelectOption={setSelected}
         />
 
         {/* canvas — the stage.

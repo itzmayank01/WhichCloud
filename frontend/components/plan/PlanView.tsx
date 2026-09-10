@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { TierDiagram } from "@/components/plan/TierDiagram";
 import type { Plan, PlanTier } from "@/lib/api";
 import { api, money } from "@/lib/api";
 
@@ -144,6 +145,24 @@ function WithheldView({ plan }: { plan: Plan }) {
           <p className="mt-2 text-sm leading-relaxed text-neutral-700">
             {plan.archetype_requirements}
           </p>
+        </section>
+      )}
+
+      {/* The way forward. A recognised shape whose requirements we can
+          describe is one we could price given its sizing driver, so the
+          refusal ends with the specific figures rather than with "no". */}
+      {recognised && plan.pricing_questions?.length > 0 && (
+        <section className="rounded-xl border border-sky-300 bg-sky-50 p-4">
+          <h3 className="text-sm font-semibold text-sky-950">
+            What we would need to price it
+          </h3>
+          <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5">
+            {plan.pricing_questions.map((q) => (
+              <li key={q} className="text-sm leading-relaxed text-sky-900">
+                {q}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
@@ -366,6 +385,19 @@ export function PlanView({
       </section>
 
       {/* ── the selected tier's bill ── */}
+      {tier.topology && tier.topology.nodes.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            {tier.label} — architecture
+          </h3>
+          <TierDiagram
+            nodes={tier.topology.nodes}
+            edges={tier.topology.edges}
+            tierName={tier.name}
+          />
+        </section>
+      )}
+
       <section className="rounded-xl border border-neutral-200 bg-white">
         <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
           <h3 className="text-sm font-semibold text-neutral-900">
@@ -375,14 +407,30 @@ export function PlanView({
         </div>
         <div className="divide-y divide-neutral-100">
           {tier.components.map((c) => (
-            <div key={c.label + c.sku} className="flex items-baseline justify-between gap-4 px-4 py-2">
-              <div className="min-w-0">
-                <div className="truncate text-sm text-neutral-900">{c.label}</div>
-                <div className="truncate font-mono text-xs text-neutral-500">{c.sku}</div>
+            <div key={c.label + c.sku} className="px-4 py-2">
+              <div className="flex items-baseline justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-neutral-900">{c.label}</div>
+                  <div className="truncate font-mono text-xs text-neutral-500">{c.sku}</div>
+                </div>
+                <div className="shrink-0 font-mono text-sm tabular-nums text-neutral-900">
+                  {money(c.monthly_usd)}
+                </div>
               </div>
-              <div className="shrink-0 font-mono text-sm tabular-nums text-neutral-900">
-                {money(c.monthly_usd)}
-              </div>
+              {/* THE APPROXIMATION, WHERE THE NUMBER IS.
+                  A derived rate, a single-sourced one, or a spot price
+                  good for ranking but not for billing — disclosed on the
+                  line rather than in a README, because the reader of a
+                  bill sees a line and a figure and nothing else. */}
+              {c.caveats && c.caveats.length > 0 && (
+                <ul className="mt-1.5 flex flex-col gap-1 border-l-2 border-amber-300 pl-3">
+                  {c.caveats.map((caveat) => (
+                    <li key={caveat} className="text-xs leading-relaxed text-amber-800">
+                      {caveat}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
         </div>

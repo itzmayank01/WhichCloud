@@ -1,0 +1,52 @@
+# ADVISORY, not auto-applied. This technique's lever is a QUANTITY --
+# how many gateways, how many instances, how many GB -- and deciding
+# that is the engine's job, sized from what the workload stated. A
+# technique that wrote a quantity into the spec would override the
+# sizing rather than describe a saving. The applies_when rule below is
+# still evaluated; what is withheld is only the automatic application.
+id: archive-cold-objects
+name: Move cold objects to an archive class
+category: storage
+summary: >
+  Most stored bytes are never read again after their first month. Archive
+  classes cost a fraction of the standard rate for exactly that data.
+
+applies_when:
+  workload_type: [batch, storage, mixed, web]
+  traffic_pattern: [steady]
+  min_monthly_spend_usd: 25
+  requires:
+    - Data with an access pattern that falls off with age
+    - Tolerance for slower first-byte retrieval on the archived portion
+
+savings:
+  typical_pct: 60
+  confidence: high
+  basis: >
+    MEASURED from the ap-south-1 catalog: S3 Standard is $0.025/GB-month
+    and Glacier Instant Retrieval is materially below it for data read
+    rarely but needed immediately when it is.
+
+    The engine applies this only to a fraction of stored bytes, never to
+    all of them -- an archive class applied to hot data pays retrieval
+    charges that exceed what the storage saving was.
+
+tradeoffs:
+  - Retrieval is charged per GB on top of storage, so data that turns out
+    to be warm costs MORE than it would have in Standard.
+  - Minimum storage durations apply; deleting early still bills the
+    minimum.
+  - Deeper classes add retrieval latency measured in hours, which is a
+    correctness problem if anything expects the object to be there now.
+
+implemented_by:
+  - name: S3 Lifecycle configuration
+    url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html
+    type: managed-service
+  - name: S3 Intelligent-Tiering (automatic, for unknown patterns)
+    url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering.html
+    type: managed-service
+
+
+providers: [aws, gcp, azure]
+obviousness: medium

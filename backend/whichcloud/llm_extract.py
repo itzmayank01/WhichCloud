@@ -36,6 +36,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from whichcloud import quantity_audit
 from whichcloud.archetype import ARCHETYPES, COMPOSITE, UNKNOWN
 from whichcloud.architecture.readers import candidates, is_exhausted
 from whichcloud.constraints import REQUIRED, Constraints
@@ -48,7 +49,22 @@ from whichcloud.pricing import store
 #: describing two workloads can say so. Bumped rather than reused --
 #: a v1 row cannot be read as v2, and serving one silently would answer
 #: a multi-shape prompt with whichever half v1 happened to pick.
-SCHEMA_VERSION = "constraints-v2"
+#: v7: the shape-specific sizing drivers -- model_size_gb,
+#: peak_concurrent_connections, searchable_history.
+#: v6: `interruptible` -- the gate on Spot, which must be stated.
+#: v5: active_hours_per_day. Its absence was producing ZEROES -- asked
+#: for a per-day figure on a business-hours workload the model had no
+#: way to say 'eight hours' worth' and returned 0, discarding a rate it
+#: had read correctly.
+#: v4: requests_per_day gained explicit time-basis normalisation and a
+#: `requests_basis` quote; a v3 row was read under rules that dropped
+#: 'predictions a second' and per-clinic multipliers entirely.
+#: v3: the source-estate fields (source_vm_count, source_os, the vCPU/RAM/
+#: disk totals, cpu_architecture). A v2 row has none of them, so a cached
+#: migration would come back with a zero machine count -- which the
+#: quantity audit would correctly refuse to price, but refusing a prompt
+#: we can now read properly is a worse answer than re-reading it.
+SCHEMA_VERSION = "constraints-v7"
 
 #: THE PINNED PRIMARY. One provider and one model, named, because
 #: different models return different Constraints from the same prompt --
@@ -154,6 +170,20 @@ class Field_(BaseModel):
     span: str = Field(default="", description="quote it came from, <=12 words, '' if assumed")
 
 
+def _unstated(value: str = "0") -> "Field_":
+    """The default for a field nobody was asked about.
+
+    The migration fields below carry one, unlike every field above them,
+    and the difference is deliberate. Those describe an EXISTING estate,
+    so on the six-in-seven prompts that are not a migration there is
+    genuinely nothing to say -- and making them required meant a model
+    that sensibly omitted them failed schema validation and discarded an
+    otherwise perfect extraction. Failing soft to "unstated" is the same
+    rule the coercion layer already follows for every other field.
+    """
+    return Field_(value=value, source="assumed", span="")
+
+
 class ArchetypeCall(BaseModel):
     name: str = Field(description=f"one of: {', '.join(ARCHETYPES)}")
     confidence: float = Field(description="0.0-1.0")
@@ -189,7 +219,72 @@ class Extraction(BaseModel):
                     "NOTHING about data loss")
     users: Field_ = Field(description="people using it, 0 if unstated")
     requests_per_day: Field_ = Field(
-        description="per DAY: 80,000/month->2667; 50/sec->4320000; 0 if none")
+        description=(
+            "Work items per DAY. NORMALISE from whatever basis the text "
+            "uses: /sec x86400, /min x1440, /hour x24, /week /7, "
+            "/month /30, /year /365. "
+            "COUNT AS A WORK ITEM: request, visit, visitor, session, "
+            "pageview, transaction, order, booking, appointment, event, "
+            "lookup, query, message, prediction, submission, application, "
+            "webhook, API call, hit. "
+            "MULTIPLY when the text gives a per-unit rate and a count: "
+            "'40 stores at ~200 transactions each a day'->8000; "
+            "'12 clinics, 150 appointments each per day'->1800. "
+            "If the text says the work happens only part of the day "
+            "('business hours', 'nightly'), multiply the rate by "
+            "active_hours_per_day rather than by 24, and NEVER return 0 "
+            "just because the day is partial: '50/sec in business hours' "
+            "with active_hours_per_day=9 is 1620000, not 0. "
+            "source MUST be 'stated' whenever the text gives ANY figure "
+            "you normalised from, even after arithmetic — it is stated, "
+            "not assumed. 0 and 'assumed' ONLY when no volume is given"
+        ))
+    #: What the figure above was read FROM. Required by the same rule that
+    #: makes `span` required elsewhere: a normalised number is arithmetic
+    #: on someone's words, and a reader who cannot see the words cannot
+    #: check the arithmetic. "1,728,000/day" is unfalsifiable on its own;
+    #: "20 predictions a second in business hours" can be argued with.
+    requests_basis: Field_ = Field(
+        default_factory=lambda: _unstated(""),
+        description="the exact phrase the requests figure came from and "
+                    "its unit, e.g. '30,000 visitors a month' or "
+                    "'40 stores x 200 transactions/day'; '' if unstated")
+    model_size_gb: Field_ = Field(
+        default_factory=_unstated,
+        description="GB of the trained model artefact being served; 0 if "
+                    "unstated or not a model-serving workload")
+    peak_concurrent_connections: Field_ = Field(
+        default_factory=_unstated,
+        description="sockets/sessions open AT THE SAME TIME at peak, for "
+                    "chat, live feeds or presence. NOT users total and "
+                    "NOT requests: '100,000 users' with no concurrency "
+                    "figure is 0 here. 0 if unstated")
+    searchable_history: Field_ = Field(
+        default_factory=lambda: _unstated("false"),
+        description="true if the text says past messages/events must be "
+                    "searchable or queryable ('history must be "
+                    "searchable'); false if unstated")
+    interruptible: Field_ = Field(
+        default_factory=lambda: _unstated("false"),
+        description="true ONLY if the text says the work can be safely "
+                    "restarted, re-run or resumed after a failure "
+                    "('we can rerun it in the morning', 'a failed batch "
+                    "just runs again'). false when unstated — do not "
+                    "infer it from the work merely looking batch-like")
+    #: The workload's duty cycle, as hours. Added because its ABSENCE was
+    #: producing zeroes: asked for a per-day figure on a workload the text
+    #: said runs only in business hours, the model had no way to say
+    #: "eight hours' worth" and returned 0 instead -- silently discarding
+    #: a rate it had read perfectly well. Measured: "50 predictions a
+    #: second during business hours" -> requests_per_day 0.
+    active_hours_per_day: Field_ = Field(
+        default_factory=lambda: _unstated("24"),
+        description="hours per DAY this workload is actually running or "
+                    "serving. 24 when continuous or unstated. 'business "
+                    "hours'/'office hours'->9, 'nightly batch that takes "
+                    "2 hours'->2, 'weekday evenings'->4. Use it with "
+                    "requests_per_day: a rate given per second/minute "
+                    "applies only during these hours")
     peak_shape: Field_ = Field(description="flat|morning|evening|spiky")
     budget_monthly_usd: Field_ = Field(description="monthly USD, 0 if unstated")
     storage_gb: Field_ = Field(description="GB, 0 if unstated")
@@ -215,6 +310,46 @@ class Extraction(BaseModel):
                     "scale with users; 0 if unstated")
     user_data_gb: Field_ = Field(
         description="GB ONE user accumulates (not the total); 0 if unstated")
+
+    # ── the source estate, for a migration ───────────────────────────
+    # Sized from an inventory of what already runs, never from traffic.
+    # "40 virtual machines" used to have nowhere to go and was dropped.
+    source_vm_count: Field_ = Field(
+        default_factory=_unstated,
+        description="how many EXISTING machines/servers/VMs are being "
+                    "moved as-is. Count them however the text says it: "
+                    "'40 virtual machines'->40, '12 servers'->12, 'two "
+                    "racks of 20'->40. 0 ONLY if no count is given")
+    source_os: Field_ = Field(
+        default_factory=lambda: _unstated("unknown"),
+        description="linux|windows|mixed|unknown for the machines being "
+                    "moved. 'a mix of Windows and Linux'->mixed. Any "
+                    "mention of Windows at all->windows or mixed, never "
+                    "linux. unknown if not a migration or not said")
+    source_vcpu_total: Field_ = Field(
+        default_factory=_unstated,
+        description="TOTAL vCPUs across all machines being moved (not per "
+                    "machine); multiply if the text gives a per-machine "
+                    "figure and a count; 0 if unstated")
+    source_ram_gb_total: Field_ = Field(
+        default_factory=_unstated,
+        description="TOTAL RAM in GB across all machines being moved; 0 "
+                    "if unstated")
+    source_disk_gb_total: Field_ = Field(
+        default_factory=_unstated,
+        description="TOTAL attached disk in GB across all machines being "
+                    "moved; 0 if unstated")
+    cpu_architecture: Field_ = Field(
+        default_factory=lambda: _unstated("unknown"),
+        description="x86_required|arm_ok|unknown. x86_required whenever "
+                    "Windows is involved, or the text names commercial "
+                    "software licensed per-core or x86-only (SQL Server, "
+                    ".NET Framework, SAP, Oracle DB), or says legacy/"
+                    "as-is/lift-and-shift of existing binaries. arm_ok "
+                    "ONLY if the text positively says ARM/Graviton is "
+                    "fine or it is new code in a portable runtime. "
+                    "unknown when nothing indicates either way — do NOT "
+                    "guess arm_ok")
     #: A LIST, not one value. A prompt describing a web app AND a nightly
     #: batch job is two workloads, and a single-valued field forces the
     #: model to discard one of them -- which is how "0/4 multi-shape
@@ -323,6 +458,8 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "durability": ("normal", "high", "ephemeral"),
     "peak_shape": ("flat", "morning", "evening", "spiky"),
     "static_assets": ("none", "light", "heavy"),
+    "source_os": ("linux", "windows", "mixed", "unknown"),
+    "cpu_architecture": ("x86_required", "arm_ok", "unknown"),
 }
 
 #: Fields outside REQUIRED that the model still returns. Coerced and set
@@ -332,7 +469,62 @@ _ENUMS: dict[str, tuple[str, ...]] = {
 _NON_REQUIRED_FIELDS = (
     "country_lock", "static_assets", "emails_per_month", "async_processing",
     "content_storage_gb", "user_data_gb",
+    "source_vm_count", "source_os", "source_vcpu_total",
+    "source_ram_gb_total", "source_disk_gb_total", "cpu_architecture",
+    "requests_basis", "active_hours_per_day", "interruptible",
+    "model_size_gb", "peak_concurrent_connections", "searchable_history",
 )
+
+#: Operating systems that put x86 beyond argument. Not a phrase table --
+#: a value table over an already-extracted enum, which can only ever
+#: TIGHTEN a constraint (never loosen one) and therefore cannot invent a
+#: capability the workload does not have.
+_X86_FORCING_OS = frozenset({"windows", "mixed"})
+
+
+def _correct_requests_provenance(c: Constraints) -> None:
+    """A figure quoted from the text is STATED, whatever the model filed it as.
+
+    Measured before this: "roughly 2,000 transactions an hour", "about
+    30,000 visitors a month" and "3.65 million claims submissions a year"
+    were all normalised to the right number and then recorded as
+    `assumed`. That is not a cosmetic mislabel. `assumed` drives
+    assumed_fields(), the confidence map and the "what did we guess"
+    panel, so the interface asked the user to confirm a figure they had
+    just given it -- and, worse, presented their own number back as the
+    engine's guess.
+
+    The model is asked to get this right and is not trusted to: a quoted
+    basis is objective evidence that the figure came from the text, so
+    the basis decides. Only ever promotes assumed -> stated; nothing here
+    can invent a value or claim provenance for a figure nobody gave.
+    """
+    if c.requests_basis and c.requests_per_day > 0:
+        c.stated.add("requests_per_day")
+        c.evidence.setdefault("requests_per_day", c.requests_basis)
+
+
+def _force_x86_where_required(c: Constraints) -> None:
+    """ARM is ruled out by facts, not by the model's opinion of them.
+
+    The model is asked for `cpu_architecture`, but it is not trusted to
+    hold the line: it returned arm_ok for a Windows estate often enough
+    that the previous engine recommended Graviton for a lift-and-shift of
+    legacy Windows Server images -- infrastructure that would not have
+    run at all, which is worse than an infrastructure that costs the
+    wrong amount.
+
+    So the OS decides, and the model's answer is only allowed to survive
+    where the OS does not contradict it. This can only ever move a
+    workload TOWARDS x86, never away from it.
+    """
+    if c.source_os in _X86_FORCING_OS:
+        c.cpu_architecture = "x86_required"
+        c.forced_x86_reason = (
+            f"the machines being moved run {c.source_os} — Windows images "
+            "do not run on ARM, so Graviton is not an option here however "
+            "much cheaper it is"
+        )
 
 
 def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
@@ -353,13 +545,20 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
             value = str(raw).strip().lower()
             if value not in _ENUMS[name]:
                 continue  # keep the dataclass default, and leave it 'assumed'
-        elif name in ("users", "requests_per_day", "emails_per_month"):
+        elif name in ("users", "requests_per_day", "emails_per_month",
+                      "source_vm_count", "source_vcpu_total",
+                      "peak_concurrent_connections"):
             value = _as_int(raw)
         elif name in ("budget_monthly_usd", "storage_gb", "egress_gb",
-                      "content_storage_gb", "user_data_gb"):
+                      "content_storage_gb", "user_data_gb",
+                      "source_ram_gb_total", "source_disk_gb_total",
+                      "active_hours_per_day", "model_size_gb"):
             value = _as_float(raw)
-        elif name in ("public_facing", "country_lock", "async_processing"):
+        elif name in ("public_facing", "country_lock", "async_processing",
+                      "interruptible", "searchable_history"):
             value = _as_bool(raw)
+        elif name == "requests_basis":
+            value = str(raw).strip()
         else:  # country
             value = str(raw).strip().upper()[:2]
 
@@ -372,8 +571,31 @@ def _to_constraints(payload: Extraction) -> tuple[Constraints, ExtractionMeta]:
 
     # These are not REQUIRED fields -- they have no stated/assumed
     # accounting of their own -- so drop them back out of the stated set.
+    # `source_*` and `cpu_architecture` keep theirs: a migration IS sized
+    # from them, so "was this told to us or guessed" is exactly as
+    # load-bearing there as it is for requests_per_day.
+    _KEEPS_PROVENANCE = frozenset({
+        "source_vm_count", "source_os", "source_vcpu_total",
+        "source_ram_gb_total", "source_disk_gb_total", "cpu_architecture",
+    })
     for name in _NON_REQUIRED_FIELDS:
-        c.stated.discard(name)
+        if name not in _KEEPS_PROVENANCE:
+            c.stated.discard(name)
+
+    # ZERO HOURS MEANS UNSTATED, NOT "NEVER RUNS". The model returns 0
+    # for a field it has nothing to say about, and 0 active hours read
+    # literally would bill a workload for one percent of a month -- an
+    # under-bill, which is no more honest than an over-bill. 24 is the
+    # honest default: something nobody described the schedule of runs all
+    # the time until told otherwise.
+    if c.active_hours_per_day <= 0:
+        c.active_hours_per_day = 24.0
+
+    # Facts override the model's reading of them. Both of these can
+    # only ever tighten a constraint or strengthen a provenance claim;
+    # neither can invent a value.
+    _correct_requests_provenance(c)
+    _force_x86_where_required(c)
 
     # Every shape that clears the bar, strongest first. One is an
     # ordinary classification; two or more is a composite -- a prompt
@@ -590,6 +812,14 @@ def extract(
             try:
                 payload = Extraction.model_validate_json(stored)
                 constraints, meta = _to_constraints(payload)
+                # Audited on the way OUT of the cache, not on the way in.
+                # A row cached before this check existed would otherwise
+                # serve a dropped quantity forever, and the audit is pure
+                # over (description, constraints) so re-running it costs
+                # nothing and can only tighten the answer.
+                constraints.unparsed_quantities = quantity_audit.audit(
+                    description, constraints,
+                )
                 meta.cached = True
                 meta.model = _MODEL
                 meta.reader = f"{PRIMARY_PROVIDER} (cached)"
@@ -614,6 +844,7 @@ def extract(
         return _fallback(description, str(exc)[:200])
 
     constraints, meta = _to_constraints(payload)
+    constraints.unparsed_quantities = quantity_audit.audit(description, constraints)
     meta.reader, meta.model = label, _MODEL
     # `label` is "groq", "groq#2", "gemini"... -- the provider is the part
     # before the '#', since a second key for the primary is still primary.
@@ -650,6 +881,11 @@ def _fallback(description: str, reason: str) -> tuple[Constraints, ExtractionMet
     from whichcloud.archetype import classify as phrase_classify
 
     constraints = phrase_extract(description)
+    # The degraded reader misses far more, so the net matters MORE here,
+    # not less: this is the path most likely to have dropped a figure.
+    constraints.unparsed_quantities = quantity_audit.audit(
+        description, constraints,
+    )
     detected, _ = phrase_classify(description)
     return constraints, ExtractionMeta(
         reader="phrase-tables",
