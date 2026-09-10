@@ -32,6 +32,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which carries no secrets and is the one file a new
+# contributor reads to learn what has to be configured. `.env*` was swallowing
+# it, so it had never been committed: it sat on one machine describing Auth.js
+# long after the app moved to Clerk, and nobody cloning the repo ever saw it
+# to notice.
+!.env.example
 
 # vercel
 .vercel
