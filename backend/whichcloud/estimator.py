@@ -694,6 +694,26 @@ def _hourly_line(
     )
 
 
+def _monitored_nodes(spec: "ArchitectureSpec") -> int:
+    """Every machine a per-node security meter would actually see.
+
+    Providers that bill protection per node-hour (Azure's Defender plans)
+    charge by the machine, whatever kind of machine it is. Counting only
+    `compute_count` meant a tier that runs on Fargate tasks or warehouse
+    nodes -- both of which set `compute_count` to 0 -- billed for zero
+    nodes, so the line silently priced at $0.00 on Azure while the same
+    architecture priced correctly on the providers that meter vCPUs. A
+    zero here does not read as "not applicable", it reads as "free".
+
+    Read replicas are counted for the same reason the vCPU branch counts
+    them: a replica is a separate database machine and is protected as one.
+    """
+    nodes = spec.compute_count + spec.fargate_task_count + spec.warehouse_node_count
+    if spec.database_vcpu:
+        nodes += 1 + spec.database_read_replicas
+    return nodes
+
+
 def _metered_line(label: str, point: PricePoint, amount: float) -> LineItem:
     quantity = Decimal(str(amount))
     return LineItem(
@@ -1885,9 +1905,8 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             # Per-node providers charge by the machine, not by its vCPUs,
             # so converting a vCPU count into node-hours would invent load
             # the provider never bills for.
-            nodes = spec.compute_count + (1 if spec.database_vcpu else 0)
             result.items.append(
-                _hourly_line("Threat detection", ec2, nodes)
+                _hourly_line("Threat detection", ec2, _monitored_nodes(spec))
             )
         elif ec2:
             # Whichever compute tier is actually running. A Fargate task's
@@ -1937,8 +1956,9 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
     if spec.posture_monthly_checks:
         point = _by_role(provider, region, "posture", "checks", dsn)
         if point and point.unit == "node-hour":
-            nodes = spec.compute_count + (1 if spec.database_vcpu else 0)
-            result.items.append(_hourly_line("Security posture", point, nodes))
+            result.items.append(
+                _hourly_line("Security posture", point, _monitored_nodes(spec))
+            )
         elif point:
             result.items.append(
                 _tiered_line("Security posture checks", point, spec.posture_monthly_checks)
