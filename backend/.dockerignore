@@ -1,0 +1,15 @@
+# The virtualenv is built for macOS and would overwrite the Linux one the
+# image just installed -- with binaries that cannot run in the container.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Fixtures and audits are development tooling; they are large and the server
+# never reads them.
+audit/fixtures/
+tests/
+
+.env
+.env.*

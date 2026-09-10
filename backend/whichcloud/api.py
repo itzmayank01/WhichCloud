@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
 from decimal import Decimal
 from typing import Literal
 
@@ -49,15 +50,36 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# The frontend runs on a different port in development.
+# The frontend runs on a different port in development, and on a different
+# HOST once it is deployed. The local ports stay listed unconditionally --
+# they cost nothing in production and losing them would break every
+# development machine the first time this is configured.
+#
+# Deployed origins are added through WHICHCLOUD_ALLOWED_ORIGINS, comma
+# separated. Without it a hosted frontend gets a CORS refusal on every
+# request, which surfaces in the browser as the API being down rather than as
+# a configuration setting nobody set.
+_LOCAL_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+]
+_CONFIGURED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("WHICHCLOUD_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=[*_LOCAL_ORIGINS, *_CONFIGURED_ORIGINS],
+    # Vercel gives every deployment its own hostname, so a preview build is a
+    # different origin from the production one and from every other preview.
+    # Naming them individually would mean editing this list per deploy; the
+    # pattern is anchored at both ends so it cannot match a domain that merely
+    # CONTAINS the project name.
+    allow_origin_regex=os.getenv("WHICHCLOUD_ALLOWED_ORIGIN_REGEX") or None,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
