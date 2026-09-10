@@ -84,7 +84,22 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <ClerkProvider>
+        {/* Signing in lands in the workspace, not back on the landing page.
+            Someone who has just authenticated came here to price something;
+            returning them to the marketing argument makes them navigate to
+            the product they already chose.
+
+            Fallback, not force: a visitor sent to sign-in from a deep link
+            still returns to the page they were trying to reach. Force would
+            discard that and send everyone to the workspace regardless.
+
+            Set here as well as in .env.local because that file is gitignored
+            -- it holds the secret key -- so an env-only setting silently
+            reverts to the landing page on any other machine. */}
+        <ClerkProvider
+          signInFallbackRedirectUrl="/dashboard"
+          signUpFallbackRedirectUrl="/dashboard"
+        >
           <header className="sticky top-0 z-30 flex h-16 items-center gap-8 border-b border-line bg-canvas/85 px-6 backdrop-blur">
             <Link href="/" aria-label="WhichCloud home">
               <Wordmark />
