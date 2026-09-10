@@ -16,6 +16,7 @@ Two things it deliberately exposes that a typical API would hide:
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from decimal import Decimal
 from typing import Literal
@@ -630,6 +631,20 @@ class DescribeIn(BaseModel):
     #: able to override that so the same requirement can be compared across
     #: providers without rewriting the description to say "on GCP".
     provider: Literal["aws", "gcp", "azure"] | None = None
+
+
+class AdviseIn(BaseModel):
+    description: str
+    #: A question about the architecture. Free text -- "why is this so
+    #: expensive", "can I drop the second NAT gateway", "is this right for
+    #: 300 staff".
+    question: str
+    #: Which tier is on screen. The advice is about the architecture the
+    #: person is looking at, so the wrong one here answers a question nobody
+    #: asked -- the same trap `/describe/export.tf` documents above.
+    option: str
+    provider: Literal["aws", "gcp", "azure"] | None = None
+    reader: Literal["gemini", "groq", "anthropic", "openai"] | None = None
 
 
 class PlanExportIn(BaseModel):
@@ -1517,6 +1532,68 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
         read_by=intake.provider,
         provider=provider,
     )
+
+
+@app.post("/advise")
+def advise_route(body: AdviseIn) -> dict:
+    """A question about a priced architecture, answered against its real bill.
+
+    The architecture is re-derived here rather than accepted from the client.
+    A caller could otherwise post any JSON it liked as "the architecture" and
+    get it reviewed as though the engine had costed it, which is the exact
+    failure mode this product exists to argue against.
+
+    The model never prices anything -- see whichcloud/advise.py. It proposes
+    changes; `lever` says which engine knob each one maps to, so the interface
+    can offer to re-price a suggestion instead of quoting it.
+    """
+    from .advise import advise as run_advice
+    from .intake import IntakeError
+
+    if not body.question.strip():
+        raise HTTPException(400, "Ask a question.")
+
+    try:
+        intake = _cached_intake(body.description, body.reader)
+    except IntakeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    requirement = intake.requirement
+    provider = body.provider or requirement.provider_preference or "aws"
+    options = recommend(requirement, provider)
+
+    chosen = next((o for o in options if o.label == body.option), None)
+    if chosen is None:
+        raise HTTPException(
+            404,
+            f"No option called {body.option!r} for this description. "
+            f"Got: {', '.join(o.label for o in options)}.",
+        )
+
+    # The same serialisation the interface was given, so the model reads the
+    # figures the person is looking at rather than a second rendering of them.
+    shown = _option_out(chosen, provider).model_dump()
+
+    try:
+        advice, read_by = run_advice(
+            body.question,
+            shown,
+            # A dataclass, not a Pydantic model -- asdict, not model_dump.
+            dataclasses.asdict(requirement),
+            reader=body.reader,
+        )
+    except IntakeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    return {
+        **advice.model_dump(),
+        # Shown, not logged: an answer from a model is a different kind of
+        # claim from a number out of the catalog, and the reader should be
+        # able to tell which is which without checking the docs.
+        "read_by": read_by,
+        "option": chosen.label,
+        "provider": provider,
+    }
 
 
 @app.post("/describe/export.tf")
