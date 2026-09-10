@@ -127,4 +127,12 @@ export const ToolIcons = {
       <path d="M4.5 5.5V4h11v1.5M10 4v12M7.5 16h5" />
     </svg>
   ),
+  /** Connect two services. An actual arrow, because that is the word people
+   *  use for it and the thing they look for in the rail. */
+  arrow: (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" {...stroke} aria-hidden>
+      <path d="M3.5 16.5L16 4" />
+      <path d="M10.5 4H16v5.5" />
+    </svg>
+  ),
 };

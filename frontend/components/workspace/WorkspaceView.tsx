@@ -190,6 +190,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [pending, setPending] = useState<IconEntry | null>(null);
   const [tool, setTool] = useState<SketchTool>("select");
   const [seedToken, setSeedToken] = useState(0);
+  const [sketchFull, setSketchFull] = useState(false);
 
   // NOTE the guard on `overrideCloud`. This is passed to onAsk, and a click
   // handler receives the event as its first argument -- so an unguarded
@@ -242,6 +243,23 @@ export function WorkspaceView({ name }: { name: string | null }) {
     setInspected(null);
   }, [selected, cloud]);
 
+  /* Escape steps back one level: out of full screen first, then out of the
+     sketch. Bound on the window rather than the canvas because focus after a
+     drag sits on whichever node was moved, and a key handler on the pane
+     would not see it. An armed drawing tool releases first, so Escape also
+     means "never mind" to a box you were about to place. */
+  useEffect(() => {
+    if (!sketching) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (tool !== "select") setTool("select");
+      else if (sketchFull) setSketchFull(false);
+      else setSketching(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sketching, sketchFull, tool]);
+
   // Built once and rendered in both places -- floating over the pane, and
   // again inside the full-page overlay. Going full page should not cost you
   // the ability to replay the build or pull the Terraform for what you are
@@ -262,6 +280,25 @@ export function WorkspaceView({ name }: { name: string | null }) {
           <path d="M6.5 4.5v11l9-5.5z" />
         </svg>
         Replay
+      </button>
+      <span className="h-4 w-px bg-line" aria-hidden />
+      {/* Reachable from the full-page view too. This bar renders in BOTH
+          places, and the editor was previously only enterable from the small
+          pane -- so opening the diagram full screen, which is exactly when
+          someone wants to work on it, was the one view with no way in. */}
+      <button
+        type="button"
+        onClick={() => {
+          setSketching(true);
+          setSketchFull(true);
+          setAsking(false);
+          setInspected(null);
+        }}
+        title="Rearrange this diagram"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-sunk"
+      >
+        <span className="h-3.5 w-3.5">{ToolIcons.edit}</span>
+        Rearrange
       </button>
       <span className="h-4 w-px bg-line" aria-hidden />
       <DownloadTerraformButton
@@ -400,7 +437,18 @@ export function WorkspaceView({ name }: { name: string | null }) {
             put a second, stronger edge around the whole picture -- the eye
             reads that outer rectangle as part of the architecture. Reference
             architecture diagrams are published on white for the same reason. */}
-        <main className="relative min-h-0 flex-1 bg-surface">
+        {/* Sketch mode can take the whole window. Editing is the one thing
+            here that genuinely needs the room: the priced view is read, but a
+            diagram being rearranged is worked on, and doing that in a pane
+            inset by a 380px rail is what the request "I need these tools when
+            I open the architecture" was actually about. */}
+        <main
+          className={
+            sketching && sketchFull
+              ? "fixed inset-0 z-50 bg-surface"
+              : "relative min-h-0 flex-1 bg-surface"
+          }
+        >
           {shown?.topology?.nodes?.length && sketching ? (
             /* ── sketch mode ── */
             <>
@@ -433,6 +481,9 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       setSketching(false);
                       setPalette(false);
                       setTool("select");
+                      // Or the priced pane comes back still pinned over the
+                      // whole window with no way out of it.
+                      setSketchFull(false);
                     }}
                     className="rounded-md border border-caution/40 px-2 py-0.5 text-[11.5px] font-medium text-caution transition-colors hover:bg-caution/10"
                   >
@@ -451,6 +502,14 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       icon: ToolIcons.cursor,
                       active: tool === "select",
                       onSelect: () => setTool("select"),
+                    },
+                    {
+                      id: "connect",
+                      label: "Draw an arrow between two services",
+                      icon: ToolIcons.arrow,
+                      active: tool === "connect",
+                      onSelect: () =>
+                        setTool(tool === "connect" ? "select" : "connect"),
                     },
                     {
                       id: "add",
@@ -475,6 +534,15 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     },
                     "divider",
                     {
+                      id: "full",
+                      label: sketchFull
+                        ? "Leave full screen"
+                        : "Edit full screen",
+                      icon: ToolIcons.expand,
+                      active: sketchFull,
+                      onSelect: () => setSketchFull((on) => !on),
+                    },
+                    {
                       id: "reset",
                       label: "Start again from the priced layout",
                       icon: ToolIcons.replay,
@@ -495,9 +563,18 @@ export function WorkspaceView({ name }: { name: string | null }) {
               )}
 
               <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
+                {/* Says what the SELECTED tool does. One fixed line listing
+                    every gesture is the same as no line: the reader has to
+                    find their case in it, which is the work the hint was
+                    supposed to save. */}
                 <span className="pointer-events-auto rounded-lg border border-line bg-surface/95 px-3 py-1.5 font-mono text-[11.5px] text-ink-3 shadow-sm backdrop-blur">
-                  drag to move · double-click to rename · ⌫ to delete · drag a
-                  handle to connect
+                  {tool === "connect"
+                    ? "drag from any blue dot on a box to another box to draw an arrow"
+                    : tool === "box"
+                      ? "click the canvas to drop a boundary"
+                      : tool === "text"
+                        ? "click the canvas to place a label"
+                        : "drag to move · double-click to rename · ⌫ to delete"}
                 </span>
               </div>
             </>
