@@ -565,6 +565,29 @@ export type Plan = {
   extraction_spans: Record<string, string>;
 };
 
+/** One thing the reviewer thinks could be done differently. */
+export type Suggestion = {
+  title: string;
+  rationale: string;
+  /** The engine knob this maps to, or "none" when it cannot be re-priced.
+   *  The distinction is the point: a suggestion with a lever can be costed,
+   *  one without is advice, and the interface must not present them alike. */
+  lever: string;
+  direction: "increase" | "decrease" | "enable" | "disable" | "unchanged";
+  trade_off: string;
+};
+
+export type Advice = {
+  answer: string;
+  suggestions: Suggestion[];
+  verdict: "sound" | "has_risks" | "not_recommended" | "not_applicable";
+  /** Which model answered. Shown, because an answer from a model is a
+   *  different kind of claim from a number out of the catalog. */
+  read_by: string;
+  option: string;
+  provider: string;
+};
+
 export const api = {
   health: () => get<Health>("/health", 60),
 
@@ -596,6 +619,18 @@ export const api = {
      for a different description is the failure this whole layer exists to
      avoid. */
   plan: (body: Record<string, unknown>) => post<Plan>("/plan", body),
+
+  /** A question about the architecture on screen, answered against its bill.
+   *
+   *  Never cached. Two people can ask different questions of the same
+   *  architecture, and serving one the other's answer is the same class of
+   *  mistake as serving a stale plan. */
+  advise: (body: {
+    description: string;
+    question: string;
+    option: string;
+    provider?: string;
+  }) => post<Advice>("/advise", body),
 
   describe: (body: Record<string, unknown>) =>
     post<Recommendation>("/describe", body),

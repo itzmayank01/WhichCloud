@@ -558,18 +558,34 @@ const nodeTypes = {
 };
 const edgeTypes = { poly: PolyEdge };
 
+/** What a click on a box reports back. Deliberately the node's own priced
+ *  fields and nothing derived: the inspector shows what the estimator said
+ *  about this component, so anything computed here would be a second opinion
+ *  about a number that already has one. */
+export type SelectedNode = {
+  id: string;
+  label: string;
+  purpose?: string | null;
+  priced?: boolean;
+  monthly_usd?: number | null;
+  sku?: string | null;
+  tier?: string | null;
+};
+
 function Inner({
   nodes: topoNodes,
   edges: topoEdges,
   playing,
   cloud,
   onPaneClick,
+  onNodeSelect,
 }: {
   nodes: TopoNode[];
   edges: TopoEdge[];
   playing: boolean;
   cloud: CloudId;
   onPaneClick?: () => void;
+  onNodeSelect?: (node: SelectedNode | null) => void;
 }) {
   const [laid, setLaid] = useState<Layout | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -713,7 +729,29 @@ function Inner({
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable
-      onPaneClick={onPaneClick}
+      onNodeClick={(_, node) => {
+        // Containers are scenery -- a VPC boundary has no line on the bill --
+        // and they are already `selectable: false`, so this only ever fires
+        // for a real component.
+        const data = node.data as Record<string, unknown>;
+        onNodeSelect?.({
+          id: node.id,
+          label: String(data.label ?? node.id),
+          purpose: (data.purpose as string) ?? null,
+          priced: Boolean(data.priced),
+          monthly_usd: (data.monthly_usd as number) ?? null,
+          sku: (data.sku as string) ?? null,
+          tier: (data.tier as string) ?? null,
+        });
+      }}
+      onPaneClick={() => {
+        // Clicking empty canvas clears the inspector as well as doing
+        // whatever the pane click already did. A panel describing a box the
+        // reader has visibly deselected is the kind of stale state that makes
+        // people stop trusting the rest of the screen.
+        onNodeSelect?.(null);
+        onPaneClick?.();
+      }}
       proOptions={{ hideAttribution: true }}
       className="bg-white"
       style={{ cursor: onPaneClick ? "zoom-in" : undefined }}
@@ -744,6 +782,8 @@ export function ArchitectureGraph(props: {
    *  it, so picking a different tier from inside the overlay closed the
    *  overlay instead of redrawing in place. */
   graphKey?: string;
+  /** Fires with the clicked component, or null when the canvas is cleared. */
+  onNodeSelect?: (node: SelectedNode | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -766,6 +806,7 @@ export function ArchitectureGraph(props: {
         playing={props.playing ?? true}
         cloud={props.cloud ?? "aws"}
         onPaneClick={inOverlay ? undefined : () => setExpanded(true)}
+        onNodeSelect={props.onNodeSelect}
       />
     </ReactFlowProvider>
   );

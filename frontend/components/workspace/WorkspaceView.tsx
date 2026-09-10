@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   money,
@@ -9,8 +9,14 @@ import {
   type Option,
   type Recommendation,
 } from "@/lib/api";
-import { ArchitectureGraph } from "@/components/architecture/ArchitectureGraph";
+import {
+  ArchitectureGraph,
+  type SelectedNode,
+} from "@/components/architecture/ArchitectureGraph";
 import { CostRail } from "@/components/workspace/CostRail";
+import { AskPanel } from "@/components/workspace/AskPanel";
+import { Inspector } from "@/components/workspace/Inspector";
+import { ToolIcons, ToolRail } from "@/components/workspace/ToolRail";
 
 /**
  * The workspace, canvas-first.
@@ -167,6 +173,9 @@ export function WorkspaceView({ name }: { name: string | null }) {
   // reason to have picked a cloud yet, and being made to choose one before
   // seeing a number is the opposite of what this tool is for.
   const [cloud, setCloud] = useState<CloudId | null>(null);
+  /** The component whose box was last clicked, or null for none. */
+  const [inspected, setInspected] = useState<SelectedNode | null>(null);
+  const [asking, setAsking] = useState(false);
 
   // NOTE the guard on `overrideCloud`. This is passed to onAsk, and a click
   // handler receives the event as its first argument -- so an unguarded
@@ -209,6 +218,15 @@ export function WorkspaceView({ name }: { name: string | null }) {
 
   const advice = result ? recommend(result.options) : null;
   const shown = result?.options.find((o) => o.label === selected) ?? null;
+
+  /* Clear the inspector when the thing it describes is replaced. Each tier
+     draws its own boxes, so a panel opened on "Database" under Most reliable
+     kept describing a multi-AZ line after a switch to Cheapest, where that
+     component does not exist -- the numbers stayed on screen and simply
+     stopped being true of anything. */
+  useEffect(() => {
+    setInspected(null);
+  }, [selected, cloud]);
 
   // Built once and rendered in both places -- floating over the pane, and
   // again inside the full-page overlay. Going full page should not cost you
@@ -381,6 +399,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                   cloud={cloud ?? "aws"}
                   nodes={shown.topology.nodes}
                   edges={shown.topology.edges}
+                  onNodeSelect={setInspected}
                   playing
                   overlayFooter={actionBar}
                   overlayHeader={
@@ -412,6 +431,69 @@ export function WorkspaceView({ name }: { name: string | null }) {
                 />
               </div>
 
+              {/* tool rail, floating at the left edge of the canvas */}
+              <div className="pointer-events-none absolute left-0 top-0 flex h-full items-center p-3">
+                <ToolRail
+                  tools={[
+                    {
+                      id: "select",
+                      label: "Select a component to see what it costs",
+                      icon: ToolIcons.cursor,
+                      // Always on: clicking a box inspects it. The button is
+                      // here to SAY that, since a canvas gives no other hint
+                      // that its boxes are clickable.
+                      active: !asking,
+                      onSelect: () => setAsking(false),
+                    },
+                    {
+                      id: "ask",
+                      label: "Ask about this architecture",
+                      icon: ToolIcons.ask,
+                      active: asking,
+                      onSelect: () => setAsking((open) => !open),
+                    },
+                    "divider",
+                    {
+                      id: "replay",
+                      label: "Replay the build animation",
+                      icon: ToolIcons.replay,
+                      onSelect: () => setReplay((n) => n + 1),
+                    },
+                  ]}
+                />
+              </div>
+
+              {/* Inspector, floating opposite the rail. It steps aside when
+                  the advisor is open rather than stacking on top of it: both
+                  describe the same architecture, and one obscuring the other
+                  is the reader losing the thing they clicked to see. */}
+              {inspected && (
+                <div
+                  className={`pointer-events-none absolute top-0 p-3 transition-[right] ${
+                    asking ? "right-[330px]" : "right-0"
+                  }`}
+                >
+                  <Inspector
+                    node={inspected}
+                    option={shown}
+                    onClose={() => setInspected(null)}
+                  />
+                </div>
+              )}
+
+              {/* the advisor, when asked for */}
+              {asking && (
+                <div className="pointer-events-none absolute bottom-0 right-0 top-0 flex max-h-full w-[330px] flex-col p-3">
+                  <div className="pointer-events-auto flex min-h-0 flex-col overflow-y-auto rounded-xl border border-line bg-surface/95 shadow-lg backdrop-blur">
+                    <AskPanel
+                      description={asked}
+                      option={shown.label}
+                      provider={cloud ?? "aws"}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* action bar, floating over the canvas */}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
                 <div className="pointer-events-auto">{actionBar}</div>
@@ -432,10 +514,19 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     </p>
                   </>
                 ) : result && shown ? (
-                  <p className="text-[14px] text-ink-3">
-                    Diagram not available for {shown.label} — only AWS
-                    architectures are drawn today.
-                  </p>
+                  <>
+                    {/* Was "only AWS architectures are drawn today". That
+                        stopped being true when the other two clouds gained
+                        topologies -- all three now return the same 17/19/21
+                        nodes across the tiers -- and the copy stayed, talking
+                        readers out of a feature that had shipped. If a
+                        topology is ever genuinely empty, the useful thing to
+                        name is the tier, not the cloud. */}
+                    <p className="text-[14px] text-ink-3">
+                      No diagram for {shown.label} — the estimate priced it,
+                      but nothing came back to draw.
+                    </p>
+                  </>
                 ) : (
                   <>
                     <svg viewBox="0 0 48 48" className="mx-auto h-12 w-12 text-ink-3/40" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
