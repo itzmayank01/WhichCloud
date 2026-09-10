@@ -190,7 +190,6 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [pending, setPending] = useState<IconEntry | null>(null);
   const [tool, setTool] = useState<SketchTool>("select");
   const [seedToken, setSeedToken] = useState(0);
-  const [sketchFull, setSketchFull] = useState(false);
 
   // NOTE the guard on `overrideCloud`. This is passed to onAsk, and a click
   // handler receives the event as its first argument -- so an unguarded
@@ -243,22 +242,24 @@ export function WorkspaceView({ name }: { name: string | null }) {
     setInspected(null);
   }, [selected, cloud]);
 
-  /* Escape steps back one level: out of full screen first, then out of the
-     sketch. Bound on the window rather than the canvas because focus after a
-     drag sits on whichever node was moved, and a key handler on the pane
-     would not see it. An armed drawing tool releases first, so Escape also
-     means "never mind" to a box you were about to place. */
+  /* Escape releases an armed drawing tool first, and closes the sketch only
+     when nothing is armed -- so it also means "never mind" to a box you were
+     about to place, rather than throwing away the whole session on the way.
+     Bound on the window rather than the canvas: focus after a drag sits on
+     whichever node was moved, and a handler on the pane would not see it. */
   useEffect(() => {
     if (!sketching) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (tool !== "select") setTool("select");
-      else if (sketchFull) setSketchFull(false);
-      else setSketching(false);
+      else {
+        setSketching(false);
+        setPalette(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sketching, sketchFull, tool]);
+  }, [sketching, tool]);
 
   // Built once and rendered in both places -- floating over the pane, and
   // again inside the full-page overlay. Going full page should not cost you
@@ -282,19 +283,34 @@ export function WorkspaceView({ name }: { name: string | null }) {
         Replay
       </button>
       <span className="h-4 w-px bg-line" aria-hidden />
-      {/* Reachable from the full-page view too. This bar renders in BOTH
-          places, and the editor was previously only enterable from the small
-          pane -- so opening the diagram full screen, which is exactly when
-          someone wants to work on it, was the one view with no way in. */}
+      {/* This bar is the only home for these now. It renders in the pane AND
+          inside the full-page overlay, so both views reach the same controls
+          and neither needs a floating rail of its own. */}
+      <button
+        type="button"
+        onClick={() => setAsking((open) => !open)}
+        title="Ask about this architecture"
+        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+          asking
+            ? "border-accent bg-accent text-white"
+            : "border-line-strong bg-surface text-ink hover:bg-sunk"
+        }`}
+      >
+        <span className="h-3.5 w-3.5">{ToolIcons.ask}</span>
+        Ask
+      </button>
+      <span className="h-4 w-px bg-line" aria-hidden />
       <button
         type="button"
         onClick={() => {
+          // Straight to full screen. Rearranging is the reason someone opens
+          // this, and dropping them into the narrow pane to press a second
+          // expand button is a step that exists only because the state does.
           setSketching(true);
-          setSketchFull(true);
           setAsking(false);
           setInspected(null);
         }}
-        title="Rearrange this diagram"
+        title="Rearrange this diagram full screen"
         className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-sunk"
       >
         <span className="h-3.5 w-3.5">{ToolIcons.edit}</span>
@@ -444,7 +460,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
             I open the architecture" was actually about. */}
         <main
           className={
-            sketching && sketchFull
+            sketching
               ? "fixed inset-0 z-50 bg-surface"
               : "relative min-h-0 flex-1 bg-surface"
           }
@@ -481,9 +497,6 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       setSketching(false);
                       setPalette(false);
                       setTool("select");
-                      // Or the priced pane comes back still pinned over the
-                      // whole window with no way out of it.
-                      setSketchFull(false);
                     }}
                     className="rounded-md border border-caution/40 px-2 py-0.5 text-[11.5px] font-medium text-caution transition-colors hover:bg-caution/10"
                   >
@@ -533,15 +546,6 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       onSelect: () => setTool(tool === "text" ? "select" : "text"),
                     },
                     "divider",
-                    {
-                      id: "full",
-                      label: sketchFull
-                        ? "Leave full screen"
-                        : "Edit full screen",
-                      icon: ToolIcons.expand,
-                      active: sketchFull,
-                      onSelect: () => setSketchFull((on) => !on),
-                    },
                     {
                       id: "reset",
                       label: "Start again from the priced layout",
@@ -622,47 +626,15 @@ export function WorkspaceView({ name }: { name: string | null }) {
                 />
               </div>
 
-              {/* tool rail, floating at the left edge of the canvas */}
-              <div className="pointer-events-none absolute left-0 top-0 flex h-full items-center p-3">
-                <ToolRail
-                  tools={[
-                    {
-                      id: "select",
-                      label: "Select a component to see what it costs",
-                      icon: ToolIcons.cursor,
-                      // Always on: clicking a box inspects it. The button is
-                      // here to SAY that, since a canvas gives no other hint
-                      // that its boxes are clickable.
-                      active: !asking,
-                      onSelect: () => setAsking(false),
-                    },
-                    {
-                      id: "ask",
-                      label: "Ask about this architecture",
-                      icon: ToolIcons.ask,
-                      active: asking,
-                      onSelect: () => setAsking((open) => !open),
-                    },
-                    {
-                      id: "sketch",
-                      label: "Rearrange this diagram",
-                      icon: ToolIcons.edit,
-                      onSelect: () => {
-                        setSketching(true);
-                        setAsking(false);
-                        setInspected(null);
-                      },
-                    },
-                    "divider",
-                    {
-                      id: "replay",
-                      label: "Replay the build animation",
-                      icon: ToolIcons.replay,
-                      onSelect: () => setReplay((n) => n + 1),
-                    },
-                  ]}
-                />
-              </div>
+              {/* No tool rail here, deliberately.
+                  This pane is the answer being read: a diagram beside the
+                  bill that produced it, in whatever width is left after a
+                  380px rail. Editing wants the opposite -- room, and no
+                  column of numbers competing for the same attention -- so
+                  the tools live in the full-page view, reached from
+                  Rearrange in the bar below. Two sets of controls a few
+                  hundred pixels apart, one of which barely fits, was worse
+                  than one set in the place the work actually happens. */}
 
               {/* Inspector, floating opposite the rail. It steps aside when
                   the advisor is open rather than stacking on top of it: both
