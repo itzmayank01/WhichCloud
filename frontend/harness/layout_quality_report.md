@@ -37,7 +37,7 @@
 | gcp | batch-etl | Most optimized | 6 | 0 | 0 | 0 (4) | 0 | 0 | 1 | all | 3.19 | 1331 | 734 | 6/1 | 0 | 2 | 0 | 5 | 6 |
 | gcp | event-iot | Cheapest | 8 | 0 | 0 | 1 (6) | 0 | 0 | 1 | all | 2.22 | 3249 | 772 | 11/0 | 0 | 3 | 0 | 3 | 3 |
 | gcp | event-iot | Most reliable | 10 | 0 | 0 | 1 (6) | 0 | 0 | 1 | missed firehose,streaming | 2.65 | 3685 | 874 | 11/1 | 0 | 2 | 3 | 6 | 4 |
-| gcp | event-iot | Most optimized | 11 | 0 | 1 | 1 (7) | 0 | 0 | 1 | missed iot | 0.66 ⚠️ | 3707 | 655 | 10/3 | 0 | 3 | 0 | 7 | 5 |
+| gcp | event-iot | Most optimized | 11 | 0 | 0 | 3 (7) | 0 | 0 | 1 | missed iot | 0.66 | 3882 | 684 | 10/3 | 0 | 3 | 2 | 7 | 5 |
 | gcp | serverless-api | Cheapest | 6 | 0 | 0 | 0 (6) | 0 | 0 | 1 | all | 2.63 | 1970 | 915 | 11/0 | 0 | 2 | 0 | 5 | 3 |
 | gcp | serverless-api | Most reliable | 8 | 0 | 0 | 0 (7) | 0 | 0 | 1 | all | 0.82 | 3374 | 1086 | 13/0 | 0 | 3 | 0 | 8 | 3 |
 | gcp | serverless-api | Most optimized | 11 | 0 | 0 | 0 (9) | 0 | 0 | 1 | all | 0.76 | 3645 | 941 | 17/0 | 1 | 3 | 0 | 7 | 3 |
@@ -58,7 +58,7 @@
 | azure | batch-etl | Most optimized | 6 | 0 | 0 | 1 (4) | 0 | 0 | 1 | all | 3.13 | 2020 | 750 | 6/1 | 0 | 2 | 0 | 5 | 6 |
 | azure | event-iot | Cheapest | 8 | 0 | 0 | 1 (6) | 0 | 0 | 1 | all | 2.51 | 3325 | 944 | 11/0 | 0 | 3 | 0 | 3 | 3 |
 | azure | event-iot | Most reliable | 10 | 0 | 0 | 2 (6) | 0 | 0 | 1 | missed firehose,streaming | 2.91 | 3785 | 820 | 10/2 | 0 | 2 | 5 | 6 | 4 |
-| azure | event-iot | Most optimized | 11 | 0 | 1 | 2 (7) | 0 | 0 | 1 | missed iot | 3.73 ⚠️ | 2588 | 629 | 11/2 | 0 | 3 | 1 | 4 | 5 |
+| azure | event-iot | Most optimized | 11 | 0 | 0 | 1 (7) | 0 | 0 | 1 | missed iot | 3.73 | 2569 | 610 | 11/2 | 0 | 3 | 1 | 4 | 5 |
 | azure | serverless-api | Cheapest | 6 | 0 | 0 | 0 (6) | 0 | 0 | 1 | all | 0.68 | 2177 | 871 | 11/0 | 0 | 2 | 0 | 4 | 3 |
 | azure | serverless-api | Most reliable | 8 | 0 | 0 | 0 (7) | 0 | 0 | 1 | all | 0.83 | 3296 | 1056 | 13/0 | 0 | 3 | 0 | 8 | 3 |
 | azure | serverless-api | Most optimized | 11 | 0 | 0 | 0 (9) | 0 | 0 | 1 | all | 0.77 | 3567 | 902 | 17/0 | 1 | 3 | 0 | 9 | 3 |

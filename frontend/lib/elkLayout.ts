@@ -940,6 +940,18 @@ export async function layout(
     // lane it needed was horizontal.
     const downward = b.y > a.y;
     const rightward = b.x > a.x;
+    /* Where along the face to leave from.
+     *
+     * Pinned to the centre, both faces of a box can be unusable at once: on
+     * GCP's event-iot the bus has the warehouse immediately to its left and
+     * the IoT core immediately above, so the sideways route met one and the
+     * upward route met the other, and no LANE could help because the problem
+     * was the departure point. The IoT core spans all but the last 24px of
+     * the bus's width -- there is a way out, just not from the middle.
+     *
+     * Ordered from the centre outward so a clear middle is still preferred.
+     */
+    const ALONG = [0.5, 0.35, 0.65, 0.2, 0.8, 0.08, 0.92];
     const vertical = {
       from: { x: a.x + a.w / 2, y: downward ? a.y + a.h : a.y },
       to: { x: b.x + b.w / 2, y: downward ? b.y : b.y + b.h },
@@ -976,15 +988,25 @@ export async function layout(
     // services are connected when they are not. Untidy beats false.
     for (const padded of [true, false]) {
       for (const plan of [vertical, horizontal]) {
-        const centre = plan.centre(plan.from, plan.to);
-        for (let step = 0; step <= 60; step++) {
-          const lanes = step === 0 ? [centre] : [centre + step * 12, centre - step * 12];
-          for (const lane of lanes) {
-            const candidate = plan.build(plan.from, plan.to, lane);
-            const blocked = padded
-              ? hitsNode(candidate, srcId, tgtId)
-              : hitsBareNode(candidate, srcId, tgtId);
-            if (!blocked) return candidate;
+        const isVertical = plan === vertical;
+        for (const along of ALONG) {
+          // Slide the departure along the source's face; the arrival stays on
+          // the target's centre, which is where a reader expects a line to
+          // land.
+          const from = isVertical
+            ? { x: a.x + a.w * along, y: plan.from.y }
+            : { x: plan.from.x, y: a.y + a.h * along };
+          const centre = plan.centre(from, plan.to);
+          for (let step = 0; step <= 60; step++) {
+            const lanes =
+              step === 0 ? [centre] : [centre + step * 12, centre - step * 12];
+            for (const lane of lanes) {
+              const candidate = plan.build(from, plan.to, lane);
+              const blocked = padded
+                ? hitsNode(candidate, srcId, tgtId)
+                : hitsBareNode(candidate, srcId, tgtId);
+              if (!blocked) return candidate;
+            }
           }
         }
       }
