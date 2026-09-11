@@ -1618,36 +1618,54 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         # zone count. `terraform_export_*` builds exactly this many, and a
         # test holds the two together.
         count = 1 if provider in ("gcp", "azure") else spec.nat_gateway_count
-        # OPEN QUESTION, deliberately left as it is.
+        # HOW MANY UNITS ARE BILLED, which is not the same question as how
+        # many gateways exist -- and only on GCP do the two answers differ.
         #
-        # GCP's Cloud NAT uptime rate is $0.0014/hour against AWS's ~$0.045
-        # per gateway-hour -- a 40x gap that shows up as GCP sitting 46% below
-        # the median on C6/F6/Cheapest. Google's published pricing charges
-        # uptime PER VM ASSIGNED to the gateway (up to 32), which would make
-        # the quantity here the fleet size rather than the resource count, and
-        # would explain the whole gap.
+        # AWS and Azure meter a NAT gateway by its own uptime: one resource,
+        # one hourly charge, however much sits behind it. Google's published
+        # pricing charges uptime PER VM ASSIGNED to the gateway, up to 32.
         #
-        # The ingested SKU is Google's own "Cloud NAT Gateway Uptime" and its
-        # description says gateway, not VM. One reading is a 40x underquote on
-        # every multi-instance GCP tier; the other is that Cloud NAT is simply
-        # much cheaper. Changing it on the strength of a half-remembered rate
-        # card would risk quoting four times the real price, which is the worse
-        # of the two errors.
+        # Google's billing catalog does not say so. The SKU reads "Cloud Nat
+        # Gateway Uptime" with usageUnit "h" and displayQuantity 1, which is
+        # what this code originally followed. The arithmetic is what settles
+        # it: $0.0014/hour x 32 VMs is $0.0448/hour, and AWS charges $0.045
+        # per gateway-hour. Google priced a FULL gateway to land within a
+        # twentieth of a cent of a competitor's single one. A managed NAT
+        # service that genuinely cost $1.02 a month would be remarkable, and
+        # nothing else in this catalog is priced 40x below both rivals.
         #
-        # This is exactly what checking one architecture against a real
-        # invoice would settle in a minute, and it is the best argument in the
-        # repo for doing that.
+        # So the quantity is the fleet, not the resource. Left as one unit it
+        # understated every multi-instance GCP tier -- at the 32-VM cap, by
+        # $31/month on a line the reader had no reason to question, because a
+        # small number attracts no attention.
+        billed = count
+        if provider == "gcp":
+            billed = max(1, spec.compute_count + spec.fargate_task_count)
         if hourly:
-            result.items.append(
-                _hourly_line(
-                    # "× 1" stays even at one, matching "KMS keys × 1" and
-                    # "Secrets × 1" elsewhere in this file -- and the count is
-                    # read back out of this label by a test.
-                    f"NAT gateway × {count}",
-                    hourly,
-                    count,
-                )
+            nat = _hourly_line(
+                # "× 1" stays even at one, matching "KMS keys × 1" and
+                # "Secrets × 1" elsewhere in this file -- and the count is
+                # read back out of this label by a test. It names the RESOURCE
+                # count, which is what the diagram draws and the Terraform
+                # builds; `billed` is the meter.
+                f"NAT gateway × {count}",
+                hourly,
+                billed,
             )
+            if provider == "gcp" and billed != count:
+                nat = replace(
+                    nat,
+                    caveats=[
+                        *nat.caveats,
+                        f"Billed per VM behind the gateway ({billed}), not per "
+                        "gateway. Google's billing catalog describes this SKU "
+                        "only as hourly gateway uptime; the per-VM basis is "
+                        "from its published pricing, and is corroborated by "
+                        "the rate being 1/32nd of what AWS and Azure charge "
+                        "for one gateway.",
+                    ],
+                )
+            result.items.append(nat)
             if per_gb and spec.nat_gb_processed:
                 result.items.append(
                     _metered_line(

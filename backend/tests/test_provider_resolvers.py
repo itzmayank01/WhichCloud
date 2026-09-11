@@ -99,8 +99,13 @@ def test_google_buys_one_regional_cloud_nat_not_one_per_zone():
         if "nat" in i.sku.lower() and "gateway" in i.label.lower()
     ]
     assert lines, "GCP estimate has no NAT line at all"
-    # The line is billed in gateway-hours, so the count is hours / 730.
-    gateways = float(lines[0].quantity) / 730
+    # The RESOURCE count is in the label, not in the quantity. Those were the
+    # same number until the meter was corrected: Google bills Cloud NAT uptime
+    # per VM behind the gateway, so a four-instance tier on ONE regional
+    # gateway is 4 x 730 unit-hours. Reading the resource count off the
+    # quantity now measures the fleet and would fail on a design that is
+    # entirely correct.
+    gateways = int(lines[0].label.rsplit("\u00d7", 1)[1])
     assert gateways == 1, (
         f"GCP quoted {gateways:g} Cloud NATs; the region has one"
     )
