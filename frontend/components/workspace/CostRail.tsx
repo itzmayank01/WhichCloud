@@ -222,6 +222,11 @@ export function CostRail({
   onSelectOption?: (label: string) => void;
 }) {
   const [active, setActive] = useState<string | null>(null);
+  /* Whether the brief is open for editing. Not derived from `option`, because
+     it has to survive an answer arriving: someone who opens the form to change
+     their description should not have it shut under them the moment a slow
+     request from BEFORE they opened it comes back. */
+  const [editing, setEditing] = useState(false);
   const buckets = option ? bucketize(option.topology.nodes) : [];
   const total = buckets.reduce((sum, b) => sum + b.value, 0);
   // What the compliant alternative actually costs. Naming it without its
@@ -244,7 +249,27 @@ export function CostRail({
 
   return (
     <aside className="flex w-full shrink-0 flex-col overflow-y-auto border-line bg-surface lg:h-full lg:w-[380px] lg:border-r">
-      {/* ── describe ── */}
+      {/* ── describe ──
+          Collapses once there is an answer. A five-row textarea holding text
+          the reader wrote themselves was the first third of the panel,
+          permanently, and it pushed the price -- the thing they came back for
+          -- below the fold on a phone. Answered, the brief becomes one line
+          they can reopen; unanswered, the form is the whole point and opens
+          on its own. */}
+      {option && !editing ? (
+        <div className="flex items-start gap-2 border-b border-line px-4 py-3">
+          <p className="min-w-0 flex-1 truncate text-[13px] text-ink-2" title={description}>
+            {description.trim() || "No description"}
+          </p>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[12px] font-medium text-ink-2 transition-colors hover:bg-sunk"
+          >
+            Edit
+          </button>
+        </div>
+      ) : (
       <div className="border-b border-line p-4">
         <label
           htmlFor="workspace-description"
@@ -262,7 +287,10 @@ export function CostRail({
         />
         <div className="mt-2.5 flex items-center gap-2">
           <button
-            onClick={onAsk}
+            onClick={() => {
+              setEditing(false);
+              onAsk();
+            }}
             disabled={busy}
             className="flex-1 rounded-lg bg-accent px-4 py-2 text-[13.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
@@ -276,6 +304,17 @@ export function CostRail({
               Example
             </button>
           )}
+          {/* Only once there is something to go back TO. Offering "cancel"
+              before a first answer exists would close the form and leave an
+              empty panel. */}
+          {option && (
+            <button
+              onClick={() => setEditing(false)}
+              className="shrink-0 rounded-lg border border-line px-3 py-2 text-[12.5px] text-ink-2 transition-colors hover:bg-sunk"
+            >
+              Cancel
+            </button>
+          )}
         </div>
         {error && (
           <p className="mt-2.5 rounded-lg bg-caution-wash px-3 py-2 text-[12.5px] leading-relaxed text-caution">
@@ -283,14 +322,19 @@ export function CostRail({
           </p>
         )}
       </div>
+      )}
 
       {!option ? null : (
         <>
           {/* ── headline ── */}
           <div className="border-b border-line bg-canvas px-4 py-4">
-            {result?.goal && (
-              <p className="text-[13px] leading-snug text-ink-2">{result.goal}</p>
-            )}
+            {/* The goal is NOT repeated here. It sits in the collapsed brief
+                directly above, and printing it twice in a row -- once as the
+                reader's own sentence, once as an uppercase eyebrow -- said the
+                same thing to the same person two lines apart. The eyebrow also
+                had to go on its own account: mono-uppercase-tracked labels are
+                the single most recognisable tell of a generated interface,
+                which the Section headings in this file already avoid. */}
             {/* The headline is the ON-DEMAND price: what you pay if you sign
                 nothing. `monthly_usd` may include committed rates on compute
                 and database, which is a price nobody can obtain today -- it
@@ -301,18 +345,47 @@ export function CostRail({
                 paragraphs below, separated from the headline by the shape
                 table -- so the three numbers a reader compares were the three
                 furthest apart on the panel. */}
-            <div className="mt-3">
+            {/* Two prices, one comparison.
+                These were three separate treatments -- a 40px number, a green
+                chip, and a green sentence -- scattered down the panel, so the
+                reader had to assemble "pay this now, or this if you commit"
+                from parts that did not look related. Side by side, with the
+                one you can actually pay today given the weight, it is a
+                decision rather than a list of figures. */}
+            <div className="mt-2.5">
               <div className="flex items-baseline gap-2">
-                <span className="tnum font-mono text-[40px] font-semibold leading-none tracking-[-0.02em] text-ink">
+                <span className="tnum font-mono text-[38px] font-semibold leading-none tracking-[-0.025em] text-ink">
                   {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
                 </span>
                 <span className="text-[13px] text-ink-muted">/mo</span>
               </div>
-              <p className="mt-1.5 text-[12.5px] text-ink-muted">
-                on-demand — what you pay having signed nothing
+              <p className="mt-1 text-[12px] text-ink-muted">
+                on-demand · nothing signed
               </p>
+
+              {option.ondemand_monthly_usd != null &&
+                option.commitment_covers.length > 0 && (
+                  <div className="mt-2.5 border-t border-line pt-2.5">
+                    <div className="flex items-baseline gap-2">
+                      <span className="tnum font-mono text-[17px] font-semibold text-save">
+                        {money(option.monthly_usd)}
+                      </span>
+                      <span className="text-[12px] leading-snug text-ink-2">
+                        /mo on a 1-year commitment
+                      </span>
+                    </div>
+                    {/* Directly under the figure it qualifies. It had drifted
+                        below the spec list, where "covers compute, database"
+                        read as a stray fact about the architecture rather than
+                        as the terms of the price three rows above it. */}
+                    <p className="mt-0.5 text-[11.5px] leading-snug text-ink-3">
+                      covers {option.commitment_covers.join(", ").toLowerCase()}
+                    </p>
+                  </div>
+                )}
+
               {option.measured_saving_usd > 0 && (
-                <p className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-save/10 px-2 py-1 font-mono text-[11.5px] font-semibold text-save">
+                <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-save/10 px-2 py-1 font-mono text-[11.5px] font-semibold text-save">
                   −{money(option.measured_saving_usd)}/mo already optimised
                 </p>
               )}
@@ -322,27 +395,26 @@ export function CostRail({
                 line up down the page -- the same discipline as the cost sheet
                 below, which is what makes the panel read as one document. */}
             {option.shape_parts?.length > 0 && (
-              <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              <dl className="mt-3 flex flex-col gap-1 border-t border-line pt-3">
                 {option.shape_parts.map((part) => (
-                  <div key={part.label} className="contents">
-                    <dt className="text-[13px] text-ink-muted">{part.label}</dt>
-                    <dd className="font-mono text-[13px] text-ink">{part.value}</dd>
+                  <div
+                    key={part.label}
+                    className="flex items-baseline justify-between gap-3"
+                  >
+                    <dt className="shrink-0 text-[12.5px] text-ink-muted">
+                      {part.label}
+                    </dt>
+                    {/* Right-aligned against the label rather than sitting in
+                        a second column. A fixed column sized to the widest
+                        label left a ragged gutter on every other row, which is
+                        what made this read as debug output. */}
+                    <dd className="min-w-0 truncate text-right font-mono text-[12.5px] text-ink">
+                      {part.value}
+                    </dd>
                   </div>
                 ))}
               </dl>
             )}
-            {/* The commitment as a full sentence naming what it covers, not a
-                parenthetical. It is a business decision, not a discount code. */}
-            {option.ondemand_monthly_usd != null &&
-              option.commitment_covers.length > 0 && (
-                <p className="mt-1.5 text-[11.5px] leading-snug text-ink-2">
-                  <span className="font-mono font-semibold text-save">
-                    {money(option.monthly_usd)}/mo
-                  </span>{" "}
-                  with a 1-year commitment on{" "}
-                  {option.commitment_covers.join(", ").toLowerCase()}
-                </p>
-              )}
             {option.steady_monthly_usd != null &&
               option.steady_monthly_usd < option.monthly_usd && (
                 <p className="mt-1 font-mono text-[11.5px] text-ink-3">
