@@ -448,6 +448,24 @@ export type AuditReport = {
    *  and "we did not look" are different claims. */
   reviewed_no_finding: { service: string; monthly_usd: number; why: string }[];
   warnings: string[];
+  /** The bill on three axes — what the cost report groups, filters and
+   *  charts. The findings say what should change; this says what is
+   *  there, which is the question a reader has first. */
+  breakdown: CostRow[];
+};
+
+/** One cell of the bill. Aggregated server-side on all three dimensions
+ *  at once, so regrouping in the interface never needs another request —
+ *  and never moves money, because every row is already disjoint. */
+export type CostRow = {
+  service: string;
+  region: string;
+  resource_type: string;
+  /** ISO day, or "" where the export carried no date column — in which
+   *  case the bill is a snapshot and there is no series to draw. */
+  day: string;
+  monthly_usd: number;
+  usage: number;
 };
 
 export type SavedArchitecture = {

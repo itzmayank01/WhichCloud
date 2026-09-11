@@ -1340,6 +1340,20 @@ async def audit_route(file: UploadFile = File(...)) -> dict:
         # different claims, and only one is honest about coverage.
         "reviewed_no_finding": report.reviewed_no_finding,
         "warnings": report.warnings,
+        # The bill on three axes, for the cost report. Findings answer
+        # "what should change"; this answers "what is there", which is
+        # the question a reader has first and the one they can check.
+        "breakdown": [
+            {
+                "service": c.service,
+                "region": c.region,
+                "resource_type": c.resource_type,
+                "day": c.day,
+                "monthly_usd": c.monthly_usd,
+                "usage": c.usage,
+            }
+            for c in report.breakdown
+        ],
     }
 
 

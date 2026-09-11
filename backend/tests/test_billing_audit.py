@@ -35,6 +35,13 @@ Compute Engine,asia-south1,N2 Instance Core,2190,410.00
 Cloud Storage,asia-south1,Standard Storage,4000,88.00
 """
 
+DENSE_CUR = "".join(
+    ["lineItem/ProductCode,product/region,product/instanceType,"
+     "lineItem/UsageStartDate,lineItem/UsageAmount,lineItem/UnblendedCost\n"]
+    + [f"Svc{i % 7},ap-south-1,t{i % 5},2024-03-{(i % 28) + 1:02d}T00:00:00Z,"
+       f"10,{(i * 7.3331) % 100:.4f}\n" for i in range(400)]
+)
+
 AZURE_EXPORT = """MeterCategory,ResourceLocation,MeterSubCategory,Quantity,CostInBillingCurrency
 Virtual Machines,centralindia,Dv3 Series,2190,395.00
 Storage,centralindia,Blob Storage,4000,92.00
@@ -166,3 +173,133 @@ def test_rows_for_one_service_are_folded_into_one_finding():
     assert report.lines_read == 50
     assert report.total_monthly_usd == pytest.approx(500.0)
     assert len({f.service for f in report.findings}) == 1
+
+
+# ── the cost report's axes ───────────────────────────────────────────
+#
+# The audit collapses the bill to one row per service, because a finding
+# per CUR row would be noise. A cost report needs the other axes back,
+# and the property that matters is that regrouping NEVER MOVES MONEY:
+# whatever you group by, the parts still add up to the bill.
+
+
+def test_the_breakdown_adds_up_to_the_bill():
+    """Exactly, to the cent -- not within a tolerance. Cells rounded
+    independently drifted ten cents from the headline on a 1,165-cell
+    export, and a report whose rows do not add up to its own total is one
+    a reader is right to stop believing."""
+    report = audit(AWS_CUR)
+    assert round(sum(c.monthly_usd for c in report.breakdown), 2) == report.total_monthly_usd
+
+
+def test_the_breakdown_adds_up_on_a_bill_wide_enough_to_drift():
+    import random
+
+    random.seed(3)
+    rows = [
+        "lineItem/ProductCode,product/region,product/instanceType,"
+        "lineItem/UsageStartDate,lineItem/UsageAmount,lineItem/UnblendedCost"
+    ]
+    for day in range(1, 29):
+        for service in ("AmazonEC2", "AmazonRDS", "AmazonS3", "AWSLambda"):
+            for region in ("ap-south-1", "us-east-1", "eu-west-1"):
+                rows.append(
+                    f"{service},{region},x,2024-03-{day:02d}T00:00:00Z,10,"
+                    f"{random.uniform(1, 99):.4f}"
+                )
+    report = audit("\n".join(rows) + "\n")
+    assert len(report.breakdown) > 300
+    assert round(sum(c.monthly_usd for c in report.breakdown), 2) == report.total_monthly_usd
+
+
+def test_apportioning_moves_no_cell_by_more_than_a_cent():
+    """The leftover cents have to land somewhere. They may not land in a
+    heap: a cell shifted by more than a cent is a misstated line, however
+    well the column adds up."""
+    from whichcloud.billing_audit import _breakdown, parse
+
+    lines, _ = parse(DENSE_CUR)
+    rows, _ = _breakdown(lines)
+    exact: dict[tuple, float] = {}
+    for line in lines:
+        key = (line.service, line.region, line.resource_type, line.day)
+        exact[key] = exact.get(key, 0.0) + float(line.monthly_usd)
+    for row in rows:
+        key = (row.service, row.region, row.resource_type, row.day)
+        assert abs(row.monthly_usd - exact[key]) <= 0.0101
+
+
+def test_one_service_in_two_regions_stays_two_rows():
+    """The service rollup kept the FIRST region it saw and added the rest
+    of the money to it. That silently relocates spend -- a report grouped
+    by region would have shown us-east-1 at zero while it was being
+    billed."""
+    report = audit(
+        "lineItem/ProductCode,product/region,product/instanceType,"
+        "lineItem/UsageAmount,lineItem/UnblendedCost\n"
+        "AmazonEC2,ap-south-1,m5.xlarge,100,400.00\n"
+        "AmazonEC2,us-east-1,m5.xlarge,100,100.00\n"
+    )
+    by_region = {c.region: c.monthly_usd for c in report.breakdown}
+    assert by_region == {"ap-south-1": 400.00, "us-east-1": 100.00}
+
+
+def test_the_breakdown_is_largest_first():
+    costs = [c.monthly_usd for c in audit(AWS_CUR).breakdown]
+    assert costs == sorted(costs, reverse=True)
+
+
+@pytest.mark.parametrize("content", [AWS_CUR, GCP_EXPORT, AZURE_EXPORT])
+def test_every_provider_export_yields_a_breakdown(content):
+    report = audit(content)
+    assert report.breakdown
+    assert all(c.service for c in report.breakdown)
+
+
+# ── the time axis ────────────────────────────────────────────────────
+
+DATED_CUR = """lineItem/ProductCode,product/region,lineItem/UsageStartDate,lineItem/UsageAmount,lineItem/UnblendedCost
+AmazonEC2,ap-south-1,2024-03-01T00:00:00Z,100,400.00
+AmazonEC2,ap-south-1,2024-03-02T00:00:00Z,100,300.00
+AmazonRDS,ap-south-1,2024-03-01T00:00:00Z,100,100.00
+"""
+
+
+def test_costs_are_split_by_day():
+    by_day: dict[str, float] = {}
+    for cell in audit(DATED_CUR).breakdown:
+        by_day[cell.day] = by_day.get(cell.day, 0) + cell.monthly_usd
+    assert by_day == {"2024-03-01": 500.00, "2024-03-02": 300.00}
+
+
+def test_splitting_by_day_still_adds_up_to_the_bill():
+    report = audit(DATED_CUR)
+    assert round(sum(c.monthly_usd for c in report.breakdown), 2) == pytest.approx(
+        report.total_monthly_usd, abs=0.01
+    )
+
+
+def test_an_undated_bill_says_so_rather_than_inventing_a_date():
+    """A row dated to today because the export did not say would draw a
+    trend that never happened. Empty, and a warning that names the column
+    to look for."""
+    report = audit(AWS_CUR)
+    assert all(c.day == "" for c in report.breakdown)
+    assert any("single snapshot" in w for w in report.warnings)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("2024-03-01T00:00:00Z", "2024-03-01"),   # AWS
+        ("2024-03-01 00:00:00 UTC", "2024-03-01"),  # GCP
+        ("03/01/2024", "2024-03-01"),             # Azure, US-style
+        ("3/7/2024", "2024-03-07"),
+        ("", ""),
+        ("not a date", ""),                       # guessed dates move money
+    ],
+)
+def test_each_provider_writes_the_date_differently(raw, expected):
+    from whichcloud.billing_audit import _day
+
+    assert _day(raw) == expected

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "diagram:check": "tsx harness/layoutQuality.ts"
+    "diagram:check": "tsx harness/layoutQuality.ts",
+    "report:check": "tsx harness/costReport.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.6",

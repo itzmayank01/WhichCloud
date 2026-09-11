@@ -59,6 +59,15 @@ _REGION_COLUMNS = (
     "product/region", "region", "resourcelocation", "location",
     "product/location",
 )
+#: When the usage happened. A cost report is a TIME SERIES first -- "what
+#: did we spend, over what period, and is it rising" -- and none of that
+#: is answerable from a single collapsed total. Each provider names this
+#: differently, and AWS gives an interval where the other two give a day.
+_DATE_COLUMNS = (
+    "lineitem/usagestartdate", "usagestartdate", "usage_start_time",
+    "date", "usagedatetime", "usage_date", "billingperiodstartdate",
+    "bill/billingperiodstartdate", "chargeperiodstart",
+)
 _TYPE_COLUMNS = (
     "product/instancetype", "instancetype", "meter subcategory",
     "metersubcategory", "resource_type", "sku_description", "product/usagetype",
@@ -80,6 +89,10 @@ class BillingLine:
     usage: Decimal = Decimal(0)
     region: str = ""
     resource_type: str = ""
+    #: ISO day, or "" when the export did not say. Empty rather than
+    #: today's date: a row whose date we do not know must not be plotted
+    #: as if it happened now, which would invent a trend.
+    day: str = ""
     raw: dict = field(default_factory=dict)
 
 
@@ -114,6 +127,28 @@ class Finding:
 
 
 @dataclass
+class CostRow:
+    """One cell of the bill, aggregated on the dimensions a report groups by.
+
+    The audit collapses everything to one row per service, because a finding
+    per CUR row would be noise. A COST REPORT needs the other axes back:
+    nobody asks only "what did we spend", they ask "on what, where, and of
+    what kind". Aggregating on the three together keeps the payload in the
+    tens or low hundreds of rows -- a CUR's thousands are rows about the same
+    handful of services -- so the interface can filter and regroup locally
+    without another round trip per click.
+    """
+
+    service: str
+    region: str
+    resource_type: str
+    #: ISO day, or "" where the export did not state one.
+    day: str
+    monthly_usd: float
+    usage: float
+
+
+@dataclass
 class AuditReport:
     currency: str = "USD"
     total_monthly_usd: float = 0.0
@@ -125,6 +160,9 @@ class AuditReport:
     #: coverage.
     reviewed_no_finding: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    #: The bill itself, on three axes. Findings answer "what should change";
+    #: this answers "what is there", which is the question a reader has first.
+    breakdown: list[CostRow] = field(default_factory=list)
 
     @property
     def total_saving_usd(self) -> float:
@@ -154,6 +192,32 @@ class AuditReport:
         if not self.total_monthly_usd:
             return 0.0
         return round(100 * self.total_saving_usd / self.total_monthly_usd, 1)
+
+
+def _day(value: str | None) -> str:
+    """An ISO day from whatever the export put in its date column.
+
+    AWS writes `2024-03-01T00:00:00Z`, GCP `2024-03-01 00:00:00 UTC`,
+    Azure `03/01/2024`. Only the day is kept: billing exports are daily at
+    finest, and an hour that is really a bucket label reads as precision
+    the data does not carry.
+
+    Anything unrecognised returns "" rather than a guess. A misparsed date
+    puts real money on the wrong day, and a chart makes that look like a
+    spike somebody has to go and explain.
+    """
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if match := re.match(r"(\d{4})-(\d{2})-(\d{2})", text):
+        return match.group(0)
+    # Azure's US-style M/D/Y. Ambiguous for the first twelve days of a
+    # month -- and unresolvable from one row, so the provider's stated
+    # format is taken at its word rather than sniffed.
+    if match := re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", text):
+        month, day, year = match.groups()
+        return f"{year}-{int(month):02d}-{int(day):02d}"
+    return ""
 
 
 def _pick(header: list[str], candidates: tuple[str, ...]) -> str | None:
@@ -199,6 +263,7 @@ def parse(content: str) -> tuple[list[BillingLine], list[str]]:
     usage_col = _pick(header, _USAGE_COLUMNS)
     region_col = _pick(header, _REGION_COLUMNS)
     type_col = _pick(header, _TYPE_COLUMNS)
+    date_col = _pick(header, _DATE_COLUMNS)
 
     lines: list[BillingLine] = []
     warnings: list[str] = []
@@ -217,6 +282,7 @@ def parse(content: str) -> tuple[list[BillingLine], list[str]]:
             usage=_decimal(row.get(usage_col, "0")) if usage_col else Decimal(0),
             region=(row.get(region_col) or "").strip() if region_col else "",
             resource_type=(row.get(type_col) or "").strip() if type_col else "",
+            day=_day(row.get(date_col, "")) if date_col else "",
             raw=row,
         ))
 
@@ -232,6 +298,10 @@ def parse(content: str) -> tuple[list[BillingLine], list[str]]:
         )
     return lines, warnings
 
+
+#: Ceiling on breakdown rows returned. Past this the finest axis is
+#: dropped rather than the tail truncated -- see _breakdown.
+_MAX_CELLS = 12000
 
 #: Billing service names -> the workload_type the knowledge base speaks.
 #: Deliberately conservative: a service this cannot classify produces NO
@@ -304,6 +374,101 @@ def _applies(technique: Technique, line: BillingLine, category: str) -> bool:
     return True
 
 
+def _round_to_total(rows: list[CostRow], total: float) -> list[CostRow]:
+    """Round every cell to cents so they still sum to the bill exactly.
+
+    Rounding each cell independently does not do this. On a 1,165-cell
+    export the roundings drifted ten cents from the headline -- nothing
+    against $84,000, but a cost report whose rows visibly do not add up to
+    its own total is one a reader stops believing, and they are right to.
+
+    Largest-remainder apportionment: floor every cell to a cent, then hand
+    the leftover cents to the cells that lost the most in the floor. Each
+    cell moves by at most one cent from its true value, and the column
+    sums to the bill by construction rather than by luck.
+    """
+    cents = [int(row.monthly_usd * 100) for row in rows]
+    remainders = sorted(
+        range(len(rows)),
+        key=lambda i: rows[i].monthly_usd * 100 - cents[i],
+        reverse=True,
+    )
+    leftover = round(total * 100) - sum(cents)
+    # Negative only if floats conspired; handing back cents is the same
+    # operation in reverse and keeps the invariant either way.
+    step = 1 if leftover >= 0 else -1
+    for n in range(abs(leftover)):
+        cents[remainders[n % len(remainders)]] += step
+
+    for row, value in zip(rows, cents):
+        row.monthly_usd = value / 100
+        row.usage = round(row.usage, 4)
+    return rows
+
+
+def _breakdown(lines: list[BillingLine]) -> tuple[list[CostRow], list[str]]:
+    """The bill grouped on service, region, resource type and day.
+
+    All four axes at once, so the interface can regroup and filter without
+    another request -- every row is disjoint, so any subtotal it builds is
+    a real sum rather than a re-estimate.
+
+    Unknown dimensions become an explicit empty string rather than being
+    dropped: a row whose region the export did not state is still real
+    money, and binning it under another region would move spend somewhere
+    it did not go.
+    """
+    notes: list[str] = []
+
+    def fold(keep_type: bool) -> dict[tuple, CostRow]:
+        cells: dict[tuple, CostRow] = {}
+        for line in lines:
+            rtype = line.resource_type if keep_type else ""
+            key = (line.service, line.region, rtype, line.day)
+            cell = cells.get(key)
+            if cell is None:
+                cells[key] = CostRow(
+                    service=line.service, region=line.region,
+                    resource_type=rtype, day=line.day,
+                    monthly_usd=float(line.monthly_usd),
+                    usage=float(line.usage),
+                )
+            else:
+                cell.monthly_usd += float(line.monthly_usd)
+                cell.usage += float(line.usage)
+        return cells
+
+    cells = fold(keep_type=True)
+    # A full CUR crossed with a month of days can reach tens of thousands
+    # of combinations, which is a payload nobody can use. Drop the finest
+    # axis rather than truncating: a report missing its long tail silently
+    # understates every total, where a report with one fewer dimension is
+    # still arithmetically true.
+    if len(cells) > _MAX_CELLS:
+        dropped = len(cells)
+        cells = fold(keep_type=False)
+        notes.append(
+            f"Grouped without resource type: the bill has {dropped:,} "
+            f"service/region/type/day combinations, past the {_MAX_CELLS:,} "
+            f"this can return. Totals are unchanged; the resource-type "
+            f"breakdown is not available for a bill this wide."
+        )
+
+    rows = _round_to_total(
+        sorted(cells.values(), key=lambda c: c.monthly_usd, reverse=True),
+        float(sum(line.monthly_usd for line in lines)),
+    )
+
+    if rows and not any(c.day for c in rows):
+        notes.append(
+            "No date column was found, so this bill is a single snapshot "
+            "rather than a series. Costs over time needs an export with "
+            "lineItem/UsageStartDate (AWS), usage_start_time (GCP) or "
+            "Date (Azure)."
+        )
+    return rows, notes
+
+
 def audit(content: str, techniques: list[Technique] | None = None) -> AuditReport:
     """A billing export, reviewed against the knowledge base."""
     lines, warnings = parse(content)
@@ -329,6 +494,8 @@ def audit(content: str, techniques: list[Technique] | None = None) -> AuditRepor
         lines_read=len(lines),
         warnings=warnings,
     )
+    report.breakdown, breakdown_notes = _breakdown(lines)
+    report.warnings.extend(breakdown_notes)
 
     for line in sorted(
         by_service.values(), key=lambda l: l.monthly_usd, reverse=True

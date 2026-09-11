@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, money, type AuditReport } from "@/lib/api";
+import { CostReport } from "./CostReport";
 
 /**
  * The audit results view.
@@ -93,14 +94,10 @@ export function AuditWorkbench() {
             </p>
           </section>
 
-          {report.warnings.map((w) => (
-            <div
-              key={w}
-              className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900"
-            >
-              {w}
-            </div>
-          ))}
+          {/* WHAT IS THERE, before what to change. A reader's first
+              question about their own bill is where the money went, and
+              a findings list answers a question they have not asked yet. */}
+          <CostReport rows={report.breakdown} warnings={report.warnings} />
 
           <section className="rounded-xl border border-neutral-200 bg-white">
             <h2 className="border-b border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-900">
