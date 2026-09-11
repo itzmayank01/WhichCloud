@@ -619,6 +619,14 @@ class RecommendIn(BaseModel):
     needs_event_streaming: bool = False
     needs_analytics: bool = False
     needs_search: bool = False
+    #: Selects the event-driven service graph -- a bus and a stream ahead of
+    #: the compute, rather than a request path through it. The field existed on
+    #: Requirement and on the plain-English path from the start, but not here,
+    #: so the structured routes could not reach one of the seven archetypes at
+    #: all: posting it was accepted and silently dropped, and the caller got a
+    #: web app back.
+    event_driven: bool = False
+    needs_queue: bool = False
     daily_transactions: int | None = None
     latency_target_ms: int | None = None
 
@@ -640,6 +648,8 @@ class RecommendIn(BaseModel):
             needs_event_streaming=self.needs_event_streaming,
             needs_analytics=self.needs_analytics,
             needs_search=self.needs_search,
+            event_driven=self.event_driven,
+            needs_queue=self.needs_queue,
             daily_transactions=self.daily_transactions,
             latency_target_ms=self.latency_target_ms,
         )

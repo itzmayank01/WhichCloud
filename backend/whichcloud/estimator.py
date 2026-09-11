@@ -462,6 +462,27 @@ PROVIDER_SKUS: dict[tuple[str, str, str], str] = {
     ("gcp", "lambda-duration", "gb-second"): "cloudrunfunctions:memory-time",
     ("gcp", "queue", "requests"): "pubsub:messages",
     ("gcp", "notification", "requests"): "pubsub:notifications",
+    # The event bus. Google has no EventBridge-shaped product with its own
+    # meter -- Eventarc routes events and bills the Pub/Sub underneath it, so
+    # the Pub/Sub message meter IS the price of the bus. Without this mapping
+    # the line was permanently missing on GCP, and it is rung one of the
+    # event-driven archetype: the queue is the whole promise, so an
+    # architecture reported without it is not cheaper, it is incomplete.
+    #
+    # The two meters are not the same shape and the gap is real, not a
+    # conversion error. EventBridge charges $1.00 per million events up to
+    # 64 KB each; Pub/Sub charges for throughput, which the ingest records at
+    # ~$0.04 per million on a 1 KB message. Both are quantified in events, so
+    # the line item is correct -- but GCP's figure assumes small messages, and
+    # a workload moving 64 KB payloads would close most of that 25x gap.
+    ("gcp", "eventbridge", "events"): "pubsub:messages",
+    # NOT mapped here: stream delivery to storage. Firehose bills per GB
+    # delivered and its GCP equivalent is a Dataflow job billed per
+    # vCPU-hour. Pointing the role at dataflow:vcpu-hour would multiply a
+    # volume by a compute rate and print the product as a price. How many
+    # vCPU sustain a given GB/month is a modelling assumption nobody here has
+    # measured, so the line stays reported as missing -- which is one honest
+    # gap rather than one invented number.
     ("gcp", "athena", "tb"): "bigquery:analysis",
     ("gcp", "glue", "dpu-hour"): "dataflow:vcpu-hour",
     ("azure", "rekognition", "images"): "aivision:transactions",
@@ -691,6 +712,54 @@ def _hourly_line(
         unit_price=point.price_usd,
         quantity=quantity,
         monthly_usd=point.price_usd * quantity,
+    )
+
+
+def _self_managed_line(
+    label: str,
+    provider: str,
+    region: str,
+    *,
+    vcpu: float,
+    memory_gb: float,
+    count: int,
+    dsn: str | None,
+) -> LineItem | None:
+    """Price a capability the provider does not sell as a managed product.
+
+    Some things genuinely have no first-party managed SKU on a given cloud --
+    Google sells no managed search cluster, and Elastic there is a marketplace
+    product. Reporting those as `missing` was honest but made the comparison
+    worse rather than better: the component vanished from the total, so the
+    provider that CANNOT do a thing came out looking cheaper at it than the
+    providers that can.
+
+    Running it on general-purpose compute is what an engineer would actually
+    do, and the compute catalog holds real published rates for exactly that.
+    So the line is priced from the same machines the compute tier uses, and
+    carries a caveat saying it is self-managed -- because the money is only
+    half the difference. The other half is who patches it at 2am, and a number
+    cannot say that.
+    """
+    point = store.cheapest_compute_like(
+        provider=provider,
+        region=region,
+        category="compute",
+        min_vcpu=vcpu,
+        min_memory_gb=memory_gb,
+        dsn=dsn,
+    )
+    if not point:
+        return None
+    line = _hourly_line(f"{label} × {count}", point, count)
+    return replace(
+        line,
+        caveats=[
+            *line.caveats,
+            f"Self-managed on {point.sku}: {provider} sells no managed "
+            "equivalent, so this is the compute to run it yourself. Operating "
+            "it -- patching, scaling, backups -- is not in this figure.",
+        ],
     )
 
 
@@ -1503,6 +1572,25 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         # zone count. `terraform_export_*` builds exactly this many, and a
         # test holds the two together.
         count = 1 if provider in ("gcp", "azure") else spec.nat_gateway_count
+        # OPEN QUESTION, deliberately left as it is.
+        #
+        # GCP's Cloud NAT uptime rate is $0.0014/hour against AWS's ~$0.045
+        # per gateway-hour -- a 40x gap that shows up as GCP sitting 46% below
+        # the median on C6/F6/Cheapest. Google's published pricing charges
+        # uptime PER VM ASSIGNED to the gateway (up to 32), which would make
+        # the quantity here the fleet size rather than the resource count, and
+        # would explain the whole gap.
+        #
+        # The ingested SKU is Google's own "Cloud NAT Gateway Uptime" and its
+        # description says gateway, not VM. One reading is a 40x underquote on
+        # every multi-instance GCP tier; the other is that Cloud NAT is simply
+        # much cheaper. Changing it on the strength of a half-remembered rate
+        # card would risk quoting four times the real price, which is the worse
+        # of the two errors.
+        #
+        # This is exactly what checking one architecture against a real
+        # invoice would settle in a minute, and it is the best argument in the
+        # repo for doing that.
         if hourly:
             result.items.append(
                 _hourly_line(
@@ -1626,7 +1714,22 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                                  endpoint, spec.kafka_broker_count)
                 )
             else:
-                result.missing.append("managed Kafka broker")
+                # Same treatment as search: brokers on general-purpose compute,
+                # labelled as self-managed, rather than a hole that flatters
+                # whichever cloud has no managed Kafka.
+                own = _self_managed_line(
+                    "Kafka brokers (self-managed)",
+                    provider,
+                    region,
+                    vcpu=spec.kafka_broker_vcpu or 2,
+                    memory_gb=spec.kafka_broker_memory_gb or 0.0,
+                    count=spec.kafka_broker_count,
+                    dsn=dsn,
+                )
+                if own:
+                    result.items.append(own)
+                else:
+                    result.missing.append("managed Kafka broker")
 
     # ---- search / analytics (OpenSearch) ----
     if spec.search_node_count:
@@ -1659,10 +1762,25 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 )
             )
         else:
-            # Names the capability, not a product: GCP sells no first-party
-            # managed search cluster (Elastic on GCP is a marketplace product),
-            # so this is a real absence rather than an unmapped SKU.
-            result.missing.append("managed search cluster")
+            # GCP sells no first-party managed search cluster (Elastic there is
+            # a marketplace product), so there is no SKU to map. Reporting it
+            # missing was honest and still made the comparison worse: the line
+            # vanished from the total, so the cloud that cannot do this came
+            # out cheaper at it than the two that can. Price the compute an
+            # engineer would actually run it on, and say that is what it is.
+            own = _self_managed_line(
+                "Search nodes (self-managed)",
+                provider,
+                region,
+                vcpu=spec.search_node_vcpu or 2,
+                memory_gb=spec.search_node_memory_gb or 0.0,
+                count=spec.search_node_count,
+                dsn=dsn,
+            )
+            if own:
+                result.items.append(own)
+            else:
+                result.missing.append("managed search cluster")
 
         if spec.search_storage_gb:
             volume = store.get_price(
@@ -1677,7 +1795,21 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
                 # no separate per-GB meter to add, so this is not a gap.
                 pass
             else:
-                result.missing.append("managed search storage")
+                # Self-managed nodes keep their index on block storage, which
+                # every provider does sell. Without this the cluster was priced
+                # and the disk under it was not.
+                # Through the role table, not a hand-written SKU: every
+                # provider already has a (db_storage, gp3) mapping to its own
+                # SSD-class per-GB-month meter, and naming one directly here
+                # would resolve on AWS and silently return nothing on the
+                # cloud this branch exists for.
+                disk = _by_role(provider, region, "db_storage", "gp3", dsn)
+                if disk:
+                    result.items.append(
+                        _metered_line("Search storage (self-managed)", disk, spec.search_storage_gb)
+                    )
+                else:
+                    result.missing.append("managed search storage")
 
     # ---- data warehouse ----
     if spec.warehouse_node_count:

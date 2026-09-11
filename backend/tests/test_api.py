@@ -203,14 +203,22 @@ def test_incomplete_estimates_are_flagged_not_hidden(client):
     """A shape a cloud cannot fully price must come back marked incomplete, so
     the interface never presents a partial total as the cheaper answer.
 
-    Web/relational and web/media now price COMPLETE on all three clouds, so the
-    example here needs a search cluster: GCP (and Azure) have no managed
-    OpenSearch-equivalent mapped yet, so a search workload's options are still
-    incomplete -- exactly what this flag must surface."""
+    The example has to be a gap that is still REAL, and the honest ones keep
+    shrinking. Web/relational and web/media price complete everywhere; search
+    used to be the example until GCP's cluster was priced as self-managed
+    compute, which closed it.
+
+    What remains is stream delivery to object storage: Firehose bills per GB
+    delivered and its GCP equivalent is a Dataflow job billed per vCPU-hour,
+    and nobody here has measured how many vCPU sustain a given GB/month. That
+    is a gap held open on purpose rather than filled with a guess, which makes
+    it the right subject for this test -- and if it is ever closed, this test
+    should be repointed again rather than deleted."""
     body = client.post(
         "/compare",
-        json={"goal": "catalog", "workload_type": "web", "needs_search": True,
-              "daily_transactions": 500000, "storage_gb": 200, "egress_gb": 500},
+        json={"goal": "order events", "workload_type": "api",
+              "event_driven": True, "daily_transactions": 500000,
+              "storage_gb": 200, "egress_gb": 500},
     ).json()
 
     gcp = body["clouds"]["gcp"]
