@@ -27,6 +27,16 @@ import "@xyflow/react/dist/style.css";
 import type { Node as TopoNode, Edge as TopoEdge } from "@/lib/api";
 import { buildGraphModel } from "@/lib/graphModel";
 import { layout, type CloudId } from "@/lib/elkLayout";
+// Shared with the priced canvas on purpose. These are what make a box look
+// like the diagram it came from; duplicating them here would guarantee the
+// two drift apart the first time either is touched.
+import {
+  ContainerBadge,
+  ROUTE_ROWS,
+  containerStyle,
+  serviceDisplayName,
+  serviceIconPath,
+} from "@/components/architecture/ArchitectureGraph";
 import type { IconEntry } from "@/lib/iconCatalog";
 
 /**
@@ -71,13 +81,27 @@ function Handles({ connecting }: { connecting: boolean }) {
   );
 }
 
+/* The service box, drawn from the SAME helpers as the priced canvas --
+   serviceIconPath and serviceDisplayName are exported from ArchitectureGraph
+   rather than reimplemented. The first version of this editor drew plain
+   bordered rectangles, so opening it threw away every icon, every provider
+   product name and the whole visual language of the diagram someone had just
+   been reading. Editing a picture should not mean editing a worse one. */
 function SketchService({ data, selected }: NodeProps) {
   const d = data as {
     label: string;
+    kind?: string;
     icon?: string;
     detail?: string;
+    cloud?: CloudId;
     connecting?: boolean;
   };
+  const cloud = d.cloud ?? "aws";
+  // An explicit icon (added from the palette) wins; otherwise the engine's
+  // `kind` resolves exactly as it does on the priced canvas.
+  const icon = d.icon ?? (d.kind ? serviceIconPath(d.kind, cloud) : null);
+  const title = (d.kind ? serviceDisplayName(d.kind, cloud) : null) ?? d.label;
+
   return (
     <div
       className="flex h-full w-full items-center gap-2.5 border bg-white px-2.5 py-2"
@@ -87,17 +111,21 @@ function SketchService({ data, selected }: NodeProps) {
         // picking things: a 1px border change reads as a rendering artefact.
         borderColor: selected ? "#1b3a6b" : "#D5DBDB",
         boxShadow: selected
-          ? "0 0 0 2px #1b3a6b, 0 2px 8px rgba(27,58,107,.18)"
+          ? "0 0 0 2px #1b3a6b, 0 4px 12px rgba(27,58,107,.20)"
           : "none",
       }}
     >
       <Handles connecting={Boolean(d.connecting)} />
-      {d.icon && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={d.icon} alt="" className="h-8 w-8 shrink-0 object-contain" />
-      )}
+      <div className="grid h-9 w-9 shrink-0 place-items-center">
+        {icon ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={icon} alt="" className="h-8 w-8 object-contain" />
+        ) : (
+          <div className="h-7 w-7 rounded-[2px] bg-sunk ring-1 ring-line" />
+        )}
+      </div>
       <div className="min-w-0 flex-1 leading-tight">
-        <p className="truncate text-[12.5px] font-medium text-ink">{d.label}</p>
+        <p className="truncate text-[12.5px] font-semibold text-ink">{title}</p>
         {d.detail && (
           <p className="truncate text-[10.5px] italic text-ink-3">{d.detail}</p>
         )}
@@ -106,16 +134,44 @@ function SketchService({ data, selected }: NodeProps) {
   );
 }
 
+/* The boundary, in the priced canvas's own colour language: VPC green, zone
+   dashed blue, subnets by tier. Drawn from containerStyle so the two views
+   cannot drift -- one hand-picked grey dashed rectangle made every boundary
+   look alike, which is precisely what those colours exist to prevent. */
 function SketchGroup({ data, selected }: NodeProps) {
-  const d = data as { label: string };
+  const d = data as { label: string; kind?: string; cloud?: CloudId };
+  const st = containerStyle(d.kind ?? "cloud");
+  const routes = d.kind ? ROUTE_ROWS[d.kind] : undefined;
+
   return (
     <div
-      className="h-full w-full border-[1.5px] border-dashed bg-transparent"
-      style={{ borderRadius: 4, borderColor: selected ? "#1b3a6b" : "#8FA3BF" }}
+      className="h-full w-full"
+      style={{
+        background: st.fill,
+        border: `${selected ? st.width + 1 : st.width}px ${
+          st.dash ? "dashed" : "solid"
+        } ${selected ? "#1b3a6b" : st.border}`,
+        borderRadius: 2,
+        boxShadow: selected ? "0 0 0 2px rgba(27,58,107,.18)" : "none",
+      }}
     >
-      <span className="absolute -top-2.5 left-2 bg-white px-1 text-[11px] font-medium text-ink-3">
+      <span
+        className="absolute flex items-center gap-1.5 whitespace-nowrap rounded-[2px] pr-1.5 text-[12px] font-semibold leading-[18px]"
+        style={{ left: 8, top: -10, background: "#FFFFFF", color: st.ink }}
+      >
+        {d.kind && <ContainerBadge kind={d.kind} cloud={d.cloud} />}
         {d.label}
       </span>
+      {routes && (
+        <div className="flex h-full flex-col justify-center gap-0.5 px-2 pt-2">
+          {routes.map(([dest, via]) => (
+            <div key={dest} className="flex items-center justify-between gap-2">
+              <span className="font-mono text-[9.5px] text-ink-2">{dest}</span>
+              <span className="font-mono text-[9.5px] text-ink-3">{via}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -143,6 +199,19 @@ const nodeTypes = {
 
 type Tool = "select" | "connect" | "box" | "text";
 
+/** Whatever is currently picked -- a service, a boundary, a label or an arrow.
+ *  Arrows included deliberately: an editor where every box can be changed and
+ *  the lines between them cannot is an editor that stops halfway. */
+export type Selection = {
+  kind: "service" | "group" | "text" | "edge";
+  id: string;
+  label: string;
+};
+
+export type Command =
+  | { type: "rename"; id: string; label: string }
+  | { type: "delete"; id: string };
+
 function Inner({
   nodes: topoNodes,
   edges: topoEdges,
@@ -152,6 +221,9 @@ function Inner({
   tool,
   onToolDone,
   seedToken,
+  onSelectionChange,
+  command,
+  onCommandDone,
 }: {
   nodes: TopoNode[];
   edges: TopoEdge[];
@@ -163,6 +235,9 @@ function Inner({
   onToolDone: () => void;
   /** Bumped to re-seed from the priced layout, discarding edits. */
   seedToken: number;
+  onSelectionChange?: (selection: Selection | null) => void;
+  command?: Command | null;
+  onCommandDone?: () => void;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>([]);
@@ -197,7 +272,9 @@ function Inner({
             id: `g:${c.id}`,
             type: "sketchGroup",
             position: { x: c.x, y: c.y },
-            data: { label: c.label },
+            // kind is what containerStyle reads to pick the boundary's colour
+            // and dash; dropping it made every boundary an identical grey box.
+            data: { label: c.label, kind: c.kind, cloud },
             style: { width: c.w, height: c.h },
             // Boundaries sit behind and must not swallow clicks aimed at the
             // services inside them.
@@ -209,7 +286,14 @@ function Inner({
             id: n.id,
             type: "sketchService",
             position: { x: n.x, y: n.y },
-            data: { label: n.label, icon: undefined, detail: n.detail },
+            // kind + cloud, so the box resolves the same mark and the same
+            // provider product name the priced canvas gave it.
+            data: {
+              label: n.label,
+              kind: n.kind,
+              cloud,
+              detail: n.detail,
+            },
             style: { width: n.w, height: n.h },
             zIndex: 10,
           })),
@@ -306,6 +390,54 @@ function Inner({
     [tool, rf, setNodes, onToolDone],
   );
 
+  /* Report what is selected so the workspace can offer a properties panel.
+     React Flow tracks selection internally; without lifting it, "select a
+     thing and change it" has nowhere to happen -- which is why the only edits
+     available were drag, rename-by-double-click and delete. */
+  useEffect(() => {
+    const node = nodes.find((n) => n.selected);
+    if (node) {
+      const d = node.data as { label?: string };
+      onSelectionChange?.({
+        kind: node.type === "sketchGroup" ? "group" : node.type === "sketchText" ? "text" : "service",
+        id: node.id,
+        label: String(d.label ?? ""),
+      });
+      return;
+    }
+    const edge = edges.find((e) => e.selected);
+    onSelectionChange?.(
+      edge ? { kind: "edge", id: edge.id, label: String(edge.label ?? "") } : null,
+    );
+  }, [nodes, edges, onSelectionChange]);
+
+  /* Commands from that panel. Kept as an imperative handle rather than more
+     props because the panel lives outside the ReactFlowProvider -- it cannot
+     reach useReactFlow, and threading a callback per action would mean a new
+     prop for every future edit. */
+  useEffect(() => {
+    if (!command) return;
+    if (command.type === "rename") {
+      setNodes((all) =>
+        all.map((n) =>
+          n.id === command.id ? { ...n, data: { ...n.data, label: command.label } } : n,
+        ),
+      );
+      setEdges((all) =>
+        all.map((e) => (e.id === command.id ? { ...e, label: command.label } : e)),
+      );
+    }
+    if (command.type === "delete") {
+      setNodes((all) => all.filter((n) => n.id !== command.id));
+      setEdges((all) =>
+        all.filter(
+          (e) => e.id !== command.id && e.source !== command.id && e.target !== command.id,
+        ),
+      );
+    }
+    onCommandDone?.();
+  }, [command, setNodes, setEdges, onCommandDone]);
+
   const onConnect = useCallback(
     (connection: Connection) =>
       setEdges((current) =>
@@ -391,6 +523,9 @@ export function SketchCanvas(props: {
   tool: Tool;
   onToolDone: () => void;
   seedToken: number;
+  onSelectionChange?: (selection: Selection | null) => void;
+  command?: Command | null;
+  onCommandDone?: () => void;
 }) {
   return (
     <ReactFlowProvider>

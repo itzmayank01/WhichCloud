@@ -101,15 +101,23 @@ export function Inspector({
               </div>
             )}
           </div>
+        ) : node.priced === false ? (
+          /* A real gap: the catalog could not price this, so the total is
+             short by whatever it costs. Amber, because the number on the left
+             is wrong until it is resolved. */
+          <p className="rounded-lg border border-caution/25 bg-caution-wash px-3 py-2 text-[12px] leading-relaxed text-caution">
+            The catalog could not price this in this region, so the total on
+            the left excludes it.
+          </p>
         ) : (
-          /* Two different silences, kept apart. A component the catalog could
-             not price is a hole in the total; one the estimator simply does
-             not bill for (a subnet, a route table) is not. Collapsing them
-             into "no price" would make a real gap look like a detail. */
-          <p className="rounded-lg bg-caution-wash px-3 py-2 text-[12px] leading-relaxed text-caution">
-            {node.priced === false
-              ? "The catalog could not price this in this region, so the total on the left excludes it."
-              : "Not billed on its own — its cost sits inside another line."}
+          /* NOT a warning, and it must not look like one. A subnet, a route
+             table or the end users are not billed separately -- that is how
+             the cloud works, not a problem with the estimate. Amber here put a
+             caution panel on the most ordinary fact in the diagram, which
+             teaches people to discount the colour by the time it means
+             something. */
+          <p className="rounded-lg bg-sunk px-3 py-2 text-[12px] leading-relaxed text-ink-3">
+            Not billed on its own — its cost sits inside another line.
           </p>
         )}
       </div>

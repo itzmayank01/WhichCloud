@@ -10,6 +10,7 @@ import {
   type Recommendation,
 } from "@/lib/api";
 import { PROVIDER_SERVICES } from "@/lib/providerServices";
+import { Notices } from "@/components/workspace/Notices";
 
 /**
  * The rail beside the canvas: what was asked, what it costs, and why.
@@ -295,11 +296,26 @@ export function CostRail({
                 and database, which is a price nobody can obtain today -- it
                 needs a one-year term they have not agreed to. Leading with a
                 blend of the two would be a number no user could act on. */}
+            {/* Price and the two figures that qualify it, as one unit. The
+                commitment and the measured saving used to sit several
+                paragraphs below, separated from the headline by the shape
+                table -- so the three numbers a reader compares were the three
+                furthest apart on the panel. */}
             <div className="mt-3">
-              <div className="tnum font-mono text-[40px] font-semibold leading-none tracking-[-0.02em] text-ink">
-                {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
+              <div className="flex items-baseline gap-2">
+                <span className="tnum font-mono text-[40px] font-semibold leading-none tracking-[-0.02em] text-ink">
+                  {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
+                </span>
+                <span className="text-[13px] text-ink-muted">/mo</span>
               </div>
-              <p className="mt-1.5 text-[13px] text-ink-muted">per month, on-demand</p>
+              <p className="mt-1.5 text-[12.5px] text-ink-muted">
+                on-demand — what you pay having signed nothing
+              </p>
+              {option.measured_saving_usd > 0 && (
+                <p className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-save/10 px-2 py-1 font-mono text-[11.5px] font-semibold text-save">
+                  −{money(option.measured_saving_usd)}/mo already optimised
+                </p>
+              )}
             </div>
             {/* The shape as an aligned definition list. Labels in one column,
                 values in another, values in mono so figures and identifiers
@@ -334,75 +350,19 @@ export function CostRail({
                   peak {money(option.monthly_usd)}/mo
                 </p>
               )}
-            {option.measured_saving_usd > 0 && (
-              <p className="mt-1.5 font-mono text-[11.5px] font-medium text-save">
-                −{money(option.measured_saving_usd)}/mo after optimizations
-              </p>
-            )}
             {because && (
               <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink-2">{because}</p>
             )}
-            {option.budget_saturated && (
-              <p className="mt-2.5 rounded-lg bg-caution-wash px-2.5 py-2 text-[12px] leading-relaxed text-caution">
-                Sized to the ceiling this workload can use. A higher budget
-                won't add useful capacity — the extra is headroom.
-              </p>
-            )}
-            {!option.complete && (
-              <p className="mt-2.5 rounded-lg bg-caution-wash px-2.5 py-2 text-[12px] leading-relaxed text-caution">
-                {option.missing.length} component
-                {option.missing.length === 1 ? "" : "s"} could not be priced in
-                this region — this total is a floor, not the answer.
-              </p>
-            )}
-            {/* Above the cost sheet, not filed under "what this gives up".
-                A price is only meaningful once you know whether the thing
-                priced is the thing you asked for, and the cheapest shape is
-                always one machine and one database — so on a workload whose
-                owner wrote that it cannot go down, this is the lowest number
-                on screen AND the one that fails the brief. Naming the cheaper
-                compliant alternative turns the warning into a decision. */}
-            {!option.compliant && (
-              <div className="mt-2.5 rounded-lg border border-caution/30 bg-caution-wash px-2.5 py-2">
-                <p className="text-[12px] font-semibold text-caution">
-                  This does not meet what you asked for
-                </p>
-                <ul className="mt-1 space-y-1">
-                  {option.unmet.map((u) => (
-                    <li key={u} className="text-[12px] leading-relaxed text-caution">
-                      {u}
-                    </li>
-                  ))}
-                </ul>
-                {result?.cheapest_compliant ? (
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelectOption?.(result.cheapest_compliant!)}
-                      className="font-semibold text-accent underline underline-offset-2"
-                    >
-                      {result.cheapest_compliant}
-                    </button>{" "}
-                    is the cheapest shape here that does
-                    {cheapestCompliantCost != null && (
-                      <>
-                        , at{" "}
-                        <span className="tnum font-mono font-semibold">
-                          {money(cheapestCompliantCost)}/mo
-                        </span>
-                      </>
-                    )}
-                    .
-                  </p>
-                ) : (
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-2">
-                    Nothing on offer meets it at this budget. That is a fact
-                    about the budget, not a reason to ship a single point of
-                    failure.
-                  </p>
-                )}
-              </div>
-            )}
+            {/* Everything qualifying the number, in one band with a severity
+                stripe each -- above the cost sheet, not filed under "what this
+                gives up". A price only means something once you know whether
+                the thing priced is the thing you asked for. */}
+            <Notices
+              option={option}
+              result={result}
+              cheapestCompliantCost={cheapestCompliantCost}
+              onSelectOption={onSelectOption}
+            />
           </div>
 
           {/* ── cost distribution ── */}

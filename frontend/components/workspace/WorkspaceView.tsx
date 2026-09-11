@@ -20,8 +20,11 @@ import { ToolIcons, ToolRail } from "@/components/workspace/ToolRail";
 import { ServicePalette } from "@/components/workspace/ServicePalette";
 import {
   SketchCanvas,
+  type Command as SketchCommand,
+  type Selection as SketchSelection,
   type SketchTool,
 } from "@/components/workspace/SketchCanvas";
+import { SketchInspector } from "@/components/workspace/SketchInspector";
 import type { IconEntry } from "@/lib/iconCatalog";
 
 /**
@@ -190,6 +193,8 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [pending, setPending] = useState<IconEntry | null>(null);
   const [tool, setTool] = useState<SketchTool>("select");
   const [seedToken, setSeedToken] = useState(0);
+  const [picked, setPicked] = useState<SketchSelection | null>(null);
+  const [command, setCommand] = useState<SketchCommand | null>(null);
 
   // NOTE the guard on `overrideCloud`. This is passed to onAsk, and a click
   // handler receives the event as its first argument -- so an unguarded
@@ -478,6 +483,9 @@ export function WorkspaceView({ name }: { name: string | null }) {
                   tool={tool}
                   onToolDone={() => setTool("select")}
                   seedToken={seedToken}
+                  onSelectionChange={setPicked}
+                  command={command}
+                  onCommandDone={() => setCommand(null)}
                 />
               </div>
 
@@ -562,6 +570,28 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     cloud={cloud ?? "aws"}
                     onPick={setPending}
                     onClose={() => setPalette(false)}
+                  />
+                </div>
+              )}
+
+              {/* Properties for whatever is selected. Sits below the palette
+                  when both are open, so adding a service and then editing it
+                  does not mean closing one panel to reach the other. */}
+              {picked && (
+                <div
+                  className={`pointer-events-none absolute right-0 p-3 ${
+                    palette ? "bottom-0" : "top-0"
+                  }`}
+                >
+                  <SketchInspector
+                    selection={picked}
+                    onRename={(label) =>
+                      setCommand({ type: "rename", id: picked.id, label })
+                    }
+                    onDelete={() => {
+                      setCommand({ type: "delete", id: picked.id });
+                      setPicked(null);
+                    }}
                   />
                 </div>
               )}

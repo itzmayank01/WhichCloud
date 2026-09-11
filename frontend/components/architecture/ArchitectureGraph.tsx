@@ -36,7 +36,7 @@ const money = (v: number) =>
  *  succeeds never reports a miss. A gap now returns null, the card draws a
  *  neutral placeholder, and the console names the provider and kind that is
  *  missing so it can be added rather than disguised. */
-function serviceIconPath(kind: string, cloud: CloudId = "aws"): string | null {
+export function serviceIconPath(kind: string, cloud: CloudId = "aws"): string | null {
   if (cloud === "aws") {
     const label = KIND_ICON_LABEL[kind];
     return label ? iconFor(label) : null;
@@ -53,7 +53,7 @@ function serviceIconPath(kind: string, cloud: CloudId = "aws"): string | null {
 
 /** The provider's own name for a service, or null to keep the generic label.
  *  A GCP diagram should say "Cloud SQL", not "Database". */
-function serviceDisplayName(kind: string, cloud: CloudId): string | null {
+export function serviceDisplayName(kind: string, cloud: CloudId): string | null {
   if (cloud === "aws") return null;
   return PROVIDER_SERVICES[cloud]?.[kind]?.name ?? null;
 }
@@ -94,7 +94,7 @@ const CONTAINER_STYLE: Record<string, ContainerStyle> = {
   "routetable-private": { border: "#00A4A6", width: 1.5, fill: "#FFFFFF", ink: "#007F80" },
 };
 
-function containerStyle(kind: string): ContainerStyle {
+export function containerStyle(kind: string): ContainerStyle {
   if (kind.startsWith("az-")) return CONTAINER_STYLE.az;
   if (kind.startsWith("subnet-public")) return CONTAINER_STYLE["subnet-public"];
   if (kind.startsWith("subnet-app")) return CONTAINER_STYLE["subnet-app"];
@@ -197,7 +197,7 @@ const CLOUD_WORDMARK: Record<string, { text: string; bg: string }> = {
   azure: { text: "Azure", bg: "#0078D4" },
 };
 
-function ContainerBadge({ kind, cloud = "aws" }: { kind: string; cloud?: CloudId }) {
+export function ContainerBadge({ kind, cloud = "aws" }: { kind: string; cloud?: CloudId }) {
   const b = badgeFor(kind);
   if (!b) return null;
   // The account wordmark is set as text; every other badge is a glyph.
@@ -228,7 +228,7 @@ function ContainerBadge({ kind, cloud = "aws" }: { kind: string; cloud?: CloudId
    local CIDR, and the default route out. Which gateway the default route uses
    is the actual difference between a public and a private subnet, so it is
    worth showing rather than implying. */
-const ROUTE_ROWS: Record<string, Array<[string, string]>> = {
+export const ROUTE_ROWS: Record<string, Array<[string, string]>> = {
   "routetable-public": [
     ["10.0.0.0/16", "local"],
     ["0.0.0.0/0", "igw"],
