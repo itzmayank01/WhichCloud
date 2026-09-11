@@ -83,6 +83,11 @@ export type LaidEdge = {
   kind: "request" | "branch" | "replication";
   /** absolute polyline points from ELK's orthogonal routing */
   points: Array<{ x: number; y: number }>;
+  /** Where the label sits. Normally the midpoint of the longest segment, but
+   *  nudged along that segment when a sibling's label would land on top of it
+   *  -- see separateLabels. Computed here rather than in the renderer because
+   *  it is the only place that can see the other edges. */
+  labelAt?: { x: number; y: number };
 };
 
 export type Layout = {
@@ -1111,6 +1116,8 @@ export async function layout(
     height = bandY + ACCOUNT_H + bandPad;
   }
 
+  separateLabels(edges);
+
   return {
     nodes,
     containers,
@@ -1119,4 +1126,67 @@ export async function layout(
     width: Math.ceil(width),
     height: Math.ceil(height),
   };
+}
+
+/** Midpoint of the longest straight segment — clear of corners, and where a
+ *  reader looks for an edge's name. */
+function labelAnchorAt(pts: Array<{ x: number; y: number }>, t = 0.5) {
+  let best = -1;
+  let a = pts[0];
+  let b = pts[pts.length - 1] ?? pts[0];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const len = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    if (len > best) {
+      best = len;
+      a = pts[i];
+      b = pts[i + 1];
+    }
+  }
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+/**
+ * Slide labels along their own segment until they stop landing on each other.
+ *
+ * Two edges leaving the SAME node run roughly parallel for their first stretch,
+ * so the midpoints of their longest segments end up side by side and the two
+ * names print on top of one another: measured, "query" over "catalog" leaving
+ * the object store, and "objects" over "events" leaving the compute tier.
+ *
+ * Nudging along the segment rather than away from it keeps each label on the
+ * line it describes, which is the whole job of an edge label -- a name floated
+ * off into clear space belongs to nothing.
+ */
+function separateLabels(edges: LaidEdge[]): void {
+  const labelled = edges.filter((e) => e.label);
+  const placed: Array<{ x: number; y: number; w: number; h: number }> = [];
+  // The same box the renderer and the harness measure: roughly 6px per
+  // character. Approximate on purpose -- it only has to be close enough to
+  // stop two names sharing a spot.
+  const boxFor = (e: LaidEdge, at: { x: number; y: number }) => ({
+    x: at.x - (e.label.length * 6 + 8) / 2,
+    y: at.y - 7,
+    w: e.label.length * 6 + 8,
+    h: 14,
+  });
+  const clashes = (r: { x: number; y: number; w: number; h: number }) =>
+    placed.some(
+      (p) => r.x < p.x + p.w && r.x + r.w > p.x && r.y < p.y + p.h && r.y + r.h > p.y
+    );
+
+  for (const edge of labelled) {
+    // Walk outward from the middle: 0.5, then 0.35/0.65, then 0.2/0.8. Past
+    // that the label is nearer a corner than the line it names, so the
+    // midpoint is kept and the overlap accepted rather than made stranger.
+    let chosen = labelAnchorAt(edge.points, 0.5);
+    for (const t of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+      const at = labelAnchorAt(edge.points, t);
+      if (!clashes(boxFor(edge, at))) {
+        chosen = at;
+        break;
+      }
+    }
+    edge.labelAt = chosen;
+    placed.push(boxFor(edge, chosen));
+  }
 }

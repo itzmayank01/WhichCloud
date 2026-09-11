@@ -471,7 +471,11 @@ function PolyEdge({ id, data, markerEnd }: EdgeProps) {
     reduced: boolean;
   };
   const path = roundedPath(d.points, d.attach ? 0 : 8);
-  const anchor = labelAnchor(d.points);
+  // The anchor layout chose, which is the only place that can see the other
+  // edges and nudge a label clear of a sibling's. Falls back to the local
+  // midpoint for any edge that predates it.
+  const anchor = (d as { labelAt?: { x: number; y: number } }).labelAt
+    ?? labelAnchor(d.points);
   // A label only helps where it lands NEAR the things it describes. On a
   // long-haul route -- CDN reaching object storage, the app reaching the
   // stream -- ELK parks the midpoint out in open canvas, and a dozen of those

@@ -12,9 +12,9 @@
 | media-streaming | Most reliable | 6 | 0 | 0 | 0 (5) | 0 | 0 | 1 | all | 2.31 | 2858 | 1115 | 9/0 | 0 | 2 | 0 | 7 | 6 |
 | media-streaming | Most optimized | 7 | 0 | 0 | 1 (6) | 0 | 0 | 1 | all | 2.36 | 3617 | 1188 | 12/0 | 1 | 3 | 0 | 7 | 6 |
 | batch-etl | Cheapest | 5 | 0 | 0 | 0 (3) | 0 | 0 | 1 | all | 2.64 | 1213 | 567 | 6/0 | 0 | 2 | 0 | 4 | 4 |
-| batch-etl | Most reliable | 6 | 0 | 0 | 0 (4) | 1 | 0 | 1 | all | 2.42 ⚠️ | 1552 | 486 | 7/0 | 0 | 2 | 0 | 5 | 5 |
+| batch-etl | Most reliable | 6 | 0 | 0 | 0 (4) | 0 | 0 | 1 | all | 2.42 | 1552 | 486 | 7/0 | 0 | 2 | 0 | 5 | 5 |
 | batch-etl | Most optimized | 6 | 0 | 0 | 3 (5) | 0 | 0 | 1 | all | 2.98 | 4706 | 1893 | 9/0 | 0 | 2 | 0 | 8 | 6 |
-| event-iot | Cheapest | 8 | 0 | 0 | 2 (6) | 1 | 0 | 1 | all | 2.58 ⚠️ | 3675 | 1007 | 11/0 | 0 | 3 | 0 | 3 | 3 |
+| event-iot | Cheapest | 8 | 0 | 0 | 2 (6) | 0 | 0 | 1 | all | 2.58 | 3675 | 1007 | 11/0 | 0 | 3 | 0 | 3 | 3 |
 | event-iot | Most reliable | 10 | 0 | 0 | 4 (6) | 0 | 0 | 1 | missed firehose,streaming | 2.76 | 4138 | 862 | 10/2 | 0 | 2 | 1 | 6 | 4 |
 | event-iot | Most optimized | 11 | 0 | 0 | 9 (8) | 0 | 0 | 1 | missed iot | 3.14 ⚠️ | 6526 | 2015 | 15/1 | 0 | 4 | 3 | 5 | 5 |
 | serverless-api | Cheapest | 6 | 0 | 0 | 0 (6) | 0 | 0 | 1 | all | 0.68 | 2177 | 871 | 11/0 | 0 | 2 | 0 | 4 | 3 |

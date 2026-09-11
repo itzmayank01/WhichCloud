@@ -59,6 +59,13 @@ function segRect(a: P, b: P, r: Rect): boolean {
 }
 function labelRect(e: LaidEdge): Rect | null {
   if (!e.label) return null;
+  // Measure where the renderer actually puts it. Recomputing a midpoint here
+  // would measure a picture nobody sees, and would go on reporting overlaps
+  // that layout had already separated.
+  if (e.labelAt) {
+    const lw = e.label.length * 6 + 8;
+    return { x: e.labelAt.x - lw / 2, y: e.labelAt.y - 7, w: lw, h: 14 };
+  }
   let best = 0;
   let anchor: P = e.points[Math.floor(e.points.length / 2)] ?? { x: 0, y: 0 };
   for (let i = 0; i < e.points.length - 1; i++) {
