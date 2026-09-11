@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { api, type ArchitectureView, type SavedArchitecture, type Tier } from "@/lib/api";
 import { ArchitectureCanvas } from "@/components/architecture/ArchitectureCanvas";
 
@@ -59,7 +60,11 @@ Business intelligence dashboards are served via Amazon QuickSight, with access c
   },
 ];
 
+/* `owner` is no longer sent anywhere -- the API derives it from the verified
+   session -- but it stays in the props because the component displays it. The
+   session token is what identifies the caller now. */
 export function ArchitectureWorkbench({ owner }: { owner: string }) {
+  const { getToken } = useAuth();
   const [selectedPreset, setSelectedPreset] = useState<string>(PRESETS[0].id);
   const [description, setDescription] = useState(PRESETS[0].description);
   const [view, setView] = useState<ArchitectureView | null>(null);
@@ -82,11 +87,13 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
   // Fetch saved architectures
   const refreshSaved = useCallback(async () => {
     try {
-      setSaved((await api.savedArchitectures(owner)).saved);
+      const token = await getToken();
+      if (!token) return; // signed out: nothing of theirs to list
+      setSaved((await api.savedArchitectures(token)).saved);
     } catch {
       /* ignore */
     }
-  }, [owner]);
+  }, [getToken]);
 
   useEffect(() => {
     void refreshSaved();
@@ -123,13 +130,17 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
     if (!view) return;
     setSaving(true);
     try {
-      await api.saveArchitecture({
-        owner,
-        title: description.trim().slice(0, 60),
-        description,
-        services: view.counts.services,
-        regions: view.regions,
-      });
+      const token = await getToken();
+      if (!token) throw new Error("signed out");
+      await api.saveArchitecture(
+        {
+          title: description.trim().slice(0, 60),
+          description,
+          services: view.counts.services,
+          regions: view.regions,
+        },
+        token,
+      );
       await refreshSaved();
     } catch {
       setError("Could not save architecture.");

@@ -49,7 +49,14 @@ Variables:
 WHICHCLOUD_DSN=${{Postgres.DATABASE_URL}}
 WHICHCLOUD_REDIS_URL=${{Redis.REDIS_URL}}
 GEMINI_API_KEY=<from aistudio.google.com/apikey>
+CLERK_JWKS_URL=https://<your-clerk-instance>/.well-known/jwks.json
 ```
+
+`CLERK_JWKS_URL` is not optional if anyone is going to save anything. The
+routes that read or delete a person's work verify a Clerk session token
+against these keys, and refuse every caller when the variable is unset — on
+purpose, because a default would mean a misconfigured deployment verifying
+nothing while appearing to work.
 
 The `${{Service.VAR}}` form is Railway's reference syntax — it keeps working
 if a database is recreated, where a pasted literal silently points at the old

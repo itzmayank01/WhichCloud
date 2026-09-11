@@ -247,16 +247,35 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, revalidate = 300): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, { next: { revalidate } });
+async function get<T>(
+  path: string,
+  revalidate = 300,
+  token?: string,
+): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, {
+    next: { revalidate },
+    headers: bearer(token),
+  });
   if (!response.ok) {
     throw new ApiError(`GET ${path} failed`, response.status);
   }
   return response.json();
 }
 
-async function del<T>(path: string): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, { method: "DELETE" });
+/** The Clerk session token, when a call is for a specific person.
+ *
+ *  Passed in rather than read here: this module is plain TypeScript that also
+ *  runs server-side, and `useAuth()` is a hook. The component that knows who
+ *  is signed in fetches the token and hands it over. */
+function bearer(token?: string): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function del<T>(path: string, token?: string): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, {
+    method: "DELETE",
+    headers: bearer(token),
+  });
   if (!response.ok) {
     throw new Error(`DELETE ${path} failed: ${response.status}`);
   }
@@ -281,10 +300,11 @@ async function post<T>(
   path: string,
   body: Record<string, unknown>,
   revalidate?: number,
+  token?: string,
 ): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...bearer(token) },
     body: JSON.stringify(body),
     ...(revalidate === undefined
       ? { cache: "no-store" as const }
@@ -685,19 +705,19 @@ export const api = {
     return response.json();
   },
 
-  saveArchitecture: (body: Record<string, unknown>) =>
-    post<SavedArchitecture>("/architecture/save", body),
+  /* These three are per-person, so they carry the session token and no owner.
+     The owner used to travel in the body and the query string, which meant
+     `?owner=someone-else` read another person's saves and a DELETE with the
+     same parameter removed them. The server derives it from the token now,
+     and there is nothing here left to forge. */
+  saveArchitecture: (body: Record<string, unknown>, token: string) =>
+    post<SavedArchitecture>("/architecture/save", body, undefined, token),
 
-  savedArchitectures: (owner: string) =>
-    get<{ saved: SavedArchitecture[] }>(
-      `/architecture/saved?owner=${encodeURIComponent(owner)}`,
-      0,
-    ),
+  savedArchitectures: (token: string) =>
+    get<{ saved: SavedArchitecture[] }>("/architecture/saved", 0, token),
 
-  deleteArchitecture: (id: string, owner: string) =>
-    del<{ deleted: boolean }>(
-      `/architecture/saved/${id}?owner=${encodeURIComponent(owner)}`,
-    ),
+  deleteArchitecture: (id: string, token: string) =>
+    del<{ deleted: boolean }>(`/architecture/saved/${id}`, token),
 };
 
 /** Prices are the product. Format them once, consistently, everywhere. */

@@ -410,43 +410,83 @@ def test_architecture_groups_are_outermost_first(client, monkeypatch):
     assert [g["depth"] for g in groups] == sorted(g["depth"] for g in groups)
 
 
+def _as(owner: str):
+    """Run the next requests as a VERIFIED owner.
+
+    The routes take their owner from a session token now, so a test cannot
+    name one in the request -- which is the entire point of the change. It
+    overrides the dependency instead, which is the same thing a real caller
+    achieves by presenting a valid token, without needing Clerk to mint one.
+    """
+    from whichcloud.api import app
+    from whichcloud.auth import current_owner
+
+    app.dependency_overrides[current_owner] = lambda: owner
+
+
+def _anonymous():
+    from whichcloud.api import app
+
+    app.dependency_overrides.clear()
+
+
+@needs_db
+def test_per_person_routes_refuse_an_unauthenticated_caller(client):
+    """The hole this replaced.
+
+    `owner` used to arrive in the body and the query string, so
+    `?owner=someone-else` returned their saved architectures and a DELETE with
+    the same parameter removed them. The model's own docstring defended it by
+    saying the browser never reached this service -- but the frontend calls
+    this API from the client, so it always did.
+    """
+    _anonymous()
+    assert client.get("/architecture/saved").status_code == 401
+    assert client.delete("/architecture/saved/1").status_code == 401
+    assert client.post("/architecture/save", json={"description": "x"}).status_code == 401
+    # Naming yourself in the payload is not a way in; the field no longer exists.
+    assert client.post(
+        "/architecture/save", json={"owner": "victim", "description": "x"}
+    ).status_code == 401
+
+
+@needs_db
 def test_saved_architectures_are_isolated_by_owner(client):
     """The owner is part of the query, not a check before it. Anything else
     lets one person read or delete another's work."""
+    _as("user_a")
     a = client.post(
-        "/architecture/save",
-        json={"owner": "user_a", "title": "A", "description": "a thing"},
+        "/architecture/save", json={"title": "A", "description": "a thing"}
     ).json()
 
-    assert client.get("/architecture/saved", params={"owner": "user_b"}).json()["saved"] == []
-
+    _as("user_b")
+    assert client.get("/architecture/saved").json()["saved"] == []
     # A stranger's delete removes nothing and reports so.
-    gone = client.delete(
-        f"/architecture/saved/{a['id']}", params={"owner": "user_b"}
-    ).json()
-    assert gone["deleted"] is False
+    assert client.delete(f"/architecture/saved/{a['id']}").json()["deleted"] is False
 
-    mine = client.get("/architecture/saved", params={"owner": "user_a"}).json()["saved"]
+    _as("user_a")
+    mine = client.get("/architecture/saved").json()["saved"]
     assert any(row["id"] == a["id"] for row in mine)
-
-    assert client.delete(
-        f"/architecture/saved/{a['id']}", params={"owner": "user_a"}
-    ).json()["deleted"] is True
+    assert client.delete(f"/architecture/saved/{a['id']}").json()["deleted"] is True
+    _anonymous()
 
 
-def test_saving_requires_an_owner_and_a_description(client):
-    assert client.post(
-        "/architecture/save", json={"owner": " ", "description": "x"}
-    ).status_code == 400
-    assert client.post(
-        "/architecture/save", json={"owner": "u", "description": "  "}
-    ).status_code == 400
+@needs_db
+def test_saving_requires_a_description(client):
+    """`owner` is no longer rejected for being blank -- it is not accepted at
+    all, so the only thing left to validate is what the person actually sent."""
+    _as("user_v")
+    assert client.post("/architecture/save", json={"description": "  "}).status_code == 400
+    _anonymous()
 
 
+@needs_db
 def test_an_untitled_save_is_named_from_its_description(client):
     """A list of "Untitled" is not a list."""
+    _as("user_t")
     body = client.post(
         "/architecture/save",
-        json={"owner": "user_t", "title": "", "description": "a multi-region shop"},
+        json={"title": "", "description": "a multi-region shop"},
     ).json()
     assert body["title"] == "a multi-region shop"
+    _anonymous()

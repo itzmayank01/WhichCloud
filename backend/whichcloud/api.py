@@ -22,7 +22,7 @@ import os
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -38,6 +38,7 @@ from .engine import (
 from .knowledge import Technique, load_techniques
 from .pricing import store
 from .pricing.models import REGIONS
+from .auth import current_owner
 from .requirements import Requirement
 
 app = FastAPI(
@@ -705,15 +706,23 @@ class DescribeExportIn(BaseModel):
 
 
 class SaveArchitectureIn(BaseModel):
-    """Who is saving, what they called it, and the description itself.
+    """What they called it, and the description itself.
 
-    `owner` arrives from the caller rather than being derived from a token.
-    The identity provider sits in front of this service, and the browser never
-    reaches it directly -- but that means this endpoint trusts its caller, so
-    it must not be exposed publicly without a check in front of it.
+    NO `owner` FIELD, deliberately. It used to be here, with a note saying the
+    identity provider sat in front of this service and the browser never
+    reached it directly -- so the endpoint trusted its caller.
+
+    The premise was false. The frontend calls this API from the client, and
+    NEXT_PUBLIC_API_URL is public by construction, so the browser reaches it
+    every time. `?owner=someone-else` read another person's saved
+    architectures and a DELETE with the same parameter removed them.
+
+    Identity now comes from the verified session token and this model cannot
+    express it. Removing the field rather than ignoring it is the point: an
+    ignored field still looks like an input, and the next person to read this
+    would wire it back up.
     """
 
-    owner: str
     #: Optional, because the route names an untitled save after its own
     #: description. Requiring it here would reject the case that behaviour
     #: exists to handle.
@@ -1206,17 +1215,22 @@ def export_architecture_route(body: ArchitectureIn):
 
 
 @app.post("/architecture/save")
-def save_architecture_route(body: SaveArchitectureIn) -> dict:
-    """Keep an architecture so it can be reopened rather than re-described."""
-    if not body.owner.strip():
-        raise HTTPException(400, "owner is required")
+def save_architecture_route(
+    body: SaveArchitectureIn, owner: str = Depends(current_owner)
+) -> dict:
+    """Keep an architecture so it can be reopened rather than re-described.
+
+    The owner comes from the verified session, and `body.owner` is ignored --
+    see the note on SaveArchitectureIn. A caller who names themselves is
+    naming a wish, not a fact.
+    """
     if not body.description.strip():
         raise HTTPException(400, "description is empty")
 
     title = body.title.strip() or body.description.strip()[:60]
     try:
         saved = store.save_architecture(
-            body.owner, title, body.description, body.services, body.regions
+            owner, title, body.description, body.services, body.regions
         )
     except Exception as exc:
         raise HTTPException(503, f"could not save: {exc}") from exc
@@ -1227,8 +1241,11 @@ def save_architecture_route(body: SaveArchitectureIn) -> dict:
 
 
 @app.get("/architecture/saved")
-def saved_architectures_route(owner: str = Query(...)) -> dict:
-    """Everything this owner has kept, newest first."""
+def saved_architectures_route(owner: str = Depends(current_owner)) -> dict:
+    """Everything this owner has kept, newest first.
+
+    Was `?owner=` -- which meant `?owner=someone-else` returned their saves.
+    """
     try:
         rows = store.list_architectures(owner)
     except Exception as exc:
@@ -1241,8 +1258,14 @@ def saved_architectures_route(owner: str = Query(...)) -> dict:
 
 
 @app.delete("/architecture/saved/{architecture_id}")
-def delete_architecture_route(architecture_id: str, owner: str = Query(...)) -> dict:
-    """Remove one. Silently does nothing if it is not this owner's."""
+def delete_architecture_route(
+    architecture_id: str, owner: str = Depends(current_owner)
+) -> dict:
+    """Remove one. Silently does nothing if it is not this owner's.
+
+    The scoping was always here; the owner it scoped to was whatever the query
+    string said, so the check compared a row against an attacker's claim.
+    """
     try:
         removed = store.delete_architecture(owner, architecture_id)
     except Exception as exc:
