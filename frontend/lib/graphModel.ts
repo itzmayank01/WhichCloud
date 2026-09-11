@@ -437,6 +437,37 @@ export function buildGraphModel(
   // backend already emitted that we have not covered
   for (const [s, t, label] of BRANCH_EDGES) addEdge(s, t, label, false);
 
+  /* Drop branch edges that duplicate a path already on the canvas.
+   *
+   * A warehouse fed by the bus, the lake, the ETL job AND the app had four
+   * inbound edges, three of them labelled "load" -- the same journey drawn
+   * three times. `storage -> warehouse` says nothing that
+   * `storage -> glue -> warehouse` does not already say, and each shortcut
+   * costs a line across the canvas: this pair alone put event-iot's top tier
+   * one crossing over its budget.
+   *
+   * Transitive reduction, and only over BRANCH edges. A request-path hop is
+   * the sequence itself and must survive even when a branch happens to
+   * parallel it; and only one hop is considered, because a two-hop search
+   * starts removing edges whose intermediate is three boxes away, where the
+   * shortcut is genuinely easier to read than the path.
+   */
+  const reachableVia = new Map<string, Set<string>>();
+  for (const e of dataEdges) {
+    if (!reachableVia.has(e.source)) reachableVia.set(e.source, new Set());
+    reachableVia.get(e.source)!.add(e.target);
+  }
+  for (let i = dataEdges.length - 1; i >= 0; i--) {
+    const edge = dataEdges[i];
+    if (edge.kind !== "branch") continue;
+    const hops = reachableVia.get(edge.source);
+    if (!hops) continue;
+    const viaIntermediate = [...hops].some(
+      (mid) => mid !== edge.target && reachableVia.get(mid)?.has(edge.target),
+    );
+    if (viaIntermediate) dataEdges.splice(i, 1);
+  }
+
   // Parallel sinks: the stores that did NOT become the spine's terminus,
   // written to directly by whatever processes the request rather than chained
   // to each other.

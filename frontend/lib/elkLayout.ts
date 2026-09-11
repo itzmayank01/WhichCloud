@@ -906,29 +906,51 @@ export async function layout(
     const a = box.get(srcId);
     const b = box.get(tgtId);
     if (!a || !b) return null;
-    const downward = b.y > a.y;
-    const from = { x: a.x + a.w / 2, y: downward ? a.y + a.h : a.y };
-    const to = { x: b.x + b.w / 2, y: downward ? b.y : b.y + b.h };
     // Drop consecutive duplicates inline rather than calling dedupe(), which
     // is declared further down this function and would be in its temporal
     // dead zone here.
-    const build = (lane: number) => {
-      const pts = [from, { x: from.x, y: lane }, { x: to.x, y: lane }, to];
-      return pts.filter(
-        (p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y
-      );
+    const clean = (pts: Array<{ x: number; y: number }>) =>
+      pts.filter((p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
+
+    // BOTH perpendicular approaches, not just one. Arriving on the target's
+    // top or bottom clears an obstacle parked beside it; arriving on its left
+    // or right clears one parked above or below. Offering only the vertical
+    // pair left `kafka -> storage` routed through the ETL job, because the
+    // lane it needed was horizontal.
+    const downward = b.y > a.y;
+    const rightward = b.x > a.x;
+    const vertical = {
+      from: { x: a.x + a.w / 2, y: downward ? a.y + a.h : a.y },
+      to: { x: b.x + b.w / 2, y: downward ? b.y : b.y + b.h },
+      build: (from: { x: number; y: number }, to: { x: number; y: number }, lane: number) =>
+        clean([from, { x: from.x, y: lane }, { x: to.x, y: lane }, to]),
+      centre: (from: { x: number; y: number }, to: { x: number; y: number }) =>
+        (from.y + to.y) / 2,
     };
+    const horizontal = {
+      from: { x: rightward ? a.x + a.w : a.x, y: a.y + a.h / 2 },
+      to: { x: rightward ? b.x : b.x + b.w, y: b.y + b.h / 2 },
+      build: (from: { x: number; y: number }, to: { x: number; y: number }, lane: number) =>
+        clean([from, { x: lane, y: from.y }, { x: lane, y: to.y }, to]),
+      centre: (from: { x: number; y: number }, to: { x: number; y: number }) =>
+        (from.x + to.x) / 2,
+    };
+
     // Sweep the connecting lane rather than taking the midpoint. The midpoint
-    // is as likely to be occupied as the lane we are escaping -- on the web
+    // is as likely to be occupied as the lane being escaped -- on the web
     // fixtures it ran straight across the zone-a compute -- so the first
     // candidate being blocked is the normal case, not the exception.
-    const centre = (from.y + to.y) / 2;
-    for (let step = 0; step <= 60; step++) {
-      for (const lane of step === 0 ? [centre] : [centre + step * 12, centre - step * 12]) {
-        const candidate = build(lane);
-        if (!hitsNode(candidate, srcId, tgtId)) return candidate;
+    for (const plan of [vertical, horizontal]) {
+      const centre = plan.centre(plan.from, plan.to);
+      for (let step = 0; step <= 60; step++) {
+        const lanes = step === 0 ? [centre] : [centre + step * 12, centre - step * 12];
+        for (const lane of lanes) {
+          const candidate = plan.build(plan.from, plan.to, lane);
+          if (!hitsNode(candidate, srcId, tgtId)) return candidate;
+        }
       }
     }
+
     return null;
   };
 
