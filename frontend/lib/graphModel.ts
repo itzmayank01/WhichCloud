@@ -49,10 +49,11 @@ export function planeOf(kind: string): Plane {
   return PLANE_BY_KIND[kind] ?? "data";
 }
 
-/** The canonical order of the request/data path. Present nodes are threaded
- *  onto this spine to assign sequence numbers; a kind not on it is still a
- *  data node (a branch off the spine), it just carries no step number. */
-const FLOW_SPINE: string[] = [
+/** The canonical order of the REQUEST path — a user asking for something and
+ *  the answer coming back. Present nodes are threaded onto it to assign
+ *  sequence numbers; a kind not on it is still a data node (a branch off the
+ *  spine), it just carries no step number. */
+const REQUEST_SPINE: string[] = [
   "users", // the client node's id (kind "client")
   "dns",
   "network", // CloudFront / edge
@@ -62,11 +63,30 @@ const FLOW_SPINE: string[] = [
   "compute",
   "compute_fargate",
   "lambda",
+  // The stores used to be listed here, in series. They are in SPINE_STORES
+  // now, and exactly one of them joins the spine as its terminus.
+];
+
+/** The tail of the request spine: durable stores.
+ *
+ *  These are ALTERNATIVES and parallel sinks, not consecutive hops. A
+ *  time-series database does not feed a search index, and a search index does
+ *  not feed a data warehouse. Threading them as a chain -- which is what
+ *  listing them in one ordered spine did -- drew a flow that does not exist,
+ *  and on the one fixture carrying three of them it chained
+ *  `timestream -> search -> warehouse` while the event bus ALSO fanned out to
+ *  all three. A serial chain plus a fan-out onto the same nodes is where
+ *  eighteen edge crossings came from against a budget of nine.
+ *
+ *  Order is priority: the first one present becomes the spine's terminus and
+ *  the rest hang off the processor in parallel, which is how they are
+ *  actually written to. */
+const SPINE_STORES: readonly string[] = [
   "database",
   "dynamodb",
+  "warehouse",
   "timestream",
   "search",
-  "warehouse",
 ];
 
 /** Data-plane branch edges: (from → to, label), drawn but NOT sequenced —
@@ -367,9 +387,18 @@ export function buildGraphModel(
     }
   }
 
-  // ── the request spine: sequence the data nodes that lie on it ──
+  // ── the spine: sequence the data nodes that lie on it ──
+  //
+  // The path is threaded in order; the stores are not. Only ONE store joins
+  // the spine, as its terminus, because the rest are written to in parallel
+  // rather than passed through -- see SPINE_STORES. The others are emitted
+  // below as parallel sinks from whatever processes the request.
   const dataIds = new Set(data.map((n) => n.id));
-  const spine = FLOW_SPINE.filter((k) => dataIds.has(k));
+  const path = REQUEST_SPINE.filter((k) => dataIds.has(k));
+  const storesPresent = SPINE_STORES.filter((k) => dataIds.has(k));
+  const primaryStore = storesPresent[0];
+  const parallelStores = storesPresent.slice(1);
+  const spine = primaryStore ? [...path, primaryStore] : path;
   const seqOf = new Map<string, number>();
   spine.forEach((id, i) => {
     seqOf.set(id, i + 1);
@@ -407,6 +436,23 @@ export function buildGraphModel(
   // branch edges, from the model's own table plus any labelled edge the
   // backend already emitted that we have not covered
   for (const [s, t, label] of BRANCH_EDGES) addEdge(s, t, label, false);
+
+  // Parallel sinks: the stores that did NOT become the spine's terminus,
+  // written to directly by whatever processes the request rather than chained
+  // to each other.
+  //
+  // AFTER the branch edges, and only where nothing already writes to the
+  // store. An event bus fans out to every sink it feeds, so adding a second
+  // line from the processor to the same warehouse gives it two inbound edges
+  // for one relationship -- which put the crossing count UP when this was
+  // emitted unconditionally, undoing most of what the fix was for.
+  const processor = path[path.length - 1];
+  if (processor) {
+    const alreadyFed = new Set(dataEdges.map((e) => e.target));
+    for (const store of parallelStores) {
+      if (!alreadyFed.has(store)) addEdge(processor, store, "writes", false);
+    }
+  }
 
   // CROSS-ZONE EDGES. Zone b was drawn as boxes with nothing joining them to
   // anything -- a standby that appears to stand alone. Every AWS reference
