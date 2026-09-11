@@ -195,6 +195,53 @@ const nodeTypes = {
   sketchText: SketchText,
 };
 
+/* ── saved layouts ──
+ *
+ * A sketch survives leaving the editor. Without this the canvas discarded
+ * everything the moment you pressed "Back to the priced diagram" -- so the
+ * one thing the editor exists for, arranging a diagram the way you want it,
+ * could not be kept, and every visit started from the ELK layout again.
+ *
+ * Deliberately localStorage rather than the API. /architecture/save stores a
+ * DESCRIPTION against an owner; a sketch is neither -- it is a scratch
+ * arrangement of one tier on one cloud, worth keeping for the person who made
+ * it and nobody else. Putting it on the server would mean an owner, a schema
+ * and a migration for something that belongs in the browser that drew it.
+ *
+ * Keyed on cloud + tier + the shape of the topology, so switching tiers gives
+ * you that tier's sketch rather than this one's boxes in the wrong places,
+ * and re-pricing a genuinely different architecture does not restore a layout
+ * built for the old one.
+ */
+const STORE_PREFIX = "whichcloud.sketch.v1";
+
+function layoutKey(cloud: string, nodes: TopoNode[], edges: TopoEdge[]): string {
+  const shape = `${nodes.length}:${edges.length}:${nodes
+    .map((n) => n.id)
+    .sort()
+    .join(",")}`;
+  // A short non-cryptographic digest; this only has to separate architectures
+  // from each other, not resist anything.
+  let h = 0;
+  for (let i = 0; i < shape.length; i++) h = (h * 31 + shape.charCodeAt(i)) | 0;
+  return `${STORE_PREFIX}.${cloud}.${h}`;
+}
+
+type Saved = { nodes: RFNode[]; edges: RFEdge[] };
+
+function readSaved(key: string): Saved | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Saved;
+    return parsed?.nodes?.length ? parsed : null;
+  } catch {
+    // A corrupt or unreadable entry must not take the editor down with it:
+    // the fallback is the ELK layout, which is where a first visit starts.
+    return null;
+  }
+}
+
 /* ── canvas ── */
 
 type Tool = "select" | "connect" | "box" | "text";
@@ -244,6 +291,10 @@ function Inner({
   const rf = useReactFlow();
   const nextId = useRef(0);
   const host = useRef<HTMLDivElement | null>(null);
+  /* The seedToken this canvas has already acted on. Initialised to the
+     incoming value so a first mount is NOT mistaken for a reset -- otherwise
+     opening the editor would wipe the saved sketch it was about to restore. */
+  const seenToken = useRef(seedToken);
   const ready = useNodesInitialized();
 
   /* Fit once React Flow has actually MEASURED the nodes, not on a timer.
@@ -260,9 +311,36 @@ function Inner({
 
   /* Seed from the same ELK run the priced canvas uses, so the sketch opens on
      the arrangement the reader was just looking at rather than on a pile of
-     boxes they have to sort out before they can start. */
+     boxes they have to sort out before they can start.
+
+     Unless there is a saved sketch for this exact architecture, in which case
+     that wins: someone returning to a diagram they arranged wants THEIR
+     arrangement, and re-running ELK over it would silently throw the work
+     away a second time. */
   useEffect(() => {
     let alive = true;
+    const key = layoutKey(cloud, topoNodes, topoEdges);
+    /* Reset means reset. The tool bumps seedToken to ask for the priced
+       layout back, and restoring the save here would hand it exactly the
+       arrangement it was trying to discard -- a button that appears to do
+       nothing, which is worse than no button. */
+    const isReset = seenToken.current !== seedToken;
+    seenToken.current = seedToken;
+    if (isReset) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* nothing to do; the ELK path below is the correct outcome anyway */
+      }
+    }
+    const saved = isReset ? null : readSaved(key);
+    if (saved) {
+      setNodes(saved.nodes);
+      setEdges(saved.edges);
+      return () => {
+        alive = false;
+      };
+    }
     const model = buildGraphModel(topoNodes, topoEdges, cloud);
     layout(model, cloud)
       .then((laid) => {
@@ -389,6 +467,32 @@ function Inner({
     },
     [tool, rf, setNodes, onToolDone],
   );
+
+  /* Persist the arrangement.
+     Debounced, because this fires on every frame of a drag and localStorage
+     is synchronous -- writing per frame would put a disk round-trip inside
+     the drag loop and make the canvas feel heavy, which is the one thing an
+     editor cannot afford. The `selected` flag is stripped: restoring a sketch
+     with three boxes mysteriously highlighted looks like a bug. */
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const key = layoutKey(cloud, topoNodes, topoEdges);
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          key,
+          JSON.stringify({
+            nodes: nodes.map((n) => ({ ...n, selected: false })),
+            edges: edges.map((e) => ({ ...e, selected: false })),
+          }),
+        );
+      } catch {
+        // Quota exceeded, or storage disabled. Losing the save is survivable;
+        // taking the editor down over it is not.
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [nodes, edges, cloud, topoNodes, topoEdges]);
 
   /* Report what is selected so the workspace can offer a properties panel.
      React Flow tracks selection internally; without lifting it, "select a
