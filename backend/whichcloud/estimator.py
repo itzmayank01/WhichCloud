@@ -888,7 +888,20 @@ def _sustained_use_discount(provider, point, spec, compute_line):
         # discount that quietly escaped the single-sourced label would be
         # the one number on the bill claiming more confidence than the
         # rate it is a percentage of.
-        caveats=caveats_for(point, provider),
+        #
+        # Plus the provenance of the PERCENTAGE, which is a different claim.
+        # Every other figure in this file is read from the price catalog;
+        # this one is not in it -- Google's billing API prices a machine
+        # without describing the discount applied to it afterwards -- so the
+        # rate comes from published documentation and can go stale without
+        # an ingest noticing. That is worth one sentence on the line rather
+        # than a comment only a maintainer reads.
+        caveats=[
+            *caveats_for(point, provider),
+            f"The {rate:.0%} rate is from Google's published Compute Engine "
+            "pricing, not from the billing catalog, which does not expose "
+            "sustained-use discounts. It is not refreshed by an ingest.",
+        ],
     )
 
 
