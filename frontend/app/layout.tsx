@@ -1,4 +1,5 @@
 import { ClerkProvider, Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -56,8 +57,16 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: "#fbfbfc",
-  colorScheme: "light",
+  /* Both, or the browser's own chrome stays light behind a dark page -- the
+     address bar on mobile and the scrollbars everywhere. `colorScheme` is
+     what tells the engine to render form controls and scrollbars to match;
+     pinned to "light" it undid the palette on the two widgets CSS does not
+     own. */
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fbfbfc" },
+    { media: "(prefers-color-scheme: dark)", color: "#12151a" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -75,6 +84,22 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       // inside the app still report normally.
       suppressHydrationWarning
     >
+      <head>
+        {/* Applied BEFORE first paint, which is the whole reason this is an
+            inline script rather than an effect. React mounts after the
+            browser has already painted, so a stored dark choice would show a
+            white page first and then snap -- the flash every theme switcher
+            has to solve, and the reason the attribute is stamped here rather
+            than in the component that owns it.
+
+            "system" stores nothing to stamp: removing the attribute is what
+            hands the decision back to prefers-color-scheme. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var c=localStorage.getItem("whichcloud.theme");if(c==="dark"||c==="light"){document.documentElement.setAttribute("data-theme",c)}}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className="flex min-h-full flex-col bg-canvas text-ink">
         {/* First thing in the tab order, invisible until focused: lets a
             keyboard user past the header without walking the whole nav. */}
@@ -145,6 +170,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </nav>
 
             <div className="ml-auto flex items-center gap-4">
+              {/* Before the account controls, matching where every docs site
+                  and editor puts it: theme is a property of the reader, not
+                  of the session, and it has to be reachable signed out. */}
+              <ThemeToggle />
               <Show when="signed-out">
                 <SignInButton>
                   <button className="text-sm text-ink-2 transition-colors hover:text-ink">

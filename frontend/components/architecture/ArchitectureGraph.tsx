@@ -740,7 +740,7 @@ function Inner({
   }, [rfNodes, rf]);
 
   return (
-    <div ref={hostRef} className="h-full w-full">
+    <div ref={hostRef} className="artboard h-full w-full">
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}

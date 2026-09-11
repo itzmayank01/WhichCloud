@@ -25,11 +25,23 @@
 }
 
 /**
- * WhichCloud — light only, deliberately.
+ * WhichCloud — dark chrome, light artboard.
  *
- * A cost tool gets read on projectors, printed into reports and screenshotted
- * into slides. Dark loses all three, so there is no prefers-color-scheme block:
- * the page looks the same on every machine, which is what makes a demo safe.
+ * This file used to say "light only, deliberately", because a cost tool gets
+ * read on projectors, printed into reports and screenshotted into slides, and
+ * dark loses all three. That argument is sound, and it is about the DIAGRAM:
+ * a projector washes out dark fills, a printer throws away the ink, and a
+ * screenshot of an inverted architecture does not match the reference
+ * diagrams it is imitating.
+ *
+ * It is not an argument about the header, the cost rail or the panels. So the
+ * chrome now follows the reader's system, and the canvas stays white --
+ * exactly what Figma, draw.io and Lucidchart do, for the same reason. The
+ * artboard is the document; the frame around it is the application.
+ *
+ * Anything the diagram draws with therefore does NOT appear in the dark block
+ * below: --svc-* are the provider category hues and --cat-* is the cost ramp,
+ * both read against white and both exported.
  *
  * The palette is near-monochrome on purpose. Colour is spent almost entirely
  * on the architecture diagram, where it carries meaning — each cloud service
@@ -96,6 +108,108 @@
   --svc-storage: #4a8c1c;
   --svc-network: #7d3fd6;
   --svc-client: #6b7280;
+}
+
+/* ── the artboard ──
+ *
+ * A subtree that stays light whatever the chrome is doing. The diagram draws
+ * on white by design -- it imitates the providers' own reference diagrams, it
+ * gets exported to SVG, printed into reports and pasted into slides, and an
+ * inverted architecture matches none of those.
+ *
+ * Applied as a class rather than fixed per component because the boxes mix
+ * literals with tokens: the fill is a hard #FFFFFF (it has to be, for the
+ * export) while the text is `text-ink`. In dark mode the token flipped and
+ * the literal did not, so every service label went light-on-white and
+ * vanished. Re-declaring the palette on one wrapper fixes all of it at once
+ * and cannot be forgotten on the next component added to the canvas.
+ */
+.artboard {
+  color-scheme: light;
+  --paper: #ffffff;
+  --ink: #16191f;
+  --ink-muted: #5b6470;
+  --rule: #e3e6ea;
+  --accent: #1b3a6b;
+  --flag: #b4530a;
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --surface-sunk: #ffffff;
+  --border: #e3e6ea;
+  --border-strong: #cfd3da;
+  --ink-2: #5b6470;
+  --ink-3: #5b6470;
+  --accent-wash: #eef1f6;
+  --accent-line: #c3cfe0;
+  --caution-wash: #fdf4ec;
+  --save: #1b5e3f;
+  color: var(--ink);
+}
+
+/* React Flow v12 paints its own pane from `color-scheme`, so under a dark
+   root it drew a dark ground behind a white diagram -- the account-plane band
+   sat on it, outside the drawing. Setting the scheme on .artboard is not
+   enough because the pane's default comes from the library's own variables;
+   name them. */
+.artboard .react-flow,
+.artboard .react-flow__pane,
+.artboard .react-flow__renderer {
+  background: #ffffff;
+}
+.artboard .react-flow__controls-button {
+  background: #ffffff;
+  border-bottom: 1px solid #e3e6ea;
+  color: #16191f;
+  fill: #16191f;
+}
+
+/* ── dark chrome ──
+ *
+ * Three states, not two. An explicit choice stamps data-theme on the root;
+ * the default "system" setting stamps nothing, so only prefers-color-scheme
+ * separates light from dark there. The media query is guarded against an
+ * explicit light choice, and the [data-theme="dark"] block repeats the
+ * palette so the toggle wins in both directions.
+ *
+ * Only the six base values and the washes are redefined. Everything built on
+ * them follows, and anything the DIAGRAM uses is deliberately absent. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #12151a;
+    --ink: #e8ebef;
+    --ink-muted: #97a1af;
+    --rule: #262b33;
+    /* Navy at #1b3a6b is unreadable on a dark ground; lifted to the same hue
+       at a luminance that clears 4.5:1, and still far from all three provider
+       blues so a selected Azure chip cannot read as chrome. */
+    --accent: #7ea3d6;
+    --flag: #e08a3c;
+    --surface: #171b21;
+    --surface-sunk: #1d222a;
+    --border-strong: #3a414c;
+    --accent-wash: #182231;
+    --accent-line: #35486a;
+    --caution-wash: #2a1e13;
+    --save: #4f9d76;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #12151a;
+  --ink: #e8ebef;
+  --ink-muted: #97a1af;
+  --rule: #262b33;
+  --accent: #7ea3d6;
+  --flag: #e08a3c;
+  --surface: #171b21;
+  --surface-sunk: #1d222a;
+  --border-strong: #3a414c;
+  --accent-wash: #182231;
+  --accent-line: #35486a;
+  --caution-wash: #2a1e13;
+  --save: #4f9d76;
 }
 
 @theme inline {
