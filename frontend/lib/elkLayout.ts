@@ -870,13 +870,85 @@ export async function layout(
     return route;
   };
 
+  const hitsNode = (
+    pts: Array<{ x: number; y: number }>,
+    srcId: string,
+    tgtId: string
+  ) => {
+    for (let k = 1; k < pts.length; k++) {
+      const [lox, hix] = [Math.min(pts[k - 1].x, pts[k].x), Math.max(pts[k - 1].x, pts[k].x)];
+      const [loy, hiy] = [Math.min(pts[k - 1].y, pts[k].y), Math.max(pts[k - 1].y, pts[k].y)];
+      for (const [id, r] of inflatedObstacles(srcId, tgtId)) {
+        void id;
+        // A shallow inset, so an edge legitimately grazing a node's border does
+        // not count as passing through it.
+        if (hix > r.x + 3 && lox < r.x + r.w - 3 && hiy > r.y + 3 && loy < r.y + r.h - 3)
+          return true;
+      }
+    }
+    return false;
+  };
+  /** A route that arrives on the target's TOP or BOTTOM face instead of its
+   *  side, for when something is parked in the side lane.
+   *
+   *  routeBetween sweeps corridors but keeps the faces it picked from the
+   *  dominant axis, so the last segment's position is fixed. This is the one
+   *  degree of freedom it does not have. */
+  const perpendicularRoute = (
+    srcId: string,
+    tgtId: string
+  ): Array<{ x: number; y: number }> | null => {
+    const a = box.get(srcId);
+    const b = box.get(tgtId);
+    if (!a || !b) return null;
+    const downward = b.y > a.y;
+    const from = { x: a.x + a.w / 2, y: downward ? a.y + a.h : a.y };
+    const to = { x: b.x + b.w / 2, y: downward ? b.y : b.y + b.h };
+    // Drop consecutive duplicates inline rather than calling dedupe(), which
+    // is declared further down this function and would be in its temporal
+    // dead zone here.
+    const build = (lane: number) => {
+      const pts = [from, { x: from.x, y: lane }, { x: to.x, y: lane }, to];
+      return pts.filter(
+        (p, i) => i === 0 || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y
+      );
+    };
+    // Sweep the connecting lane rather than taking the midpoint. The midpoint
+    // is as likely to be occupied as the lane we are escaping -- on the web
+    // fixtures it ran straight across the zone-a compute -- so the first
+    // candidate being blocked is the normal case, not the exception.
+    const centre = (from.y + to.y) / 2;
+    for (let step = 0; step <= 60; step++) {
+      for (const lane of step === 0 ? [centre] : [centre + step * 12, centre - step * 12]) {
+        const candidate = build(lane);
+        if (!hitsNode(candidate, srcId, tgtId)) return candidate;
+      }
+    }
+    return null;
+  };
+
   // Draw the replication edges withheld from ELK. They were excluded so they
   // could not distort layering, but they still have to be DRAWN -- a standby
   // database with no line to its primary reads as a second unrelated database.
   for (const [i, e] of model.dataEdges.entries()) {
     if (e.kind !== "replication") continue;
-    const route = routeBetween(e.source, e.target);
+    let route = routeBetween(e.source, e.target);
     if (!route) continue;
+    // These are hand-routed and, until now, never checked. routeBetween
+    // returns the least-bad route when no lane is clear, which is right --
+    // but it only varies the CORRIDOR, never the face it arrives on, and the
+    // final segment sits at the target's face centre. When something occupies
+    // that lane no corridor avoids it: the load balancer's line to the zone-b
+    // compute arrived along the left face at exactly the y the zone-b NAT
+    // gateway sits at, on both web fixtures, and nothing looked.
+    //
+    // Approaching from the perpendicular face is the move routeBetween cannot
+    // make, so it is made here. An arrow through a box reads as a connection
+    // to it, which is the one thing a diagram of connections must not say.
+    if (hitsNode(route, e.source, e.target)) {
+      const detour = perpendicularRoute(e.source, e.target);
+      if (detour && !hitsNode(detour, e.source, e.target)) route = detour;
+    }
     edges.push({
       id: `e${i}`,
       source: e.source,
@@ -929,24 +1001,6 @@ export async function layout(
 
   // Same inflated footprint the router avoids, so validation and routing
   // agree on what counts as "through a node".
-  const hitsNode = (
-    pts: Array<{ x: number; y: number }>,
-    srcId: string,
-    tgtId: string
-  ) => {
-    for (let k = 1; k < pts.length; k++) {
-      const [lox, hix] = [Math.min(pts[k - 1].x, pts[k].x), Math.max(pts[k - 1].x, pts[k].x)];
-      const [loy, hiy] = [Math.min(pts[k - 1].y, pts[k].y), Math.max(pts[k - 1].y, pts[k].y)];
-      for (const [id, r] of inflatedObstacles(srcId, tgtId)) {
-        void id;
-        // A shallow inset, so an edge legitimately grazing a node's border does
-        // not count as passing through it.
-        if (hix > r.x + 3 && lox < r.x + r.w - 3 && hiy > r.y + 3 && loy < r.y + r.h - 3)
-          return true;
-      }
-    }
-    return false;
-  };
   const endsAt = (pt: { x: number; y: number }, id: string) => {
     const b = box.get(id);
     if (!b) return false;
@@ -991,13 +1045,46 @@ export async function layout(
       if (!endsAt(pts[0], edge.source)) pts.unshift(...connectTo(a, pts[0]));
       const tail = pts[pts.length - 1];
       if (!endsAt(tail, edge.target)) pts.push(...connectTo(b, tail).reverse());
-      edge.points = dedupe(pts);
-      routeStats.elkKept++;
-      continue;
+      const bridged = dedupe(pts);
+      // RE-CHECK AFTER BRIDGING. `usable` tested ELK's own polyline, which
+      // under SEPARATE_CHILDREN legitimately stops at a container port -- and
+      // then connectTo() appends the segments that reach the actual node.
+      // Those appended segments were never tested, so a route that ELK had
+      // drawn cleanly could acquire a collision on the way to its endpoint:
+      // web-ecommerce and web-internal-tool both ran the load balancer's line
+      // to the zone-b compute straight through the zone-b NAT gateway, and
+      // both were counted as ELK routes kept.
+      //
+      // An arrow through a box reads as a connection to it, which is the one
+      // thing a diagram of connections must not get wrong. If the bridge
+      // spoils the route, fall through to the obstacle-aware router below.
+      if (!hitsNode(bridged, edge.source, edge.target)) {
+        edge.points = bridged;
+        routeStats.elkKept++;
+        continue;
+      }
     }
     routeStats.replaced++;
     const route = routeBetween(edge.source, edge.target);
     if (route) edge.points = route;
+
+    // LAST GUARD: routeBetween returns the least-bad route when no lane is
+    // clear, which is right -- a slightly blocked line beats none. But it only
+    // ever varies the CORRIDOR, never the face it arrives on, and the final
+    // segment's position is fixed by the target's face centre. When an
+    // obstacle sits in that lane no corridor can avoid it: the load balancer's
+    // line to the zone-b compute arrived along the left face at the exact y
+    // the zone-b NAT gateway occupies, on both web fixtures.
+    //
+    // Approaching from a different face is the move that function cannot make,
+    // so it is made here. An arrow through a box reads as a connection to it,
+    // and that is the one thing a diagram of connections must not say.
+    if (edge.points && hitsNode(edge.points, edge.source, edge.target)) {
+      const detour = perpendicularRoute(edge.source, edge.target);
+      if (detour && !hitsNode(detour, edge.source, edge.target)) {
+        edge.points = detour;
+      }
+    }
   }
 
   let width = res.width ?? 0;

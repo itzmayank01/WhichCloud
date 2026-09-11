@@ -4,10 +4,10 @@
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | web-ecommerce | Cheapest | 6 | 0 | 0 | 3 (6) | 0 | 0 | 1 | all | 2.53 | 3812 | 1449 | 11/1 | 0 | 3 | 0 | 9 | 6 |
 | web-ecommerce | Most reliable | 13 | 0 | 0 | 6 (10) | 0 | 0 | 1 | all | 2.36 | 7207 | 1929 | 14/1 | 0 | 4 | 0 | 14 | 6 |
-| web-ecommerce | Most optimized | 14 | 0 | 1 | 8 (11) | 0 | 0 | 1 | all | 2.42 ⚠️ | 7684 | 2002 | 17/1 | 1 | 4 | 2 | 14 | 6 |
+| web-ecommerce | Most optimized | 14 | 0 | 0 | 8 (11) | 0 | 0 | 1 | all | 2.42 | 7952 | 2002 | 17/1 | 1 | 4 | 1 | 14 | 6 |
 | web-internal-tool | Cheapest | 6 | 0 | 0 | 3 (6) | 0 | 0 | 1 | all | 2.53 | 3812 | 1449 | 11/1 | 0 | 3 | 0 | 9 | 5 |
 | web-internal-tool | Most reliable | 10 | 0 | 0 | 5 (8) | 0 | 0 | 1 | all | 2.62 | 6032 | 1918 | 12/1 | 0 | 3 | 0 | 14 | 5 |
-| web-internal-tool | Most optimized | 14 | 0 | 1 | 8 (11) | 0 | 0 | 1 | all | 2.42 ⚠️ | 7684 | 2002 | 17/1 | 1 | 4 | 2 | 13 | 5 |
+| web-internal-tool | Most optimized | 14 | 0 | 0 | 8 (11) | 0 | 0 | 1 | all | 2.42 | 7952 | 2002 | 17/1 | 1 | 4 | 1 | 13 | 5 |
 | media-streaming | Cheapest | 5 | 0 | 0 | 0 (4) | 0 | 0 | 1 | all | 2.52 | 2323 | 1074 | 8/0 | 0 | 2 | 0 | 7 | 6 |
 | media-streaming | Most reliable | 6 | 0 | 0 | 0 (5) | 0 | 0 | 1 | all | 2.31 | 2858 | 1115 | 9/0 | 0 | 2 | 0 | 7 | 6 |
 | media-streaming | Most optimized | 7 | 0 | 0 | 1 (6) | 0 | 0 | 1 | all | 2.36 | 3617 | 1188 | 12/0 | 1 | 3 | 0 | 7 | 6 |
