@@ -16,7 +16,7 @@
 | batch-etl | Most optimized | 6 | 0 | 0 | 3 (4) | 0 | 0 | 1 | all | 2.81 | 2285 | 872 | 6/1 | 0 | 2 | 0 | 5 | 6 |
 | event-iot | Cheapest | 8 | 0 | 0 | 2 (6) | 0 | 0 | 1 | all | 2.58 | 3675 | 1007 | 11/0 | 0 | 3 | 0 | 3 | 3 |
 | event-iot | Most reliable | 10 | 0 | 0 | 4 (6) | 0 | 0 | 1 | missed firehose,streaming | 2.76 | 4138 | 862 | 10/2 | 0 | 2 | 1 | 6 | 4 |
-| event-iot | Most optimized | 11 | 0 | 1 | 4 (7) | 0 | 0 | 1 | missed iot | 3.23 ⚠️ | 2688 | 645 | 11/2 | 0 | 3 | 1 | 4 | 5 |
+| event-iot | Most optimized | 11 | 0 | 0 | 2 (7) | 0 | 0 | 1 | missed iot | 3.23 | 2792 | 749 | 11/2 | 0 | 3 | 0 | 4 | 5 |
 | serverless-api | Cheapest | 6 | 0 | 0 | 0 (6) | 0 | 0 | 1 | all | 0.68 | 2177 | 871 | 11/0 | 0 | 2 | 0 | 4 | 3 |
 | serverless-api | Most reliable | 8 | 0 | 0 | 0 (7) | 0 | 0 | 1 | all | 0.83 | 3296 | 1056 | 13/0 | 0 | 3 | 0 | 8 | 3 |
 | serverless-api | Most optimized | 11 | 0 | 0 | 1 (9) | 0 | 0 | 1 | all | 0.77 | 3567 | 902 | 17/0 | 1 | 3 | 0 | 9 | 3 |

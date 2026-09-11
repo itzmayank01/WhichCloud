@@ -875,6 +875,27 @@ export async function layout(
     return route;
   };
 
+  /** Collision against the REAL node boxes, with no rendered-footprint
+   *  padding. Only for the last-ditch routing pass: a route that grazes a
+   *  price badge is worse-looking than one with clearance, and far better
+   *  than one drawn through a service. */
+  const hitsBareNode = (
+    pts: Array<{ x: number; y: number }>,
+    srcId: string,
+    tgtId: string
+  ) => {
+    for (let k = 1; k < pts.length; k++) {
+      const [lox, hix] = [Math.min(pts[k - 1].x, pts[k].x), Math.max(pts[k - 1].x, pts[k].x)];
+      const [loy, hiy] = [Math.min(pts[k - 1].y, pts[k].y), Math.max(pts[k - 1].y, pts[k].y)];
+      for (const [id, r] of box.entries()) {
+        if (!nodeById.has(id) || id === srcId || id === tgtId) continue;
+        if (hix > r.x + 3 && lox < r.x + r.w - 3 && hiy > r.y + 3 && loy < r.y + r.h - 3)
+          return true;
+      }
+    }
+    return false;
+  };
+
   const hitsNode = (
     pts: Array<{ x: number; y: number }>,
     srcId: string,
@@ -940,13 +961,31 @@ export async function layout(
     // is as likely to be occupied as the lane being escaped -- on the web
     // fixtures it ran straight across the zone-a compute -- so the first
     // candidate being blocked is the normal case, not the exception.
-    for (const plan of [vertical, horizontal]) {
-      const centre = plan.centre(plan.from, plan.to);
-      for (let step = 0; step <= 60; step++) {
-        const lanes = step === 0 ? [centre] : [centre + step * 12, centre - step * 12];
-        for (const lane of lanes) {
-          const candidate = plan.build(plan.from, plan.to, lane);
-          if (!hitsNode(candidate, srcId, tgtId)) return candidate;
+    // Two passes, and the second one is the point.
+    //
+    // Obstacles are INFLATED to each node's rendered footprint -- the price
+    // badge overhanging the top edge, the accent ring outside the border --
+    // so a route clearing the box by a pixel still runs under the badge. That
+    // is right when there is room. On a tight canvas it can leave no passable
+    // lane at all: `kafka -> storage` found all 121 candidates blocked in
+    // BOTH orientations, because the ETL job sits against the object store
+    // and the padding closes the gap between them.
+    //
+    // So if nothing clears the padded boxes, try again against the real ones.
+    // A line grazing a badge is untidy; a line through a node says two
+    // services are connected when they are not. Untidy beats false.
+    for (const padded of [true, false]) {
+      for (const plan of [vertical, horizontal]) {
+        const centre = plan.centre(plan.from, plan.to);
+        for (let step = 0; step <= 60; step++) {
+          const lanes = step === 0 ? [centre] : [centre + step * 12, centre - step * 12];
+          for (const lane of lanes) {
+            const candidate = plan.build(plan.from, plan.to, lane);
+            const blocked = padded
+              ? hitsNode(candidate, srcId, tgtId)
+              : hitsBareNode(candidate, srcId, tgtId);
+            if (!blocked) return candidate;
+          }
         }
       }
     }
@@ -974,7 +1013,7 @@ export async function layout(
     // to it, which is the one thing a diagram of connections must not say.
     if (hitsNode(route, e.source, e.target)) {
       const detour = perpendicularRoute(e.source, e.target);
-      if (detour && !hitsNode(detour, e.source, e.target)) route = detour;
+      if (detour && !hitsBareNode(detour, e.source, e.target)) route = detour;
     }
     edges.push({
       id: `e${i}`,
@@ -1108,7 +1147,12 @@ export async function layout(
     // and that is the one thing a diagram of connections must not say.
     if (edge.points && hitsNode(edge.points, edge.source, edge.target)) {
       const detour = perpendicularRoute(edge.source, edge.target);
-      if (detour && !hitsNode(detour, edge.source, edge.target)) {
+      // Accepted against the REAL boxes, not the padded ones. The last pass
+      // inside perpendicularRoute deliberately relaxes the padding to find a
+      // route at all on a tight canvas; re-testing the result against the
+      // padded boxes would throw away the very route that relaxation existed
+      // to produce, and leave the line through the node.
+      if (detour && !hitsBareNode(detour, edge.source, edge.target)) {
         edge.points = detour;
       }
     }
