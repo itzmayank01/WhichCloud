@@ -569,6 +569,13 @@ const edgeTypes = { poly: PolyEdge };
 export type SelectedNode = {
   id: string;
   label: string;
+  /** The node KIND, which is also the `group` on every line item that belongs
+   *  to it. Matching on this rather than on the label is the difference
+   *  between finding a service's cost and reporting it as unbilled: the bill
+   *  says "Database (Multi-AZ) (1-yr reserved)" where the diagram says
+   *  "Database", so an exact label match found nothing on the largest line in
+   *  the estimate. */
+  kind?: string | null;
   purpose?: string | null;
   priced?: boolean;
   monthly_usd?: number | null;
@@ -734,13 +741,20 @@ function Inner({
       nodesConnectable={false}
       elementsSelectable
       onNodeClick={(_, node) => {
-        // Containers are scenery -- a VPC boundary has no line on the bill --
-        // and they are already `selectable: false`, so this only ever fires
-        // for a real component.
+        // Containers are scenery -- a VPC, a subnet, an availability zone are
+        // boundaries, not services, and none of them has a line on the bill.
+        //
+        // `selectable: false` does NOT stop this firing; React Flow reports
+        // the click either way. Clicking the VPC therefore opened the
+        // inspector on a node with no matching line and no `priced` flag,
+        // which fell through to "the catalog could not price this in this
+        // region" -- alarming, and false. A VPC is not a missing price.
+        if (node.type === "container") return;
         const data = node.data as Record<string, unknown>;
         onNodeSelect?.({
           id: node.id,
           label: String(data.label ?? node.id),
+          kind: (data.kind as string) ?? null,
           purpose: (data.purpose as string) ?? null,
           priced: Boolean(data.priced),
           monthly_usd: (data.monthly_usd as number) ?? null,
