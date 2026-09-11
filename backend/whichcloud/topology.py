@@ -526,6 +526,35 @@ _LABELS = {
 }
 
 _MISSING_PHRASES: tuple[tuple[str, str], ...] = (
+    # ── the fourteen that mapped to nothing ──
+    #
+    # These are FIRST because the matcher returns on the first phrase
+    # contained in the label, and several of them would otherwise be captured
+    # by a shorter entry further down: "serverless warehouse query" contains
+    # neither "data warehouse" nor "query engine", but "managed ETL" sits
+    # above "egress" only by luck of ordering, and relying on luck is what
+    # produced a fourteen-label hole in the first place.
+    #
+    # They were priced, found unpriceable, and then dropped before the
+    # diagram -- so the component did not appear unpriced, it did not appear
+    # at all. test_every_label_the_estimator_can_emit_maps_to_a_kind now
+    # derives the full list from the estimator's own AST, so the next label
+    # added without a mapping fails there rather than vanishing here.
+    ("websocket connections", "connections"),
+    ("websocket messages", "connections"),
+    ("serverless warm-instance cpu", "lambda"),
+    ("serverless warehouse query", "warehouse"),
+    ("cross-region backup copy", "backup"),
+    ("vpc interface endpoints", "vpc_endpoints"),
+    ("gateway endpoints", "vpc_endpoints"),
+    ("inter-region transfer", "network"),
+    ("managed search cluster", "search"),
+    ("managed etl", "glue"),
+    ("query engine", "athena"),
+    ("secrets manager", "secrets"),
+    ("event bus", "eventbus"),
+    ("cdn", "cdn"),
+    # ── everything already mapped ──
     ("load balancer", "loadbalancer"),
     ("object storage", "storage"),
     ("monitoring", "monitoring"),
