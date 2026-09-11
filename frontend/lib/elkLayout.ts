@@ -990,6 +990,34 @@ export async function layout(
       }
     }
 
+    /* Last resort: lanes taken from the obstacles themselves.
+     *
+     * Everything above sweeps a lane between the two boxes at a fixed step.
+     * When something sits squarely in that corridor -- `kafka -> storage`
+     * meets the warehouse on GCP and the ETL job on Azure -- no such lane is
+     * clear in either orientation, padded or not, because the sweep never
+     * lands exactly past the obstacle's edge.
+     *
+     * Taking the candidate lanes FROM the obstacles guarantees one just clear
+     * of each. Ordered by distance from the straight line so the detour stays
+     * as small as the canvas allows.
+     */
+    const rects = inflatedObstacles(srcId, tgtId).map(([, r]) => r);
+    const midY = (vertical.from.y + vertical.to.y) / 2;
+    const midX = (horizontal.from.x + horizontal.to.x) / 2;
+    const vLanes = rects.flatMap((r) => [r.y - 20, r.y + r.h + 20])
+      .sort((a, b) => Math.abs(a - midY) - Math.abs(b - midY));
+    const hLanes = rects.flatMap((r) => [r.x - 20, r.x + r.w + 20])
+      .sort((a, b) => Math.abs(a - midX) - Math.abs(b - midX));
+    for (const [plan, lanes] of [
+      [vertical, vLanes],
+      [horizontal, hLanes],
+    ] as const) {
+      for (const lane of lanes) {
+        const candidate = plan.build(plan.from, plan.to, lane);
+        if (!hitsBareNode(candidate, srcId, tgtId)) return candidate;
+      }
+    }
     return null;
   };
 

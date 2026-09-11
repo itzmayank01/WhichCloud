@@ -119,9 +119,14 @@ type Metrics = {
   orphanNodes: number;
 };
 
-async function measureTier(nodes: any[], edges: any[], label: string): Promise<Metrics> {
-  const model = buildGraphModel(nodes, edges);
-  const laid = await layout(model);
+async function measureTier(
+  nodes: any[],
+  edges: any[],
+  label: string,
+  cloud: "aws" | "gcp" | "azure" = "aws"
+): Promise<Metrics> {
+  const model = buildGraphModel(nodes, edges, cloud);
+  const laid = await layout(model, cloud);
 
   const boxes = laid.nodes; // service + control + account rects
   // node–node overlaps (ignore container boxes, which legitimately contain nodes)
@@ -146,16 +151,40 @@ async function measureTier(nodes: any[], edges: any[], label: string): Promise<M
     }
   }
 
-  // edge crossings between non-adjacent segments
+  /* Edge crossings between segments of edges that are NOT adjacent.
+   *
+   * Two edges incident to the same node necessarily meet at that node. That
+   * meeting point is the node, not a crossing, and counting it measures a
+   * graph's fan-out rather than how tangled its picture is -- which is why
+   * every standard crossing metric excludes adjacent pairs.
+   *
+   * This only skipped segments of the SAME edge, and the distortion was not
+   * small. On web-ecommerce / Most optimized: Google Cloud counted 17, of
+   * which 15 were edges touching at a shared node and 2 were real. It was
+   * being reported as the worst-drawn of the three clouds while actually
+   * being the cleanest -- AWS has 5 real crossings, Azure 8, GCP 2.
+   *
+   * The budget is scaled by EDGE count, so counting per segment inflated the
+   * left side of the comparison and not the right.
+   */
   let edgeCrossings = 0;
-  const segs: Array<{ a: P; b: P; id: string }> = [];
+  const segs: Array<{ a: P; b: P; id: string; s: string; t: string }> = [];
   for (const e of laid.edges)
     for (let k = 0; k < e.points.length - 1; k++)
-      segs.push({ a: e.points[k], b: e.points[k + 1], id: e.id });
+      segs.push({
+        a: e.points[k],
+        b: e.points[k + 1],
+        id: e.id,
+        s: e.source,
+        t: e.target,
+      });
   for (let i = 0; i < segs.length; i++)
     for (let j = i + 1; j < segs.length; j++) {
-      if (segs[i].id === segs[j].id) continue;
-      if (segIntersect(segs[i].a, segs[i].b, segs[j].a, segs[j].b)) edgeCrossings++;
+      const A = segs[i];
+      const B = segs[j];
+      if (A.id === B.id) continue;
+      if (A.s === B.s || A.t === B.t || A.s === B.t || A.t === B.s) continue;
+      if (segIntersect(A.a, A.b, B.a, B.b)) edgeCrossings++;
     }
 
   // label overlaps (label vs label)
@@ -325,14 +354,25 @@ async function main() {
   const lines: string[] = [];
   lines.push("# Diagram layout quality\n");
   lines.push(
-    "| fixture | tier | svc | nodeOvl | edge→node | crossings (budget) | labelOvl | orphans | comps | reach | aspect | edgeLen | longest | elk kept/repl | cyc | fanOut | collin | rankSpan | orphan |"
+    "| cloud | fixture | tier | svc | nodeOvl | edge→node | crossings (budget) | labelOvl | orphans | comps | reach | aspect | edgeLen | longest | elk kept/repl | cyc | fanOut | collin | rankSpan | orphan |"
   );
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 
+  /* Every cloud, not just AWS.
+   *
+   * This harness called layout() with no cloud, which defaults to "aws", so
+   * two thirds of the diagrams the product actually renders were never
+   * measured. They are not the same picture: GCP has no zone containers
+   * because its subnets are regional, and Azure has none at all -- the
+   * nesting, and therefore the routing problem, differs per cloud. Two real
+   * GCP defects reached screenshots with every check passing. */
+  const CLOUDS = ["aws", "gcp", "azure"] as const;
+
+  for (const cloud of CLOUDS)
   for (const [name, fx] of Object.entries(fixtures)) {
     const sigs: string[] = [];
     for (const tier of fx.tiers) {
-      const m = await measureTier(tier.nodes, tier.edges, tier.label);
+      const m = await measureTier(tier.nodes, tier.edges, tier.label, cloud);
       sigs.push(tier.fingerprint.join(","));
       const hardFail =
         m.nodeOverlaps > 0 ||
@@ -346,7 +386,7 @@ async function main() {
       if (hardFail) failures++;
       const flag = hardFail ? " ⚠️" : "";
       lines.push(
-        `| ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} | ${m.edgeLength} | ${m.longestEdge} | ${m.elkKept}/${m.elkReplaced} | ${m.cycles} | ${m.maxFanOut} | ${m.collinear} | ${m.maxRankSpan} | ${m.orphanNodes} |`
+        `| ${cloud} | ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} | ${m.edgeLength} | ${m.longestEdge} | ${m.elkKept}/${m.elkReplaced} | ${m.cycles} | ${m.maxFanOut} | ${m.collinear} | ${m.maxRankSpan} | ${m.orphanNodes} |`
       );
     }
     // three tiers must differ
