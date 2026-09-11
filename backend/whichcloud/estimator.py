@@ -560,15 +560,48 @@ _WAREHOUSE_UNIT_SKU: dict[str, str] = {
 _WAREHOUSE_SERVERLESS_TB = 5.0
 
 
+#: What one requested warehouse node is taken to be worth in Azure's units.
+#:
+#: THE most consequential approximation in this file. Azure sells dedicated
+#: SQL in data warehouse units and publishes no vCPU figure for them, so
+#: nothing in the catalog relates a DWU to a Redshift node -- and the two
+#: cannot be derived from each other, only assumed. At one node per SKU-unit
+#: the same four-node request prices at $1,263 on Redshift and $4,935 on
+#: Synapse, which is most of Azure's 175% deviation on C6.
+#:
+#: It is a ratio rather than a DWU count on purpose: the DWU itself is read
+#: off the SKU, so if Azure ever publishes the pool at a different service
+#: level the arithmetic follows instead of silently meaning something else.
+_AZURE_NODES_PER_WAREHOUSE_UNIT = 1
+
+
+def _warehouse_dwu(unit) -> int | None:
+    """The service level the ingested SKU actually is, per its own attributes.
+
+    Read rather than assumed. This was a literal 100 in the label, duplicating
+    a number the ingest already records as {"dwu": "100"} -- so a SKU change
+    would have moved the price while the label went on saying DW100c.
+    """
+    raw = (getattr(unit, "attributes", None) or {}).get("dwu")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _warehouse_pool_label(provider: str, unit, node_equivalents: int) -> str:
     """Name the pool in the unit the provider actually sells it in.
 
-    Azure sizes a dedicated SQL pool in data warehouse units, so N nodes'
-    worth of capacity is DW(N x 100)c -- one pool, one service level. Naming
-    it that way is what lets a reader look the price up.
+    Azure sizes a dedicated SQL pool in data warehouse units -- one pool, one
+    service level, not N pools. Naming it in DWU is what lets a reader look
+    the price up and check it.
     """
     if provider == "azure":
-        return f"Synapse dedicated SQL pool (DW{node_equivalents * 100}c)"
+        dwu = _warehouse_dwu(unit)
+        if dwu:
+            total = dwu * node_equivalents * _AZURE_NODES_PER_WAREHOUSE_UNIT
+            return f"Synapse dedicated SQL pool (DW{total}c)"
+        return "Synapse dedicated SQL pool"
     return f"{unit.name} \u00d7 {node_equivalents}"
 
 
@@ -1844,13 +1877,29 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
             # pools serving one warehouse. The arithmetic is unchanged, since
             # DWU scales linearly, but "x 4" described a purchase nobody can
             # make and hid the unit that would let anyone check the figure.
-            result.items.append(
-                _hourly_line(
-                    _warehouse_pool_label(provider, unit, spec.warehouse_node_count),
-                    unit,
-                    spec.warehouse_node_count,
-                )
+            pool = _hourly_line(
+                _warehouse_pool_label(provider, unit, spec.warehouse_node_count),
+                unit,
+                spec.warehouse_node_count,
             )
+            # The node-to-DWU equivalence goes ON THE LINE, not in a comment.
+            # It is the single assumption most responsible for Azure reading
+            # 175% above the median here, and a reader comparing three totals
+            # has no way to know one of them rests on a conversion nobody
+            # publishes unless the line says so.
+            if provider == "azure" and _warehouse_dwu(unit):
+                pool = replace(
+                    pool,
+                    caveats=[
+                        *pool.caveats,
+                        "Sized by taking one requested warehouse node as one "
+                        f"DW{_warehouse_dwu(unit)}c. Azure publishes no vCPU "
+                        "figure for a DWU, so this equivalence is assumed, not "
+                        "derived -- and it drives most of the difference "
+                        "against Redshift.",
+                    ],
+                )
+            result.items.append(pool)
         else:
             result.missing.append("data warehouse node")
 
