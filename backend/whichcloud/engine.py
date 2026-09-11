@@ -303,6 +303,33 @@ POSTURE_MONTHLY_CHECKS: dict[str, float] = {
 #: from egress rather than from a tier lookup.
 FLOWLOG_GB_PER_EGRESS_GB = 0.10
 
+
+def security_controls_wanted(requirement: "Requirement") -> bool:
+    """Should account-wide security controls be on this architecture at all?
+
+    The same test Security Hub already had, applied to the other two. That one
+    was gated after a bakery's marketing site was billed $50/mo for continuous
+    posture checking -- the largest line after the database, for a control
+    nobody asked for and no auditor would ever read. GuardDuty and VPC flow
+    logs sat two lines above it and kept the unconditional `True` they had
+    always had, so the same site still paid for threat detection and network
+    forensics it had not asked for either.
+
+    They are all the same KIND of thing: account-wide controls that exist
+    because a regime requires them or because the system is big enough that
+    operating it without them is negligent. Neither is true of a site that
+    serves a menu. A stated compliance regime turns them on; so does traffic
+    at a scale where "we did not notice" stops being an acceptable answer.
+
+    This is also why the diagram draws them with no edges: no request passes
+    through them. A component that nothing connects to AND nobody asked for is
+    one the architecture should not contain.
+    """
+    return bool(requirement.compliance) or requirement.traffic_scale in (
+        "high",
+        "very_high",
+    )
+
 SIZING_BASIS = (
     "Sizing is heuristic: conventional starting points per traffic tier, not "
     "measured from your workload. Validate under load before committing."
@@ -949,7 +976,7 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # Fargate must zero compute_count. `fargate_tasks_for` derives the
         # base and peak counts; see scripts/ for the selecting call.
         secret_count=BASE_SECRET_COUNT if stateful else 0,
-        threat_detection=True,
+        threat_detection=security_controls_wanted(requirement),
         tracing_monthly_traces=tracing_traces_for(requirement),
         # Security Hub is a compliance product, and it was being billed on
         # every architecture regardless. On a bakery's marketing site with
@@ -959,10 +986,14 @@ def base_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         # continuous posture checking is a real operational need.
         posture_monthly_checks=(
             POSTURE_MONTHLY_CHECKS[requirement.traffic_scale]
-            if requirement.compliance or requirement.traffic_scale in ("high", "very_high")
+            if security_controls_wanted(requirement)
             else 0.0
         ),
-        flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
+        flowlog_gb=(
+            requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB
+            if security_controls_wanted(requirement)
+            else 0.0
+        ),
     )
     # The primary store, derived from data_shape (RDS / DynamoDB / OpenSearch
     # / Redshift / Timestream / none), plus the ingestion stream where the
@@ -1312,7 +1343,7 @@ def event_driven_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
             fargate_task_vcpu=1.0, fargate_task_memory_gb=2.0,
             athena_tb_scanned_per_month=ATHENA_TB_PER_MONTH,
             glue_dpu_hours_per_month=GLUE_DPU_HOURS,  # managed ETL/catalog
-            threat_detection=True,
+            threat_detection=security_controls_wanted(requirement),
         )
 
     # Most optimized
@@ -1330,7 +1361,7 @@ def event_driven_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         search_storage_gb=max(requirement.storage_gb, write_gb),
         warehouse_node_count=WAREHOUSE_NODES[requirement.traffic_scale],  # OLAP
         warehouse_node_vcpu=2, warehouse_node_memory_gb=16.0,
-        threat_detection=True,
+        threat_detection=security_controls_wanted(requirement),
         posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
     )
 
@@ -1427,7 +1458,11 @@ def batch_etl_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         kms_key_count=1,
         s3_put_requests=rows,
         s3_get_requests=rows * S3_GETS_PER_PUT,
-        flowlog_gb=requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB,
+        flowlog_gb=(
+            requirement.egress_gb * FLOWLOG_GB_PER_EGRESS_GB
+            if security_controls_wanted(requirement)
+            else 0.0
+        ),
     )
 
     if label == "Cheapest":
@@ -1453,7 +1488,7 @@ def batch_etl_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
             fargate_task_vcpu=1.0, fargate_task_memory_gb=2.0,
             glue_dpu_hours_per_month=BATCH_GLUE_DPU_HOURS,   # managed ETL/catalog
             athena_tb_scanned_per_month=BATCH_ATHENA_TB_PER_MONTH,
-            threat_detection=True,
+            threat_detection=security_controls_wanted(requirement),
         )
 
     # Most optimized — Redshift replaces re-scanning the lake with Athena.
@@ -1466,7 +1501,7 @@ def batch_etl_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         glue_dpu_hours_per_month=BATCH_GLUE_DPU_HOURS,
         warehouse_node_count=WAREHOUSE_NODES[requirement.traffic_scale],
         warehouse_node_vcpu=2, warehouse_node_memory_gb=16.0,
-        threat_detection=True,
+        threat_detection=security_controls_wanted(requirement),
         posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
     )
 
