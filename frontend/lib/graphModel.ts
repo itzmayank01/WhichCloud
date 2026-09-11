@@ -281,7 +281,14 @@ const OUTSIDE_CLOUD = new Set(["client"]);
  *  them adds no cost, it just stops the picture claiming a single-zone
  *  deployment when the bill paid for two. */
 /** Suffix for the standby half, so the label reads like the architecture. */
-const STANDBY_LABEL: Record<string, string> = {
+/** What the zone-b twin of each kind is called.
+ *
+ *  Exported because the node renderers need it: on GCP and Azure the title is
+ *  the provider's product name ("Cloud SQL"), which REPLACED the whole label
+ *  and took the qualifier with it -- so the standby and its primary drew as
+ *  two boxes reading "Cloud SQL / Relational database", and the diagram looked
+ *  like it had rendered everything twice. */
+export const STANDBY_LABEL: Record<string, string> = {
   database: "standby",
   cache: "replica",
   search: "replica",

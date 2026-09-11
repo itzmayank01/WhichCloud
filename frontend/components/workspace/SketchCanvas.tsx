@@ -25,7 +25,7 @@ import {
 // splits the bundle.
 import "@xyflow/react/dist/style.css";
 import type { Node as TopoNode, Edge as TopoEdge } from "@/lib/api";
-import { buildGraphModel } from "@/lib/graphModel";
+import { buildGraphModel, STANDBY_LABEL } from "@/lib/graphModel";
 import { layout, type CloudId } from "@/lib/elkLayout";
 // Shared with the priced canvas on purpose. These are what make a box look
 // like the diagram it came from; duplicating them here would guarantee the
@@ -87,7 +87,7 @@ function Handles({ connecting }: { connecting: boolean }) {
    bordered rectangles, so opening it threw away every icon, every provider
    product name and the whole visual language of the diagram someone had just
    been reading. Editing a picture should not mean editing a worse one. */
-function SketchService({ data, selected }: NodeProps) {
+function SketchService({ id, data, selected }: NodeProps) {
   const d = data as {
     label: string;
     kind?: string;
@@ -100,7 +100,12 @@ function SketchService({ data, selected }: NodeProps) {
   // An explicit icon (added from the palette) wins; otherwise the engine's
   // `kind` resolves exactly as it does on the priced canvas.
   const icon = d.icon ?? (d.kind ? serviceIconPath(d.kind, cloud) : null);
-  const title = (d.kind ? serviceDisplayName(d.kind, cloud) : null) ?? d.label;
+  // Same standby handling as the priced canvas: on GCP and Azure the product
+  // name replaces the label, so without this a Multi-AZ pair reads as the same
+  // service drawn twice.
+  const product = d.kind ? serviceDisplayName(d.kind, cloud) : null;
+  const standby = id.endsWith("__b") ? STANDBY_LABEL[d.kind ?? ""] ?? "zone b" : null;
+  const title = product ? (standby ? `${product} ${standby}` : product) : d.label;
 
   return (
     <div

@@ -19,7 +19,7 @@ import "@xyflow/react/dist/style.css";
 import { Icon } from "@iconify/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Node as TopoNode, Edge as TopoEdge } from "@/lib/api";
-import { buildGraphModel } from "@/lib/graphModel";
+import { buildGraphModel, STANDBY_LABEL } from "@/lib/graphModel";
 import { layout, type CloudId, type Layout, type LaidNode } from "@/lib/elkLayout";
 import { PROVIDER_SERVICES } from "@/lib/providerServices";
 import { iconFor } from "@/lib/serviceIcon";
@@ -284,7 +284,20 @@ function ServiceNode({ data }: NodeProps) {
   // Title is the provider's real product name where we know it; the generic
   // role stays underneath as the descriptor. This is the reverse of the old
   // arrangement, where the title was generic ("Database") on every cloud.
-  const title = serviceDisplayName(d.kind, cloud) ?? d.label;
+  // On AWS the label already reads "Database standby"; on GCP and Azure the
+  // product name REPLACED it and took the qualifier with it, so the standby
+  // and its primary drew as two identical boxes -- "Cloud SQL / Relational
+  // database" twice -- and the diagram looked like it had rendered everything
+  // a second time. Keep the product name AND the qualifier.
+  const product = serviceDisplayName(d.kind, cloud);
+  const standby = d.id.endsWith("__b")
+    ? STANDBY_LABEL[d.kind] ?? "zone b"
+    : null;
+  const title = product
+    ? standby
+      ? `${product} ${standby}`
+      : product
+    : d.label;
   // AWS reference styling: a hairline #D5DBDB box, 2px corners, NO shadow.
   // The rounded-xl card with a drop shadow read as a web UI component rather
   // than a diagram symbol -- twenty of them stacked looked like a dashboard,
