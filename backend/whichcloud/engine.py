@@ -1362,7 +1362,16 @@ def event_driven_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         warehouse_node_count=WAREHOUSE_NODES[requirement.traffic_scale],  # OLAP
         warehouse_node_vcpu=2, warehouse_node_memory_gb=16.0,
         threat_detection=security_controls_wanted(requirement),
-        posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
+        # Same gate as every other site. These two tier variants set it
+        # unconditionally, which quietly undid the gate for the top tiers --
+        # a workload with no stated regime still paid for continuous posture
+        # checking, and paid for it on ONE tier and not the one below, so the
+        # two tiers also stopped being comparable.
+        posture_monthly_checks=(
+            POSTURE_MONTHLY_CHECKS[requirement.traffic_scale]
+            if security_controls_wanted(requirement)
+            else 0.0
+        ),
     )
 
 
@@ -1502,7 +1511,16 @@ def batch_etl_spec(requirement: Requirement, label: str) -> ArchitectureSpec:
         warehouse_node_count=WAREHOUSE_NODES[requirement.traffic_scale],
         warehouse_node_vcpu=2, warehouse_node_memory_gb=16.0,
         threat_detection=security_controls_wanted(requirement),
-        posture_monthly_checks=POSTURE_MONTHLY_CHECKS[requirement.traffic_scale],
+        # Same gate as every other site. These two tier variants set it
+        # unconditionally, which quietly undid the gate for the top tiers --
+        # a workload with no stated regime still paid for continuous posture
+        # checking, and paid for it on ONE tier and not the one below, so the
+        # two tiers also stopped being comparable.
+        posture_monthly_checks=(
+            POSTURE_MONTHLY_CHECKS[requirement.traffic_scale]
+            if security_controls_wanted(requirement)
+            else 0.0
+        ),
     )
 
 
@@ -2301,23 +2319,6 @@ def recommend(
         # volume alone. The budget has not been consulted and must not be:
         # it is applied below as a CONSTRAINT on the finished design, never as
         # an input to it.
-        if server_shape:
-            # A tier is never smaller than the one below it. Floor each scalable
-            # knob at the cheaper tier's value so "Most optimized" is always >=
-            # "Most reliable" componentwise, and therefore in price -- the
-            # monotonicity the three labels assert.
-            floor_from = _scaled_by_label.get("Most reliable")
-            if label == "Most optimized" and floor_from is not None:
-                spec = replace(
-                    spec,
-                    compute_count=max(spec.compute_count, floor_from.compute_count),
-                    database_vcpu=(max(spec.database_vcpu or 0, floor_from.database_vcpu or 0) or None),
-                    database_memory_gb=(max(spec.database_memory_gb or 0, floor_from.database_memory_gb or 0) or None),
-                    database_read_replicas=max(spec.database_read_replicas, floor_from.database_read_replicas),
-                    cache_vcpu=(max(spec.cache_vcpu or 0, floor_from.cache_vcpu or 0) or None),
-                    cache_memory_gb=(max(spec.cache_memory_gb or 0, floor_from.cache_memory_gb or 0) or None),
-                )
-            _scaled_by_label[label] = spec
 
         # Budget last, and only ever downward. Under budget the difference is
         # headroom and nothing changes; over budget, capacity is given up in a
@@ -2325,6 +2326,62 @@ def recommend(
         spec, budget_saturated, budget_given_up = _fit_within_budget(
             spec, requirement, provider, dsn
         )
+
+        # AFTER the budget, not before it.
+        #
+        # The floor used to run on the freshly sized spec and then the
+        # budget stripped capacity back off, so on F1/azure at $500 the
+        # top tier lost the cache the middle tier kept and came out
+        # $17 CHEAPER than the tier below it -- the floor had been
+        # applied and then undone, three lines apart.
+        #
+        # Flooring last can push a tier over its budget. That is the
+        # honest outcome and the interface already states it: an option
+        # that cannot meet the brief within the budget is reported as
+        # over budget, which is a fact about the budget rather than a
+        # reason to ship a top tier weaker than the one beneath it.
+        #
+        # A tier is never smaller than the one below it. Floor each scalable
+        # knob at the cheaper tier's value so "Most optimized" is always >=
+        # "Most reliable" componentwise, and therefore in price -- the
+        # monotonicity the three labels assert.
+        #
+        # NOT gated on server_shape, unlike the compute_count floors above.
+        # That guard exists because forcing `compute_count >= 2` on a Fargate
+        # or event-driven shape manufactures a phantom EC2 fleet. Taking a
+        # componentwise MAXIMUM cannot do that: if the tier below runs zero
+        # instances, max(0, 0) is still zero. Nothing is invented that the
+        # cheaper tier does not already have.
+        #
+        # Gating it anyway meant batch, serverless, AI and event-driven shapes
+        # had no monotonicity guarantee at all -- and those are exactly the
+        # archetypes whose tiers were observed crossing, because the budget
+        # ladder can strip a warehouse from the top tier while leaving the
+        # middle one (which never had it) untouched.
+        floor_from = _scaled_by_label.get("Most reliable")
+        if label == "Most optimized" and floor_from is not None:
+            spec = replace(
+                spec,
+                compute_count=max(spec.compute_count, floor_from.compute_count),
+                database_vcpu=(max(spec.database_vcpu or 0, floor_from.database_vcpu or 0) or None),
+                database_memory_gb=(max(spec.database_memory_gb or 0, floor_from.database_memory_gb or 0) or None),
+                database_read_replicas=max(spec.database_read_replicas, floor_from.database_read_replicas),
+                cache_vcpu=(max(spec.cache_vcpu or 0, floor_from.cache_vcpu or 0) or None),
+                cache_memory_gb=(max(spec.cache_memory_gb or 0, floor_from.cache_memory_gb or 0) or None),
+                # The knobs the non-server shapes actually scale on. Without
+                # these the floor was a no-op for precisely the archetypes it
+                # was extended to cover.
+                fargate_task_count=max(spec.fargate_task_count, floor_from.fargate_task_count),
+                warehouse_node_count=max(spec.warehouse_node_count, floor_from.warehouse_node_count),
+                nat_gateway_count=max(spec.nat_gateway_count, floor_from.nat_gateway_count),
+                # Redundancy is a capability, not a quantity, so a max over
+                # numbers never caught it: the top tier was handing back the
+                # standby database the middle tier had, which is the plainest
+                # possible violation of "no smaller than the tier below" and
+                # the one a reader would notice first.
+                database_multi_az=spec.database_multi_az or floor_from.database_multi_az,
+            )
+        _scaled_by_label[label] = spec
 
         baseline = estimate(spec, provider, dsn=dsn)
 
