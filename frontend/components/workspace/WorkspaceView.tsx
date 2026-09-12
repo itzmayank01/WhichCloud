@@ -423,9 +423,18 @@ export function WorkspaceView({ name }: { name: string | null }) {
             })}
           </div>
         ) : (
-          <p className="flex-1 truncate text-[13px] text-ink-3">
-            {name ? `Welcome back, ${name} — describe what you're building.` : "Describe what you're building."}
-          </p>
+          <div className="flex flex-1 items-center justify-between">
+            <p className="truncate text-[13px] text-ink-3">
+              {name ? `Welcome back, ${name} — describe what you're building.` : "Describe what you're building."}
+            </p>
+            <a
+              href="/finops"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1 text-[12px] font-semibold text-accent hover:bg-accent/20 transition-all"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+              <span>Live FinOps Cockpit →</span>
+            </a>
+          </div>
         )}
       </div>
 
