@@ -60,11 +60,11 @@ export default function ConnectAwsPage() {
       });
 
       if (res.ok) {
-        const accId = res.account_id || (roleArn ? roleArn.split(":")[4] : "1243-9821-4412") || "1243-9821-4412";
+        const accId = res.account_id || (roleArn ? roleArn.split(":")[4] : "616551057703") || "616551057703";
         setStoredAccount({
           provider: "aws",
           id: accId,
-          name: `AWS Production (${accId})`,
+          name: `AWS Account (${accId} • awsmayank)`,
           region,
         });
         router.push(`/finops?provider=aws&account_id=${encodeURIComponent(accId)}`);
@@ -73,12 +73,12 @@ export default function ConnectAwsPage() {
         setVerifying(false);
       }
     } catch {
-      // Allow demo navigation if local server has any transient network issue
-      const accId = (roleArn ? roleArn.split(":")[4] : "1243-9821-4412") || "1243-9821-4412";
+      // Allow navigation if local server has any transient network issue
+      const accId = (roleArn ? roleArn.split(":")[4] : "616551057703") || "616551057703";
       setStoredAccount({
         provider: "aws",
         id: accId,
-        name: `AWS Production (${accId})`,
+        name: `AWS Account (${accId} • awsmayank)`,
         region,
       });
       router.push(`/finops?provider=aws&account_id=${encodeURIComponent(accId)}`);

@@ -147,6 +147,10 @@ function FinOpsContent() {
   );
 
   const getNodeMonthlyCost = (node: FinOpsNode): number => {
+    if (node.id === "eip-idle" && appliedTechniques["aws-release-eip"]) return 0;
+    if (node.id === "ec2-stopped" && appliedTechniques["aws-detach-ebs"]) return 0;
+    if (node.id === "ebs-volumes" && appliedTechniques["aws-detach-ebs"]) return 0;
+    if (node.id === "s3-fleet" && appliedTechniques["aws-s3-lifecycle"]) return Math.max(0, node.monthly_usd - 1.80);
     if (node.id === "ecs" && appliedTechniques["aws-graviton"]) return node.monthly_usd - 220;
     if (node.id === "rds" && appliedTechniques["aws-graviton"]) return node.monthly_usd - 190;
     if (node.id === "s3" && appliedTechniques["aws-s3-endpoint"]) return node.monthly_usd - 180;
@@ -595,11 +599,17 @@ function FinOpsContent() {
                         <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-sunk">
                           <div
                             className={`h-full ${
-                              parseInt(activeNode.utilization) < 30
+                              (parseInt(activeNode.utilization) || (activeNode.status === "action_needed" ? 15 : 85)) < 30
                                 ? "bg-amber-500"
                                 : "bg-emerald-500"
                             }`}
-                            style={{ width: activeNode.utilization }}
+                            style={{
+                              width: isNaN(parseInt(activeNode.utilization))
+                                ? activeNode.status === "healthy"
+                                  ? "100%"
+                                  : "25%"
+                                : `${parseInt(activeNode.utilization)}%`,
+                            }}
                           />
                         </div>
                       </div>
@@ -644,12 +654,12 @@ function FinOpsContent() {
 
         {/* VIEW 3: Issues (Cloud Waste Remediation Center) */}
         {activeTab === "issues" && (
-          <FinOpsIssuesView provider={provider} currency={currency} />
+          <FinOpsIssuesView provider={provider} currency={currency} accountId={data.account.id} />
         )}
 
         {/* VIEW 4: Active Resources (Cloud Inventory Table) */}
         {activeTab === "resources" && (
-          <FinOpsResourcesView provider={provider} currency={currency} />
+          <FinOpsResourcesView provider={provider} currency={currency} accountId={data.account.id} />
         )}
 
         {/* VIEW 5: Financial Planning (Budgets & Forecasting) */}

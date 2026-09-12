@@ -752,6 +752,16 @@ export const api = {
     get<FinOpsReportResponse>(
       `/api/finops/reports?provider=${encodeURIComponent(provider)}&interval=${encodeURIComponent(interval)}&bin=${encodeURIComponent(bin)}&group_by=${encodeURIComponent(groupBy)}`,
     ),
+
+  finopsResources: (provider = "aws", accountId = "demo") =>
+    get<{ resources: any[]; provider: string; account_id: string }>(
+      `/api/finops/resources?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+    ),
+
+  finopsIssues: (provider = "aws", accountId = "demo") =>
+    get<{ issues: any[]; provider: string; account_id: string }>(
+      `/api/finops/issues?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+    ),
 };
 
 export type ConnectionSetupStep = {

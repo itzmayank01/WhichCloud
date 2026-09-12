@@ -19,10 +19,10 @@ export interface ConnectedAccountData {
 export const CLOUD_PROVIDERS: Record<CloudProviderId, ConnectedAccountData> = {
   aws: {
     provider: "aws",
-    id: "1243-9821-4412",
-    name: "AWS Production (1243-9821-4412)",
+    id: "616551057703",
+    name: "AWS Account (616551057703 • awsmayank)",
     brandName: "Amazon Web Services",
-    region: "us-east-1",
+    region: "us-east-1 & us-west-2",
     logo: "logos:aws",
   },
   azure: {

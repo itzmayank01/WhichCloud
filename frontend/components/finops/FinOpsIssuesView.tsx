@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
+import { api } from "@/lib/api";
 
 export interface FinOpsIssue {
   id: string;
@@ -249,11 +250,13 @@ resource "aws_launch_template" "workers" {
 interface FinOpsIssuesViewProps {
   provider: string;
   currency?: CurrencyCode;
+  accountId?: string;
 }
 
 export function FinOpsIssuesView({
   provider = "aws",
   currency = "USD",
+  accountId = "demo",
 }: FinOpsIssuesViewProps) {
   const p = provider.toLowerCase();
   const rawList = DEFAULT_ISSUES[p] || DEFAULT_ISSUES.aws;
@@ -264,6 +267,23 @@ export function FinOpsIssuesView({
   const [remediatingId, setRemediatingId] = useState<string | null>(null);
   const [activeTerraformModal, setActiveTerraformModal] = useState<FinOpsIssue | null>(null);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    api.finopsIssues(provider, accountId)
+      .then((res) => {
+        if (mounted && res?.issues && res.issues.length > 0) {
+          setIssues(res.issues);
+        }
+      })
+      .catch((err) => {
+        console.error("Live issues fetch error:", err);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [provider, accountId]);
 
   const filteredIssues = issues.filter((iss) => {
     if (filterSeverity !== "all" && iss.severity !== filterSeverity) return false;

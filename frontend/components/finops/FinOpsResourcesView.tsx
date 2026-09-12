@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
+import { api } from "@/lib/api";
 
 export interface CloudResource {
   id: string;
@@ -274,11 +275,13 @@ const DEFAULT_RESOURCES: Record<string, CloudResource[]> = {
 interface FinOpsResourcesViewProps {
   provider: string;
   currency?: CurrencyCode;
+  accountId?: string;
 }
 
 export function FinOpsResourcesView({
   provider = "aws",
   currency = "USD",
+  accountId = "demo",
 }: FinOpsResourcesViewProps) {
   const p = provider.toLowerCase();
   const rawList = DEFAULT_RESOURCES[p] || DEFAULT_RESOURCES.aws;
@@ -288,6 +291,23 @@ export function FinOpsResourcesView({
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    api.finopsResources(provider, accountId)
+      .then((res) => {
+        if (mounted && res?.resources && res.resources.length > 0) {
+          setResources(res.resources);
+        }
+      })
+      .catch((err) => {
+        console.error("Live resources fetch error:", err);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [provider, accountId]);
 
   const filteredResources = resources.filter((res) => {
     if (selectedCategory !== "all" && res.category !== selectedCategory) return false;
