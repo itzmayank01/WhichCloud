@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   api,
@@ -114,28 +115,30 @@ function DownloadTerraformButton({
   option: string;
   cloud: CloudId;
 }) {
-  const router = useRouter();
-
-  function openTerraformStudio() {
-    const params = new URLSearchParams();
-    if (description) params.set("description", description);
-    if (option) params.set("option", option);
-    if (cloud) params.set("cloud", cloud);
-    router.push(`/terraform?${params.toString()}`);
-  }
+  const text = description || EXAMPLE;
+  const params = new URLSearchParams();
+  if (text) params.set("description", text);
+  if (option) params.set("option", option);
+  if (cloud) params.set("cloud", cloud);
+  const targetUrl = `/terraform?${params.toString()}`;
 
   return (
-    <button
-      type="button"
-      onClick={openTerraformStudio}
-      title="Open Terraform IaC Configuration & WhichCloud Cost Reports Studio"
+    <Link
+      href={targetUrl}
+      onClick={(e) => {
+        // Guarantee hard navigation even if client-side SPA router is cached
+        if (typeof window !== "undefined") {
+          window.location.href = targetUrl;
+        }
+      }}
+      title="Open Terraform IaC Configuration & Architecture Studio"
       className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-all hover:bg-sunk hover:border-brand hover:text-brand"
     >
       <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
       </svg>
       <span>Terraform</span>
-    </button>
+    </Link>
   );
 }
 

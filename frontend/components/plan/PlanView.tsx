@@ -39,7 +39,8 @@ function DownloadTerraformButton({
     const params = new URLSearchParams();
     if (description) params.set("description", description);
     if (tier) params.set("option", tier);
-    router.push(`/terraform?${params.toString()}`);
+    const targetUrl = `/terraform?${params.toString()}`;
+    window.location.href = targetUrl;
   }
 
   async function download() {
