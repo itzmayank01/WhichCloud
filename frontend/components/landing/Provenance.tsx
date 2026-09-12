@@ -31,7 +31,7 @@ const RUNS = [
   },
   {
     provider: "Azure",
-    checked: "Vantage instance catalog",
+    checked: "Azure Retail Prices API",
     matched: 923,
     of: 928,
     pct: "99.5%",

@@ -28,7 +28,7 @@ const BINS: { id: DateBin; label: string }[] = [
  * one; no forecast beyond a flat run-rate, because a few days of one
  * export cannot support a slope; and no blended-vs-unblended switch,
  * because most exports contain only one of the two. Each of those is a
- * real Vantage feature resting on data a connected account would have
+ * real platform feature resting on data a connected account would have
  * and an uploaded CSV does not.
  */
 export function CostReport({ rows, warnings }: { rows: CostRow[]; warnings: string[] }) {

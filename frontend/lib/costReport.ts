@@ -17,9 +17,8 @@ export const DIMENSIONS: { id: Dimension; label: string }[] = [
   { id: "resource_type", label: "Resource type" },
 ];
 
-/** Kept small on purpose. Vantage ships six operators including regex;
- *  these four cover what a person actually reaches for, and each one is
- *  unambiguous about what it does to a row. */
+/** Kept small on purpose. These four operators cover what a person
+ *  actually reaches for, and each one is unambiguous about what it does to a row. */
 export type Operator = "is" | "is not" | "contains" | "does not contain";
 
 export const OPERATORS: Operator[] = ["is", "is not", "contains", "does not contain"];
