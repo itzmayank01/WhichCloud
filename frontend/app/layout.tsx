@@ -144,6 +144,25 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 Price index
               </Link>
               <Link
+                href="/estimate"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
+                Price your app
+              </Link>
+              <Link
+                href="/connect"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
+                Connect
+              </Link>
+              <Link
+                href="/finops"
+                className="flex items-center gap-1.5 rounded-sm font-medium text-accent transition-colors hover:opacity-80"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                FinOps Live
+              </Link>
+              <Link
                 href="/#architecture"
                 className="rounded-sm transition-colors hover:text-ink"
               >
@@ -154,18 +173,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 className="rounded-sm transition-colors hover:text-ink"
               >
                 Optimizations
-              </Link>
-              <Link
-                href="/#provenance"
-                className="rounded-sm transition-colors hover:text-ink"
-              >
-                Provenance
-              </Link>
-              <Link
-                href="/estimate"
-                className="rounded-sm transition-colors hover:text-ink"
-              >
-                Price your app
               </Link>
             </nav>
 
