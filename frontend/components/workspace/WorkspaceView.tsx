@@ -16,6 +16,7 @@ import {
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
 import { CostRail } from "@/components/workspace/CostRail";
+import { TerraformLogo } from "@/components/Logo";
 import { AskPanel } from "@/components/workspace/AskPanel";
 import { Inspector } from "@/components/workspace/Inspector";
 import { ToolIcons, ToolRail } from "@/components/workspace/ToolRail";
@@ -134,9 +135,7 @@ function DownloadTerraformButton({
       title="Open Terraform IaC Configuration & Architecture Studio"
       className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-all hover:bg-sunk hover:border-brand hover:text-brand"
     >
-      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
-      </svg>
+      <TerraformLogo className="h-3.5 w-3.5 text-[#5C4EE5]" />
       <span>Terraform</span>
     </Link>
   );

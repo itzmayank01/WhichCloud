@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TierDiagram } from "@/components/plan/TierDiagram";
+import { TerraformLogo } from "@/components/Logo";
 import type { Plan, PlanTier } from "@/lib/api";
 import { api, money } from "@/lib/api";
 
@@ -68,9 +69,7 @@ function DownloadTerraformButton({
         onClick={openStudio}
         className="inline-flex items-center gap-1.5 rounded-lg border border-brand bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand transition hover:bg-brand hover:text-white"
       >
-        <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
-        </svg>
+        <TerraformLogo className="h-3.5 w-3.5 text-[#5C4EE5]" />
         <span>IaC Studio</span>
       </button>
       <button

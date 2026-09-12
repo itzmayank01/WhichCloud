@@ -34,3 +34,16 @@ export function Wordmark() {
     </span>
   );
 }
+
+/**
+ * Authentic HashiCorp Terraform vector mark:
+ * 4 isometric prisms in standard brand color #5C4EE5 / #844FBA.
+ */
+export function TerraformLogo({ className = "h-4 w-4 text-[#5C4EE5]" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
+    </svg>
+  );
+}
+

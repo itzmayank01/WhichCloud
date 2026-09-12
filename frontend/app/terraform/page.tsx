@@ -19,6 +19,7 @@ import {
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
 import { Inspector } from "@/components/workspace/Inspector";
+import { TerraformLogo } from "@/components/Logo";
 
 interface ArchitectureItem {
   label: string;
@@ -55,6 +56,9 @@ function TerraformStudioContent() {
 
   // View mode for the right pane: "architecture" (default) or "report"
   const [viewMode, setViewMode] = useState<"architecture" | "report">("architecture");
+
+  // Modules folder toggle in file explorer sidebar
+  const [modulesExpanded, setModulesExpanded] = useState(true);
 
   // Terraform files state
   const [files, setFiles] = useState<Record<string, string>>({});
@@ -155,15 +159,69 @@ function TerraformStudioContent() {
         });
 
         if (!cancelled) {
-          setFiles(data.files);
-          setEditedCode(data.files);
+          const loadedFiles: Record<string, string> = { ...data.files };
+          if (!loadedFiles["modules/vpc.tf"]) {
+            loadedFiles["modules/vpc.tf"] = `# Reusable VPC Networking Module
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+
+  name = "whichcloud-${cloud}-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["${data.region}a", "${data.region}b", "${data.region}c"]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  tags = {
+    Environment = "production"
+    Tier        = "${selectedOption}"
+  }
+}
+`;
+          }
+          if (!loadedFiles["modules/compute.tf"]) {
+            loadedFiles["modules/compute.tf"] = `# Reusable Compute Cluster Module
+module "compute_cluster" {
+  source = "./modules/compute"
+
+  cluster_name    = "whichcloud-prod-cluster"
+  instance_type   = "t3.medium"
+  min_capacity    = 2
+  max_capacity    = 6
+  vpc_id          = module.vpc.vpc_id
+  private_subnets = module.vpc.private_subnets
+}
+`;
+          }
+          if (!loadedFiles["modules/database.tf"]) {
+            loadedFiles["modules/database.tf"] = `# Reusable Managed Database Module
+module "managed_db" {
+  source = "./modules/database"
+
+  identifier             = "whichcloud-prod-db"
+  allocated_storage      = 50
+  engine                 = "mysql"
+  engine_version         = "8.0"
+  instance_class         = "db.t3.medium"
+  multi_az               = true
+  vpc_security_group_ids = [module.vpc.default_security_group_id]
+}
+`;
+          }
+
+          setFiles(loadedFiles);
+          setEditedCode(loadedFiles);
           setMonthlyCost(data.monthly_cost);
           setRegion(data.region);
           if (data.items?.length) {
             setItems(data.items);
           }
-          if (!data.files[activeFile]) {
-            setActiveFile(Object.keys(data.files)[0] || "main.tf");
+          if (!loadedFiles[activeFile]) {
+            setActiveFile("main.tf");
           }
         }
       } catch (err: unknown) {
@@ -306,14 +364,12 @@ resource "whichcloud_cost_report" "ai_curated_report" {
           <span className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#5C4EE5]/15 text-[#5C4EE5]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-                <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
-              </svg>
+              <TerraformLogo className="h-4.5 w-4.5 text-[#5C4EE5]" />
             </span>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-[14px] font-bold text-ink">Terraform IaC Studio</h1>
-                <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-brand">
+                <span className="rounded bg-[#5C4EE5]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#5C4EE5]">
                   Live Sync
                 </span>
               </div>
@@ -357,7 +413,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 onClick={() => setSelectedOption(opt.label)}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-1 transition-all ${
                   opt.label === selectedOption
-                    ? "border-brand bg-brand/10 shadow-sm text-ink"
+                    ? "border-[#5C4EE5] bg-[#5C4EE5]/10 shadow-sm text-ink"
                     : "border-transparent text-ink-3 hover:border-line hover:text-ink"
                 }`}
               >
@@ -379,17 +435,17 @@ resource "whichcloud_cost_report" "ai_curated_report" {
         {/* Right Header: View Mode Switcher + Download */}
         <div className="flex items-center gap-2">
           {/* View Mode Toggle: Architecture Diagram vs Cost Report */}
-          <div className="flex items-center rounded-lg border border-line bg-canvas p-0.5 text-[12px] font-medium">
+          <div className="flex items-center rounded-xl border border-line bg-canvas p-1 text-[12px] font-medium shadow-2xs">
             <button
               type="button"
               onClick={() => setViewMode("architecture")}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all ${
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-all ${
                 viewMode === "architecture"
-                  ? "bg-brand text-white shadow-sm"
-                  : "text-ink-2 hover:text-ink"
+                  ? "bg-[#5C4EE5] text-white shadow-sm font-semibold"
+                  : "text-ink-2 hover:text-ink hover:bg-sunk"
               }`}
             >
-              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <rect x="2" y="3" width="6" height="5" rx="1" />
                 <rect x="12" y="3" width="6" height="5" rx="1" />
                 <rect x="7" y="12" width="6" height="5" rx="1" />
@@ -400,13 +456,13 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             <button
               type="button"
               onClick={() => setViewMode("report")}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all ${
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-all ${
                 viewMode === "report"
-                  ? "bg-brand text-white shadow-sm"
-                  : "text-ink-2 hover:text-ink"
+                  ? "bg-[#5C4EE5] text-white shadow-sm font-semibold"
+                  : "text-ink-2 hover:text-ink hover:bg-sunk"
               }`}
             >
-              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 17h14" />
                 <path d="M6 14v-4" />
                 <path d="M10 14V6" />
@@ -421,9 +477,9 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             type="button"
             onClick={handleDownloadZip}
             disabled={downloadingZip}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-brand-strong disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-[#5C4EE5] px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-[#4d3fd4] active:scale-[0.98] disabled:opacity-60 shrink-0"
           >
-            <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M4 14v2a2 2 0 002 2h8a2 2 0 002-2v-2M10 3v9m0 0l-3-3m3 3l3-3" />
             </svg>
             <span>{downloadingZip ? "Packaging…" : "Download ZIP"}</span>
@@ -523,22 +579,20 @@ resource "whichcloud_cost_report" "ai_curated_report" {
       <main className="flex-1 p-4 lg:p-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {/* ════════════════════════════════════════════════════════════════════
-              LEFT COLUMN: TERRAFORM CONFIGURATION (SCREENSHOT 1)
+              LEFT COLUMN: TERRAFORM CONFIGURATION WITH FILE EXPLORER SIDEBAR
              ════════════════════════════════════════════════════════════════════ */}
           <section className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm overflow-hidden h-[740px]">
             {/* Header with Authentic Terraform Vector Logo, Title & Actions */}
             <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface">
               <div className="flex items-center gap-2">
-                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[#5C4EE5]" fill="currentColor" aria-hidden>
-                  <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
-                </svg>
+                <TerraformLogo className="h-4.5 w-4.5 text-[#5C4EE5]" />
                 <h2 className="text-[13.5px] font-semibold text-ink">Terraform Configuration</h2>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleCopyCode}
-                  className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink transition"
+                  className="inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-[11.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink transition"
                 >
                   {copiedCode ? (
                     <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -567,75 +621,212 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               </div>
             </div>
 
-            {/* File Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto border-b border-line bg-canvas/40 px-3 py-1.5 text-[12px] font-mono no-scrollbar">
-              {Object.keys(files).length > 0 ? (
-                Object.keys(files).map((fileName) => {
-                  const isActive = activeFile === fileName;
-                  return (
-                    <button
-                      key={fileName}
-                      onClick={() => setActiveFile(fileName)}
-                      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] transition-all ${
-                        isActive
-                          ? "border border-brand/40 bg-surface font-semibold text-brand shadow-xs"
-                          : "text-ink-3 hover:text-ink"
-                      }`}
-                    >
-                      {fileName.endsWith(".tf") ? (
-                        <svg viewBox="0 0 24 24" className="h-3 w-3 text-[#5C4EE5] shrink-0" fill="currentColor">
-                          <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
-                        </svg>
-                      ) : fileName.endsWith(".md") ? (
-                        <svg viewBox="0 0 20 20" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75">
-                          <rect x="4" y="3" width="12" height="14" rx="1.5" />
-                          <path d="M7 7h6M7 10h6M7 13h4" />
-                        </svg>
-                      ) : (
-                        <svg viewBox="0 0 20 20" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75">
-                          <path d="M6 3h8a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                          <circle cx="10" cy="10" r="2.5" />
-                        </svg>
-                      )}
-                      <span>{fileName}</span>
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="px-2 py-1 text-[11.5px] text-ink-3">Loading files…</div>
-              )}
-            </div>
+            {/* Split Body: File Tree Sidebar on Left, Code Editor on Right */}
+            <div className="flex flex-1 overflow-hidden min-h-0">
+              {/* ── LEFT FILE EXPLORER SIDEBAR (MATCHING USER SCREENSHOT) ── */}
+              <aside className="w-48 sm:w-52 border-r border-line bg-canvas/30 p-2.5 flex flex-col gap-1 shrink-0 overflow-y-auto select-none">
+                {/* 1. main.tf */}
+                <button
+                  type="button"
+                  onClick={() => setActiveFile("main.tf")}
+                  className={`flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-[12.5px] transition-all text-left ${
+                    activeFile === "main.tf"
+                      ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold border border-purple-200/80 dark:border-purple-800/40 shadow-xs"
+                      : "text-ink-2 hover:text-ink hover:bg-surface/80 border border-transparent font-medium"
+                  }`}
+                >
+                  <span className="font-mono text-[11px] font-bold text-[#5C4EE5] dark:text-[#A78BFA]">&lt; &gt;</span>
+                  <span className="truncate">main.tf</span>
+                </button>
 
-            {/* Code Editor Body */}
-            <div className="relative flex-1 overflow-hidden bg-canvas/90">
-              {loadingFiles ? (
-                <div className="flex h-full items-center justify-center text-[12.5px] font-mono text-ink-3">
-                  Generating Terraform IaC for {selectedOption} ({cloud.toUpperCase()})...
-                </div>
-              ) : (
-                <div className="flex h-full font-mono text-[12px] leading-relaxed">
-                  {/* Line Numbers */}
-                  <div
-                    className="select-none border-r border-line/40 bg-surface/30 px-3 py-4 text-right text-ink-3 font-mono text-[11px]"
-                    aria-hidden
+                {/* 2. variables.tf */}
+                <button
+                  type="button"
+                  onClick={() => setActiveFile("variables.tf")}
+                  className={`flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-[12.5px] transition-all text-left ${
+                    activeFile === "variables.tf"
+                      ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold border border-purple-200/80 dark:border-purple-800/40 shadow-xs"
+                      : "text-ink-2 hover:text-ink hover:bg-surface/80 border border-transparent font-medium"
+                  }`}
+                >
+                  <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 opacity-70 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="10" cy="10" r="7" />
+                    <circle cx="10" cy="10" r="2.5" fill="currentColor" />
+                  </svg>
+                  <span className="truncate">variables.tf</span>
+                </button>
+
+                {/* 3. modules / (Collapsible Folder) */}
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModulesExpanded((prev) => !prev);
+                      if (!activeFile.startsWith("modules/")) {
+                        setActiveFile("modules/vpc.tf");
+                      }
+                    }}
+                    className={`flex items-center justify-between w-full rounded-lg px-2.5 py-1.5 text-[12.5px] transition-all text-left ${
+                      activeFile.startsWith("modules/")
+                        ? "text-[#5C4EE5] dark:text-[#A78BFA] font-semibold hover:bg-surface/80"
+                        : "text-ink-2 hover:text-ink hover:bg-surface/80 font-medium"
+                    }`}
                   >
-                    {currentCode.split("\n").map((_, i) => (
-                      <div key={i} className="h-5">
-                        {i + 1}
-                      </div>
-                    ))}
-                  </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-amber-500/80 shrink-0" fill="currentColor">
+                        <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                      </svg>
+                      <span className="truncate">modules /</span>
+                    </div>
+                    <svg
+                      className={`h-3 w-3 text-ink-3 transition-transform shrink-0 ${
+                        modulesExpanded ? "rotate-90" : ""
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path d="M7 5l5 5-5 5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
 
-                  {/* Textarea Code Input */}
-                  <textarea
-                    value={currentCode}
-                    onChange={(e) => handleCodeChange(e.target.value)}
-                    spellCheck={false}
-                    className="h-full flex-1 resize-none bg-transparent p-4 font-mono text-ink outline-none focus:ring-0 focus:outline-none"
-                    placeholder="Terraform HCL configuration..."
-                  />
+                  {modulesExpanded && (
+                    <div className="ml-4 pl-2 border-l border-line/70 flex flex-col gap-0.5 animate-in fade-in-50 duration-150">
+                      {["modules/vpc.tf", "modules/compute.tf", "modules/database.tf"].map((modFile) => {
+                        const isModActive = activeFile === modFile;
+                        const shortName = modFile.replace("modules/", "");
+                        return (
+                          <button
+                            key={modFile}
+                            type="button"
+                            onClick={() => setActiveFile(modFile)}
+                            className={`flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-[11.5px] transition-all text-left ${
+                              isModActive
+                                ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold shadow-xs"
+                                : "text-ink-3 hover:text-ink hover:bg-surface/60 font-medium"
+                            }`}
+                          >
+                            <span className="font-mono text-[10px] opacity-70">&lt;&gt;</span>
+                            <span className="truncate">{shortName}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
+
+                {/* 4. outputs.tf */}
+                <button
+                  type="button"
+                  onClick={() => setActiveFile("outputs.tf")}
+                  className={`flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-[12.5px] transition-all text-left ${
+                    activeFile === "outputs.tf"
+                      ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold border border-purple-200/80 dark:border-purple-800/40 shadow-xs"
+                      : "text-ink-2 hover:text-ink hover:bg-surface/80 border border-transparent font-medium"
+                  }`}
+                >
+                  <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 opacity-70 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="10" cy="10" r="7" />
+                    <circle cx="10" cy="10" r="2.5" fill="currentColor" />
+                  </svg>
+                  <span className="truncate">outputs.tf</span>
+                </button>
+
+                {/* 5. cost_reports.tf */}
+                <button
+                  type="button"
+                  onClick={() => setActiveFile("cost_reports.tf")}
+                  className={`flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-[12.5px] transition-all text-left ${
+                    activeFile === "cost_reports.tf"
+                      ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold border border-purple-200/80 dark:border-purple-800/40 shadow-xs"
+                      : "text-ink-2 hover:text-ink hover:bg-surface/80 border border-transparent font-medium"
+                  }`}
+                >
+                  <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-[#5C4EE5] shrink-0" fill="currentColor">
+                    <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" />
+                  </svg>
+                  <span className="truncate">cost_reports.tf</span>
+                </button>
+
+                {/* 6. terraform.tfvars.example */}
+                <button
+                  type="button"
+                  onClick={() => setActiveFile("terraform.tfvars.example")}
+                  className={`flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-[12.5px] transition-all text-left ${
+                    activeFile === "terraform.tfvars.example"
+                      ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold border border-purple-200/80 dark:border-purple-800/40 shadow-xs"
+                      : "text-ink-2 hover:text-ink hover:bg-surface/80 border border-transparent font-medium"
+                  }`}
+                >
+                  <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 opacity-70 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <path d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947z" />
+                    <circle cx="10" cy="10" r="3" />
+                  </svg>
+                  <span className="truncate">terraform.tfvars</span>
+                </button>
+
+                {/* 7. README.md */}
+                <button
+                  type="button"
+                  onClick={() => setActiveFile("README.md")}
+                  className={`flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-[12.5px] transition-all text-left ${
+                    activeFile === "README.md"
+                      ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold border border-purple-200/80 dark:border-purple-800/40 shadow-xs"
+                      : "text-ink-2 hover:text-ink hover:bg-surface/80 border border-transparent font-medium"
+                  }`}
+                >
+                  <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 opacity-70 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75">
+                    <rect x="4" y="3" width="12" height="14" rx="1.5" />
+                    <path d="M7 7h6M7 10h6M7 13h4" />
+                  </svg>
+                  <span className="truncate">README.md</span>
+                </button>
+              </aside>
+
+              {/* ── RIGHT CODE EDITOR AREA ── */}
+              <div className="relative flex-1 flex flex-col min-w-0 overflow-hidden bg-canvas/90">
+                {/* File Sub-header Bar */}
+                <div className="flex items-center justify-between border-b border-line/60 bg-surface/40 px-4 py-1.5 text-[11.5px] font-mono">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-ink truncate">{activeFile}</span>
+                    <span className="text-[10.5px] text-ink-3">
+                      ({currentCode.split("\n").length} lines)
+                    </span>
+                  </div>
+                  <span className="rounded bg-canvas px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-3 border border-line/70">
+                    {activeFile.endsWith(".md") ? "Markdown" : "HCL"}
+                  </span>
+                </div>
+
+                {loadingFiles ? (
+                  <div className="flex flex-1 items-center justify-center text-[12.5px] font-mono text-ink-3">
+                    Generating Terraform IaC for {selectedOption} ({cloud.toUpperCase()})...
+                  </div>
+                ) : (
+                  <div className="flex flex-1 overflow-hidden font-mono text-[12px] leading-relaxed">
+                    {/* Line Numbers */}
+                    <div
+                      className="select-none overflow-y-hidden border-r border-line/40 bg-surface/30 px-3 py-4 text-right text-ink-3 font-mono text-[11px]"
+                      aria-hidden="true"
+                    >
+                      {currentCode.split("\n").map((_, i) => (
+                        <div key={i} className="h-5">
+                          {i + 1}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Textarea Code Input */}
+                    <textarea
+                      value={currentCode}
+                      onChange={(e) => handleCodeChange(e.target.value)}
+                      spellCheck={false}
+                      className="h-full flex-1 resize-none bg-transparent p-4 font-mono text-ink outline-none focus:ring-0 focus:outline-none"
+                      placeholder="Terraform HCL configuration..."
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Bottom Footer: Validation Feedback & Action Buttons */}
@@ -915,126 +1106,179 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                   </div>
                 </div>
 
-                {/* Big Accrued Cost Number */}
-                <div className="px-5 pt-4 pb-2">
-                  <div className="text-3xl font-extrabold tracking-tight text-ink font-mono">
-                    ${(monthlyCost * 166.7).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <div className="text-[12px] text-ink-3 mt-0.5">Accrued Costs</div>
-                </div>
+                {/* Big Accrued Cost Number - Synchronized Live with Active Architecture Option */}
+                {(() => {
+                  const liveMonthly =
+                    activeOption?.ondemand_monthly_usd ??
+                    activeOption?.monthly_usd ??
+                    monthlyCost;
 
-                {/* Interactive Curve Chart (Screenshot 1) */}
-                <div className="relative px-5 py-2">
-                  <div className="flex items-center gap-4 text-[11.5px] mb-3">
-                    <span className="flex items-center gap-1.5 text-ink-2 font-medium">
-                      <span className="h-2.5 w-2.5 rounded-full bg-[#5C4EE5]" />
-                      Accrued Costs
-                    </span>
-                    <span className="flex items-center gap-1.5 text-ink-3">
-                      <span className="h-2.5 w-2.5 rounded-full bg-[#A78BFA]" />
-                      Per Active Session
-                    </span>
-                  </div>
+                  const currentItems =
+                    activeOption?.items && activeOption.items.length > 0
+                      ? activeOption.items.map((it) => ({
+                          label: it.label,
+                          monthly: it.monthly_usd,
+                          sku: it.sku,
+                        }))
+                      : items && items.length > 0
+                      ? items
+                      : [
+                          { label: "Compute x 1 (1-yr commitment)", monthly: liveMonthly * 0.28, sku: "ec2:t3.medium" },
+                          { label: "Database (1-yr reserved)", monthly: liveMonthly * 0.38, sku: "rds:mysql-multi-az" },
+                          { label: "Object storage (standard)", monthly: liveMonthly * 0.08, sku: "s3:general-purpose" },
+                          { label: "Object storage (infrequent access)", monthly: liveMonthly * 0.05, sku: "s3:ia" },
+                          { label: "Monitoring & CloudWatch", monthly: liveMonthly * 0.07, sku: "cloudwatch:logs" },
+                          { label: "NAT Gateway x 1 & Egress", monthly: liveMonthly * 0.14, sku: "vpc:nat-gateway" },
+                        ];
 
-                  <div className="relative h-44 w-full">
-                    <svg viewBox="0 0 500 160" className="h-full w-full overflow-visible">
-                      <defs>
-                        <linearGradient id="tfCostGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#5C4EE5" stopOpacity="0.25" />
-                          <stop offset="100%" stopColor="#5C4EE5" stopOpacity="0.0" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* Area under curve */}
-                      <path
-                        d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30 L 480 150 L 40 150 Z"
-                        fill="url(#tfCostGrad)"
-                      />
-
-                      {/* Solid Accrued Costs Curve */}
-                      <path
-                        d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30"
-                        fill="none"
-                        stroke="#5C4EE5"
-                        strokeWidth="2"
-                      />
-
-                      {/* Light/Dashed Per Active Session Curve */}
-                      <path
-                        d="M 40 130 Q 90 150 140 140 T 240 130 T 340 140 T 420 120 T 480 80"
-                        fill="none"
-                        stroke="#A78BFA"
-                        strokeWidth="1.5"
-                        strokeDasharray="4 4"
-                      />
-
-                      {/* Crosshair indicator line */}
-                      <line x1="420" y1="20" x2="420" y2="150" stroke="#71717A" strokeWidth="1.5" />
-                      <polygon points="415,20 425,20 420,28" fill="#71717A" />
-
-                      {/* Tooltip Card Matching Screenshot 1 */}
-                      <foreignObject x="270" y="40" width="180" height="75">
-                        <div className="rounded-xl border border-line bg-surface p-2.5 shadow-xl text-[11px]">
-                          <div className="flex items-center justify-between text-ink">
-                            <span className="flex items-center gap-1">
-                              <span className="h-1.5 w-1.5 rounded-full bg-[#5C4EE5]" />
-                              Accrued Costs:
-                            </span>
-                            <span className="font-mono font-bold">$7,641.26</span>
-                          </div>
-                          <div className="flex items-center justify-between text-ink-3 mt-1.5">
-                            <span className="flex items-center gap-1">
-                              <span className="h-1.5 w-1.5 rounded-full bg-[#A78BFA]" />
-                              Per Active Session:
-                            </span>
-                            <span className="font-mono font-bold">$6,030.17</span>
-                          </div>
+                  return (
+                    <>
+                      <div className="px-5 pt-4 pb-2">
+                        <div className="text-3xl font-extrabold tracking-tight text-ink font-mono">
+                          ${liveMonthly.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
-                      </foreignObject>
-
-                      {/* X-axis labels */}
-                      <g className="text-[9px] fill-zinc-400 font-mono" textAnchor="middle">
-                        <text x="40" y="160">01.05</text>
-                        <text x="120" y="160">06.05</text>
-                        <text x="210" y="160">12.05</text>
-                        <text x="300" y="160">18.05</text>
-                        <text x="390" y="160">23.05</text>
-                        <text x="470" y="160">29.05</text>
-                      </g>
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Service Breakdown Table (Screenshot 1) */}
-                <div className="mt-2 flex-1 border-t border-line">
-                  <div className="grid grid-cols-12 border-b border-line bg-canvas/40 px-5 py-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider">
-                    <div className="col-span-6">Service</div>
-                    <div className="col-span-3 text-right">Accrued Costs</div>
-                    <div className="col-span-3 text-right">Previous Period</div>
-                  </div>
-
-                  <div className="divide-y divide-line/60">
-                    {items.map((it, idx) => (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-12 items-center px-5 py-2.5 text-[12px] hover:bg-sunk/50 transition"
-                      >
-                        <div className="col-span-6 flex items-center gap-2.5">
-                          <span className="flex h-5 w-5 items-center justify-center rounded bg-[#FF9900]/10 text-[#FF9900]">
-                            <Icon icon="logos:aws" className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="font-medium text-ink truncate">{it.label}</span>
-                        </div>
-                        <div className="col-span-3 text-right font-mono font-semibold text-ink">
-                          ${(it.monthly * 10).toFixed(2)}
-                        </div>
-                        <div className="col-span-3 text-right font-mono text-ink-3">
-                          ${(it.monthly * 9.2).toFixed(2)}
+                        <div className="text-[12px] text-ink-3 mt-0.5">
+                          Accrued Costs / Month • {selectedOption} ({cloud.toUpperCase()})
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+
+                      {/* Interactive Curve Chart (Screenshot 1) */}
+                      <div className="relative px-5 py-2">
+                        <div className="flex items-center gap-4 text-[11.5px] mb-3">
+                          <span className="flex items-center gap-1.5 text-ink-2 font-medium">
+                            <span className="h-2.5 w-2.5 rounded-full bg-[#5C4EE5]" />
+                            Accrued Costs
+                          </span>
+                          <span className="flex items-center gap-1.5 text-ink-3">
+                            <span className="h-2.5 w-2.5 rounded-full bg-[#A78BFA]" />
+                            Per Active Session
+                          </span>
+                        </div>
+
+                        <div className="relative h-44 w-full">
+                          <svg viewBox="0 0 500 160" className="h-full w-full overflow-visible">
+                            <defs>
+                              <linearGradient id="tfCostGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#5C4EE5" stopOpacity="0.25" />
+                                <stop offset="100%" stopColor="#5C4EE5" stopOpacity="0.0" />
+                              </linearGradient>
+                            </defs>
+
+                            {/* Area under curve */}
+                            <path
+                              d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30 L 480 150 L 40 150 Z"
+                              fill="url(#tfCostGrad)"
+                            />
+
+                            {/* Solid Accrued Costs Curve */}
+                            <path
+                              d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30"
+                              fill="none"
+                              stroke="#5C4EE5"
+                              strokeWidth="2"
+                            />
+
+                            {/* Light/Dashed Per Active Session Curve */}
+                            <path
+                              d="M 40 130 Q 90 150 140 140 T 240 130 T 340 140 T 420 120 T 480 80"
+                              fill="none"
+                              stroke="#A78BFA"
+                              strokeWidth="1.5"
+                              strokeDasharray="4 4"
+                            />
+
+                            {/* Crosshair indicator line */}
+                            <line x1="420" y1="20" x2="420" y2="150" stroke="#71717A" strokeWidth="1.5" />
+                            <polygon points="415,20 425,20 420,28" fill="#71717A" />
+
+                            {/* Tooltip Card Synchronized with Live Architecture Cost */}
+                            <foreignObject x="260" y="35" width="200" height="80">
+                              <div className="rounded-xl border border-line bg-surface/95 backdrop-blur p-2.5 shadow-xl text-[11px]">
+                                <div className="flex items-center justify-between text-ink">
+                                  <span className="flex items-center gap-1">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-[#5C4EE5]" />
+                                    Accrued Costs:
+                                  </span>
+                                  <span className="font-mono font-bold">${liveMonthly.toFixed(2)}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-ink-3 mt-1.5">
+                                  <span className="flex items-center gap-1">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-[#A78BFA]" />
+                                    Per Active Session:
+                                  </span>
+                                  <span className="font-mono font-bold">${(liveMonthly * 0.78).toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </foreignObject>
+
+                            {/* X-axis labels */}
+                            <g className="text-[9px] fill-zinc-400 font-mono" textAnchor="middle">
+                              <text x="40" y="160">01.05</text>
+                              <text x="120" y="160">06.05</text>
+                              <text x="210" y="160">12.05</text>
+                              <text x="300" y="160">18.05</text>
+                              <text x="390" y="160">23.05</text>
+                              <text x="470" y="160">29.05</text>
+                            </g>
+                          </svg>
+                        </div>
+                      </div>
+
+                      {/* Service Breakdown Table (Screenshot 1) */}
+                      <div className="mt-2 flex-1 border-t border-line">
+                        <div className="grid grid-cols-12 border-b border-line bg-canvas/40 px-5 py-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider">
+                          <div className="col-span-6">Service</div>
+                          <div className="col-span-3 text-right">Accrued Costs</div>
+                          <div className="col-span-3 text-right">Previous Period</div>
+                        </div>
+
+                        <div className="divide-y divide-line/60">
+                          {currentItems.map((it, idx) => (
+                            <div
+                              key={idx}
+                              className="grid grid-cols-12 items-center px-5 py-2.5 text-[12px] hover:bg-sunk/50 transition"
+                            >
+                              <div className="col-span-6 flex items-center gap-2.5 min-w-0">
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[#FF9900]/10 text-[#FF9900]">
+                                  <Icon
+                                    icon={
+                                      cloud === "aws"
+                                        ? "logos:aws"
+                                        : cloud === "gcp"
+                                        ? "logos:google-cloud"
+                                        : "logos:microsoft-azure"
+                                    }
+                                    className="h-3.5 w-3.5"
+                                  />
+                                </span>
+                                <span className="font-medium text-ink truncate">{it.label}</span>
+                              </div>
+                              <div className="col-span-3 text-right font-mono font-semibold text-ink">
+                                ${it.monthly.toFixed(2)}
+                              </div>
+                              <div className="col-span-3 text-right font-mono text-ink-3">
+                                ${(it.monthly * 0.92).toFixed(2)}
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* Summary Row */}
+                          <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[12px] bg-canvas/60 font-semibold border-t border-line">
+                            <div className="col-span-6 text-ink">
+                              Total Monthly Infrastructure ({selectedOption})
+                            </div>
+                            <div className="col-span-3 text-right font-mono text-[#5C4EE5] dark:text-[#A78BFA]">
+                              ${liveMonthly.toFixed(2)}
+                            </div>
+                            <div className="col-span-3 text-right font-mono text-ink-3">
+                              ${(liveMonthly * 0.92).toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
           </section>
@@ -1301,6 +1545,52 @@ variable "project_name" {
     "outputs.tf": `output "vpc_id" {
   value       = aws_vpc.main.id
   description = "The VPC ID"
+}
+`,
+    "modules/vpc.tf": `# Reusable VPC Networking Module
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+
+  name = "whichcloud-${cloud}-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["${region}a", "${region}b", "${region}c"]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  tags = {
+    Environment = "production"
+    Tier        = "${option}"
+  }
+}
+`,
+    "modules/compute.tf": `# Reusable Compute Cluster Module
+module "compute_cluster" {
+  source = "./modules/compute"
+
+  cluster_name    = "whichcloud-prod-cluster"
+  instance_type   = "t3.medium"
+  min_capacity    = 2
+  max_capacity    = 6
+  vpc_id          = module.vpc.vpc_id
+  private_subnets = module.vpc.private_subnets
+}
+`,
+    "modules/database.tf": `# Reusable Managed Database Module
+module "managed_db" {
+  source = "./modules/database"
+
+  identifier             = "whichcloud-prod-db"
+  allocated_storage      = 50
+  engine                 = "mysql"
+  engine_version         = "8.0"
+  instance_class         = "db.t3.medium"
+  multi_az               = true
+  vpc_security_group_ids = [module.vpc.default_security_group_id]
 }
 `,
     "cost_reports.tf": `provider "whichcloud" {

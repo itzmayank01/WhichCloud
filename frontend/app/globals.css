@@ -97,6 +97,9 @@
   --accent-line: #c3cfe0;
   --spend: var(--flag);
   --caution: var(--flag);
+  --brand: #5c4ee5;
+  --brand-strong: #4a3ec8;
+  --brand-wash: #f5f3ff;
   --caution-wash: #fdf4ec;
   --save: #1b5e3f;
 
@@ -192,6 +195,9 @@
     --accent-line: #35486a;
     --caution-wash: #2a1e13;
     --save: #4f9d76;
+    --brand: #7c6cf0;
+    --brand-strong: #6957eb;
+    --brand-wash: #1e1b4b;
   }
 }
 
@@ -210,6 +216,9 @@
   --accent-line: #35486a;
   --caution-wash: #2a1e13;
   --save: #4f9d76;
+  --brand: #7c6cf0;
+  --brand-strong: #6957eb;
+  --brand-wash: #1e1b4b;
 }
 
 @theme inline {
@@ -228,6 +237,9 @@
   --color-caution: var(--caution);
   --color-save: var(--save);
   --color-caution-wash: var(--caution-wash);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-wash: var(--brand-wash);
 
   --color-paper: var(--paper);
   --color-ink-muted: var(--ink-muted);
