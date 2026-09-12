@@ -709,6 +709,27 @@ export const api = {
     return response.blob();
   },
 
+  /** Inspect all generated Terraform files and WhichCloud provider templates for an option. */
+  describeInspectTf: (body: {
+    description?: string;
+    option: string;
+    provider?: string;
+    reader?: string;
+  }) =>
+    post<{
+      files: Record<string, string>;
+      option: string;
+      provider: string;
+      monthly_cost: number;
+      region: string;
+      all_options?: Array<{ label: string; monthly: number; region: string }>;
+      items?: Array<{ label: string; monthly: number; sku: string }>;
+    }>("/describe/terraform/inspect", body),
+
+  /** Real-time HCL validation of user-edited code. */
+  describeValidateTf: (body: { code: string; filename?: string }) =>
+    post<{ valid: boolean; message: string }>("/describe/terraform/validate", body),
+
   /** Upload a billing export for review. multipart, not JSON — a CUR is
    *  a file, and base64-ing megabytes through a JSON body to avoid one
    *  content type is not a simplification. */

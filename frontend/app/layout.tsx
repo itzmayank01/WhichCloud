@@ -163,6 +163,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 FinOps Live
               </Link>
               <Link
+                href="/terraform"
+                className="flex items-center gap-1.5 rounded-sm font-medium text-ink-2 transition-colors hover:text-ink"
+              >
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-[#5C4EE5]" fill="currentColor" aria-hidden>
+                  <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
+                </svg>
+                Terraform IaC
+              </Link>
+              <Link
                 href="/#architecture"
                 className="rounded-sm transition-colors hover:text-ink"
               >

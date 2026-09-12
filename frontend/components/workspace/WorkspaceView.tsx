@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   api,
   money,
@@ -113,55 +114,28 @@ function DownloadTerraformButton({
   option: string;
   cloud: CloudId;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const router = useRouter();
 
-  async function download() {
-    setBusy(true);
-    setError("");
-    try {
-      // The provider travels with the request. Without it the route fell
-      // back to the description's stated preference -- almost always unset --
-      // and handed out AWS resources to someone looking at a Google Cloud or
-      // Azure architecture.
-      const blob = await api.describeExportTf({ description, option, provider: cloud });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "whichcloud-terraform.zip";
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Export failed.");
-    } finally {
-      setBusy(false);
-    }
+  function openTerraformStudio() {
+    const params = new URLSearchParams();
+    if (description) params.set("description", description);
+    if (option) params.set("option", option);
+    if (cloud) params.set("cloud", cloud);
+    router.push(`/terraform?${params.toString()}`);
   }
 
   return (
-    <>
-      {/* Disabled off AWS rather than left to fail on click. The export
-          generates AWS resources only, and a button that looks available and
-          then errors is a worse answer than one that says up front what it
-          can do. */}
-      <button
-        type="button"
-        onClick={download}
-        disabled={busy || cloud !== "aws"}
-        title={
-          cloud === "aws"
-            ? "Download this architecture as a Terraform project"
-            : `Terraform export generates AWS resources only — this architecture is priced on ${cloud.toUpperCase()}`
-        }
-        className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-sunk disabled:opacity-60"
-      >
-        <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
-        </svg>
-        {busy ? "Generating…" : cloud === "aws" ? "Terraform" : "Terraform (AWS only)"}
-      </button>
-      {error && <span className="text-[12px] text-spend">{error}</span>}
-    </>
+    <button
+      type="button"
+      onClick={openTerraformStudio}
+      title="Open Terraform IaC Configuration & WhichCloud Cost Reports Studio"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-all hover:bg-sunk hover:border-brand hover:text-brand"
+    >
+      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
+      </svg>
+      <span>Terraform</span>
+    </button>
   );
 }
 

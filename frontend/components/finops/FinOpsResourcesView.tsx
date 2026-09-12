@@ -18,6 +18,8 @@ export interface CloudResource {
   tags: {
     env: string;
     team: string;
+    attached_to?: string;
+    [key: string]: string | undefined;
   };
 }
 

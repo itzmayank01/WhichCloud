@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { TierDiagram } from "@/components/plan/TierDiagram";
 import type { Plan, PlanTier } from "@/lib/api";
 import { api, money } from "@/lib/api";
@@ -30,8 +31,16 @@ function DownloadTerraformButton({
   description: string;
   tier: string;
 }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  function openStudio() {
+    const params = new URLSearchParams();
+    if (description) params.set("description", description);
+    if (tier) params.set("option", tier);
+    router.push(`/terraform?${params.toString()}`);
+  }
 
   async function download() {
     setBusy(true);
@@ -52,14 +61,24 @@ function DownloadTerraformButton({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={openStudio}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-brand bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand transition hover:bg-brand hover:text-white"
+      >
+        <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5M3.5 16h13" />
+        </svg>
+        <span>IaC Studio</span>
+      </button>
       <button
         type="button"
         onClick={download}
         disabled={busy || !description}
         className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 transition hover:bg-neutral-50 disabled:opacity-60"
       >
-        {busy ? "Generating…" : "Download Terraform"}
+        {busy ? "Generating…" : "Download ZIP"}
       </button>
       {error && <span className="text-xs text-red-700">{error}</span>}
     </div>
