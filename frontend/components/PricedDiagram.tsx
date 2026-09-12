@@ -159,7 +159,7 @@ export function PricedDiagram({
 
   return (
     <div className="flex flex-col gap-3">
-    <div ref={shell} className="rounded-xl border border-line bg-white p-4">
+    <div ref={shell} className="rounded-xl border border-line bg-surface p-4">
       <div style={{ overflowX: "auto", overflowY: "hidden" }}>
       {/* A CSS transform does not change an element's layout box: the canvas
           below still occupies its authored width whatever it is scaled to,
@@ -172,18 +172,17 @@ export function PricedDiagram({
         style={{ width: W, height: H, transform: `scale(${scale})` }}
       >
         <div
-          className="absolute rounded-lg border"
+          className="absolute rounded-lg border bg-surface/40"
           style={{
             left: 198,
             top: 20,
             width: W - 210,
             height: H - 36,
             borderColor: chrome.border,
-            background: "#fbfbfc",
           }}
         />
         <span
-          className="absolute flex items-center gap-2 rounded-md bg-white px-2.5 py-1.5"
+          className="absolute flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 shadow-xs"
           style={{ left: 210, top: 6 }}
         >
           <Icon icon={chrome.logo} width={20} height={20} aria-hidden />
@@ -193,11 +192,11 @@ export function PricedDiagram({
         {groups.map((g) => (
           <div key={g.label}>
             <div
-              className="absolute rounded-lg border border-dashed"
-              style={{ left: g.x, top: g.y, width: g.w, height: g.h, borderColor: "#9aa3b2" }}
+              className="absolute rounded-lg border border-dashed border-line-strong/60"
+              style={{ left: g.x, top: g.y, width: g.w, height: g.h }}
             />
             <span
-              className="absolute whitespace-nowrap bg-[#fbfbfc] px-2 text-[13.5px] font-semibold text-ink-2"
+              className="absolute whitespace-nowrap rounded bg-surface px-2 text-[13.5px] font-semibold text-ink-2"
               style={{ left: g.x + 12, top: g.y - 10 }}
             >
               {g.label}
@@ -224,7 +223,7 @@ export function PricedDiagram({
               orient="auto-start-reverse"
               markerUnits="userSpaceOnUse"
             >
-              <path d="M1.5 1.5 L9 5 L1.5 8.5 Z" fill="#3d4552" />
+              <path d="M1.5 1.5 L9 5 L1.5 8.5 Z" fill="currentColor" className="text-ink-3" />
             </marker>
           </defs>
           {flows.map(([a, b]) => {
@@ -235,7 +234,7 @@ export function PricedDiagram({
               <path
                 key={`${a}-${b}`}
                 d={elbow(SLOT[a], SLOT[b])}
-                stroke={lit ? "#0b0d12" : "#3d4552"}
+                stroke={lit ? "var(--ink)" : "var(--color-ink-3)"}
                 strokeWidth={lit ? 2 : 1.4}
                 markerEnd={`url(#priced-head-${provider})`}
                 className="transition-all duration-200"
@@ -255,10 +254,10 @@ export function PricedDiagram({
               onFocus={() => setHovered(n.id)}
               onBlur={() => setHovered(null)}
               tabIndex={0}
-              className={`absolute flex flex-col items-center justify-center rounded-lg border bg-white px-2 text-center outline-none transition-all duration-200 ${
+              className={`absolute flex flex-col items-center justify-center rounded-lg border bg-surface px-2 text-center outline-none transition-all duration-200 ${
                 active
                   ? "-translate-y-0.5 border-line-strong elev-3"
-                  : "border-line elev-1"
+                  : "border-line elev-1 hover:border-line-strong"
               }`}
               style={{ left: slot.x, top: slot.y, width: BOX_W, height: BOX_H }}
             >
@@ -275,7 +274,7 @@ export function PricedDiagram({
                 <div className="mt-0.5 text-[12px] text-ink-3">web and mobile</div>
               ) : n.priced ? (
                 <div className="mt-1 flex items-baseline gap-1.5">
-                  <span className="tnum font-mono text-[15px] font-semibold">
+                  <span className="tnum font-mono text-[15px] font-semibold text-ink">
                     {money(n.monthly_usd)}
                   </span>
                   <span className="tnum font-mono text-[12px] text-ink-3">

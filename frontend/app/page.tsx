@@ -378,7 +378,7 @@ export default function Home() {
               "Built from terraform-aws-modules, not generated from scratch",
               "Optimizations applied and annotated",
             ]}
-            tint="bg-[#f2f4f6]"
+            tint="bg-sunk border border-line"
             visual={<TerraformVisual />}
           />
         </div>

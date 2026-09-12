@@ -135,7 +135,7 @@ export function ShowcaseDiagram() {
   }, []);
 
   return (
-    <div ref={shell} className="rounded-xl border border-line bg-white p-4">
+    <div ref={shell} className="rounded-xl border border-line bg-surface p-4">
       <div style={{ overflowX: "auto", overflowY: "hidden" }}>
       {/* A CSS transform does not change an element's layout box: the canvas
           below still occupies its authored width whatever it is scaled to,
@@ -149,18 +149,17 @@ export function ShowcaseDiagram() {
       >
         {/* AWS cloud boundary */}
         <div
-          className="absolute rounded-lg border"
+          className="absolute rounded-lg border bg-surface/40"
           style={{
             left: 186,
             top: 24,
             width: W - 198,
             height: H - 40,
             borderColor: "#232F3E",
-            background: "#fbfbfc",
           }}
         />
         <span
-          className="absolute flex items-center gap-2 rounded-md bg-white px-2.5 py-1.5"
+          className="absolute flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 shadow-xs"
           style={{ left: 198, top: 10 }}
         >
           <Icon icon="logos:aws" width={22} height={22} aria-hidden />
@@ -171,17 +170,16 @@ export function ShowcaseDiagram() {
         {GROUPS.map((g) => (
           <div key={g.label}>
             <div
-              className="absolute rounded-lg border border-dashed"
+              className="absolute rounded-lg border border-dashed border-line-strong/60"
               style={{
                 left: g.x,
                 top: g.y,
                 width: g.w,
                 height: g.h,
-                borderColor: "#9aa3b2",
               }}
             />
             <span
-              className="absolute whitespace-nowrap bg-[#fbfbfc] px-2 text-[13.5px] font-semibold text-ink-2"
+              className="absolute whitespace-nowrap rounded bg-surface px-2 text-[13.5px] font-semibold text-ink-2"
               style={{ left: g.x + 12, top: g.y - 10 }}
             >
               {g.label}
@@ -209,7 +207,7 @@ export function ShowcaseDiagram() {
               orient="auto-start-reverse"
               markerUnits="userSpaceOnUse"
             >
-              <path d="M1.5 1.5 L9 5 L1.5 8.5 Z" fill="#3d4552" />
+              <path d="M1.5 1.5 L9 5 L1.5 8.5 Z" fill="currentColor" className="text-ink-3" />
             </marker>
           </defs>
           {EDGES.map(([from, to]) => {
@@ -218,7 +216,7 @@ export function ShowcaseDiagram() {
               <path
                 key={`${from}-${to}`}
                 d={path(byId(from), byId(to))}
-                stroke={lit ? "#0b0d12" : "#3d4552"}
+                stroke={lit ? "var(--ink)" : "var(--color-ink-3)"}
                 strokeWidth={lit ? 2 : 1.4}
                 markerEnd="url(#showcase-head)"
                 className="transition-all duration-200"
@@ -238,10 +236,10 @@ export function ShowcaseDiagram() {
               onFocus={() => setHovered(n.id)}
               onBlur={() => setHovered(null)}
               tabIndex={0}
-              className={`absolute flex flex-col items-center justify-center rounded-lg border bg-white px-2 text-center outline-none transition-all duration-200 ${
+              className={`absolute flex flex-col items-center justify-center rounded-lg border bg-surface px-2 text-center outline-none transition-all duration-200 ${
                 active
                   ? "-translate-y-0.5 border-line-strong elev-3"
-                  : "border-line elev-1"
+                  : "border-line elev-1 hover:border-line-strong"
               }`}
               style={{ left: n.x, top: n.y, width: BOX_W, height: BOX_H }}
             >
@@ -253,7 +251,8 @@ export function ShowcaseDiagram() {
                   width={34}
                   height={34}
                   fill="none"
-                  stroke="#5A6270"
+                  stroke="currentColor"
+                  className="text-ink-2"
                   strokeWidth="1.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"

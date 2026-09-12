@@ -283,7 +283,7 @@ export function MultiCloudArchitecture({
                  selected card. Two accents on one card -- green for cheapest,
                  blue for selected -- read as two different claims about the
                  same thing, so on this card selection is green as well. */
-              className={`group relative overflow-hidden rounded-xl border bg-white text-left transition-all duration-150 ${
+              className={`group relative overflow-hidden rounded-xl border bg-surface text-left transition-all duration-150 ${
                 wins
                   ? on
                     ? "border-save shadow-[0_4px_16px_-6px_rgba(11,122,69,.32)]"
@@ -323,7 +323,7 @@ export function MultiCloudArchitecture({
                       aria-hidden
                     />
                   )}
-                  <span className="truncate text-[15px] font-semibold tracking-[-0.01em]">
+                  <span className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">
                     {chrome?.label ?? p}
                   </span>
                   {wins && (

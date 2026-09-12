@@ -38,7 +38,7 @@ export function HoverBoard({
 
   return (
     <div
-      className={`rounded-xl border bg-white px-5 py-4 transition-all duration-200 ${
+      className={`rounded-xl border bg-surface px-5 py-4 transition-all duration-200 ${
         idle
           ? "border-line"
           : "border-line-strong elev-3"
@@ -48,7 +48,7 @@ export function HoverBoard({
       {idle ? (
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-sunk">
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="#666e7c" strokeWidth="1.8" strokeLinecap="round">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-ink-2" fill="none" strokeWidth="1.8" strokeLinecap="round">
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>
           </span>
@@ -62,7 +62,7 @@ export function HoverBoard({
             <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3 font-medium">
               {node.kind}
             </div>
-            <div className="mt-1 text-[17px] font-medium leading-tight">
+            <div className="mt-1 text-[17px] font-medium leading-tight text-ink">
               {serviceName(provider, node.kind, node.label)}
             </div>
             {node.sku && (
@@ -74,7 +74,7 @@ export function HoverBoard({
             <div className="font-mono text-[13px] uppercase tracking-[0.12em] text-ink-3 font-medium">
               Monthly
             </div>
-            <div className="tnum mt-1 font-mono text-[24px] leading-none">
+            <div className="tnum mt-1 font-mono text-[24px] leading-none text-ink">
               {node.priced ? money(node.monthly_usd) : "n/a"}
             </div>
             {node.priced && total > 0 && (
