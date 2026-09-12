@@ -2005,6 +2005,58 @@ def finops_issues(provider: str = "aws", account_id: str = "demo"):
     return {"issues": [], "provider": p, "account_id": account_id}
 
 
+class ResourceActionRequest(BaseModel):
+    provider: str = "aws"
+    action: str
+    resource_id: str
+    region: str = "us-east-1"
+    dry_run: bool = False
+
+
+@app.post("/api/finops/resources/action")
+def finops_resource_action(req: ResourceActionRequest):
+    """Execute live resource lifecycle actions directly (stop, terminate, delete, release)."""
+    p = req.provider.lower()
+    if p == "aws":
+        try:
+            from whichcloud.connections.aws_live import execute_resource_action
+            return execute_resource_action(
+                action=req.action,
+                resource_id=req.resource_id,
+                region=req.region,
+                dry_run=req.dry_run,
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger("whichcloud.api").error("Resource action error: %s", exc)
+            return {"ok": False, "message": str(exc)}
+    return {"ok": False, "message": f"Direct actions not supported on {p}"}
+
+
+@app.get("/api/finops/planning")
+def finops_planning(provider: str = "aws", account_id: str = "demo"):
+    """Returns live budget envelope, actual accrued spend, and 12-month forecast."""
+    p = provider.lower()
+    if p == "aws":
+        try:
+            from whichcloud.connections.aws_live import get_live_aws_planning
+            return get_live_aws_planning(account_id or "616551057703")
+        except Exception as exc:
+            import logging
+            logging.getLogger("whichcloud.api").error("Planning fetch error: %s", exc)
+
+    return {
+        "budget_usd": 50.0,
+        "current_accrued": 24.98,
+        "forecasted_total": 25.50,
+        "budget_utilization": 50,
+        "forecasted_utilization": 51,
+        "monthly_data": [],
+        "unit_economics": [],
+        "account_id": account_id,
+    }
+
+
 @app.get("/api/finops/reports")
 def finops_reports(
     provider: str = "aws",

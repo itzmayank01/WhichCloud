@@ -762,6 +762,23 @@ export const api = {
     get<{ issues: any[]; provider: string; account_id: string }>(
       `/api/finops/issues?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
     ),
+
+  finopsPlanning: (provider = "aws", accountId = "demo") =>
+    get<FinOpsPlanningResponse>(
+      `/api/finops/planning?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+    ),
+
+  finopsResourceAction: (payload: {
+    provider: string;
+    action: string;
+    resource_id: string;
+    region?: string;
+    dry_run?: boolean;
+  }) =>
+    post<{ ok: boolean; message: string; command?: string; output?: string; dry_run?: boolean }>(
+      "/api/finops/resources/action",
+      payload,
+    ),
 };
 
 export type ConnectionSetupStep = {
@@ -877,6 +894,29 @@ export type FinOpsReportResponse = {
   legend: FinOpsReportLegendItem[];
   series: FinOpsReportSeriesBucket[];
   table_items: FinOpsReportTableItem[];
+};
+
+export type FinOpsPlanningResponse = {
+  budget_usd: number;
+  current_accrued: number;
+  forecasted_total: number;
+  budget_utilization: number;
+  forecasted_utilization: number;
+  monthly_data: {
+    month: string;
+    spend: number;
+    isForecast: boolean;
+    low?: number;
+    high?: number;
+  }[];
+  unit_economics: {
+    label: string;
+    value: string;
+    subtext: string;
+    trend: "up" | "down" | "neutral" | "alert";
+  }[];
+  account_id: string;
+  resource_count?: number;
 };
 
 /** Prices are the product. Format them once, consistently, everywhere. */

@@ -276,12 +276,22 @@ interface FinOpsResourcesViewProps {
   provider: string;
   currency?: CurrencyCode;
   accountId?: string;
+  onResourceAction?: () => void;
+}
+
+interface ActionModalState {
+  resource: CloudResource;
+  actionType: string;
+  title: string;
+  command: string;
+  savingsUsd: number;
 }
 
 export function FinOpsResourcesView({
   provider = "aws",
   currency = "USD",
   accountId = "demo",
+  onResourceAction,
 }: FinOpsResourcesViewProps) {
   const p = provider.toLowerCase();
   const rawList = DEFAULT_RESOURCES[p] || DEFAULT_RESOURCES.aws;
@@ -291,6 +301,11 @@ export function FinOpsResourcesView({
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // Modal State for Deletion & Stopping
+  const [confirmModal, setConfirmModal] = useState<ActionModalState | null>(null);
+  const [executingAction, setExecutingAction] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -309,6 +324,72 @@ export function FinOpsResourcesView({
     };
   }, [provider, accountId]);
 
+  const openActionModal = (
+    res: CloudResource,
+    actionType: string,
+    title: string,
+    command: string,
+    savingsUsd: number
+  ) => {
+    setConfirmModal({
+      resource: res,
+      actionType,
+      title,
+      command,
+      savingsUsd,
+    });
+    setCopiedCommand(false);
+  };
+
+  const handleExecuteAction = async (isDryRun = false) => {
+    if (!confirmModal) return;
+    setExecutingAction(true);
+    try {
+      const res = await api.finopsResourceAction({
+        provider,
+        action: confirmModal.actionType,
+        resource_id: confirmModal.resource.id,
+        region: confirmModal.resource.region,
+        dry_run: isDryRun,
+      });
+
+      if (res.ok) {
+        if (
+          confirmModal.actionType.startsWith("delete") ||
+          confirmModal.actionType === "terminate_instance" ||
+          confirmModal.actionType === "release_eip"
+        ) {
+          setResources((prev) => prev.filter((r) => r.id !== confirmModal.resource.id));
+        } else if (confirmModal.actionType === "stop_instance") {
+          setResources((prev) =>
+            prev.map((r) =>
+              r.id === confirmModal.resource.id
+                ? { ...r, status: "idle", type: r.type.replace(/RUNNING/i, "STOPPED") }
+                : r
+            )
+          );
+        }
+
+        setActionNotice(
+          `Action completed: ${confirmModal.title} (${confirmModal.resource.name}). Savings: ${formatCurrency(
+            confirmModal.savingsUsd,
+            currency,
+            2
+          )}/mo.`
+        );
+        onResourceAction?.();
+      } else {
+        setActionNotice(`Action Notice: ${res.message}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setActionNotice(`Failed to execute: ${msg}`);
+    } finally {
+      setExecutingAction(false);
+      setConfirmModal(null);
+    }
+  };
+
   const filteredResources = resources.filter((res) => {
     if (selectedCategory !== "all" && res.category !== selectedCategory) return false;
     if (selectedStatus !== "all" && res.status !== selectedStatus) return false;
@@ -325,7 +406,7 @@ export function FinOpsResourcesView({
 
   const totalCost = resources.reduce((acc, r) => acc + r.monthly_usd, 0);
   const avgUtil = Math.round(
-    resources.reduce((acc, r) => acc + r.utilization_pct, 0) / resources.length
+    resources.reduce((acc, r) => acc + r.utilization_pct, 0) / Math.max(1, resources.length)
   );
   const idleCount = resources.filter((r) => r.status === "idle" || r.status === "overprovisioned").length;
 
@@ -506,20 +587,105 @@ export function FinOpsResourcesView({
 
                   <td className="px-5 py-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() => handleAction(res, "Rightsize Simulation")}
-                        className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink hover:bg-sunk transition-colors"
-                        title="Analyze right-sizing options"
-                      >
-                        Rightsize
-                      </button>
-                      <button
-                        onClick={() => handleAction(res, "Snapshot Backup")}
-                        className="rounded-lg border border-line bg-surface p-1 text-ink-3 hover:text-ink hover:bg-sunk transition-colors"
-                        title="Create backup snapshot"
-                      >
-                        <Icon icon="mdi:camera" className="h-4 w-4" />
-                      </button>
+                      {/* Contextual Action Buttons for Provisioned Cloud Resources */}
+                      {(res.id.startsWith("eipalloc-") || res.type.includes("Elastic IP") || res.name.startsWith("eip-")) ? (
+                        <button
+                          onClick={() =>
+                            openActionModal(
+                              res,
+                              "release_eip",
+                              "Release Elastic IP Address",
+                              `aws ec2 release-address --allocation-id ${res.id} --region ${res.region}`,
+                              res.monthly_usd
+                            )
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11.5px] font-semibold text-red-500 hover:bg-red-500/20 transition-colors"
+                          title="Release unassociated IP address to eliminate $3.65/mo idle fee"
+                        >
+                          <Icon icon="mdi:ip-network-outline" className="h-3.5 w-3.5" />
+                          <span>Release IP</span>
+                        </button>
+                      ) : (res.service === "Amazon EBS" || res.id.startsWith("vol-")) ? (
+                        <button
+                          onClick={() =>
+                            openActionModal(
+                              res,
+                              "delete_volume",
+                              "Delete Detached EBS Volume",
+                              `aws ec2 delete-volume --volume-id ${res.id} --region ${res.region}`,
+                              res.monthly_usd
+                            )
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11.5px] font-semibold text-red-500 hover:bg-red-500/20 transition-colors"
+                          title="Delete unattached EBS volume"
+                        >
+                          <Icon icon="mdi:trash-can-outline" className="h-3.5 w-3.5" />
+                          <span>Delete Volume</span>
+                        </button>
+                      ) : (res.service === "Amazon EC2" || res.id.startsWith("i-")) ? (
+                        <div className="flex items-center gap-1.5">
+                          {!(res.status === "idle" || res.type.includes("STOPPED")) && (
+                            <button
+                              onClick={() =>
+                                openActionModal(
+                                  res,
+                                  "stop_instance",
+                                  "Stop EC2 Instance",
+                                  `aws ec2 stop-instances --instance-ids ${res.id} --region ${res.region}`,
+                                  Math.round(res.monthly_usd * 0.75 * 100) / 100
+                                )
+                              }
+                              className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11.5px] font-semibold text-amber-500 hover:bg-amber-500/20 transition-colors"
+                              title="Stop instance compute runtime"
+                            >
+                              <Icon icon="mdi:stop-circle-outline" className="h-3.5 w-3.5" />
+                              <span>Stop</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() =>
+                              openActionModal(
+                                res,
+                                "terminate_instance",
+                                "Terminate EC2 Instance",
+                                `aws ec2 terminate-instances --instance-ids ${res.id} --region ${res.region}`,
+                                res.monthly_usd
+                              )
+                            }
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11.5px] font-semibold text-red-500 hover:bg-red-500/20 transition-colors"
+                            title="Permanently terminate EC2 instance"
+                          >
+                            <Icon icon="mdi:trash-can-outline" className="h-3.5 w-3.5" />
+                            <span>Terminate</span>
+                          </button>
+                        </div>
+                      ) : (res.service === "Amazon S3" || res.id.startsWith("arn:aws:s3")) ? (
+                        <button
+                          onClick={() => {
+                            const bucketName = res.id.replace("arn:aws:s3:::", "").split("/")[0] || res.name;
+                            openActionModal(
+                              res,
+                              "delete_bucket",
+                              "Delete S3 Bucket",
+                              `aws s3 rb s3://${bucketName} --force --region ${res.region}`,
+                              res.monthly_usd
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] font-medium text-red-500 hover:bg-red-500/10 transition-colors"
+                          title="Delete S3 bucket and empty objects"
+                        >
+                          <Icon icon="mdi:trash-can-outline" className="h-3.5 w-3.5" />
+                          <span>Delete Bucket</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleAction(res, "Rightsize Simulation")}
+                          className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink hover:bg-sunk transition-colors"
+                          title="Analyze right-sizing options"
+                        >
+                          Rightsize
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -528,6 +694,131 @@ export function FinOpsResourcesView({
           </table>
         </div>
       </div>
+
+      {/* Action Confirmation Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="relative w-full max-w-lg rounded-2xl border border-line bg-surface p-6 shadow-2xl transition-all">
+            {/* Header */}
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-500">
+                <Icon icon="mdi:alert-circle-outline" className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[17px] font-bold text-ink">{confirmModal.title}</h3>
+                <p className="mt-0.5 text-[12.5px] text-ink-2">
+                  Confirm cloud resource lifecycle action. This will directly modify your provisioned cloud resources.
+                </p>
+              </div>
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="rounded-lg p-1 text-ink-3 hover:bg-sunk hover:text-ink transition-colors"
+              >
+                <Icon icon="mdi:close" className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Resource Spec Summary */}
+            <div className="mt-5 rounded-xl border border-line bg-sunk/60 p-4 space-y-2.5">
+              <div className="flex items-center justify-between text-[12.5px]">
+                <span className="text-ink-3">Resource Name:</span>
+                <span className="font-semibold text-ink">{confirmModal.resource.name}</span>
+              </div>
+              <div className="flex items-center justify-between text-[12.5px]">
+                <span className="text-ink-3">Resource ID:</span>
+                <span className="font-mono text-[11.5px] text-ink-2 truncate max-w-[240px]">
+                  {confirmModal.resource.id}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[12.5px]">
+                <span className="text-ink-3">Region & Service:</span>
+                <span className="font-mono text-[11.5px] text-ink-2">
+                  {confirmModal.resource.region} • {confirmModal.resource.service}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-line/60 pt-2 text-[12.5px]">
+                <span className="font-medium text-ink-2">Immediate Monthly Savings:</span>
+                <span className="font-mono font-bold text-emerald-500">
+                  +{formatCurrency(confirmModal.savingsUsd, currency, 2)}/mo
+                </span>
+              </div>
+            </div>
+
+            {/* Cloud CLI Command Box */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between pb-1.5 text-[11.5px] font-medium text-ink-3">
+                <span className="flex items-center gap-1.5 font-mono">
+                  <Icon icon="mdi:console-line" className="h-4 w-4" />
+                  Live Cloud CLI Command
+                </span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(confirmModal.command);
+                    setCopiedCommand(true);
+                    setTimeout(() => setCopiedCommand(false), 2000);
+                  }}
+                  className="flex items-center gap-1 text-[11px] text-accent hover:underline"
+                >
+                  <Icon icon={copiedCommand ? "mdi:check" : "mdi:content-copy"} className="h-3.5 w-3.5" />
+                  <span>{copiedCommand ? "Copied" : "Copy command"}</span>
+                </button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-line bg-canvas p-3 font-mono text-[11.5px] text-ink">
+                <code>{confirmModal.command}</code>
+              </div>
+            </div>
+
+            {/* Warning Notice */}
+            <div className="mt-4 flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-[12px] text-amber-500">
+              <Icon icon="mdi:shield-alert" className="h-4 w-4 shrink-0" />
+              <span>
+                Execution occurs directly on your connected {p.toUpperCase()} account credentials. Deletions cannot be undone.
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={executingAction}
+                onClick={() => setConfirmModal(null)}
+                className="rounded-xl border border-line bg-surface px-4 py-2 text-[13px] font-medium text-ink hover:bg-sunk transition-colors"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={executingAction}
+                onClick={() => handleExecuteAction(true)}
+                className="rounded-xl border border-line bg-sunk px-4 py-2 text-[13px] font-medium text-ink-2 hover:text-ink hover:bg-sunk/80 transition-colors"
+                title="Verify permissions without altering resource state"
+              >
+                {executingAction ? "Validating..." : "Dry Run Test"}
+              </button>
+
+              <button
+                type="button"
+                disabled={executingAction}
+                onClick={() => handleExecuteAction(false)}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-red-700 shadow-sm transition-colors disabled:opacity-50"
+              >
+                {executingAction ? (
+                  <>
+                    <Icon icon="mdi:loading" className="h-4 w-4 animate-spin" />
+                    <span>Executing Live...</span>
+                  </>
+                ) : (
+                  <>
+                    <Icon icon="mdi:flash" className="h-4 w-4" />
+                    <span>Execute Live on {p.toUpperCase()}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

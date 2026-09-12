@@ -659,12 +659,21 @@ function FinOpsContent() {
 
         {/* VIEW 4: Active Resources (Cloud Inventory Table) */}
         {activeTab === "resources" && (
-          <FinOpsResourcesView provider={provider} currency={currency} accountId={data.account.id} />
+          <FinOpsResourcesView
+            provider={provider}
+            currency={currency}
+            accountId={data.account.id}
+            onResourceAction={handleResync}
+          />
         )}
 
         {/* VIEW 5: Financial Planning (Budgets & Forecasting) */}
         {activeTab === "planning" && (
-          <FinOpsPlanningView provider={provider} currency={currency} />
+          <FinOpsPlanningView
+            provider={provider}
+            currency={currency}
+            accountId={data.account.id}
+          />
         )}
 
         {/* VIEW 6: Recommendations (FinOps Cost Reduction Hub) */}

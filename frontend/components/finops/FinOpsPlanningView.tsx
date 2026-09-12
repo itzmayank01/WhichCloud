@@ -1,45 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
+import { api, FinOpsPlanningResponse } from "@/lib/api";
 
 interface FinOpsPlanningViewProps {
   provider: string;
   currency?: CurrencyCode;
+  accountId?: string;
 }
 
 export function FinOpsPlanningView({
   provider = "aws",
   currency = "USD",
+  accountId = "616551057703",
 }: FinOpsPlanningViewProps) {
-  const [budgetUsd, setBudgetUsd] = useState(12000);
+  const storageKey = `whichcloud_budget_${provider}_${accountId}`;
+
+  const [budgetUsd, setBudgetUsd] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) return parseFloat(saved) || 50.0;
+    }
+    return provider === "aws" ? 50.0 : 12000.0;
+  });
+
   const [showEditBudgetModal, setShowEditBudgetModal] = useState(false);
-  const [tempBudget, setTempBudget] = useState("12000");
+  const [tempBudget, setTempBudget] = useState(String(budgetUsd));
+  const [liveData, setLiveData] = useState<FinOpsPlanningResponse | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    api.finopsPlanning(provider, accountId)
+      .then((res) => {
+        if (mounted && res) {
+          setLiveData(res);
+          // If no custom budget was saved, initialize from API
+          if (typeof window !== "undefined" && !localStorage.getItem(storageKey)) {
+            setBudgetUsd(res.budget_usd);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load live planning data:", err);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [provider, accountId, storageKey]);
 
   // Spend metrics
-  const currentAccrued = 8420.5;
-  const forecastedTotal = 10150.0;
-  const budgetUtilization = Math.round((currentAccrued / budgetUsd) * 100);
-  const forecastedUtilization = Math.round((forecastedTotal / budgetUsd) * 100);
+  const currentAccrued = liveData ? liveData.current_accrued : (provider === "aws" ? 24.98 : 8420.5);
+  const forecastedTotal = liveData ? liveData.forecasted_total : (provider === "aws" ? 25.50 : 10150.0);
+  const budgetUtilization = Math.round((currentAccrued / Math.max(1, budgetUsd)) * 100);
+  const forecastedUtilization = Math.round((forecastedTotal / Math.max(1, budgetUsd)) * 100);
 
-  // 12-Month Data: 6 months actual + 6 months ML forecast
-  const monthlyData = [
-    { month: "Jul", spend: 7800, isForecast: false },
-    { month: "Aug", spend: 8150, isForecast: false },
-    { month: "Sep", spend: 7920, isForecast: false },
-    { month: "Oct", spend: 8640, isForecast: false },
-    { month: "Nov", spend: 8200, isForecast: false },
-    { month: "Dec", spend: 8420, isForecast: false },
-    { month: "Jan", spend: 9100, isForecast: true, low: 8800, high: 9500 },
-    { month: "Feb", spend: 9450, isForecast: true, low: 9000, high: 9900 },
-    { month: "Mar", spend: 9800, isForecast: true, low: 9300, high: 10400 },
-    { month: "Apr", spend: 10150, isForecast: true, low: 9600, high: 10800 },
-    { month: "May", spend: 10400, isForecast: true, low: 9800, high: 11200 },
-    { month: "Jun", spend: 10800, isForecast: true, low: 10100, high: 11700 },
-  ];
+  // 12-Month Data
+  const monthlyData = liveData?.monthly_data && liveData.monthly_data.length > 0
+    ? liveData.monthly_data
+    : [
+        { month: "Apr", spend: 26.40, isForecast: false },
+        { month: "May", spend: 28.10, isForecast: false },
+        { month: "Jun", spend: 27.80, isForecast: false },
+        { month: "Jul", spend: 26.50, isForecast: false },
+        { month: "Aug", spend: 27.50, isForecast: false },
+        { month: "Sep", spend: 24.98, isForecast: false },
+        { month: "Oct", spend: 24.20, isForecast: true, low: 22.0, high: 26.5 },
+        { month: "Nov", spend: 23.80, isForecast: true, low: 21.5, high: 26.0 },
+        { month: "Dec", spend: 23.50, isForecast: true, low: 21.0, high: 25.8 },
+        { month: "Jan", spend: 22.90, isForecast: true, low: 20.5, high: 25.0 },
+        { month: "Feb", spend: 22.40, isForecast: true, low: 20.0, high: 24.5 },
+        { month: "Mar", spend: 21.80, isForecast: true, low: 19.5, high: 24.0 },
+      ];
 
-  const maxVal = 13000;
+  const maxVal = Math.max(...monthlyData.map((d) => d.high || d.spend), budgetUsd * 1.1, 35);
 
   return (
     <div className="mt-6 space-y-8">
@@ -209,45 +245,79 @@ export function FinOpsPlanningView({
       </div>
 
       {/* Cloud Unit Economics Section */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
-          <div className="flex items-center justify-between text-[12.5px] text-ink-3">
-            <span>Cost per Monthly Active User</span>
-            <Icon icon="mdi:account-group-outline" className="h-4 w-4 text-accent" />
-          </div>
-          <div className="mt-2 font-mono text-[24px] font-bold text-ink">
-            {formatCurrency(0.042, currency, 3)}
-          </div>
-          <p className="mt-1 text-[11.5px] text-emerald-500 font-medium">
-            ↓ 8.4% improvement vs Q3
-          </p>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {liveData?.unit_economics && liveData.unit_economics.length > 0 ? (
+          liveData.unit_economics.map((item, idx) => (
+            <div key={idx} className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
+              <div className="flex items-center justify-between text-[12.5px] text-ink-3">
+                <span>{item.label}</span>
+                <Icon
+                  icon={
+                    item.trend === "alert"
+                      ? "mdi:alert-circle-outline"
+                      : item.trend === "down"
+                      ? "mdi:trending-down"
+                      : "mdi:chart-donut"
+                  }
+                  className={`h-4 w-4 ${
+                    item.trend === "alert"
+                      ? "text-amber-500"
+                      : item.trend === "down"
+                      ? "text-emerald-500"
+                      : "text-accent"
+                  }`}
+                />
+              </div>
+              <div className="mt-2 font-mono text-[22px] font-bold text-ink">
+                {item.value}
+              </div>
+              <p className="mt-1 text-[11.5px] text-ink-2">
+                {item.subtext}
+              </p>
+            </div>
+          ))
+        ) : (
+          <>
+            <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
+              <div className="flex items-center justify-between text-[12.5px] text-ink-3">
+                <span>Cost per Monthly Active User</span>
+                <Icon icon="mdi:account-group-outline" className="h-4 w-4 text-accent" />
+              </div>
+              <div className="mt-2 font-mono text-[24px] font-bold text-ink">
+                {formatCurrency(0.042, currency, 3)}
+              </div>
+              <p className="mt-1 text-[11.5px] text-emerald-500 font-medium">
+                ↓ 8.4% improvement vs Q3
+              </p>
+            </div>
 
-        <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
-          <div className="flex items-center justify-between text-[12.5px] text-ink-3">
-            <span>Cost per 1,000 API Requests</span>
-            <Icon icon="mdi:api" className="h-4 w-4 text-accent" />
-          </div>
-          <div className="mt-2 font-mono text-[24px] font-bold text-ink">
-            {formatCurrency(0.018, currency, 3)}
-          </div>
-          <p className="mt-1 text-[11.5px] text-emerald-500 font-medium">
-            Optimal workload density
-          </p>
-        </div>
+            <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
+              <div className="flex items-center justify-between text-[12.5px] text-ink-3">
+                <span>Cost per 1,000 API Requests</span>
+                <Icon icon="mdi:api" className="h-4 w-4 text-accent" />
+              </div>
+              <div className="mt-2 font-mono text-[24px] font-bold text-ink">
+                {formatCurrency(0.018, currency, 3)}
+              </div>
+              <p className="mt-1 text-[11.5px] text-emerald-500 font-medium">
+                Optimal workload density
+              </p>
+            </div>
 
-        <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
-          <div className="flex items-center justify-between text-[12.5px] text-ink-3">
-            <span>Compute vs Storage Ratio</span>
-            <Icon icon="mdi:pie-chart" className="h-4 w-4 text-accent" />
-          </div>
-          <div className="mt-2 font-mono text-[24px] font-bold text-ink">
-            74% / 26%
-          </div>
-          <p className="mt-1 text-[11.5px] text-ink-2">
-            Healthy SaaS architecture mix
-          </p>
-        </div>
+            <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
+              <div className="flex items-center justify-between text-[12.5px] text-ink-3">
+                <span>Compute vs Storage Ratio</span>
+                <Icon icon="mdi:pie-chart" className="h-4 w-4 text-accent" />
+              </div>
+              <div className="mt-2 font-mono text-[24px] font-bold text-ink">
+                74% / 26%
+              </div>
+              <p className="mt-1 text-[11.5px] text-ink-2">
+                Healthy SaaS architecture mix
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Edit Budget Modal */}
@@ -297,6 +367,9 @@ export function FinOpsPlanningView({
                   const val = parseFloat(tempBudget);
                   if (!isNaN(val) && val > 0) {
                     setBudgetUsd(val);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem(storageKey, String(val));
+                    }
                   }
                   setShowEditBudgetModal(false);
                 }}
