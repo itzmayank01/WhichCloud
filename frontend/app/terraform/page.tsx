@@ -92,7 +92,6 @@ function TerraformStudioContent() {
 
   // Cost Reports view states (Screenshot 1)
   const [reportTab, setReportTab] = useState<"overview" | "anomalies">("overview");
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(4);
 
   // Developer Tools tabs
   const [activeDevTab, setActiveDevTab] = useState<"provider" | "cur" | "import" | "ai">("provider");
@@ -124,7 +123,6 @@ function TerraformStudioContent() {
                 region: o.region,
               }))
             );
-            // Ensure selected option exists
             const match = answer.options.find((o) => o.label === selectedOption);
             if (!match && answer.options[0]) {
               setSelectedOption(answer.options[0].label);
@@ -228,7 +226,6 @@ function TerraformStudioContent() {
     setProgress(62.5);
     setReportGeneratedNotice(false);
 
-    // Simulate real report build progression (matching Screenshot 3)
     setTimeout(() => {
       setProgress(88.4);
     }, 1200);
@@ -237,7 +234,6 @@ function TerraformStudioContent() {
       setProgress(100);
       setIsGeneratingReport(false);
       setReportGeneratedNotice(true);
-      // Automatically toggle view to show the generated Cost Report
       setViewMode("report");
     }, 2400);
   };
@@ -302,13 +298,17 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px] font-medium text-ink-2 transition hover:border-line-strong hover:text-ink"
             title="Return to Architecture Workspace"
           >
-            <Icon icon="solar:arrow-left-linear" className="h-3.5 w-3.5" />
+            <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M15 10H5m5-5l-5 5 5 5" />
+            </svg>
             <span>Workspace</span>
           </Link>
           <span className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#5C4EE5]/15 text-[#5C4EE5]">
-              <Icon icon="logos:terraform-icon" className="h-4 w-4" />
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+                <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
+              </svg>
             </span>
             <div>
               <div className="flex items-center gap-2">
@@ -389,7 +389,12 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                   : "text-ink-2 hover:text-ink"
               }`}
             >
-              <Icon icon="solar:diagram-up-bold" className="h-3.5 w-3.5" />
+              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <rect x="2" y="3" width="6" height="5" rx="1" />
+                <rect x="12" y="3" width="6" height="5" rx="1" />
+                <rect x="7" y="12" width="6" height="5" rx="1" />
+                <path d="M5 8v2a2 2 0 002 2h3m5-4v2a2 2 0 01-2 2h-3m0 0v-2" />
+              </svg>
               <span>Architecture</span>
             </button>
             <button
@@ -401,7 +406,13 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                   : "text-ink-2 hover:text-ink"
               }`}
             >
-              <Icon icon="solar:chart-square-bold" className="h-3.5 w-3.5" />
+              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M3 17h14" />
+                <path d="M6 14v-4" />
+                <path d="M10 14V6" />
+                <path d="M14 14v-6" />
+                <path d="M4 10l5-4 4 2 4-5" />
+              </svg>
               <span>Cost Report</span>
             </button>
           </div>
@@ -412,7 +423,9 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             disabled={downloadingZip}
             className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-brand-strong disabled:opacity-60"
           >
-            <Icon icon="solar:download-square-bold" className="h-3.5 w-3.5" />
+            <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 14v2a2 2 0 002 2h8a2 2 0 002-2v-2M10 3v9m0 0l-3-3m3 3l3-3" />
+            </svg>
             <span>{downloadingZip ? "Packaging…" : "Download ZIP"}</span>
           </button>
         </div>
@@ -444,7 +457,10 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 <span className="font-mono text-lg font-medium text-ink-3">/100%</span>
               </div>
               <div className="flex h-7 w-7 animate-spin items-center justify-center text-brand">
-                <Icon icon="solar:spinner-linear" className="h-6 w-6" />
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0110 10" strokeLinecap="round" />
+                </svg>
               </div>
             </div>
 
@@ -510,20 +526,45 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               LEFT COLUMN: TERRAFORM CONFIGURATION (SCREENSHOT 1)
              ════════════════════════════════════════════════════════════════════ */}
           <section className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm overflow-hidden h-[740px]">
-            {/* Header with Title & Copy */}
+            {/* Header with Authentic Terraform Vector Logo, Title & Actions */}
             <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface">
               <div className="flex items-center gap-2">
-                <Icon icon="logos:terraform-icon" className="h-4 w-4" />
+                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[#5C4EE5]" fill="currentColor" aria-hidden>
+                  <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
+                </svg>
                 <h2 className="text-[13.5px] font-semibold text-ink">Terraform Configuration</h2>
               </div>
-              <button
-                type="button"
-                onClick={handleCopyCode}
-                className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink transition"
-              >
-                <Icon icon={copiedCode ? "solar:check-circle-bold" : "solar:copy-linear"} className="h-3.5 w-3.5" />
-                <span>{copiedCode ? "Copied" : "Copy"}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink transition"
+                >
+                  {copiedCode ? (
+                    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 10l4 4L16 6" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="7" y="7" width="10" height="10" rx="2" />
+                      <path d="M4 13V5a2 2 0 012-2h8" />
+                    </svg>
+                  )}
+                  <span>{copiedCode ? "Copied" : "Copy"}</span>
+                </button>
+                {/* 3 dots menu from Screenshot 1 */}
+                <button
+                  type="button"
+                  className="rounded p-1 text-ink-3 hover:text-ink hover:bg-sunk transition"
+                  title="More options"
+                >
+                  <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
+                    <circle cx="5" cy="10" r="1.5" />
+                    <circle cx="10" cy="10" r="1.5" />
+                    <circle cx="15" cy="10" r="1.5" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* File Tabs */}
@@ -541,16 +582,21 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                           : "text-ink-3 hover:text-ink"
                       }`}
                     >
-                      <Icon
-                        icon={
-                          fileName.endsWith(".tf")
-                            ? "logos:terraform-icon"
-                            : fileName.endsWith(".md")
-                            ? "solar:document-text-linear"
-                            : "solar:code-file-linear"
-                        }
-                        className="h-3 w-3 shrink-0"
-                      />
+                      {fileName.endsWith(".tf") ? (
+                        <svg viewBox="0 0 24 24" className="h-3 w-3 text-[#5C4EE5] shrink-0" fill="currentColor">
+                          <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
+                        </svg>
+                      ) : fileName.endsWith(".md") ? (
+                        <svg viewBox="0 0 20 20" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75">
+                          <rect x="4" y="3" width="12" height="14" rx="1.5" />
+                          <path d="M7 7h6M7 10h6M7 13h4" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 20 20" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75">
+                          <path d="M6 3h8a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                          <circle cx="10" cy="10" r="2.5" />
+                        </svg>
+                      )}
                       <span>{fileName}</span>
                     </button>
                   );
@@ -602,10 +648,17 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                       : "border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
                   }`}
                 >
-                  <Icon
-                    icon={validationResult.valid ? "solar:check-circle-bold" : "solar:close-circle-bold"}
-                    className="h-4 w-4 shrink-0"
-                  />
+                  {validationResult.valid ? (
+                    <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 text-emerald-500" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 10l4 4L16 6" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 text-red-500" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="10" cy="10" r="8" />
+                      <line x1="7" y1="7" x2="13" y2="13" />
+                      <line x1="13" y1="7" x2="7" y2="13" />
+                    </svg>
+                  )}
                   <span>{validationResult.message}</span>
                 </div>
               )}
@@ -656,7 +709,12 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface shrink-0">
                   <div className="flex items-center gap-2">
                     <span className="flex h-5 w-5 items-center justify-center rounded bg-brand/15 text-brand">
-                      <Icon icon="solar:diagram-up-bold" className="h-3.5 w-3.5" />
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="3" width="6" height="5" rx="1" />
+                        <rect x="12" y="3" width="6" height="5" rx="1" />
+                        <rect x="7" y="12" width="6" height="5" rx="1" />
+                        <path d="M5 8v2a2 2 0 002 2h3m5-4v2a2 2 0 01-2 2h-3m0 0v-2" />
+                      </svg>
                     </span>
                     <h2 className="text-[13.5px] font-semibold text-ink">
                       Architecture Topology — {selectedOption}
@@ -673,15 +731,19 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                       className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink-2 hover:text-ink hover:border-line-strong transition"
                       title="Replay architecture layout animation"
                     >
-                      <Icon icon="solar:restart-bold" className="h-3 w-3" />
+                      <svg viewBox="0 0 20 20" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 10a7 7 0 112 5.07M3 10V5m0 5h5" />
+                      </svg>
                       <span>Replay</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setViewMode("report")}
-                      className="inline-flex items-center gap-1 rounded-md border border-line bg-canvas px-2.5 py-1 text-[11px] font-medium text-brand hover:border-brand transition"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-line bg-canvas px-2.5 py-1 text-[11px] font-medium text-brand hover:border-brand transition"
                     >
-                      <Icon icon="solar:chart-square-bold" className="h-3 w-3" />
+                      <svg viewBox="0 0 20 20" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 17h14M6 14v-4m4 4V6m4 8v-6" />
+                      </svg>
                       <span>Switch to Cost Report</span>
                     </button>
                   </div>
@@ -726,7 +788,6 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                     />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center p-6 text-center text-ink-3">
-                      <Icon icon="solar:danger-circle-linear" className="h-8 w-8 text-amber-500 mb-2" />
                       <p className="text-[13px] font-medium text-ink">No topology nodes found</p>
                       <p className="text-[12px] text-ink-3 mt-1">
                         Try switching tiers or providers above to load a diagram.
@@ -749,12 +810,19 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             ) : (
               /* ── 2. COST REPORTS: ALL RESOURCES VIEW (SCREENSHOT 1) ── */
               <div className="flex flex-col h-full overflow-y-auto">
-                {/* Cost Report Top Bar */}
+                {/* Cost Report Top Bar with Genuine Vantage/WhichCloud Blue Badge */}
                 <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500">
-                      <Icon icon="solar:chart-2-bold" className="h-5 w-5" />
-                    </span>
+                    {/* Authentic Cost Reports Icon Matching Screenshot 1 */}
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3B82F6] text-white shadow-xs">
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 20h16" />
+                        <path d="M7 16v-4" />
+                        <path d="M12 16V9" />
+                        <path d="M17 16V5" />
+                        <path d="M5 12l5-4 4 3 6-6" strokeWidth="2.2" />
+                      </svg>
+                    </div>
                     <div>
                       <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
                         Cost Reports
@@ -769,7 +837,12 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                       onClick={() => setViewMode("architecture")}
                       className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-[11.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink transition"
                     >
-                      <Icon icon="solar:diagram-up-bold" className="h-3.5 w-3.5" />
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="3" width="6" height="5" rx="1" />
+                        <rect x="12" y="3" width="6" height="5" rx="1" />
+                        <rect x="7" y="12" width="6" height="5" rx="1" />
+                        <path d="M5 8v2a2 2 0 002 2h3m5-4v2a2 2 0 01-2 2h-3m0 0v-2" />
+                      </svg>
                       <span>Back to Diagram</span>
                     </button>
                     <button
@@ -813,21 +886,31 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                       type="button"
                       className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk transition"
                     >
-                      <Icon icon="solar:filter-linear" className="h-3.5 w-3.5" />
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2.5a1 1 0 01-.293.707l-4.414 4.414v4.586l-4 2v-6.586L3.293 7.207A1 1 0 013 6.5V4z" />
+                      </svg>
                       <span>Filter</span>
                     </button>
                     <button
                       type="button"
                       className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk transition"
                     >
-                      <Icon icon="solar:calendar-linear" className="h-3.5 w-3.5" />
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="14" height="14" rx="2" />
+                        <line x1="13" y1="2" x2="13" y2="5" />
+                        <line x1="7" y1="2" x2="7" y2="5" />
+                        <line x1="3" y1="8" x2="17" y2="8" />
+                      </svg>
                       <span>Apr 1 - Apr 30</span>
                     </button>
                     <button
                       type="button"
                       className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk transition"
                     >
-                      <Icon icon="solar:settings-linear" className="h-3.5 w-3.5" />
+                      <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9.325 3.317a1.5 1.5 0 012.35 0 1.5 1.5 0 002.122.336 1.5 1.5 0 011.662 1.662 1.5 1.5 0 00.336 2.122 1.5 1.5 0 010 2.35 1.5 1.5 0 00-.336 2.122 1.5 1.5 0 01-1.662 1.662 1.5 1.5 0 00-2.122.336 1.5 1.5 0 01-2.35 0 1.5 1.5 0 00-2.122-.336 1.5 1.5 0 01-1.662-1.662 1.5 1.5 0 00-.336-2.122 1.5 1.5 0 010-2.35 1.5 1.5 0 00.336-2.122 1.5 1.5 0 011.662-1.662 1.5 1.5 0 002.122-.336z" />
+                        <circle cx="10.5" cy="10" r="2.5" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -936,8 +1019,10 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                         key={idx}
                         className="grid grid-cols-12 items-center px-5 py-2.5 text-[12px] hover:bg-sunk/50 transition"
                       >
-                        <div className="col-span-6 flex items-center gap-2">
-                          <Icon icon="logos:aws" className="h-3 w-3 shrink-0" />
+                        <div className="col-span-6 flex items-center gap-2.5">
+                          <span className="flex h-5 w-5 items-center justify-center rounded bg-[#FF9900]/10 text-[#FF9900]">
+                            <Icon icon="logos:aws" className="h-3.5 w-3.5" />
+                          </span>
                           <span className="font-medium text-ink truncate">{it.label}</span>
                         </div>
                         <div className="col-span-3 text-right font-mono font-semibold text-ink">

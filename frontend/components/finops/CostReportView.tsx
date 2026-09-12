@@ -196,8 +196,14 @@ export function CostReportView({
       {/* Sub-Header matching Image 4: Document icon, Report Title, Save & Import Budget buttons */}
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-5 shadow-xs sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500">
-            <Icon icon="mdi:file-document-outline" className="h-6 w-6" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#3B82F6] text-white shadow-sm">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 20h16" />
+              <path d="M7 16v-4" />
+              <path d="M12 16V9" />
+              <path d="M17 16V5" />
+              <path d="M5 12l5-4 4 3 6-6" strokeWidth="2.2" />
+            </svg>
           </div>
           <div>
             <div className="text-[12px] font-medium text-ink-3">Cost Reports</div>
@@ -1053,8 +1059,10 @@ export function CostReportView({
 
             {/* Drag & Drop Upload Zone matching Image 5 */}
             <div className="mt-5 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#7c3aed]/40 bg-[#7c3aed]/5 p-8 text-center transition-all hover:bg-[#7c3aed]/10">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#7c3aed] text-white shadow-md">
-                <Icon icon="mdi:file-document-outline" className="h-8 w-8" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand text-white shadow-md">
+                <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
               </div>
               <div className="mt-4 flex items-center gap-1.5 text-[13px] text-ink-2">
                 <span>Max</span>
