@@ -779,6 +779,21 @@ export const api = {
       "/api/finops/resources/action",
       payload,
     ),
+
+  finopsDeleteAllResources: (payload: {
+    provider: string;
+    account_id?: string;
+    confirm_phrase: string;
+    dry_run?: boolean;
+  }) =>
+    post<{
+      ok: boolean;
+      message: string;
+      deleted_count?: number;
+      total_savings_usd?: number;
+      dry_run?: boolean;
+      actions?: Array<{ resource: string; type: string; action: string; savings: number; cmd: string }>;
+    }>("/api/finops/resources/delete-all", payload),
 };
 
 export type ConnectionSetupStep = {
