@@ -736,6 +736,137 @@ export const api = {
 
   deleteArchitecture: (id: string, token: string) =>
     del<{ deleted: boolean }>(`/architecture/saved/${id}`, token),
+
+  connectionSetup: (provider: string, config: Record<string, unknown> = {}) =>
+    post<ConnectionSetup>("/api/connections/setup", { provider, config }),
+
+  connectionVerify: (provider: string, credentials: Record<string, unknown> = {}) =>
+    post<ConnectionVerifyResult>("/api/connections/verify", { provider, credentials }),
+
+  finopsLive: (provider = "aws", accountId = "demo") =>
+    get<FinOpsLiveResponse>(
+      `/api/finops/live?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+    ),
+
+  finopsReports: (provider = "aws", interval = "last_month", bin = "weekly", groupBy = "service,category") =>
+    get<FinOpsReportResponse>(
+      `/api/finops/reports?provider=${encodeURIComponent(provider)}&interval=${encodeURIComponent(interval)}&bin=${encodeURIComponent(bin)}&group_by=${encodeURIComponent(groupBy)}`,
+    ),
+};
+
+export type ConnectionSetupStep = {
+  title: string;
+  body: string;
+  snippet: string;
+  language: string;
+};
+
+export type ConnectionSetup = {
+  provider: string;
+  external_id?: string;
+  grants: string;
+  stores_secret: boolean;
+  steps: ConnectionSetupStep[];
+  cloudformation_url?: string;
+};
+
+export type ConnectionVerifyResult = {
+  ok: boolean;
+  account_id: string;
+  message: string;
+  provider: string;
+  connection_id: string;
+};
+
+export type FinOpsNode = {
+  id: string;
+  kind: string;
+  label: string;
+  monthly_usd: number;
+  share: number;
+  utilization: string;
+  waste_usd: number;
+  status: "healthy" | "warning" | "action_needed" | "optimized";
+  alert?: string;
+};
+
+export type FinOpsTechnique = {
+  id: string;
+  name: string;
+  category: string;
+  monthly_saving: number;
+  confidence: string;
+  description: string;
+  terraform_diff: string;
+};
+
+export type FinOpsLiveResponse = {
+  account: {
+    id: string;
+    name: string;
+    provider: string;
+    cloud_label: string;
+    cloud_logo: string;
+    region: string;
+    synced_at: string;
+    status: string;
+    resource_count: number;
+  };
+  summary: {
+    total_monthly_usd: number;
+    previous_monthly_usd: number;
+    projected_monthly_usd: number;
+    realizable_savings_usd: number;
+    savings_percentage: number;
+    health_grade: string;
+    efficiency_score: number;
+  };
+  nodes: FinOpsNode[];
+  techniques: FinOpsTechnique[];
+};
+
+export type FinOpsReportLegendItem = {
+  id: string;
+  name: string;
+  color: string;
+  accrued: number;
+};
+
+export type FinOpsReportSeriesBucket = {
+  date: string;
+  total: number;
+  cumulative?: number;
+  breakdown: Record<string, number>;
+};
+
+export type FinOpsReportTableItem = {
+  id: string;
+  service: string;
+  resource: string;
+  category: string;
+  subcategory: string;
+  account: string;
+  region: string;
+  accrued_usd: number;
+  prev_usd?: number;
+  change_pct?: number;
+  has_network_costs: boolean;
+  tag_team: string;
+};
+
+export type FinOpsReportResponse = {
+  report_name: string;
+  timeframe: string;
+  date_range: string;
+  comparing_label?: string;
+  date_bin: string;
+  total_accrued_usd: number;
+  previous_accrued_usd?: number;
+  change_pct?: number;
+  group_by: string[];
+  legend: FinOpsReportLegendItem[];
+  series: FinOpsReportSeriesBucket[];
+  table_items: FinOpsReportTableItem[];
 };
 
 /** Prices are the product. Format them once, consistently, everywhere. */
