@@ -748,9 +748,9 @@ export const api = {
       `/api/finops/live?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
     ),
 
-  finopsReports: (provider = "aws", interval = "last_month", bin = "weekly", groupBy = "service,category") =>
+  finopsReports: (provider = "aws", interval = "last_month", bin = "cumulative", groupBy = "service,category", accountId = "demo") =>
     get<FinOpsReportResponse>(
-      `/api/finops/reports?provider=${encodeURIComponent(provider)}&interval=${encodeURIComponent(interval)}&bin=${encodeURIComponent(bin)}&group_by=${encodeURIComponent(groupBy)}`,
+      `/api/finops/reports?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}&interval=${encodeURIComponent(interval)}&bin=${encodeURIComponent(bin)}&group_by=${encodeURIComponent(groupBy)}`,
     ),
 
   finopsResources: (provider = "aws", accountId = "demo") =>

@@ -648,7 +648,7 @@ function FinOpsContent() {
         {/* VIEW 2: Cost Reports */}
         {activeTab === "reports" && (
           <div className="mt-6">
-            <CostReportView provider={provider} />
+            <CostReportView provider={provider} currency={currency} accountId={data.account.id} />
           </div>
         )}
 

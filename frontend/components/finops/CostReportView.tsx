@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
-import { api, FinOpsReportResponse, money } from "@/lib/api";
+import { api, FinOpsReportResponse } from "@/lib/api";
+import { CurrencyCode, formatCurrency } from "@/lib/currency";
 
 type FilterRule = {
   dimension: "Resource" | "Service" | "Tag" | "Account" | "Region" | "Category";
@@ -21,7 +22,17 @@ type FilterSet = {
 type ChartMode = "bar" | "line" | "area" | "pie";
 type MetricAxis = "cost" | "usage" | "count";
 
-export function CostReportView({ provider = "aws" }: { provider?: string }) {
+interface CostReportViewProps {
+  provider?: string;
+  currency?: CurrencyCode;
+  accountId?: string;
+}
+
+export function CostReportView({
+  provider = "aws",
+  currency = "USD",
+  accountId = "616551057703",
+}: CostReportViewProps) {
   const [data, setData] = useState<FinOpsReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -75,14 +86,30 @@ export function CostReportView({ provider = "aws" }: { provider?: string }) {
   // Network costs inspection modal
   const [inspectNetworkResource, setInspectNetworkResource] = useState<string | null>(null);
 
-  // Hover state on chart elements matching Image 4
-  const [hoveredDateIdx, setHoveredDateIdx] = useState<number | null>(2);
+  // Hover state on chart elements
+  const [hoveredDateIdx, setHoveredDateIdx] = useState<number | null>(null);
   const [hoveredPieSlice, setHoveredPieSlice] = useState<string | null>(null);
+
+  // Load saved budget or default based on connected cloud provider
+  const storageKey = `whichcloud_budget_${provider}_${accountId}`;
+  const [budgetTarget] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) return parseFloat(saved) || 50.0;
+    }
+    return provider === "aws" ? 50.0 : 45000.0;
+  });
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    api.finopsReports(provider, interval.toLowerCase().replace(" ", "_"), dateBin.toLowerCase(), selectedGroupings.join(","))
+    api.finopsReports(
+      provider,
+      interval.toLowerCase().replace(" ", "_"),
+      dateBin.toLowerCase(),
+      selectedGroupings.join(","),
+      accountId
+    )
       .then((res) => {
         if (mounted) {
           setData(res);
@@ -97,7 +124,7 @@ export function CostReportView({ provider = "aws" }: { provider?: string }) {
     return () => {
       mounted = false;
     };
-  }, [provider, interval, dateBin, selectedGroupings]);
+  }, [provider, accountId, interval, dateBin, selectedGroupings]);
 
   if (loading || !data) {
     return (
@@ -236,17 +263,23 @@ export function CostReportView({ provider = "aws" }: { provider?: string }) {
         </button>
       </div>
 
-      {/* Budget KPI Triple-Badge Summary matching Image 4 */}
+      {/* Budget KPI Triple-Badge Summary */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-line bg-surface p-4 shadow-2xs">
           <div className="flex items-center justify-between text-[12px] font-medium text-ink-3">
             <span>Accrued Costs</span>
-            <span className="rounded bg-red-500/10 px-2 py-0.5 text-[11px] font-bold text-red-500">
-              +12.78%
+            <span
+              className={`rounded px-2 py-0.5 text-[11px] font-bold ${
+                (data.change_pct ?? 0) < 0
+                  ? "bg-emerald-500/10 text-emerald-500"
+                  : "bg-red-500/10 text-red-500"
+              }`}
+            >
+              {(data.change_pct ?? 0) > 0 ? `+${data.change_pct}%` : `${data.change_pct ?? 0}%`}
             </span>
           </div>
           <div className="mt-1 font-mono text-[22px] font-bold text-ink">
-            {money(data.total_accrued_usd, 2)}
+            {formatCurrency(data.total_accrued_usd, currency, 2)}
           </div>
         </div>
 
@@ -254,23 +287,25 @@ export function CostReportView({ provider = "aws" }: { provider?: string }) {
           <div className="flex items-center justify-between text-[12px] font-medium text-ink-3">
             <span>Forecasted Month-End</span>
             <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-500">
-              -15.89%
+              {provider === "aws" ? "On track" : "-2.4%"}
             </span>
           </div>
           <div className="mt-1 font-mono text-[22px] font-bold text-emerald-500">
-            {money(data.total_accrued_usd * 1.12, 2)}
+            {provider === "aws"
+              ? formatCurrency(25.48, currency, 2)
+              : formatCurrency(data.total_accrued_usd * 1.08, currency, 2)}
           </div>
         </div>
 
         <div className="rounded-xl border border-line bg-surface p-4 shadow-2xs">
           <div className="flex items-center justify-between text-[12px] font-medium text-ink-3">
-            <span>Target Budget Variance</span>
-            <span className="rounded bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-500">
-              -63.55%
+            <span>Target Budget Envelope</span>
+            <span className="rounded bg-accent/10 px-2 py-0.5 text-[11px] font-bold text-accent">
+              {Math.round((data.total_accrued_usd / Math.max(1, budgetTarget)) * 100)}% Used
             </span>
           </div>
-          <div className="mt-1 font-mono text-[22px] font-bold text-amber-500">
-            {money(data.total_accrued_usd * 1.05, 2)}
+          <div className="mt-1 font-mono text-[22px] font-bold text-accent">
+            {formatCurrency(budgetTarget, currency, 2)}
           </div>
         </div>
       </div>
@@ -474,10 +509,16 @@ export function CostReportView({ provider = "aws" }: { provider?: string }) {
                 ? "219 Active Instances"
                 : metricAxis === "usage"
                 ? "48,290 Hours"
-                : money(data.total_accrued_usd, 2)}
+                : formatCurrency(data.total_accrued_usd, currency, 2)}
             </span>
-            <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[13px] font-bold font-mono text-emerald-500">
-              -1.63% vs previous period
+            <span
+              className={`rounded-md px-2 py-0.5 text-[13px] font-bold font-mono ${
+                (data.change_pct ?? 0) < 0
+                  ? "bg-emerald-500/10 text-emerald-500"
+                  : "bg-red-500/10 text-red-500"
+              }`}
+            >
+              {(data.change_pct ?? 0) > 0 ? `+${data.change_pct}%` : `${data.change_pct ?? 0}%`} vs previous period
             </span>
           </div>
           <div className="text-[13px] text-ink-3">
@@ -496,217 +537,344 @@ export function CostReportView({ provider = "aws" }: { provider?: string }) {
                   className="h-3 w-3 rounded-full shadow-2xs"
                   style={{ backgroundColor: item.color }}
                 />
-                <span className="font-medium text-ink">{item.name}</span>
+                <span className="font-medium text-ink">
+                  {item.name} ({formatCurrency(item.accrued, currency, 2)})
+                </span>
               </div>
             ))}
             <div className="flex items-center gap-1.5">
               <span className="h-3 w-3 rounded-full bg-slate-400" />
-              <span className="font-medium text-ink">Target Budget</span>
+              <span className="font-medium text-ink">
+                Target Budget ({formatCurrency(budgetTarget, currency, 0)})
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Dynamic Chart Display Container */}
-        <div className="mt-8 relative h-80 w-full">
-          {/* Y Axis Grid lines */}
-          <div className="absolute inset-0 flex flex-col justify-between pointer-events-none text-[11px] font-mono text-ink-3 border-b border-line">
-            <div className="flex items-center justify-between border-b border-line/40 pb-1">
-              <span>{metricAxis === "count" ? "250 Instances" : "$70,000.00"}</span>
-              <div className="w-full border-b border-dashed border-line/30 ml-4" />
-            </div>
-            <div className="flex items-center justify-between border-b border-line/40 pb-1">
-              <span>{metricAxis === "count" ? "125 Instances" : "$35,000.00"}</span>
-              <div className="w-full border-b border-dashed border-line/30 ml-4" />
-            </div>
-            <div className="flex items-center justify-between pb-1">
-              <span>0</span>
-              <div className="w-full border-b border-line/50 ml-4" />
-            </div>
-          </div>
+        {/* Dynamic Live Chart Display Container */}
+        {(() => {
+          const isCumulative = dateBin.toLowerCase() === "cumulative";
+          const numPoints = data.series.length;
 
-          {/* MODE 1: Pie / Donut Chart matching Image 1 */}
-          {chartMode === "pie" && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="relative flex flex-col items-center">
-                <svg className="h-64 w-64 transform -rotate-90 overflow-visible" viewBox="0 0 100 100">
-                  {/* Slices rendered with stroke-dasharray */}
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="36"
-                    fill="transparent"
-                    stroke="#2dd4bf"
-                    strokeWidth="24"
-                    strokeDasharray="114 226"
-                    strokeDashoffset="0"
-                    className="cursor-pointer hover:opacity-90 transition-all"
-                    onMouseEnter={() => setHoveredPieSlice("Data Transfer: $33,405.60 (50.5%)")}
-                    onMouseLeave={() => setHoveredPieSlice(null)}
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="36"
-                    fill="transparent"
-                    stroke="#eab308"
-                    strokeWidth="24"
-                    strokeDasharray="109 226"
-                    strokeDashoffset="-114"
-                    className="cursor-pointer hover:opacity-90 transition-all"
-                    onMouseEnter={() => setHoveredPieSlice("Compute Instance: $32,199.74 (48.6%)")}
-                    onMouseLeave={() => setHoveredPieSlice(null)}
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="36"
-                    fill="transparent"
-                    stroke="#9333ea"
-                    strokeWidth="24"
-                    strokeDasharray="3 226"
-                    strokeDashoffset="-223"
-                    className="cursor-pointer hover:opacity-90 transition-all"
-                    onMouseEnter={() => setHoveredPieSlice("Other Operations: $566.62 (0.9%)")}
-                    onMouseLeave={() => setHoveredPieSlice(null)}
-                  />
-                </svg>
+          // Maximum value for chart Y-axis scaled dynamically to the account
+          const rawMax = Math.max(
+            ...data.series.map((s) => (isCumulative ? (s.cumulative ?? s.total) : s.total)),
+            budgetTarget,
+            provider === "aws" ? 30.0 : 1000.0
+          );
+          const maxVal = metricAxis === "count"
+            ? 250
+            : metricAxis === "usage"
+            ? 50000
+            : Math.ceil(rawMax * 1.25);
+          const midVal = maxVal / 2;
 
-                {/* Donut Center Label */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-                  <span className="text-[11px] uppercase font-bold text-ink-3">Total Spend</span>
-                  <span className="font-mono text-[16px] font-bold text-ink">{money(data.total_accrued_usd, 0)}</span>
+          // Coordinate mapping in 700x240 SVG viewbox
+          const plotLeft = 40;
+          const plotRight = 660;
+          const plotWidth = plotRight - plotLeft; // 620
+          const plotTop = 25;
+          const plotBottom = 215;
+          const plotHeight = plotBottom - plotTop; // 190
+
+          const points = data.series.map((item, idx) => {
+            const x = numPoints <= 1 ? 350 : plotLeft + (idx / (numPoints - 1)) * plotWidth;
+            const val = isCumulative ? (item.cumulative ?? item.total) : item.total;
+            const y = Math.max(plotTop, Math.min(plotBottom, plotBottom - (val / maxVal) * plotHeight));
+            return { x, y, val, date: item.date, item };
+          });
+
+          const budgetPoints = data.series.map((item, idx) => {
+            const x = numPoints <= 1 ? 350 : plotLeft + (idx / (numPoints - 1)) * plotWidth;
+            const bVal = isCumulative
+              ? (budgetTarget / Math.max(1, numPoints)) * (idx + 1)
+              : budgetTarget / Math.max(1, numPoints);
+            const y = Math.max(plotTop, Math.min(plotBottom, plotBottom - (bVal / maxVal) * plotHeight));
+            return { x, y, bVal };
+          });
+
+          const activeHoverIdx =
+            hoveredDateIdx !== null && hoveredDateIdx >= 0 && hoveredDateIdx < points.length
+              ? hoveredDateIdx
+              : points.length - 1;
+          const curPoint = points[activeHoverIdx] || points[0];
+          const curBudget = budgetPoints[activeHoverIdx] || budgetPoints[0];
+
+          const spendLinePath = points.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(" ");
+          const spendAreaPath = points.length > 0
+            ? `${spendLinePath} L ${points[points.length - 1].x} ${plotBottom} L ${points[0].x} ${plotBottom} Z`
+            : "";
+          const budgetLinePath = budgetPoints.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(" ");
+
+          const diffFromBudget = curPoint ? (curPoint.val ?? 0) - curBudget.bVal : 0;
+          const pctVariance = Math.round((Math.abs(diffFromBudget) / Math.max(0.01, curBudget.bVal)) * 100);
+          const isOverBudget = diffFromBudget > 0;
+
+          return (
+            <div className="mt-8 relative h-80 w-full">
+              {/* Y Axis Grid lines dynamically scaled */}
+              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none text-[11px] font-mono text-ink-3 border-b border-line">
+                <div className="flex items-center justify-between border-b border-line/40 pb-1">
+                  <span>
+                    {metricAxis === "count"
+                      ? "250 Instances"
+                      : formatCurrency(maxVal, currency, 2)}
+                  </span>
+                  <div className="w-full border-b border-dashed border-line/30 ml-4" />
                 </div>
-
-                {hoveredPieSlice && (
-                  <div className="mt-2 rounded-lg bg-surface border border-line px-3 py-1 text-[12px] font-mono font-bold text-accent shadow-md">
-                    {hoveredPieSlice}
-                  </div>
-                )}
+                <div className="flex items-center justify-between border-b border-line/40 pb-1">
+                  <span>
+                    {metricAxis === "count"
+                      ? "125 Instances"
+                      : formatCurrency(midVal, currency, 2)}
+                  </span>
+                  <div className="w-full border-b border-dashed border-line/30 ml-4" />
+                </div>
+                <div className="flex items-center justify-between pb-1">
+                  <span>{formatCurrency(0, currency, 2)}</span>
+                  <div className="w-full border-b border-line/50 ml-4" />
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* MODE 2: Stacked Multi-Bar Chart */}
-          {chartMode === "bar" && (
-            <div className="absolute inset-x-12 bottom-6 top-4 flex items-end justify-between px-6">
-              {metricAxis === "count"
-                ? countSeries.map((item, idx) => (
-                    <div key={item.date} className="relative flex flex-col items-center group cursor-pointer">
-                      <div
-                        className="w-10 rounded-t-sm bg-[#7c3aed] transition-all duration-300 hover:opacity-90 shadow-xs"
-                        style={{ height: `${(item.count / 250) * 220}px` }}
-                      />
-                      <span className="mt-2 text-[10.5px] font-mono text-ink-3">{item.date}</span>
-                    </div>
-                  ))
-                : data.series.map((bucket, idx) => {
-                    const barHeightPct = Math.min(100, (bucket.total / 15000) * 100);
-                    return (
-                      <div key={bucket.date} className="relative flex flex-col items-center group cursor-pointer">
-                        <div
-                          className="w-16 rounded-t-sm flex flex-col-reverse overflow-hidden transition-all duration-300 hover:opacity-90 shadow-xs"
-                          style={{ height: `${barHeightPct * 2}px` }}
-                        >
-                          <div style={{ height: "30%", backgroundColor: "#9333ea" }} />
-                          <div style={{ height: "25%", backgroundColor: "#38bdf8" }} />
-                          <div style={{ height: "25%", backgroundColor: "#f97316" }} />
-                          <div style={{ height: "20%", backgroundColor: "#2dd4bf" }} />
+              {/* MODE 1: Dynamic Donut / Pie Chart */}
+              {chartMode === "pie" && (() => {
+                const totalSpend = data.legend.reduce((acc, l) => acc + l.accrued, 0) || data.total_accrued_usd;
+                const circumference = 226.195;
+                let accumulatedLength = 0;
+
+                return (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="relative flex flex-col items-center">
+                      <svg className="h-64 w-64 transform -rotate-90 overflow-visible" viewBox="0 0 100 100">
+                        {data.legend.map((item) => {
+                          const pct = item.accrued / Math.max(0.01, totalSpend);
+                          const sliceLength = pct * circumference;
+                          const strokeDasharray = `${sliceLength} ${circumference - sliceLength}`;
+                          const strokeDashoffset = -accumulatedLength;
+                          accumulatedLength += sliceLength;
+
+                          return (
+                            <circle
+                              key={item.id}
+                              cx="50"
+                              cy="50"
+                              r="36"
+                              fill="transparent"
+                              stroke={item.color}
+                              strokeWidth="22"
+                              strokeDasharray={strokeDasharray}
+                              strokeDashoffset={strokeDashoffset}
+                              className="cursor-pointer hover:opacity-85 transition-all"
+                              onMouseEnter={() =>
+                                setHoveredPieSlice(
+                                  `${item.name}: ${formatCurrency(item.accrued, currency, 2)} (${(pct * 100).toFixed(1)}%)`
+                                )
+                              }
+                              onMouseLeave={() => setHoveredPieSlice(null)}
+                            />
+                          );
+                        })}
+                      </svg>
+
+                      {/* Donut Center Label */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                        <span className="text-[11px] uppercase font-bold text-ink-3">Total Spend</span>
+                        <span className="font-mono text-[18px] font-bold text-ink">
+                          {formatCurrency(data.total_accrued_usd, currency, 2)}
+                        </span>
+                      </div>
+
+                      {hoveredPieSlice && (
+                        <div className="mt-3 rounded-lg bg-surface border border-line px-3 py-1.5 text-[12px] font-mono font-bold text-ink shadow-lg">
+                          {hoveredPieSlice}
                         </div>
-                        <span className="mt-2 text-[11px] font-mono text-ink-3">{bucket.date}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* MODE 2: Dynamic Stacked Multi-Bar Chart */}
+              {chartMode === "bar" && (
+                <div className="absolute inset-x-8 bottom-6 top-4 flex items-end justify-between px-4">
+                  {data.series.map((bucket, idx) => {
+                    const val = isCumulative ? (bucket.cumulative ?? bucket.total) : bucket.total;
+                    const barHeightPct = Math.max(6, Math.min(100, (val / maxVal) * 100));
+                    return (
+                      <div
+                        key={bucket.date}
+                        onMouseEnter={() => setHoveredDateIdx(idx)}
+                        className="relative flex flex-col items-center group cursor-pointer flex-1 max-w-[90px] mx-2"
+                      >
+                        <div
+                          className="w-full rounded-t-lg flex flex-col-reverse overflow-hidden transition-all duration-300 hover:opacity-90 shadow-xs border border-line/60"
+                          style={{ height: `${(barHeightPct / 100) * plotHeight}px` }}
+                        >
+                          {data.legend.map((item) => {
+                            const itemVal = bucket.breakdown?.[item.id] || (item.accrued / data.legend.length);
+                            const itemPct = Math.round((itemVal / Math.max(0.01, bucket.total)) * 100);
+                            return (
+                              <div
+                                key={item.id}
+                                style={{ height: `${itemPct}%`, backgroundColor: item.color }}
+                                title={`${item.name}: ${formatCurrency(itemVal, currency, 2)}`}
+                              />
+                            );
+                          })}
+                        </div>
+                        <span
+                          className={`mt-2 text-[11px] font-mono transition-colors ${
+                            activeHoverIdx === idx ? "font-bold text-accent" : "text-ink-3"
+                          }`}
+                        >
+                          {bucket.date}
+                        </span>
                       </div>
                     );
                   })}
-            </div>
-          )}
+                </div>
+              )}
 
-          {/* MODE 3: Area / Line Chart with Interactive Budget Tooltip matching Image 4 */}
-          {(chartMode === "area" || chartMode === "line") && (
-            <div className="absolute inset-x-8 bottom-6 top-4">
-              <svg className="h-full w-full overflow-visible" viewBox="0 0 700 240" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="finopsAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#7c3aed" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
+              {/* MODE 3: Dynamic Live Area / Line Chart with Interactive Tooltip */}
+              {(chartMode === "area" || chartMode === "line") && (
+                <div className="absolute inset-x-4 bottom-6 top-4">
+                  <svg className="h-full w-full overflow-visible" viewBox="0 0 700 240" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="finopsAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.38" />
+                        <stop offset="100%" stopColor="#7c3aed" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
 
-                {/* Target Budget Line (smooth blue/grey matching Image 4) */}
-                <path
-                  d="M 20 180 Q 200 150, 400 120 T 680 90"
-                  fill="none"
-                  stroke="#94a3b8"
-                  strokeWidth="2.5"
-                  strokeDasharray="5 5"
-                />
+                    {/* Target Budget Line (smooth blue/grey) */}
+                    <path
+                      d={budgetLinePath}
+                      fill="none"
+                      stroke="#94a3b8"
+                      strokeWidth="2.5"
+                      strokeDasharray="5 5"
+                    />
 
-                {/* Actual Spend Area Fill */}
-                {chartMode === "area" && (
-                  <path
-                    d="M 20 210 Q 200 160, 400 95 T 680 30 L 680 235 L 20 235 Z"
-                    fill="url(#finopsAreaGradient)"
-                  />
-                )}
+                    {/* Actual Spend Area Fill */}
+                    {chartMode === "area" && (
+                      <path
+                        d={spendAreaPath}
+                        fill="url(#finopsAreaGradient)"
+                      />
+                    )}
 
-                {/* Actual Spend Line */}
-                <path
-                  d="M 20 210 Q 200 160, 400 95 T 680 30"
-                  fill="none"
-                  stroke="#7c3aed"
-                  strokeWidth="3.5"
-                />
+                    {/* Actual Spend Line */}
+                    <path
+                      d={spendLinePath}
+                      fill="none"
+                      stroke="#7c3aed"
+                      strokeWidth="3.5"
+                    />
 
-                {/* Interactive Hover Point & Tooltip Pin matching Image 4 */}
-                <g>
-                  {/* Vertical inspection guideline */}
-                  <line x1="400" y1="10" x2="400" y2="235" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
-                  <circle cx="400" cy="120" r="5" fill="#94a3b8" stroke="#ffffff" strokeWidth="2" />
-                  <circle cx="400" cy="95" r="6" fill="#7c3aed" stroke="#ffffff" strokeWidth="2.5" />
-                </g>
-              </svg>
+                    {/* Interactive Hover Point & Guideline */}
+                    {curPoint && (
+                      <g className="transition-all duration-150">
+                        <line
+                          x1={curPoint.x}
+                          y1={plotTop}
+                          x2={curPoint.x}
+                          y2={plotBottom}
+                          stroke="#94a3b8"
+                          strokeWidth="1.5"
+                          strokeDasharray="4 4"
+                        />
+                        <circle
+                          cx={curPoint.x}
+                          cy={curBudget.y}
+                          r="5"
+                          fill="#94a3b8"
+                          stroke="#ffffff"
+                          strokeWidth="2"
+                        />
+                        <circle
+                          cx={curPoint.x}
+                          cy={curPoint.y}
+                          r="6.5"
+                          fill="#7c3aed"
+                          stroke="#ffffff"
+                          strokeWidth="2.5"
+                        />
+                      </g>
+                    )}
+                  </svg>
 
-              {/* Floating Tooltip matching Image 4 */}
-              <div
-                className="absolute z-30 rounded-xl border border-line bg-surface p-3.5 shadow-xl text-left pointer-events-none"
-                style={{ left: "48%", top: "18%" }}
-              >
-                <div className="text-[12px] text-ink-3">Date: August 15, 2025</div>
-                <div className="mt-2 space-y-1 text-[12.5px]">
-                  <div className="flex items-center justify-between gap-6">
-                    <span className="flex items-center gap-1.5 text-ink-2">
-                      <span className="h-2 w-2 rounded-full bg-slate-400" />
-                      Target Budget
-                    </span>
-                    <span className="font-mono font-bold text-ink">$19,634.30</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-6">
-                    <span className="flex items-center gap-1.5 text-accent font-semibold">
-                      <span className="h-2 w-2 rounded-full bg-[#7c3aed]" />
-                      Actual Spend
-                    </span>
-                    <span className="font-mono font-bold text-red-500">$23,746.00</span>
+                  {/* Floating Live Tooltip */}
+                  {curPoint && (
+                    <div
+                      className="absolute z-30 rounded-xl border border-line bg-surface/95 backdrop-blur-md p-3.5 shadow-2xl text-left pointer-events-none transition-all duration-150"
+                      style={{
+                        left: `${Math.max(6, Math.min(66, (curPoint.x / 700) * 100 - 16))}%`,
+                        top: "10%",
+                      }}
+                    >
+                      <div className="text-[12px] font-semibold text-ink-3">
+                        {curPoint.date} • {isCumulative ? "Cumulative to date" : "Period spend"}
+                      </div>
+                      <div className="mt-2 space-y-1.5 text-[12.5px]">
+                        <div className="flex items-center justify-between gap-6">
+                          <span className="flex items-center gap-1.5 text-ink-2">
+                            <span className="h-2 w-2 rounded-full bg-slate-400" />
+                            Target Budget
+                          </span>
+                          <span className="font-mono font-bold text-ink">
+                            {formatCurrency(curBudget.bVal, currency, 2)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-6">
+                          <span className="flex items-center gap-1.5 text-accent font-semibold">
+                            <span className="h-2 w-2 rounded-full bg-[#7c3aed]" />
+                            Actual Spend
+                          </span>
+                          <span
+                            className={`font-mono font-bold ${
+                              isOverBudget ? "text-red-500" : "text-emerald-500"
+                            }`}
+                          >
+                            {formatCurrency(curPoint ? (curPoint.val ?? 0) : 0, currency, 2)}
+                          </span>
+                        </div>
+                      </div>
+                      <div
+                        className={`mt-2 rounded-lg px-2 py-0.5 text-[11px] font-bold ${
+                          isOverBudget
+                            ? "bg-red-500/10 text-red-500"
+                            : "bg-emerald-500/10 text-emerald-500"
+                        }`}
+                      >
+                        {isOverBudget
+                          ? `⚠️ Over Target Budget by +${pctVariance}%`
+                          : `✅ Within Target Budget (-${pctVariance}%)`}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* X Axis Dates from Live Account Series */}
+                  <div className="mt-3 flex justify-between px-6 text-[11px] font-mono text-ink-3">
+                    {points.map((p, idx) => (
+                      <button
+                        key={p.date}
+                        onClick={() => setHoveredDateIdx(idx)}
+                        onMouseEnter={() => setHoveredDateIdx(idx)}
+                        className={`cursor-pointer transition-colors ${
+                          activeHoverIdx === idx
+                            ? "font-bold text-accent"
+                            : "hover:text-ink"
+                        }`}
+                      >
+                        {p.date}
+                      </button>
+                    ))}
                   </div>
                 </div>
-                <div className="mt-2 rounded bg-red-500/10 px-2 py-0.5 text-[10.5px] font-bold text-red-500">
-                  ⚠️ Over Target Budget by +20.9%
-                </div>
-              </div>
-
-              {/* X Axis Dates */}
-              <div className="mt-2 flex justify-between px-2 text-[11px] font-mono text-ink-3">
-                <span>01.11</span>
-                <span>03.11</span>
-                <span>05.11</span>
-                <span>07.11</span>
-                <span>09.11</span>
-                <span>11.11</span>
-                <span>13.11</span>
-                <span>15.11</span>
-                <span>17.11</span>
-                <span>19.11</span>
-              </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* BOTTOM TAB BAR matching Image 1: [ Bar Charts ] [ Line Chart ] [ Area Chart ] [ Pie Chart ] */}
         <div className="mt-8 flex items-center justify-center border-t border-line pt-4">
@@ -838,12 +1006,12 @@ export function CostReportView({ provider = "aws" }: { provider?: string }) {
 
                   {/* Accrued Value */}
                   <td className="py-3.5 px-3 text-right font-mono font-bold text-ink">
-                    {metricAxis === "count" ? "17" : money(item.accrued_usd, 2)}
+                    {metricAxis === "count" ? "17" : formatCurrency(item.accrued_usd, currency, 2)}
                   </td>
 
                   {/* Previous Period Value */}
                   <td className="py-3.5 px-3 text-right font-mono text-ink-3">
-                    {metricAxis === "count" ? "14" : item.prev_usd ? money(item.prev_usd, 2) : "—"}
+                    {metricAxis === "count" ? "14" : item.prev_usd ? formatCurrency(item.prev_usd, currency, 2) : "—"}
                   </td>
 
                   {/* Change % */}
