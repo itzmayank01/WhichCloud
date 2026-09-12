@@ -429,30 +429,36 @@ export function FinOpsResourcesView({
       });
 
       if (res.ok) {
-        if (
-          confirmModal.actionType.startsWith("delete") ||
-          confirmModal.actionType === "terminate_instance" ||
-          confirmModal.actionType === "release_eip"
-        ) {
-          setResources((prev) => prev.filter((r) => r.id !== confirmModal.resource.id));
-        } else if (confirmModal.actionType === "stop_instance") {
-          setResources((prev) =>
-            prev.map((r) =>
-              r.id === confirmModal.resource.id
-                ? { ...r, status: "idle", type: r.type.replace(/RUNNING/i, "STOPPED") }
-                : r
-            )
+        if (isDryRun) {
+          setActionNotice(
+            `Dry Run Validation Passed: ${res.message || "AWS confirmed your credentials have permission to execute this operation."}`
           );
-        }
+        } else {
+          if (
+            confirmModal.actionType.startsWith("delete") ||
+            confirmModal.actionType === "terminate_instance" ||
+            confirmModal.actionType === "release_eip"
+          ) {
+            setResources((prev) => prev.filter((r) => r.id !== confirmModal.resource.id));
+          } else if (confirmModal.actionType === "stop_instance") {
+            setResources((prev) =>
+              prev.map((r) =>
+                r.id === confirmModal.resource.id
+                  ? { ...r, status: "idle", type: r.type.replace(/RUNNING/i, "STOPPED") }
+                  : r
+              )
+            );
+          }
 
-        setActionNotice(
-          `Action completed: ${confirmModal.title} (${confirmModal.resource.name}). Savings: ${formatCurrency(
-            confirmModal.savingsUsd,
-            currency,
-            2
-          )}/mo.`
-        );
-        onResourceAction?.();
+          setActionNotice(
+            `Live AWS Execution Succeeded: ${confirmModal.title} on AWS (${confirmModal.resource.name}). Immediate savings: ${formatCurrency(
+              confirmModal.savingsUsd,
+              currency,
+              2
+            )}/mo.`
+          );
+          onResourceAction?.();
+        }
       } else {
         setActionNotice(`Action Notice: ${res.message}`);
       }
@@ -843,6 +849,14 @@ export function FinOpsResourcesView({
                   {confirmModal.resource.region} • {confirmModal.resource.service}
                 </span>
               </div>
+              {confirmModal.resource.tags?.attached_to && confirmModal.resource.tags.attached_to !== "unattached" && (
+                <div className="flex items-center justify-between text-[12.5px]">
+                  <span className="text-ink-3">Attached Instance:</span>
+                  <span className="font-mono text-[11.5px] text-blue-400">
+                    {confirmModal.resource.tags.attached_to}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between border-t border-line/60 pt-2 text-[12.5px]">
                 <span className="font-medium text-ink-2">Immediate Monthly Savings:</span>
                 <span className="font-mono font-bold text-emerald-500">
@@ -879,7 +893,7 @@ export function FinOpsResourcesView({
             <div className="mt-4 flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 text-[12px] text-amber-500">
               <Icon icon="mdi:shield-alert" className="h-4 w-4 shrink-0" />
               <span>
-                Execution occurs directly on your connected {p.toUpperCase()} account credentials. Deletions cannot be undone.
+                Live execution executes directly against your authentic {p.toUpperCase()} IAM credentials. Terminations permanently destroy the workload.
               </span>
             </div>
 
@@ -899,9 +913,9 @@ export function FinOpsResourcesView({
                 disabled={executingAction}
                 onClick={() => handleExecuteAction(true)}
                 className="rounded-xl border border-line bg-sunk px-4 py-2 text-[13px] font-medium text-ink-2 hover:text-ink hover:bg-sunk/80 transition-colors"
-                title="Verify permissions without altering resource state"
+                title="Verify AWS IAM permissions without altering resource state"
               >
-                {executingAction ? "Validating..." : "Dry Run Test"}
+                {executingAction ? "Testing..." : "Dry Run (Simulate Only)"}
               </button>
 
               <button
@@ -913,7 +927,7 @@ export function FinOpsResourcesView({
                 {executingAction ? (
                   <>
                     <Icon icon="mdi:loading" className="h-4 w-4 animate-spin" />
-                    <span>Executing Live...</span>
+                    <span>Executing Live on AWS...</span>
                   </>
                 ) : (
                   <>

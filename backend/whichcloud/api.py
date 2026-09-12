@@ -20,7 +20,7 @@ import dataclasses
 import hashlib
 import os
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -2009,7 +2009,7 @@ class ResourceActionRequest(BaseModel):
     provider: str = "aws"
     action: str
     resource_id: str
-    region: str = "us-east-1"
+    region: Optional[str] = None
     dry_run: bool = False
 
 
