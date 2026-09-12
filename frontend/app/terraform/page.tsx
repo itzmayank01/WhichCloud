@@ -4,9 +4,21 @@ import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@iconify/react";
-import { api } from "@/lib/api";
-
-type CloudId = "aws" | "gcp" | "azure";
+import {
+  api,
+  money,
+  CLOUDS,
+  type CloudId,
+  type Option,
+  type Recommendation,
+  type Node as TopoNode,
+  type Edge as TopoEdge,
+} from "@/lib/api";
+import {
+  ArchitectureGraph,
+  type SelectedNode,
+} from "@/components/architecture/ArchitectureGraph";
+import { Inspector } from "@/components/workspace/Inspector";
 
 interface ArchitectureItem {
   label: string;
@@ -20,6 +32,9 @@ interface OptionItem {
   region: string;
 }
 
+const DEFAULT_WORKLOAD =
+  "I run operations for a retail chain in India with 120 stores. Nightly batch sync runs 2am to 5am with inventory updates from all stores. In-store POS queries the catalog during store hours. Mobile app for customers with 50k daily active users. 500 GB catalog images with fast delivery to users across India.";
+
 function TerraformStudioContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -28,26 +43,32 @@ function TerraformStudioContent() {
   const optionParam = searchParams.get("option") || "Most optimized";
   const cloudParam = (searchParams.get("cloud") || "aws") as CloudId;
 
-  const [description, setDescription] = useState(
-    descriptionParam ||
-      "I run operations for a retail chain in India with 120 stores. Nightly batch sync runs 2am to 5am with inventory updates from all stores. In-store POS queries the catalog during store hours. Mobile app for customers with 50k daily active users. 500 GB catalog images with fast delivery to users across India."
-  );
+  const [description, setDescription] = useState(descriptionParam || DEFAULT_WORKLOAD);
   const [selectedOption, setSelectedOption] = useState(optionParam);
   const [cloud, setCloud] = useState<CloudId>(cloudParam);
 
-  const [files, setFiles] = useState<Record<string, string>>({});
-  const [activeFile, setActiveFile] = useState<string>("cost_reports.tf");
-  const [editedCode, setEditedCode] = useState<Record<string, string>>({});
+  // Recommendation & Architecture Data
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [loadingRecommendation, setLoadingRecommendation] = useState(true);
+  const [inspectedNode, setInspectedNode] = useState<SelectedNode | null>(null);
+  const [replayCount, setReplayCount] = useState(0);
 
-  const [loading, setLoading] = useState(true);
+  // View mode for the right pane: "architecture" (default) or "report"
+  const [viewMode, setViewMode] = useState<"architecture" | "report">("architecture");
+
+  // Terraform files state
+  const [files, setFiles] = useState<Record<string, string>>({});
+  const [activeFile, setActiveFile] = useState<string>("main.tf");
+  const [editedCode, setEditedCode] = useState<Record<string, string>>({});
+  const [loadingFiles, setLoadingFiles] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [monthlyCost, setMonthlyCost] = useState<number>(469.58);
   const [region, setRegion] = useState<string>("ap-south-1");
   const [allOptions, setAllOptions] = useState<OptionItem[]>([
-    { label: "Cheapest", monthly: 212.17, region: "ap-south-1" },
-    { label: "Most reliable", monthly: 428.70, region: "ap-south-1" },
-    { label: "Most optimized", monthly: 469.58, region: "ap-south-1" },
+    { label: "Cheapest", monthly: 245.28, region: "ap-south-1" },
+    { label: "Most reliable", monthly: 478.16, region: "ap-south-1" },
+    { label: "Most optimized", monthly: 519.04, region: "ap-south-1" },
   ]);
   const [items, setItems] = useState<ArchitectureItem[]>([
     { label: "Amazon Relational Database Service (Multi-AZ)", monthly: 219.07, sku: "rds:mysql-multi-az" },
@@ -64,13 +85,17 @@ function TerraformStudioContent() {
     message: string;
   } | null>(null);
 
+  // Screenshot 3 animated progress card state
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [progress, setProgress] = useState(62.5);
-  const [reportGenerated, setReportGenerated] = useState(true);
+  const [reportGeneratedNotice, setReportGeneratedNotice] = useState(false);
 
+  // Cost Reports view states (Screenshot 1)
   const [reportTab, setReportTab] = useState<"overview" | "anomalies">("overview");
-  const [activeDevTab, setActiveDevTab] = useState<"provider" | "cur" | "import" | "ai">("provider");
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(4);
 
+  // Developer Tools tabs
+  const [activeDevTab, setActiveDevTab] = useState<"provider" | "cur" | "import" | "ai">("provider");
   const [copiedCode, setCopiedCode] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
 
@@ -81,18 +106,52 @@ function TerraformStudioContent() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
-  // Hover state on the cost chart
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(4);
+  // 1. Fetch full Recommendation for the Architecture Diagram
+  useEffect(() => {
+    let cancelled = false;
+    async function loadArchitecture() {
+      setLoadingRecommendation(true);
+      try {
+        const text = description.trim() || DEFAULT_WORKLOAD;
+        const answer = await api.describe({ description: text, provider: cloud });
+        if (!cancelled && answer) {
+          setRecommendation(answer);
+          if (answer.options?.length) {
+            setAllOptions(
+              answer.options.map((o) => ({
+                label: o.label,
+                monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
+                region: o.region,
+              }))
+            );
+            // Ensure selected option exists
+            const match = answer.options.find((o) => o.label === selectedOption);
+            if (!match && answer.options[0]) {
+              setSelectedOption(answer.options[0].label);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Could not load full architecture for diagram:", e);
+      } finally {
+        if (!cancelled) setLoadingRecommendation(false);
+      }
+    }
+    loadArchitecture();
+    return () => {
+      cancelled = true;
+    };
+  }, [description, cloud]);
 
-  // Load Terraform files from API
+  // 2. Fetch Terraform inspect files when option, cloud, or description changes
   useEffect(() => {
     let cancelled = false;
     async function loadFiles() {
-      setLoading(true);
+      setLoadingFiles(true);
       setError(null);
       try {
         const data = await api.describeInspectTf({
-          description,
+          description: description.trim() || DEFAULT_WORKLOAD,
           option: selectedOption,
           provider: cloud,
         });
@@ -102,9 +161,6 @@ function TerraformStudioContent() {
           setEditedCode(data.files);
           setMonthlyCost(data.monthly_cost);
           setRegion(data.region);
-          if (data.all_options?.length) {
-            setAllOptions(data.all_options);
-          }
           if (data.items?.length) {
             setItems(data.items);
           }
@@ -115,13 +171,12 @@ function TerraformStudioContent() {
       } catch (err: unknown) {
         if (!cancelled) {
           console.error("Failed to load Terraform inspect:", err);
-          // Fallback code populated if backend offline
           const fallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region);
           setFiles(fallback);
           setEditedCode(fallback);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoadingFiles(false);
       }
     }
     loadFiles();
@@ -130,12 +185,24 @@ function TerraformStudioContent() {
     };
   }, [description, selectedOption, cloud]);
 
-  // Code editor handlers
+  // Active Option for the Architecture Graph
+  const activeOption: Option | null =
+    recommendation?.options?.find((o) => o.label === selectedOption) ||
+    recommendation?.options?.[0] ||
+    null;
+
+  // Code editor text
   const currentCode = editedCode[activeFile] || files[activeFile] || "";
 
   const handleCodeChange = (newText: string) => {
     setEditedCode((prev) => ({ ...prev, [activeFile]: newText }));
     setValidationResult(null);
+  };
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(currentCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
   };
 
   const handleValidate = async () => {
@@ -146,21 +213,11 @@ function TerraformStudioContent() {
         filename: activeFile,
       });
       setValidationResult(res);
-    } catch {
-      // Local fallback parser
-      const openB = (currentCode.match(/\{/g) || []).length;
-      const closeB = (currentCode.match(/\}/g) || []).length;
-      if (openB === closeB) {
-        setValidationResult({
-          valid: true,
-          message: "Terraform HCL Syntax Valid. Verified structure against WhichCloud Terraform provider schema.",
-        });
-      } else {
-        setValidationResult({
-          valid: false,
-          message: `Syntax Error: Mismatched curly braces (${openB} open '{' vs ${closeB} close '}')`,
-        });
-      }
+    } catch (e: unknown) {
+      setValidationResult({
+        valid: false,
+        message: e instanceof Error ? e.message : "Validation call failed.",
+      });
     } finally {
       setValidating(false);
     }
@@ -168,671 +225,791 @@ function TerraformStudioContent() {
 
   const handleCreateReport = () => {
     setIsGeneratingReport(true);
-    setProgress(15);
-    const step1 = setTimeout(() => setProgress(45), 300);
-    const step2 = setTimeout(() => setProgress(62.5), 700);
-    const step3 = setTimeout(() => setProgress(88), 1200);
-    const step4 = setTimeout(() => {
+    setProgress(62.5);
+    setReportGeneratedNotice(false);
+
+    // Simulate real report build progression (matching Screenshot 3)
+    setTimeout(() => {
+      setProgress(88.4);
+    }, 1200);
+
+    setTimeout(() => {
       setProgress(100);
       setIsGeneratingReport(false);
-      setReportGenerated(true);
-    }, 1600);
-
-    return () => {
-      clearTimeout(step1);
-      clearTimeout(step2);
-      clearTimeout(step3);
-      clearTimeout(step4);
-    };
+      setReportGeneratedNotice(true);
+      // Automatically toggle view to show the generated Cost Report
+      setViewMode("report");
+    }, 2400);
   };
 
   const handleDownloadZip = async () => {
     setDownloadingZip(true);
     try {
       const blob = await api.describeExportTf({
-        description,
+        description: description.trim() || DEFAULT_WORKLOAD,
         option: selectedOption,
         provider: cloud,
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `whichcloud-${cloud}-terraform.zip`;
+      link.download = `whichcloud-${cloud}-${selectedOption.toLowerCase().replace(/\s+/g, "-")}.zip`;
       link.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Download failed");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to generate Terraform ZIP.");
     } finally {
       setDownloadingZip(false);
     }
   };
 
-  const handleAiRefactor = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiPrompt.trim()) return;
+  const handleApplyAi = (templatePrompt?: string) => {
+    const promptToUse = templatePrompt || aiPrompt;
+    if (!promptToUse.trim()) return;
     setAiLoading(true);
     setAiNotice(null);
 
     setTimeout(() => {
-      const tagSnippet = `\n  # Injected via WhichCloud AI Copilot: ${aiPrompt}\n  tags = {\n    Environment = "production"\n    ManagedBy   = "terraform"\n    FinOpsPolicy = "whichcloud-strict"\n  }\n`;
-      const updated = currentCode.replace(
-        /resource\s+"[^"]+"\s+"[^"]+"\s*\{/,
-        (match) => `${match}${tagSnippet}`
-      );
-      setEditedCode((prev) => ({ ...prev, [activeFile]: updated }));
+      const snippet = `\n# --- Applied via AI Copilot: ${promptToUse} ---
+resource "whichcloud_saved_filter" "ai_curated" {
+  title  = "Curated Cost Filter"
+  filter = "costs.provider = '${cloud}' AND costs.region = '${region}'"
+}
+
+resource "whichcloud_cost_report" "ai_curated_report" {
+  title               = "Autonomous Cost Optimization"
+  folder_token        = "fldr_auto_finops"
+  saved_filter_tokens = [whichcloud_saved_filter.ai_curated.token]
+  groupings           = "service,region"
+}
+`;
+      const updated = currentCode + snippet;
+      handleCodeChange(updated);
       setAiLoading(false);
-      setAiNotice(`Successfully refactored ${activeFile} based on instruction: "${aiPrompt}"`);
+      setAiNotice(`Added FinOps Terraform configuration for: "${promptToUse}"`);
       setAiPrompt("");
-    }, 800);
+      setTimeout(() => setAiNotice(null), 4000);
+    }, 900);
   };
 
-  // Chart data points
-  const chartPoints = [
-    { date: "01.05", accrued: 1200, perSession: 950 },
-    { date: "06.05", accrued: 2800, perSession: 2100 },
-    { date: "12.05", accrued: 4300, perSession: 3400 },
-    { date: "18.05", accrued: 5900, perSession: 4800 },
-    { date: "23.05", accrued: 7641.26, perSession: 6030.17 },
-    { date: "29.05", accrued: 14200, perSession: 11500 },
-  ];
-
   return (
-    <div className="min-h-screen bg-canvas text-ink flex flex-col">
-      {/* ── Top Header Bar ────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between border-b border-line bg-surface/90 px-5 backdrop-blur-md">
+    <div className="flex min-h-screen flex-col bg-canvas text-ink">
+      {/* ── TOP HEADER ────────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface/95 px-5 py-2.5 backdrop-blur">
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            className="flex items-center gap-2 font-bold text-ink transition-opacity hover:opacity-80"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-[12px] font-medium text-ink-2 transition hover:border-line-strong hover:text-ink"
+            title="Return to Architecture Workspace"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-white shadow-xs">
-              <Icon icon="mdi:cloud-outline" className="h-5 w-5" />
-            </div>
-            <span className="text-[15px] font-bold tracking-tight">WhichCloud</span>
+            <Icon icon="solar:arrow-left-linear" className="h-3.5 w-3.5" />
+            <span>Workspace</span>
           </Link>
-          <span className="text-line-strong">/</span>
+          <span className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/10 px-2.5 py-1 text-[12px] font-semibold text-purple-400">
-              <Icon icon="mdi:terraform" className="h-4 w-4" />
-              Terraform & FinOps Studio
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#5C4EE5]/15 text-[#5C4EE5]">
+              <Icon icon="logos:terraform-icon" className="h-4 w-4" />
             </span>
-            <span className="hidden text-[12px] text-ink-3 md:inline">
-              Architecture IaC & Automated Cost Reports
-            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-[14px] font-bold text-ink">Terraform IaC Studio</h1>
+                <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-brand">
+                  Live Sync
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Option & Cloud Switchers */}
-        <div className="hidden lg:flex items-center gap-3">
-          {/* Cloud Tabs */}
+        {/* Cloud Switcher */}
+        <div className="flex items-center gap-1.5">
           <div className="flex items-center rounded-lg border border-line bg-canvas p-0.5">
-            {(["aws", "gcp", "azure"] as const).map((c) => (
+            {CLOUDS.map((c) => (
               <button
-                key={c}
-                onClick={() => setCloud(c)}
+                key={c.id}
+                onClick={() => setCloud(c.id)}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-semibold transition-all ${
-                  cloud === c
-                    ? "bg-surface text-ink shadow-xs"
+                  cloud === c.id
+                    ? "bg-surface text-ink shadow-sm border border-line"
                     : "text-ink-3 hover:text-ink"
                 }`}
               >
                 <Icon
                   icon={
-                    c === "aws"
+                    c.id === "aws"
                       ? "logos:aws"
-                      : c === "gcp"
+                      : c.id === "gcp"
                       ? "logos:google-cloud"
-                      : "logos:azure-icon"
+                      : "logos:microsoft-azure"
                   }
-                  className="h-3.5 w-3.5"
+                  className="h-3 w-3"
                 />
-                <span className="uppercase">{c}</span>
+                <span className="uppercase">{c.id}</span>
               </button>
             ))}
           </div>
 
-          {/* Option Picker */}
-          <div className="flex items-center rounded-lg border border-line bg-canvas p-0.5">
+          {/* Architecture Tier Switcher (Screenshot 2) */}
+          <div className="flex items-center gap-1 rounded-xl border border-line bg-canvas p-1">
             {allOptions.map((opt) => (
               <button
                 key={opt.label}
                 onClick={() => setSelectedOption(opt.label)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-[11.5px] font-semibold transition-all ${
-                  selectedOption === opt.label
-                    ? "bg-surface text-ink shadow-xs"
-                    : "text-ink-3 hover:text-ink"
+                className={`flex items-center gap-2 rounded-lg border px-3 py-1 transition-all ${
+                  opt.label === selectedOption
+                    ? "border-brand bg-brand/10 shadow-sm text-ink"
+                    : "border-transparent text-ink-3 hover:border-line hover:text-ink"
                 }`}
               >
-                <span>{opt.label}</span>
-                <span className="font-mono text-[11px] text-ink-2">
-                  ${opt.monthly.toFixed(0)}/mo
+                <span className="text-[12px] font-medium">{opt.label}</span>
+                <span className="font-mono text-[12px] font-bold text-ink">
+                  ${opt.monthly.toFixed(2)}
+                  <span className="text-[10px] font-normal text-ink-3">/mo</span>
                 </span>
+                {opt.label === "Most optimized" && (
+                  <span className="rounded bg-emerald-500/15 px-1 py-0.2 text-[9px] font-semibold uppercase text-emerald-500">
+                    PICK
+                  </span>
+                )}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2.5">
-          <Link
-            href="/estimate"
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3.5 py-2 text-[12.5px] font-medium text-ink hover:bg-sunk transition-colors"
-          >
-            <Icon icon="mdi:chart-line" className="h-4 w-4" />
-            <span>Architecture Diagram</span>
-          </Link>
+        {/* Right Header: View Mode Switcher + Download */}
+        <div className="flex items-center gap-2">
+          {/* View Mode Toggle: Architecture Diagram vs Cost Report */}
+          <div className="flex items-center rounded-lg border border-line bg-canvas p-0.5 text-[12px] font-medium">
+            <button
+              type="button"
+              onClick={() => setViewMode("architecture")}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all ${
+                viewMode === "architecture"
+                  ? "bg-brand text-white shadow-sm"
+                  : "text-ink-2 hover:text-ink"
+              }`}
+            >
+              <Icon icon="solar:diagram-up-bold" className="h-3.5 w-3.5" />
+              <span>Architecture</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("report")}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all ${
+                viewMode === "report"
+                  ? "bg-brand text-white shadow-sm"
+                  : "text-ink-2 hover:text-ink"
+              }`}
+            >
+              <Icon icon="solar:chart-square-bold" className="h-3.5 w-3.5" />
+              <span>Cost Report</span>
+            </button>
+          </div>
 
           <button
+            type="button"
             onClick={handleDownloadZip}
             disabled={downloadingZip}
-            className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-[12.5px] font-bold text-white shadow-xs hover:bg-accent/90 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-brand-strong disabled:opacity-60"
           >
-            <Icon
-              icon={downloadingZip ? "mdi:loading" : "mdi:download"}
-              className={`h-4 w-4 ${downloadingZip ? "animate-spin" : ""}`}
-            />
-            <span>{downloadingZip ? "Packaging ZIP..." : "Download ZIP"}</span>
+            <Icon icon="solar:download-square-bold" className="h-3.5 w-3.5" />
+            <span>{downloadingZip ? "Packaging…" : "Download ZIP"}</span>
           </button>
         </div>
       </header>
 
-      {/* ── Subheader Notice ────────────────────────────────────────── */}
-      <div className="border-b border-line bg-sunk/40 px-5 py-2.5 text-[12px] flex items-center justify-between">
-        <div className="flex items-center gap-2 truncate max-w-[85%]">
-          <span className="font-medium text-ink-3">Current Workload:</span>
-          <span className="truncate font-mono text-ink-2">
-            &ldquo;{description.slice(0, 110)}...&rdquo;
-          </span>
+      {/* Subheader: Workload context banner */}
+      <div className="flex items-center justify-between border-b border-line/60 bg-surface/50 px-5 py-1.5 text-[11.5px] text-ink-3">
+        <div className="flex items-center gap-2 overflow-hidden truncate">
+          <span className="font-semibold text-ink-2 uppercase tracking-wide">Workload:</span>
+          <span className="truncate italic font-mono text-ink-2">“{description}”</span>
         </div>
-        <span className="font-mono text-[11.5px] text-ink-3 shrink-0">
-          {region} • {cloud.toUpperCase()}
-        </span>
+        <div className="flex shrink-0 items-center gap-3 font-mono text-[11px]">
+          <span>Region: <strong className="text-ink">{region}</strong></span>
+          <span>•</span>
+          <span>Provider: <strong className="uppercase text-ink">{cloud}</strong></span>
+        </div>
       </div>
 
-      {/* ── Main Studio Split View ──────────────────────────────────── */}
-      <main className="flex-1 p-5 md:p-6 space-y-6">
-        {/* Animated Generation Progress Banner (Screenshot 3 Matching) */}
-        {isGeneratingReport && (
-          <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-5 shadow-sm animate-fadeIn space-y-4">
+      {/* ── SCREENSHOT 3: FLOATING PROGRESS MODAL ────────────────────────────── */}
+      {isGeneratingReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+            {/* Top Stat & Spinning indicator */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400">
-                  <Icon icon="mdi:loading" className="h-5 w-5 animate-spin" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[22px] font-bold text-purple-300">
-                      {progress.toFixed(1)}
-                    </span>
-                    <span className="text-[13px] text-purple-300/70">/100%</span>
-                  </div>
-                  <div className="text-[13px] font-medium text-purple-200">
-                    Generating cost report via Terraform & WhichCloud Provider...
-                  </div>
-                </div>
-              </div>
-              <Icon icon="mdi:refresh" className="h-5 w-5 text-purple-300/60 animate-spin" />
-            </div>
-
-            {/* Striped Animated Bar */}
-            <div className="h-5 w-full overflow-hidden rounded-xl border border-purple-400/30 bg-purple-950/40 p-0.5">
-              <div
-                className="h-full rounded-lg bg-gradient-to-r from-purple-500 via-indigo-400 to-purple-500 transition-all duration-300"
-                style={{
-                  width: `${progress}%`,
-                  backgroundImage:
-                    "linear-gradient(45deg, rgba(255, 255, 255, 0.25) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.25) 75%, transparent 75%, transparent)",
-                  backgroundSize: "28px 28px",
-                  animation: "wc-stripes 1s linear infinite",
-                }}
-              />
-            </div>
-            <style>{`
-              @keyframes wc-stripes {
-                0% { background-position: 0 0; }
-                100% { background-position: 28px 0; }
-              }
-            `}</style>
-
-            {/* Mac-style Code Window Preview (Screenshot 3) */}
-            <div className="overflow-hidden rounded-xl border border-line bg-canvas">
-              <div className="flex items-center gap-1.5 border-b border-line bg-sunk/60 px-3.5 py-2">
-                <div className="h-2.5 w-2.5 rounded-full bg-red-500/80" />
-                <div className="h-2.5 w-2.5 rounded-full bg-amber-500/80" />
-                <div className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
-                <span className="ml-2 font-mono text-[11px] text-ink-3">
-                  cost-centers.tf
+              <div className="flex items-baseline gap-1.5">
+                <span className="font-mono text-4xl font-extrabold tracking-tight text-ink">
+                  {progress.toFixed(1)}
                 </span>
+                <span className="font-mono text-lg font-medium text-ink-3">/100%</span>
               </div>
-              <pre className="p-4 font-mono text-[12px] leading-relaxed text-ink-2">
-                <code>
-                  <span className="text-purple-400">locals</span> &#123;
-                  {"\n"}
-                  {"  "}cost_centers = yamldecode(file(
-                  <span className="text-emerald-400">&quot;cost-centers.yaml&quot;</span>
-                  )).cost_centers{"\n"}
-                  {"  "}business_units = toset([
-                  <span className="text-amber-400">for</span> k, cost_center{" "}
-                  <span className="text-amber-400">in</span> local.cost_centers :
-                  cost_center.business_unit])
-                  {"\n"}
-                  &#125;
-                </code>
+              <div className="flex h-7 w-7 animate-spin items-center justify-center text-brand">
+                <Icon icon="solar:spinner-linear" className="h-6 w-6" />
+              </div>
+            </div>
+
+            <p className="mt-2 text-[13.5px] font-medium text-ink-2">
+              Generating cost report via Terraform...
+            </p>
+
+            {/* Striped animated progress bar from Screenshot 3 */}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="h-8 w-full overflow-hidden rounded-xl border border-brand/40 bg-brand/10 p-1">
+                <div
+                  className="h-full w-full rounded-lg transition-all duration-300"
+                  style={{
+                    backgroundImage: `repeating-linear-gradient(
+                      -45deg,
+                      rgba(124, 58, 237, 0.4),
+                      rgba(124, 58, 237, 0.4) 8px,
+                      rgba(124, 58, 237, 0.15) 8px,
+                      rgba(124, 58, 237, 0.15) 16px
+                    )`,
+                  }}
+                />
+              </div>
+              <div className="h-8 w-full overflow-hidden rounded-xl border border-brand/20 bg-brand/5 p-1">
+                <div
+                  className="h-full w-full rounded-lg transition-all duration-300 opacity-60"
+                  style={{
+                    backgroundImage: `repeating-linear-gradient(
+                      -45deg,
+                      rgba(124, 58, 237, 0.25),
+                      rgba(124, 58, 237, 0.25) 8px,
+                      rgba(124, 58, 237, 0.05) 8px,
+                      rgba(124, 58, 237, 0.05) 16px
+                    )`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Mac Code Window from Screenshot 3 */}
+            <div className="mt-5 overflow-hidden rounded-xl border border-line bg-canvas/80 text-[12px] font-mono shadow-inner">
+              <div className="flex items-center gap-1.5 border-b border-line bg-surface/60 px-3 py-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500/80" />
+                <span className="h-2.5 w-2.5 rounded-full bg-yellow-500/80" />
+                <span className="h-2.5 w-2.5 rounded-full bg-green-500/80" />
+                <span className="ml-2 text-[10.5px] text-ink-3">cost-allocation.tf</span>
+              </div>
+              <pre className="overflow-x-auto p-3 text-ink-2 leading-relaxed">
+                <code>{`locals {
+  cost_centers   = yamldecode(file("cost-centers.yaml")).cost_centers
+  business_units = toset([for k, cost_center in local.cost_centers : cost_center.business_unit])
+}`}</code>
               </pre>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* 2-Column Split: Terraform Configuration (Left) & Cost Reports (Right) */}
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 items-start">
-          {/* ── Left Column: Terraform Configuration (Screenshot 1) ── */}
-          <div className="rounded-2xl border border-line bg-surface shadow-sm overflow-hidden flex flex-col">
-            {/* Header / Tabs */}
-            <div className="flex items-center justify-between border-b border-line bg-sunk/50 px-4 py-2.5">
+      {/* ── SPLIT VIEW: TERRAFORM ON LEFT, ARCHITECTURE DIAGRAM ON RIGHT ─────── */}
+      <main className="flex-1 p-4 lg:p-5">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {/* ════════════════════════════════════════════════════════════════════
+              LEFT COLUMN: TERRAFORM CONFIGURATION (SCREENSHOT 1)
+             ════════════════════════════════════════════════════════════════════ */}
+          <section className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm overflow-hidden h-[740px]">
+            {/* Header with Title & Copy */}
+            <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface">
               <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400">
-                  <Icon icon="mdi:terraform" className="h-4 w-4" />
-                </div>
-                <h2 className="text-[14px] font-bold text-ink">
-                  Terraform Configuration
-                </h2>
+                <Icon icon="logos:terraform-icon" className="h-4 w-4" />
+                <h2 className="text-[13.5px] font-semibold text-ink">Terraform Configuration</h2>
               </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(currentCode);
-                    setCopiedCode(true);
-                    setTimeout(() => setCopiedCode(false), 2000);
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-ink-2 hover:bg-surface hover:text-ink transition-colors"
-                >
-                  <Icon
-                    icon={copiedCode ? "mdi:check" : "mdi:content-copy"}
-                    className="h-3.5 w-3.5"
-                  />
-                  <span>{copiedCode ? "Copied" : "Copy"}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* File Switcher Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto border-b border-line bg-sunk/20 px-3 py-1.5 scrollbar-none">
-              {Object.keys(files).map((filename) => {
-                const isActive = activeFile === filename;
-                return (
-                  <button
-                    key={filename}
-                    onClick={() => setActiveFile(filename)}
-                    className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 font-mono text-[11.5px] font-medium transition-all ${
-                      isActive
-                        ? "bg-surface text-ink border border-line shadow-xs font-semibold"
-                        : "text-ink-3 hover:bg-surface/60 hover:text-ink"
-                    }`}
-                  >
-                    <Icon
-                      icon={
-                        filename.endsWith(".tf")
-                          ? "mdi:terraform"
-                          : filename.endsWith(".md")
-                          ? "mdi:language-markdown"
-                          : "mdi:code-json"
-                      }
-                      className={`h-3.5 w-3.5 ${
-                        filename.includes("cost")
-                          ? "text-purple-400"
-                          : filename === "main.tf"
-                          ? "text-emerald-400"
-                          : "text-ink-3"
-                      }`}
-                    />
-                    <span>{filename}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Code Editor Body with Line Numbers */}
-            <div className="relative flex bg-canvas font-mono text-[12px] leading-6 min-h-[460px] max-h-[560px] overflow-auto">
-              {/* Line Numbers */}
-              <div className="sticky left-0 top-0 select-none border-r border-line/60 bg-sunk/30 px-3 py-4 text-right text-ink-3">
-                {currentCode.split("\n").map((_, i) => (
-                  <div key={i} className="text-[11.5px]">
-                    {i + 1}
-                  </div>
-                ))}
-              </div>
-
-              {/* Code Textarea / Display */}
-              <div className="flex-1 p-4">
-                <textarea
-                  value={currentCode}
-                  onChange={(e) => handleCodeChange(e.target.value)}
-                  spellCheck={false}
-                  className="h-full w-full resize-none border-0 bg-transparent font-mono text-[12px] leading-6 text-ink focus:outline-none focus:ring-0"
-                  rows={currentCode.split("\n").length + 2}
-                />
-              </div>
-            </div>
-
-            {/* Validation Notice Pill */}
-            {validationResult && (
-              <div
-                className={`flex items-center gap-2 border-t px-4 py-2.5 text-[12px] font-medium ${
-                  validationResult.valid
-                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                    : "border-red-500/20 bg-red-500/10 text-red-400"
-                }`}
-              >
-                <Icon
-                  icon={validationResult.valid ? "mdi:check-circle" : "mdi:alert-circle"}
-                  className="h-4 w-4 shrink-0"
-                />
-                <span>{validationResult.message}</span>
-              </div>
-            )}
-
-            {/* Bottom Actions (Screenshot 1 Matching) */}
-            <div className="flex items-center justify-end gap-3 border-t border-line bg-surface p-3.5">
               <button
                 type="button"
-                onClick={handleValidate}
-                disabled={validating}
-                className="rounded-xl border border-line bg-surface px-5 py-2 text-[13px] font-semibold text-ink hover:bg-sunk transition-colors"
+                onClick={handleCopyCode}
+                className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink transition"
               >
-                {validating ? "Validating..." : "Validate"}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCreateReport}
-                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-6 py-2 text-[13px] font-bold text-white shadow-sm hover:bg-purple-700 transition-colors"
-              >
-                <Icon icon="mdi:flash" className="h-4 w-4" />
-                <span>Create Report</span>
-              </button>
-            </div>
-          </div>
-
-          {/* ── Right Column: Cost Reports (Screenshot 1) ── */}
-          <div className="rounded-2xl border border-line bg-surface shadow-sm overflow-hidden flex flex-col">
-            {/* Header (Screenshot 1) */}
-            <div className="flex items-center justify-between border-b border-line bg-sunk/40 px-5 py-3.5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
-                  <Icon icon="mdi:chart-box-outline" className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-                    Cost Reports
-                  </div>
-                  <h3 className="text-[16px] font-bold text-ink">All Resources</h3>
-                </div>
-              </div>
-
-              <button
-                onClick={() => alert("Cost Report configuration saved to WhichCloud workspace.")}
-                className="rounded-xl bg-purple-600 px-4 py-1.5 text-[12.5px] font-bold text-white hover:bg-purple-700 transition-colors"
-              >
-                Save
+                <Icon icon={copiedCode ? "solar:check-circle-bold" : "solar:copy-linear"} className="h-3.5 w-3.5" />
+                <span>{copiedCode ? "Copied" : "Copy"}</span>
               </button>
             </div>
 
-            {/* Secondary Nav & Date Pill (Screenshot 1) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-2.5">
-              <div className="flex items-center gap-1 border-b border-line/0">
-                <button
-                  onClick={() => setReportTab("overview")}
-                  className={`border-b-2 px-3 py-1 text-[13px] font-semibold transition-all ${
-                    reportTab === "overview"
-                      ? "border-purple-500 text-purple-400"
-                      : "border-transparent text-ink-3 hover:text-ink"
-                  }`}
-                >
-                  Overview
-                </button>
-                <button
-                  onClick={() => setReportTab("anomalies")}
-                  className={`border-b-2 px-3 py-1 text-[13px] font-semibold transition-all ${
-                    reportTab === "anomalies"
-                      ? "border-purple-500 text-purple-400"
-                      : "border-transparent text-ink-3 hover:text-ink"
-                  }`}
-                >
-                  Anomalies
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk">
-                  <Icon icon="mdi:filter-variant" className="h-3.5 w-3.5" />
-                  <span>Filter</span>
-                </button>
-
-                <button className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk">
-                  <Icon icon="mdi:calendar-range" className="h-3.5 w-3.5" />
-                  <span>Sep 1 - Sep 30</span>
-                </button>
-
-                <button className="flex items-center gap-1 rounded-lg border border-line bg-surface px-2 py-1 text-[12px] text-ink-3 hover:text-ink hover:bg-sunk">
-                  <Icon icon="mdi:cog-outline" className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Accrued Costs Metric & Graph (Screenshot 1) */}
-            <div className="p-6 space-y-4">
-              <div>
-                <div className="font-mono text-[32px] font-extrabold tracking-tight text-ink">
-                  ${monthlyCost >= 1000 ? monthlyCost.toLocaleString("en-US", { minimumFractionDigits: 2 }) : monthlyCost.toFixed(2)}
-                </div>
-                <div className="text-[12.5px] font-medium text-ink-3">
-                  Accrued Costs · {cloud.toUpperCase()} ({region})
-                </div>
-              </div>
-
-              {/* Legend & Hover Inspect Pill (Screenshot 1) */}
-              <div className="flex items-center justify-between text-[12px]">
-                <div className="flex items-center gap-4">
-                  <span className="flex items-center gap-1.5 font-medium text-purple-400">
-                    <span className="h-2.5 w-2.5 rounded-full bg-purple-500" />
-                    Accrued Costs
-                  </span>
-                  <span className="flex items-center gap-1.5 font-medium text-blue-400">
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-400" />
-                    Per Active Session
-                  </span>
-                </div>
-
-                {hoveredIndex !== null && (
-                  <div className="flex items-center gap-3 rounded-xl border border-line bg-sunk/80 px-3 py-1 text-[11.5px] font-mono shadow-xs">
-                    <span className="text-purple-400">
-                      Accrued: ${chartPoints[hoveredIndex].accrued.toFixed(2)}
-                    </span>
-                    <span className="text-blue-400">
-                      Per Session: ${chartPoints[hoveredIndex].perSession.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Interactive SVG Trend Curve Chart (Screenshot 1) */}
-              <div className="relative h-44 w-full select-none rounded-xl border border-line/60 bg-canvas/60 p-2 overflow-hidden">
-                <svg className="h-full w-full overflow-visible" viewBox="0 0 600 140" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="tfAccruedGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.45" />
-                      <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.0" />
-                    </linearGradient>
-                    <linearGradient id="tfSessionGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#60a5fa" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* Horizontal Grid lines */}
-                  <line x1="0" y1="30" x2="600" y2="30" stroke="currentColor" strokeOpacity="0.06" />
-                  <line x1="0" y1="70" x2="600" y2="70" stroke="currentColor" strokeOpacity="0.06" />
-                  <line x1="0" y1="110" x2="600" y2="110" stroke="currentColor" strokeOpacity="0.06" />
-
-                  {/* Area fills */}
-                  <path
-                    d="M 0 120 Q 120 100 240 85 T 480 60 L 600 15 L 600 140 L 0 140 Z"
-                    fill="url(#tfAccruedGrad)"
-                  />
-                  <path
-                    d="M 0 130 Q 120 115 240 105 T 480 90 L 600 50 L 600 140 L 0 140 Z"
-                    fill="url(#tfSessionGrad)"
-                  />
-
-                  {/* Curve lines */}
-                  <path
-                    d="M 0 120 Q 120 100 240 85 T 480 60 L 600 15"
-                    fill="none"
-                    stroke="#8b5cf6"
-                    strokeWidth="2.5"
-                  />
-                  <path
-                    d="M 0 130 Q 120 115 240 105 T 480 90 L 600 50"
-                    fill="none"
-                    stroke="#60a5fa"
-                    strokeWidth="1.8"
-                    strokeDasharray="4 3"
-                  />
-
-                  {/* Interactive Cursor marker */}
-                  {hoveredIndex !== null && (
-                    <g>
-                      <line
-                        x1={hoveredIndex * 120}
-                        y1="0"
-                        x2={hoveredIndex * 120}
-                        y2="140"
-                        stroke="#8b5cf6"
-                        strokeWidth="1.5"
-                        strokeDasharray="2 2"
-                      />
-                      <circle cx={hoveredIndex * 120} cy={60} r="4" fill="#8b5cf6" stroke="#ffffff" strokeWidth="2" />
-                    </g>
-                  )}
-                </svg>
-
-                {/* X-Axis Date markers */}
-                <div className="flex justify-between px-2 pt-1 text-[11px] font-mono text-ink-3">
-                  {chartPoints.map((pt, idx) => (
+            {/* File Tabs */}
+            <div className="flex items-center gap-1 overflow-x-auto border-b border-line bg-canvas/40 px-3 py-1.5 text-[12px] font-mono no-scrollbar">
+              {Object.keys(files).length > 0 ? (
+                Object.keys(files).map((fileName) => {
+                  const isActive = activeFile === fileName;
+                  return (
                     <button
-                      key={pt.date}
-                      onMouseEnter={() => setHoveredIndex(idx)}
-                      className={`hover:text-purple-400 transition-colors ${
-                        hoveredIndex === idx ? "font-bold text-purple-400" : ""
+                      key={fileName}
+                      onClick={() => setActiveFile(fileName)}
+                      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] transition-all ${
+                        isActive
+                          ? "border border-brand/40 bg-surface font-semibold text-brand shadow-xs"
+                          : "text-ink-3 hover:text-ink"
                       }`}
                     >
-                      {pt.date}
+                      <Icon
+                        icon={
+                          fileName.endsWith(".tf")
+                            ? "logos:terraform-icon"
+                            : fileName.endsWith(".md")
+                            ? "solar:document-text-linear"
+                            : "solar:code-file-linear"
+                        }
+                        className="h-3 w-3 shrink-0"
+                      />
+                      <span>{fileName}</span>
                     </button>
-                  ))}
-                </div>
-              </div>
+                  );
+                })
+              ) : (
+                <div className="px-2 py-1 text-[11.5px] text-ink-3">Loading files…</div>
+              )}
+            </div>
 
-              {/* Service Breakdown Table (Screenshot 1) */}
-              <div className="pt-2">
-                <div className="overflow-hidden rounded-xl border border-line">
-                  <table className="w-full text-left text-[12.5px]">
-                    <thead className="border-b border-line bg-sunk/60 font-semibold text-ink-2 text-[11.5px]">
-                      <tr>
-                        <th className="px-4 py-2.5">Service</th>
-                        <th className="px-4 py-2.5 text-right">Accrued Costs</th>
-                        <th className="px-4 py-2.5 text-right">Previous Period</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line/60 bg-surface">
-                      {items.slice(0, 5).map((item) => (
-                        <tr key={item.label} className="hover:bg-sunk/40 transition-colors">
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-2.5">
-                              <Icon
-                                icon={
-                                  item.label.includes("Database")
-                                    ? "mdi:database"
-                                    : item.label.includes("VPC")
-                                    ? "mdi:lan"
-                                    : item.label.includes("Compute")
-                                    ? "mdi:server"
-                                    : item.label.includes("Storage")
-                                    ? "mdi:bucket-outline"
-                                    : "mdi:security"
-                                }
-                                className="h-4 w-4 text-ink-3"
-                              />
-                              <span className="font-medium text-ink truncate max-w-[260px]">
-                                {item.label}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono font-semibold text-ink">
-                            ${item.monthly.toFixed(2)}
-                          </td>
-                          <td className="px-4 py-2.5 text-right font-mono text-ink-3">
-                            ${(item.monthly * 0.94).toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            {/* Code Editor Body */}
+            <div className="relative flex-1 overflow-hidden bg-canvas/90">
+              {loadingFiles ? (
+                <div className="flex h-full items-center justify-center text-[12.5px] font-mono text-ink-3">
+                  Generating Terraform IaC for {selectedOption} ({cloud.toUpperCase()})...
                 </div>
+              ) : (
+                <div className="flex h-full font-mono text-[12px] leading-relaxed">
+                  {/* Line Numbers */}
+                  <div
+                    className="select-none border-r border-line/40 bg-surface/30 px-3 py-4 text-right text-ink-3 font-mono text-[11px]"
+                    aria-hidden
+                  >
+                    {currentCode.split("\n").map((_, i) => (
+                      <div key={i} className="h-5">
+                        {i + 1}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Textarea Code Input */}
+                  <textarea
+                    value={currentCode}
+                    onChange={(e) => handleCodeChange(e.target.value)}
+                    spellCheck={false}
+                    className="h-full flex-1 resize-none bg-transparent p-4 font-mono text-ink outline-none focus:ring-0 focus:outline-none"
+                    placeholder="Terraform HCL configuration..."
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Footer: Validation Feedback & Action Buttons */}
+            <div className="border-t border-line bg-surface p-3.5">
+              {validationResult && (
+                <div
+                  className={`mb-3 flex items-center gap-2 rounded-xl p-2.5 text-[12px] font-mono ${
+                    validationResult.valid
+                      ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                      : "border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
+                  }`}
+                >
+                  <Icon
+                    icon={validationResult.valid ? "solar:check-circle-bold" : "solar:close-circle-bold"}
+                    className="h-4 w-4 shrink-0"
+                  />
+                  <span>{validationResult.message}</span>
+                </div>
+              )}
+
+              {reportGeneratedNotice && (
+                <div className="mb-3 flex items-center justify-between rounded-xl border border-brand/30 bg-brand/10 p-2.5 text-[12px] text-brand">
+                  <span className="font-medium">
+                    ✨ Cost report generated successfully via Terraform provider!
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("report")}
+                    className="underline font-semibold hover:opacity-80"
+                  >
+                    View in Right Pane
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleValidate}
+                  disabled={validating}
+                  className="flex-1 rounded-xl border border-line bg-canvas py-2 text-[13px] font-semibold text-ink transition hover:border-line-strong hover:bg-sunk disabled:opacity-60"
+                >
+                  {validating ? "Validating HCL…" : "Validate"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateReport}
+                  className="flex-1 rounded-xl bg-[#5C4EE5] py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-[#4d3fd4]"
+                >
+                  Create Report
+                </button>
               </div>
             </div>
-          </div>
+          </section>
+
+          {/* ════════════════════════════════════════════════════════════════════
+              RIGHT COLUMN: ARCHITECTURE DIAGRAM (OR COST REPORT TOGGLE)
+             ════════════════════════════════════════════════════════════════════ */}
+          <section className="flex flex-col rounded-2xl border border-line bg-surface shadow-sm overflow-hidden h-[740px]">
+            {viewMode === "architecture" ? (
+              /* ── 1. ARCHITECTURE DIAGRAM VIEW (SCREENSHOT 2) ── */
+              <div className="relative flex flex-col h-full overflow-hidden">
+                {/* Right Pane Header */}
+                <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded bg-brand/15 text-brand">
+                      <Icon icon="solar:diagram-up-bold" className="h-3.5 w-3.5" />
+                    </span>
+                    <h2 className="text-[13.5px] font-semibold text-ink">
+                      Architecture Topology — {selectedOption}
+                    </h2>
+                    <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[10.5px] text-ink-3">
+                      {activeOption?.topology?.nodes?.length || 15} services • {region}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setReplayCount((c) => c + 1)}
+                      className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink-2 hover:text-ink hover:border-line-strong transition"
+                      title="Replay architecture layout animation"
+                    >
+                      <Icon icon="solar:restart-bold" className="h-3 w-3" />
+                      <span>Replay</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("report")}
+                      className="inline-flex items-center gap-1 rounded-md border border-line bg-canvas px-2.5 py-1 text-[11px] font-medium text-brand hover:border-brand transition"
+                    >
+                      <Icon icon="solar:chart-square-bold" className="h-3 w-3" />
+                      <span>Switch to Cost Report</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Graph Stage */}
+                <div className="relative flex-1 w-full h-full overflow-hidden bg-canvas">
+                  {loadingRecommendation ? (
+                    <div className="flex h-full items-center justify-center text-[12.5px] font-mono text-ink-3">
+                      Building live architecture diagram for {selectedOption}...
+                    </div>
+                  ) : activeOption?.topology?.nodes?.length ? (
+                    <ArchitectureGraph
+                      graphKey={`${selectedOption}-${cloud}-${replayCount}`}
+                      cloud={cloud}
+                      nodes={activeOption.topology.nodes}
+                      edges={activeOption.topology.edges}
+                      onNodeSelect={setInspectedNode}
+                      playing
+                      overlayHeader={
+                        <div className="flex items-center gap-1.5 rounded-xl border border-line bg-surface/95 p-1.5 shadow-lg backdrop-blur">
+                          {allOptions.map((option) => (
+                            <button
+                              key={option.label}
+                              onClick={() => setSelectedOption(option.label)}
+                              className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 transition-all ${
+                                option.label === selectedOption
+                                  ? "border-brand bg-brand/10 shadow-xs text-ink"
+                                  : "border-line bg-canvas hover:border-line-strong hover:bg-sunk"
+                              }`}
+                            >
+                              <span className="text-[12.5px] font-semibold text-ink">
+                                {option.label}
+                              </span>
+                              <span className="font-mono text-[12.5px] font-bold text-ink">
+                                ${option.monthly.toFixed(2)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      }
+                    />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center p-6 text-center text-ink-3">
+                      <Icon icon="solar:danger-circle-linear" className="h-8 w-8 text-amber-500 mb-2" />
+                      <p className="text-[13px] font-medium text-ink">No topology nodes found</p>
+                      <p className="text-[12px] text-ink-3 mt-1">
+                        Try switching tiers or providers above to load a diagram.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Node Inspector Flyout */}
+                  {inspectedNode && (
+                    <div className="absolute top-4 right-4 z-20 w-80 shadow-2xl animate-in slide-in-from-right-4 duration-200">
+                      <Inspector
+                        node={inspectedNode}
+                        option={activeOption}
+                        onClose={() => setInspectedNode(null)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* ── 2. COST REPORTS: ALL RESOURCES VIEW (SCREENSHOT 1) ── */
+              <div className="flex flex-col h-full overflow-y-auto">
+                {/* Cost Report Top Bar */}
+                <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500">
+                      <Icon icon="solar:chart-2-bold" className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+                        Cost Reports
+                      </div>
+                      <div className="text-[15px] font-bold text-ink">All Resources</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("architecture")}
+                      className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-[11.5px] font-medium text-ink-2 hover:border-line-strong hover:text-ink transition"
+                    >
+                      <Icon icon="solar:diagram-up-bold" className="h-3.5 w-3.5" />
+                      <span>Back to Diagram</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg bg-[#5C4EE5] px-4 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-[#4d3fd4]"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+
+                {/* Report Tabs & Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-2">
+                  <div className="flex items-center gap-4 text-[13px] font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setReportTab("overview")}
+                      className={`relative pb-2 transition ${
+                        reportTab === "overview"
+                          ? "text-[#5C4EE5] border-b-2 border-[#5C4EE5]"
+                          : "text-ink-3 hover:text-ink"
+                      }`}
+                    >
+                      Overview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportTab("anomalies")}
+                      className={`relative pb-2 transition ${
+                        reportTab === "anomalies"
+                          ? "text-[#5C4EE5] border-b-2 border-[#5C4EE5]"
+                          : "text-ink-3 hover:text-ink"
+                      }`}
+                    >
+                      Anomalies
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk transition"
+                    >
+                      <Icon icon="solar:filter-linear" className="h-3.5 w-3.5" />
+                      <span>Filter</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk transition"
+                    >
+                      <Icon icon="solar:calendar-linear" className="h-3.5 w-3.5" />
+                      <span>Apr 1 - Apr 30</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-[12px] font-medium text-ink-2 hover:bg-sunk transition"
+                    >
+                      <Icon icon="solar:settings-linear" className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Big Accrued Cost Number */}
+                <div className="px-5 pt-4 pb-2">
+                  <div className="text-3xl font-extrabold tracking-tight text-ink font-mono">
+                    ${(monthlyCost * 166.7).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[12px] text-ink-3 mt-0.5">Accrued Costs</div>
+                </div>
+
+                {/* Interactive Curve Chart (Screenshot 1) */}
+                <div className="relative px-5 py-2">
+                  <div className="flex items-center gap-4 text-[11.5px] mb-3">
+                    <span className="flex items-center gap-1.5 text-ink-2 font-medium">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#5C4EE5]" />
+                      Accrued Costs
+                    </span>
+                    <span className="flex items-center gap-1.5 text-ink-3">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#A78BFA]" />
+                      Per Active Session
+                    </span>
+                  </div>
+
+                  <div className="relative h-44 w-full">
+                    <svg viewBox="0 0 500 160" className="h-full w-full overflow-visible">
+                      <defs>
+                        <linearGradient id="tfCostGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#5C4EE5" stopOpacity="0.25" />
+                          <stop offset="100%" stopColor="#5C4EE5" stopOpacity="0.0" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* Area under curve */}
+                      <path
+                        d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30 L 480 150 L 40 150 Z"
+                        fill="url(#tfCostGrad)"
+                      />
+
+                      {/* Solid Accrued Costs Curve */}
+                      <path
+                        d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30"
+                        fill="none"
+                        stroke="#5C4EE5"
+                        strokeWidth="2"
+                      />
+
+                      {/* Light/Dashed Per Active Session Curve */}
+                      <path
+                        d="M 40 130 Q 90 150 140 140 T 240 130 T 340 140 T 420 120 T 480 80"
+                        fill="none"
+                        stroke="#A78BFA"
+                        strokeWidth="1.5"
+                        strokeDasharray="4 4"
+                      />
+
+                      {/* Crosshair indicator line */}
+                      <line x1="420" y1="20" x2="420" y2="150" stroke="#71717A" strokeWidth="1.5" />
+                      <polygon points="415,20 425,20 420,28" fill="#71717A" />
+
+                      {/* Tooltip Card Matching Screenshot 1 */}
+                      <foreignObject x="270" y="40" width="180" height="75">
+                        <div className="rounded-xl border border-line bg-surface p-2.5 shadow-xl text-[11px]">
+                          <div className="flex items-center justify-between text-ink">
+                            <span className="flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#5C4EE5]" />
+                              Accrued Costs:
+                            </span>
+                            <span className="font-mono font-bold">$7,641.26</span>
+                          </div>
+                          <div className="flex items-center justify-between text-ink-3 mt-1.5">
+                            <span className="flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#A78BFA]" />
+                              Per Active Session:
+                            </span>
+                            <span className="font-mono font-bold">$6,030.17</span>
+                          </div>
+                        </div>
+                      </foreignObject>
+
+                      {/* X-axis labels */}
+                      <g className="text-[9px] fill-zinc-400 font-mono" textAnchor="middle">
+                        <text x="40" y="160">01.05</text>
+                        <text x="120" y="160">06.05</text>
+                        <text x="210" y="160">12.05</text>
+                        <text x="300" y="160">18.05</text>
+                        <text x="390" y="160">23.05</text>
+                        <text x="470" y="160">29.05</text>
+                      </g>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Service Breakdown Table (Screenshot 1) */}
+                <div className="mt-2 flex-1 border-t border-line">
+                  <div className="grid grid-cols-12 border-b border-line bg-canvas/40 px-5 py-2 text-[11px] font-semibold text-ink-3 uppercase tracking-wider">
+                    <div className="col-span-6">Service</div>
+                    <div className="col-span-3 text-right">Accrued Costs</div>
+                    <div className="col-span-3 text-right">Previous Period</div>
+                  </div>
+
+                  <div className="divide-y divide-line/60">
+                    {items.map((it, idx) => (
+                      <div
+                        key={idx}
+                        className="grid grid-cols-12 items-center px-5 py-2.5 text-[12px] hover:bg-sunk/50 transition"
+                      >
+                        <div className="col-span-6 flex items-center gap-2">
+                          <Icon icon="logos:aws" className="h-3 w-3 shrink-0" />
+                          <span className="font-medium text-ink truncate">{it.label}</span>
+                        </div>
+                        <div className="col-span-3 text-right font-mono font-semibold text-ink">
+                          ${(it.monthly * 10).toFixed(2)}
+                        </div>
+                        <div className="col-span-3 text-right font-mono text-ink-3">
+                          ${(it.monthly * 9.2).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
 
-        {/* ── WhichCloud Terraform Provider & Developer Tools Suite (Document Requirements) ── */}
-        <div className="rounded-2xl border border-line bg-surface p-6 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-line pb-4">
+        {/* ════════════════════════════════════════════════════════════════════
+            DEVELOPER TOOLS & WHICHCLOUD TERRAFORM PROVIDER SUITE
+           ════════════════════════════════════════════════════════════════════ */}
+        <section className="mt-6 rounded-2xl border border-line bg-surface p-5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
             <div>
-              <h3 className="text-[17px] font-bold text-ink">
+              <h3 className="text-[14px] font-bold text-ink">
                 WhichCloud Terraform Provider & Developer Tools
               </h3>
-              <p className="mt-0.5 text-[12.5px] text-ink-2">
-                Automate cloud cost governance, saved filters, and AWS CUR 2.0 integration via Infrastructure as Code.
+              <p className="text-[12px] text-ink-3 mt-0.5">
+                Automate cloud cost management as Infrastructure as Code via the official WhichCloud Terraform Provider.
               </p>
             </div>
 
-            {/* Tool Tabs */}
-            <div className="flex items-center rounded-lg border border-line bg-canvas p-0.5">
+            {/* Dev Tools Navigation Tabs */}
+            <div className="flex items-center gap-1 rounded-xl border border-line bg-canvas p-1 text-[12px]">
               <button
+                type="button"
                 onClick={() => setActiveDevTab("provider")}
-                className={`rounded-md px-3 py-1 text-[12px] font-semibold transition-all ${
+                className={`rounded-lg px-3 py-1 font-medium transition ${
                   activeDevTab === "provider"
-                    ? "bg-surface text-ink shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-ink-3 hover:text-ink"
                 }`}
               >
                 Terraform Provider
               </button>
               <button
+                type="button"
                 onClick={() => setActiveDevTab("cur")}
-                className={`rounded-md px-3 py-1 text-[12px] font-semibold transition-all ${
+                className={`rounded-lg px-3 py-1 font-medium transition ${
                   activeDevTab === "cur"
-                    ? "bg-surface text-ink shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-ink-3 hover:text-ink"
                 }`}
               >
                 AWS CUR 2.0 Module
               </button>
               <button
+                type="button"
                 onClick={() => setActiveDevTab("import")}
-                className={`rounded-md px-3 py-1 text-[12px] font-semibold transition-all ${
+                className={`rounded-lg px-3 py-1 font-medium transition ${
                   activeDevTab === "import"
-                    ? "bg-surface text-ink shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-ink-3 hover:text-ink"
                 }`}
               >
-                terraform import
+                Terraform Import
               </button>
               <button
+                type="button"
                 onClick={() => setActiveDevTab("ai")}
-                className={`rounded-md px-3 py-1 text-[12px] font-semibold transition-all ${
+                className={`rounded-lg px-3 py-1 font-medium transition ${
                   activeDevTab === "ai"
-                    ? "bg-surface text-ink shadow-xs"
+                    ? "bg-brand text-white shadow-xs"
                     : "text-ink-3 hover:text-ink"
                 }`}
               >
@@ -843,211 +1020,162 @@ function TerraformStudioContent() {
 
           {/* Tab 1: WhichCloud Terraform Provider */}
           {activeDevTab === "provider" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              <div className="space-y-3">
-                <h4 className="text-[14px] font-bold text-ink">
-                  Official WhichCloud Terraform Provider
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div>
+                <h4 className="text-[13px] font-semibold text-ink">
+                  Automate FinOps Resources in Terraform
                 </h4>
-                <p className="text-[12.5px] leading-relaxed text-ink-2">
-                  Use the WhichCloud provider to declare cost reports, saved filters, and organizational folders as code.
-                  Allows software engineering teams to automate FinOps reporting across hundreds of AWS accounts without manual console setup.
+                <p className="mt-1 text-[12.5px] leading-relaxed text-ink-3">
+                  With the WhichCloud provider, you can manage Cost Reports, report notifications, folders, and dashboards. The provider queries cloud data using WhichCloud Query Language (VQL).
                 </p>
-                <div className="space-y-2 pt-1 text-[12px]">
-                  <div className="flex items-center gap-2 text-ink-2">
-                    <Icon icon="mdi:check-circle-outline" className="h-4 w-4 text-emerald-500" />
-                    <span><strong>whichcloud_cost_report</strong>: Automated reports grouped by region, service, or cost category.</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-ink-2">
-                    <Icon icon="mdi:check-circle-outline" className="h-4 w-4 text-emerald-500" />
-                    <span><strong>whichcloud_saved_filter</strong>: VQL (WhichCloud Query Language) filtering rules.</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-ink-2">
-                    <Icon icon="mdi:check-circle-outline" className="h-4 w-4 text-emerald-500" />
-                    <span><strong>whichcloud_folder</strong>: Hierarchical workspaces by business unit or environment.</span>
-                  </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-[11.5px]">
+                  <span className="rounded-md border border-line bg-canvas px-2 py-1 font-mono text-ink-2">
+                    whichcloud_cost_report
+                  </span>
+                  <span className="rounded-md border border-line bg-canvas px-2 py-1 font-mono text-ink-2">
+                    whichcloud_saved_filter
+                  </span>
+                  <span className="rounded-md border border-line bg-canvas px-2 py-1 font-mono text-ink-2">
+                    whichcloud_folder
+                  </span>
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-line bg-canvas p-4 font-mono text-[11.5px] text-ink leading-relaxed">
-                <pre>{`terraform {
-  required_providers {
-    whichcloud = {
-      source  = "whichcloud-sh/whichcloud"
-      version = "~> 1.2.0"
-    }
-  }
+              <div className="overflow-hidden rounded-xl border border-line bg-canvas font-mono text-[11.5px]">
+                <div className="flex items-center justify-between border-b border-line bg-surface/50 px-3 py-1.5 text-ink-3 text-[11px]">
+                  <span>cost_report.tf snippet</span>
+                  <span>whichcloud-sh/whichcloud</span>
+                </div>
+                <pre className="p-3 text-ink-2 leading-relaxed overflow-x-auto">
+{`resource "whichcloud_folder" "app" {
+  title = "Production Cloud Workload"
 }
 
-provider "whichcloud" {
-  api_token = var.whichcloud_api_token
-}
-
-resource "whichcloud_cost_report" "aws_costs" {
-  title     = "Production AWS Costs"
-  filter    = "costs.provider = 'aws' AND costs.region = '${region}'"
-  groupings = "region,service"
-}`}</pre>
+resource "whichcloud_cost_report" "service_summary" {
+  folder_token = whichcloud_folder.app.token
+  filter       = "costs.provider = '${cloud}'"
+  title        = "${selectedOption} Monthly Accrual"
+  groupings    = "region,service"
+}`}
+                </pre>
               </div>
             </div>
           )}
 
-          {/* Tab 2: AWS CUR 2.0 Integration Module */}
+          {/* Tab 2: AWS CUR 2.0 Module */}
           {activeDevTab === "cur" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              <div className="space-y-3">
-                <h4 className="text-[14px] font-bold text-ink">
-                  WhichCloud AWS Integration Module (CUR 2.0 Ready)
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div>
+                <h4 className="text-[13px] font-semibold text-ink">
+                  Vantage/WhichCloud AWS Integration Module
                 </h4>
-                <p className="text-[12.5px] leading-relaxed text-ink-2">
-                  Links your AWS master or member accounts with WhichCloud. For management accounts, provisions a dedicated S3 bucket
-                  and configures AWS Cost and Usage Report (CUR 2.0 Data Export) along with a cross-account IAM role.
+                <p className="mt-1 text-[12.5px] leading-relaxed text-ink-3">
+                  Links your AWS master or member accounts with automated Cross-Account IAM Roles and Cost and Usage Report (CUR 2.0) Data Export. Supports multi-account telemetry ingestion.
                 </p>
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-[12px] text-amber-400">
-                  <span className="font-semibold">Region Parity Requirement:</span> The AWS provider region and
-                  cur_bucket_region must match to ensure S3 delivery notifications reach WhichCloud.
-                </div>
+                <ul className="mt-2 space-y-1 text-[12px] text-ink-2">
+                  <li>• Automatic CUR 2.0 parquet format data export</li>
+                  <li>• S3 bucket creation with strict private ACLs</li>
+                  <li>• Cross-account IAM role for WhichCloud autonomous analysis</li>
+                </ul>
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-line bg-canvas p-4 font-mono text-[11.5px] text-ink leading-relaxed">
-                <pre>{`module "whichcloud_integration" {
-  source  = "whichcloud-sh/whichcloud-integration/aws"
-  version = "~> 1.1.0"
-
-  cur_bucket_name   = "whichcloud-cur-${region}-reports"
+              <div className="overflow-hidden rounded-xl border border-line bg-canvas font-mono text-[11.5px]">
+                <div className="flex items-center justify-between border-b border-line bg-surface/50 px-3 py-1.5 text-ink-3 text-[11px]">
+                  <span>cur2_integration.tf</span>
+                  <span>whichcloud-integration/aws</span>
+                </div>
+                <pre className="p-3 text-ink-2 leading-relaxed overflow-x-auto">
+{`module "whichcloud_aws_cur" {
+  source            = "whichcloud-sh/whichcloud-integration/aws"
+  cur_bucket_name   = "whichcloud-cur-${region}-billing"
   cur_bucket_region = "${region}"
   upgrade_to_cur_2  = true
-}`}</pre>
+}`}
+                </pre>
               </div>
             </div>
           )}
 
-          {/* Tab 3: terraform import Generator */}
+          {/* Tab 3: Terraform Import */}
           {activeDevTab === "import" && (
-            <div className="space-y-4">
-              <p className="text-[12.5px] text-ink-2">
-                Bring existing cost reports and saved filters created in WhichCloud console under Terraform state management.
+            <div className="mt-4 space-y-3">
+              <p className="text-[12.5px] text-ink-3 leading-relaxed">
+                Bring existing cost reports and cloud monitoring resources created directly in the console into your Terraform state file.
               </p>
+
               <div className="flex items-center gap-3">
                 <input
                   type="text"
                   value={importToken}
                   onChange={(e) => setImportToken(e.target.value)}
-                  placeholder="Enter Report Token (e.g. rprt_1abc23456c7c8a90)"
-                  className="flex-1 rounded-xl border border-line bg-canvas px-4 py-2 font-mono text-[12.5px] text-ink focus:outline-none focus:border-accent"
+                  placeholder="rprt_token..."
+                  className="w-72 rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-[12px] text-ink outline-none focus:border-brand"
                 />
                 <button
+                  type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(
-                      `terraform import whichcloud_cost_report.workload_report ${importToken.trim()}`
-                    );
+                    navigator.clipboard.writeText(`terraform import whichcloud_cost_report.demo_report ${importToken}`);
                     setCopiedImportCmd(true);
                     setTimeout(() => setCopiedImportCmd(false), 2000);
                   }}
-                  className="rounded-xl bg-purple-600 px-4 py-2 text-[12.5px] font-bold text-white hover:bg-purple-700 transition-colors shrink-0"
+                  className="rounded-xl border border-line bg-canvas px-3.5 py-1.5 text-[12px] font-semibold text-ink hover:bg-sunk transition"
                 >
-                  {copiedImportCmd ? "Copied!" : "Copy Import Command"}
+                  {copiedImportCmd ? "Copied Command!" : "Copy Import Command"}
                 </button>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-line bg-canvas p-3.5 font-mono text-[12px] text-emerald-400">
-                <code>
-                  terraform import whichcloud_cost_report.workload_report {importToken.trim()}
-                </code>
+              <div className="rounded-xl border border-line bg-canvas p-3 font-mono text-[12px] text-brand">
+                terraform import whichcloud_cost_report.demo_report {importToken}
               </div>
             </div>
           )}
 
           {/* Tab 4: AI Copilot */}
           {activeDevTab === "ai" && (
-            <div className="space-y-4">
-              <form onSubmit={handleAiRefactor} className="flex gap-3">
+            <div className="mt-4 space-y-3">
+              <p className="text-[12.5px] text-ink-3">
+                Tell AI to modify your Terraform files (e.g. inject cost guardrails, add multi-AZ standby, or add budget alerts).
+              </p>
+
+              <div className="flex gap-2">
                 <input
                   type="text"
                   value={aiPrompt}
                   onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder="Ask AI Copilot: e.g. 'Add standard cost center tags to all resources' or 'Switch to Graviton ARM'"
-                  className="flex-1 rounded-xl border border-line bg-canvas px-4 py-2 text-[12.5px] text-ink focus:outline-none focus:border-accent"
+                  placeholder="e.g. Add AWS Bedrock LLM cost tracking filters and CloudWatch budget alarms..."
+                  className="flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-[12.5px] text-ink outline-none focus:border-brand"
                 />
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => handleApplyAi()}
                   disabled={aiLoading || !aiPrompt.trim()}
-                  className="rounded-xl bg-accent px-4 py-2 text-[12.5px] font-bold text-white hover:bg-accent/90 transition-colors disabled:opacity-50"
+                  className="rounded-xl bg-brand px-4 py-2 text-[12.5px] font-semibold text-white transition hover:bg-brand-strong disabled:opacity-60"
                 >
-                  {aiLoading ? "Generating..." : "Refactor Code"}
+                  {aiLoading ? "Injecting…" : "Apply to Terraform"}
                 </button>
-              </form>
+              </div>
 
               {aiNotice && (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-[12px] text-emerald-400">
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2 text-[12px] text-emerald-500">
                   {aiNotice}
                 </div>
               )}
             </div>
           )}
-        </div>
+        </section>
       </main>
     </div>
   );
 }
 
-// Fallback HCL files if backend is starting up or cold
-function getDefaultFallbackFiles(
-  cloud: string,
-  option: string,
-  cost: number,
-  region: string
-): Record<string, string> {
+// Fallback generator if backend API is temporarily offline
+function getDefaultFallbackFiles(cloud: CloudId, option: string, cost: number, region: string) {
   return {
-    "cost_reports.tf": `# WhichCloud Terraform Provider - Automated Cloud Cost Reporting
-terraform {
-  required_version = ">= 1.0.0"
-  required_providers {
-    whichcloud = {
-      source  = "whichcloud-sh/whichcloud"
-      version = "~> 1.2.0"
-    }
-  }
-}
+    "main.tf": `# WhichCloud Automated Terraform Architecture
+# Target Cloud: ${cloud.toUpperCase()}
+# Tier: ${option} ($${cost.toFixed(2)}/mo)
+# Region: ${region}
 
-provider "whichcloud" {
-  api_token = var.whichcloud_api_token
-}
-
-resource "whichcloud_folder" "workload_folder" {
-  title = "${option} Workload Costs"
-}
-
-resource "whichcloud_saved_filter" "workload_filter" {
-  title  = "Production ${cloud.toUpperCase()} Infrastructure"
-  filter = "costs.provider = '${cloud}' AND costs.region = '${region}'"
-}
-
-resource "whichcloud_cost_report" "workload_cost_report" {
-  folder_token = whichcloud_folder.workload_folder.token
-  title        = "${option} Cost Report"
-  filter       = "costs.provider = '${cloud}'"
-  start_date   = "2026-09-01"
-  end_date     = "2026-09-30"
-  date_bin     = "cumulative"
-  chart_type   = "line"
-  groupings    = "region,service"
-
-  saved_filter_tokens = [
-    whichcloud_saved_filter.workload_filter.token
-  ]
-}
-
-module "whichcloud_aws_integration" {
-  source  = "whichcloud-sh/whichcloud-integration/aws"
-  version = "~> 1.1.0"
-
-  cur_bucket_name   = "whichcloud-cur-${region}-reports"
-  cur_bucket_region = "${region}"
-  upgrade_to_cur_2  = true
-}
-`,
-    "main.tf": `# ${cloud.toUpperCase()} Architecture Provisioning - ${option}
-# Monthly Cost Estimate: $${cost.toFixed(2)}/mo
 terraform {
   required_version = ">= 1.0.0"
   required_providers {
@@ -1055,67 +1183,65 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 5.48.0"
     }
+    whichcloud = {
+      source  = "whichcloud-sh/whichcloud"
+      version = "~> 1.2.0"
+    }
   }
 }
 
 provider "aws" {
-  region = var.region
+  region = var.aws_region
 }
 
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.19"
-
-  name = "production-retail-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["${region}a", "${region}b"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
-}
-
-resource "aws_db_instance" "primary_db" {
-  allocated_storage      = 50
-  engine                 = "mysql"
-  engine_version         = "8.0"
-  instance_class         = "db.t4g.medium"
-  multi_az               = true
-  username               = "admin"
-  password               = "ChangeMeToSecureVaultSecret123!"
-  skip_final_snapshot    = true
-  vpc_security_group_ids = [module.vpc.default_security_group_id]
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  tags = {
+    Name        = "whichcloud-vpc"
+    Environment = "production"
+  }
 }
 `,
-    "variables.tf": `variable "region" {
-  type        = string
-  default     = "${region}"
-  description = "Target Cloud Region"
+    "variables.tf": `variable "aws_region" {
+  type    = string
+  default = "${region}"
 }
 
-variable "whichcloud_api_token" {
-  type        = string
-  sensitive   = true
-  description = "WhichCloud API Authorization Token"
+variable "project_name" {
+  type    = string
+  default = "whichcloud-app"
 }
 `,
     "outputs.tf": `output "vpc_id" {
-  value       = module.vpc.vpc_id
-  description = "VPC Identifier"
-}
-
-output "database_endpoint" {
-  value       = aws_db_instance.primary_db.endpoint
-  description = "Primary Relational Database Endpoint"
+  value       = aws_vpc.main.id
+  description = "The VPC ID"
 }
 `,
-    "README.md": `# WhichCloud Infrastructure as Code Project
-## Architecture: ${option} ($${cost.toFixed(2)}/mo)
+    "cost_reports.tf": `provider "whichcloud" {
+  api_token = var.whichcloud_api_token
+}
+
+resource "whichcloud_folder" "tier_folder" {
+  title = "Architecture - ${option}"
+}
+
+resource "whichcloud_cost_report" "main_report" {
+  folder_token = whichcloud_folder.tier_folder.token
+  filter       = "costs.provider = '${cloud}'"
+  title        = "${option} Cost Overview"
+  groupings    = "region,service"
+}
+`,
+    "terraform.tfvars.example": `aws_region = "${region}"
+project_name = "whichcloud-prod"
+whichcloud_api_token = "YOUR_WHICHCLOUD_API_TOKEN"
+`,
+    "README.md": `# WhichCloud Terraform Architecture
+Generated automatically for: ${option} ($${cost.toFixed(2)}/mo)
 Region: ${region}
 
-### Deployment Quickstart
+### Quickstart
 \`\`\`bash
 terraform init
 terraform plan

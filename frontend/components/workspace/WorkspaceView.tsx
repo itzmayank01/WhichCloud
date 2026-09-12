@@ -297,7 +297,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
       </button>
       <span className="h-4 w-px bg-line" aria-hidden />
       <DownloadTerraformButton
-        description={asked}
+        description={asked || description || EXAMPLE}
         option={shown.label}
         cloud={cloud ?? "aws"}
       />
