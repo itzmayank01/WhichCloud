@@ -502,9 +502,35 @@ export function FinOpsResourcesView({
     <div className="mt-6 space-y-6">
       {/* Action Notification Pill */}
       {actionNotice && (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-[13px] font-medium text-emerald-500 animate-fadeIn">
-          <Icon icon="mdi:check-circle" className="h-4 w-4 shrink-0" />
-          <span>{actionNotice}</span>
+        <div
+          className={`flex items-center justify-between gap-3 rounded-xl border p-3.5 text-[13px] font-medium animate-fadeIn ${
+            actionNotice.toLowerCase().includes("error") || actionNotice.toLowerCase().includes("failed")
+              ? "border-red-500/30 bg-red-500/10 text-red-400"
+              : actionNotice.toLowerCase().includes("dry run")
+              ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <Icon
+              icon={
+                actionNotice.toLowerCase().includes("error") || actionNotice.toLowerCase().includes("failed")
+                  ? "mdi:alert-circle"
+                  : actionNotice.toLowerCase().includes("dry run")
+                  ? "mdi:shield-check"
+                  : "mdi:check-circle"
+              }
+              className="h-5 w-5 shrink-0"
+            />
+            <span>{actionNotice}</span>
+          </div>
+          <button
+            onClick={() => setActionNotice(null)}
+            className="rounded-lg p-1 text-ink-3 hover:bg-surface hover:text-ink transition-colors"
+            title="Dismiss notice"
+          >
+            <Icon icon="mdi:close" className="h-4 w-4" />
+          </button>
         </div>
       )}
 

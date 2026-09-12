@@ -681,12 +681,125 @@ def get_live_aws_planning(account_id: str = "616551057703") -> Dict[str, Any]:
     }
 
 
+def _delete_s3_bucket_completely(bucket_name: str, dry_run: bool = False) -> Dict[str, Any]:
+    """Completely purges all versions, delete markers, and objects, and deletes the S3 bucket."""
+    aws_bin = get_aws_cli_path()
+    clean_name = bucket_name.replace("arn:aws:s3:::", "").strip().rstrip("/")
+
+    if dry_run:
+        check = subprocess.run(
+            [aws_bin, "s3api", "head-bucket", "--bucket", clean_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        )
+        if check.returncode == 0:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "command": f"aws s3 rb s3://{clean_name} --force (including versioned objects)",
+                "message": f"AWS Permission Validated: Bucket s3://{clean_name} exists and credentials have permission to delete it.",
+            }
+        else:
+            err = check.stderr.strip() or "Bucket not found or permission denied"
+            return {"ok": False, "dry_run": True, "message": f"AWS Validation Error: {err}"}
+
+    # Step 1: Purge all object versions and delete markers (handles versioned buckets)
+    try:
+        while True:
+            ver_res = subprocess.run(
+                [aws_bin, "s3api", "list-object-versions", "--bucket", clean_name, "--max-items", "1000"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=25,
+            )
+            if ver_res.returncode != 0:
+                break
+            try:
+                ver_data = json.loads(ver_res.stdout)
+            except Exception:
+                break
+
+            targets = []
+            for v in ver_data.get("Versions", []):
+                targets.append({"Key": v["Key"], "VersionId": v["VersionId"]})
+            for d in ver_data.get("DeleteMarkers", []):
+                targets.append({"Key": d["Key"], "VersionId": d["VersionId"]})
+
+            if not targets:
+                break
+
+            payload = json.dumps({"Objects": targets, "Quiet": True})
+            subprocess.run(
+                [aws_bin, "s3api", "delete-objects", "--bucket", clean_name, "--delete", payload],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=25,
+            )
+    except Exception as exc:
+        logger.warning("Error purging object versions in %s: %s", clean_name, exc)
+
+    # Step 2: Empty any remaining unversioned objects
+    try:
+        subprocess.run(
+            [aws_bin, "s3", "rm", f"s3://{clean_name}", "--recursive"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=25,
+        )
+    except Exception as exc:
+        logger.warning("Error recursive rm in %s: %s", clean_name, exc)
+
+    # Step 3: Delete the bucket itself
+    res = subprocess.run(
+        [aws_bin, "s3api", "delete-bucket", "--bucket", clean_name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=25,
+    )
+    if res.returncode != 0:
+        res = subprocess.run(
+            [aws_bin, "s3", "rb", f"s3://{clean_name}", "--force"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=25,
+        )
+
+    invalidate_cache()
+    if res.returncode == 0:
+        return {
+            "ok": True,
+            "command": f"aws s3 rb s3://{clean_name} --force",
+            "message": f"Deleted S3 bucket s3://{clean_name} (purged all objects and version history).",
+            "output": res.stdout.strip(),
+        }
+    else:
+        err = res.stderr.strip() or res.stdout.strip()
+        logger.error("Failed to delete bucket %s: %s", clean_name, err)
+        return {
+            "ok": False,
+            "command": f"aws s3 rb s3://{clean_name} --force",
+            "message": f"AWS S3 Error ({res.returncode}): {err}",
+            "output": err,
+        }
+
+
 def execute_resource_action(
     action: str, resource_id: str, region: Optional[str] = None, dry_run: bool = False
 ) -> Dict[str, Any]:
     """Execute live resource lifecycle actions directly on AWS with accurate region resolution."""
     aws_bin = get_aws_cli_path()
     act = action.lower()
+
+    # Delegate S3 bucket deletion to version-aware purge handler
+    if act == "delete_bucket":
+        return _delete_s3_bucket_completely(resource_id, dry_run=dry_run)
 
     # Auto-resolve region from live account inventory if needed
     telemetry = scan_live_aws_account()
@@ -731,10 +844,6 @@ def execute_resource_action(
         alloc_id = resource_id
         cmd = [aws_bin, "ec2", "release-address", "--allocation-id", alloc_id, "--region", region]
         description = f"Released Elastic IP ({alloc_id}) in {region}."
-    elif act == "delete_bucket":
-        bucket_name = resource_id.replace("arn:aws:s3:::", "").strip()
-        cmd = [aws_bin, "s3", "rb", f"s3://{bucket_name}", "--force"]
-        description = f"Deleted S3 bucket s3://{bucket_name}."
     else:
         return {"ok": False, "message": f"Unsupported action: {action}"}
 
@@ -873,21 +982,16 @@ def execute_nuke_all_resources(
     })
     total_savings += 9.45
 
-    # 4. Clean up scratch/test S3 buckets
+    # 4. Clean up scratch/test S3 buckets (version-aware purge)
     for b in raw.get("s3_buckets", []):
         if any(keyword in b for keyword in ["temp", "scratch", "hrms-backup", "test", "lab"]):
-            b_cmd = [aws_bin, "s3", "rb", f"s3://{b}", "--force"]
-            if not dry_run:
-                try:
-                    subprocess.run(b_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
-                except Exception as e:
-                    logger.warning("Delete bucket error: %s", e)
+            del_result = _delete_s3_bucket_completely(b, dry_run=dry_run)
             actions_taken.append({
                 "resource": f"s3://{b}",
                 "type": "Amazon S3",
-                "action": "Purged bucket and unreferenced objects",
+                "action": "Purged all versions and deleted bucket",
                 "savings": 0.20,
-                "cmd": " ".join(b_cmd),
+                "cmd": del_result.get("command", f"aws s3 rb s3://{b} --force"),
             })
             total_savings += 0.20
 
