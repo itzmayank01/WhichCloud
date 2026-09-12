@@ -30,10 +30,10 @@ export type Scenario = {
   rows: { provider: string; label: string; monthly: string; cheapest: boolean }[];
 };
 
-const READERS = [
-  { id: "gemini", label: "Gemini", icon: "logos:google-gemini" },
-  { id: "anthropic", label: "Claude", icon: "logos:claude-icon" },
-  { id: "openai", label: "ChatGPT", icon: "logos:openai-icon" },
+const CLOUDS_LIST = [
+  { id: "aws", label: "AWS", icon: "logos:aws" },
+  { id: "azure", label: "Microsoft Azure", icon: "logos:microsoft-azure" },
+  { id: "gcp", label: "Google Cloud", icon: "logos:google-cloud" },
 ];
 
 /* A mark per prompt, so the three read as different questions at a glance.
@@ -123,7 +123,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
     });
 
     at(T.toPrompt, () => setStage("picking"));
-    at(T.press, () => setReader((r) => (r + 1) % READERS.length));
+    at(T.press, () => setReader((r) => (r + 1) % CLOUDS_LIST.length));
 
     const q = scenario.question;
     at(T.typeStart, () => setStage("typing"));
@@ -192,22 +192,22 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
       <div
         ref={cardRef}
         className="relative overflow-hidden rounded-2xl border border-line bg-surface elev-3">
-        {/* reader selector */}
+        {/* cloud selector */}
         <div className="flex flex-wrap items-center gap-2.5 border-b border-line px-4 py-3">
-          <span className="text-[14px] font-semibold text-ink">Read by</span>
-          {READERS.map((r, i) => {
+          <span className="text-[13.5px] font-semibold text-ink">Multi-Cloud Pricing</span>
+          {CLOUDS_LIST.map((c, i) => {
             const on = i === reader;
             return (
               <span
-                key={r.id}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13.5px] font-medium transition-all duration-300 ${
+                key={c.id}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-all duration-300 ${
                   on
-                    ? "border-accent bg-accent-wash text-ink"
+                    ? "border-accent bg-accent-wash text-ink shadow-2xs"
                     : "border-line bg-surface text-ink-3"
                 }`}
               >
-                <Icon icon={r.icon} width={15} height={15} aria-hidden />
-                {r.label}
+                <Icon icon={c.icon} width={15} height={15} aria-hidden />
+                {c.label}
               </span>
             );
           })}
@@ -322,11 +322,25 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
               <div
                 key={row.provider}
                 className={`flex items-center justify-between rounded-lg border px-3 py-2 transition-all duration-500 ${
-                  row.cheapest ? "border-save/45" : "border-line"
+                  row.cheapest ? "border-save/45 bg-save/5" : "border-line"
                 }`}
                 style={{ transitionDelay: answered ? `${i * 80}ms` : "0ms" }}
               >
-                <span className="text-[13.5px] font-medium text-ink-2">{row.label}</span>
+                <div className="flex items-center gap-2">
+                  <Icon
+                    icon={
+                      row.provider.toLowerCase() === "azure"
+                        ? "logos:microsoft-azure"
+                        : row.provider.toLowerCase() === "gcp"
+                        ? "logos:google-cloud"
+                        : "logos:aws"
+                    }
+                    width={16}
+                    height={16}
+                    aria-hidden
+                  />
+                  <span className="text-[13.5px] font-medium text-ink-2">{row.label}</span>
+                </div>
                 <span className="flex items-baseline gap-2">
                   <span
                     className={`tnum font-mono text-[15px] font-semibold ${
