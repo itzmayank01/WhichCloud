@@ -43,7 +43,7 @@ from .engine import (
 from .knowledge import Technique, load_techniques
 from .pricing import store
 from .pricing.models import REGIONS
-from .auth import current_owner
+from .auth import current_owner, finops_owner
 from .requirements import Requirement
 
 app = FastAPI(
@@ -1987,7 +1987,7 @@ class ConnectionVerifyIn(BaseModel):
 
 
 @app.post("/api/connections/setup")
-def connection_setup(body: ConnectionSetupIn, owner: str = Depends(current_owner)):
+def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)):
     p = body.provider.lower()
     cfg = dict(body.config)
     external_id = ""
@@ -2057,7 +2057,7 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(current_owner
 
 
 @app.post("/api/connections/verify")
-def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(current_owner)):
+def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owner)):
     p = body.provider.lower()
     creds = dict(body.credentials)
 
@@ -2090,7 +2090,7 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(current_own
 
 
 @app.get("/api/finops/live")
-def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
+def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
     """Returns real/live FinOps cost breakdown, topology, and optimization opportunities."""
     p = provider.lower()
 
@@ -2222,7 +2222,7 @@ def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = De
 
 
 @app.get("/api/finops/resources")
-def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
+def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
     """Returns complete, authentic inventory list of active cloud resources."""
     p = provider.lower()
     if p == "aws":
@@ -2240,7 +2240,7 @@ def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str
 
 
 @app.get("/api/finops/issues")
-def finops_issues(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
+def finops_issues(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
     """Returns authentic, actionable cloud waste anomalies detected in the account."""
     p = provider.lower()
     if p == "aws":
@@ -2266,7 +2266,7 @@ class ResourceActionRequest(BaseModel):
 
 
 @app.post("/api/finops/resources/action")
-def finops_resource_action(req: ResourceActionRequest, owner: str = Depends(current_owner)):
+def finops_resource_action(req: ResourceActionRequest, owner: str = Depends(finops_owner)):
     """Execute live resource lifecycle actions directly (stop, terminate, delete, release)."""
     p = req.provider.lower()
     if p == "aws":
@@ -2293,7 +2293,7 @@ class DeleteAllResourcesRequest(BaseModel):
 
 
 @app.post("/api/finops/resources/delete-all")
-def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Depends(current_owner)):
+def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Depends(finops_owner)):
     """Safely execute deletion of all active provisioned resources after physical keyboard confirmation."""
     normalized = req.confirm_phrase.strip().lower()
     valid_confirmations = ["delete all resources", "confirm", "delete all", "confirm delete"]
@@ -2329,7 +2329,7 @@ def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Dep
 
 
 @app.get("/api/finops/planning")
-def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
+def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
     """Returns live budget envelope, actual accrued spend, and 12-month forecast."""
     p = provider.lower()
     if p == "aws":
@@ -2359,7 +2359,7 @@ def finops_reports(
     interval: str = "last_month",
     bin: str = "cumulative",
     group_by: str = "service,category",
-    owner: str = Depends(current_owner),
+    owner: str = Depends(finops_owner),
 ):
     """Returns multi-dimensional Cost Report data with filters and drilldown for the connected account."""
     p = provider.lower()

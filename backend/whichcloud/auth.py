@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 #: Clerk's JWKS endpoint for this instance. Derived from the publishable key's
 #: frontend API host, or set directly when that is not convenient.
@@ -112,3 +112,38 @@ def current_owner(authorization: str | None = Header(default=None)) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise AuthError("Send the Clerk session token as `Authorization: Bearer <token>`.")
     return str(verify(authorization.split(" ", 1)[1].strip())["sub"])
+
+
+#: Interim lockdown, not the real fix. FinOps Live and the cloud connection
+#: routes were built against a single set of AWS credentials on the server
+#: (see connections/aws_live.py) rather than per-tenant ones -- `account_id`
+#: is a display label, never used to select credentials, and `owner` was
+#: required but never checked against anything. Two different signed-in
+#: users hit the exact same real AWS account, including destructive actions.
+#: A real per-tenant AssumeRole flow already exists (connections/aws.py) and
+#: so does a DB table for it (cloud_connections in infra/init/01_schema.sql)
+#: but neither is wired into the FinOps routes yet -- that's a real backend
+#: rework, tracked separately. Until then, this restricts those routes to an
+#: explicit allow-list so the single shared account isn't reachable by
+#: anyone who happens to sign up.
+#:
+#: Deliberately has no default and fails closed: an unset or empty list
+#: denies everyone, including the account's owner, rather than silently
+#: allowing every signed-in user the way an empty-list-means-allow-all
+#: reading would.
+_FINOPS_OWNERS = [
+    o.strip()
+    for o in os.getenv("WHICHCLOUD_FINOPS_OWNERS", "").split(",")
+    if o.strip()
+]
+
+
+def finops_owner(owner: str = Depends(current_owner)) -> str:
+    """FastAPI dependency: `current_owner`, additionally checked against
+    `WHICHCLOUD_FINOPS_OWNERS`. See the module-level note above."""
+    if owner not in _FINOPS_OWNERS:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not on the FinOps access list.",
+        )
+    return owner

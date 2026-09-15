@@ -6,6 +6,19 @@ docker compose -f infra/docker-compose.yml up -d
 
 # 2️⃣ Backend
 #
+# backend/.env is gitignored -- nothing loads it automatically (no
+# python-dotenv in this codebase), so a value set there was silent unless
+# something sourced it first. WHICHCLOUD_FINOPS_OWNERS (see auth.py) has no
+# safe way to auto-derive the way CLERK_JWKS_URL does below, so without this
+# it would need a manual `export` on every fresh shell, which is exactly the
+# kind of thing that gets forgotten and quietly leaves FinOps Live 403ing
+# for everyone -- or, worse, someone "fixing" that by loosening the check.
+if [ -f "backend/.env" ]; then
+  set -a
+  source backend/.env
+  set +a
+fi
+
 # current_owner (backend/whichcloud/auth.py) verifies Clerk session tokens
 # against CLERK_JWKS_URL. Its docstring says that host can be "derived from
 # the publishable key's frontend API host" -- but nothing actually did that
