@@ -18,6 +18,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "python-hcl2>=8.1",
     "python-multipart>=0.0.9",
+    "openai>=1.0",
 ]
 
 [project.optional-dependencies]
