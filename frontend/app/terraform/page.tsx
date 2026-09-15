@@ -109,48 +109,33 @@ function TerraformStudioContent() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
-  /* Both data-fetching effects below reliably never fired their first
-     network call on a genuinely fresh page load -- confirmed by patching
-     window.fetch on a brand new tab and watching nothing arrive for 10+
-     seconds, while any *subsequent* state change (clicking a pricing tier)
-     fired and completed the same fetch correctly every time. That is the
-     signature of this client component's initial mount effects running
-     during hydration before the browser has actually settled, under this
-     Suspense + useSearchParams combination -- not a bug in the fetch logic
-     itself, which works once triggered. Gating on a `mounted` flag set from
-     its own effect pushes the real data-fetching effects to run on a
-     confirmed-stable client render instead of racing hydration. */
-  const [mounted, setMounted] = useState(false);
+  /* This page fires two LLM-backed calls at nearly the same moment --
+     api.describe() below and api.describeInspectTf() in the next effect.
+     Each takes ~10-11s alone (measured directly against the backend), but
+     Render's free tier runs it with WEB_CONCURRENCY=1: a single worker, so
+     two concurrent LLM-heavy requests queue behind each other instead of
+     running truly in parallel, doubling the wait to ~20s. That's not a
+     hang -- both effects fire correctly and both requests do complete --
+     but with no indication of why it's slow, a real 20-second wait reads
+     as broken. secondsWaiting only drives the loading copy below. */
+  const [secondsWaiting, setSecondsWaiting] = useState(0);
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // TEMPORARY diagnostic instrumentation -- remove once the root cause of
-  // the stuck-on-fresh-load bug is found. `tick` proves basic effects/timers
-  // fire post-hydration at all; `trace` records exactly how far each loader
-  // gets, visible directly in the loading UI instead of only in devtools.
-  const [tick, setTick] = useState(0);
-  const [trace, setTrace] = useState<string[]>([]);
-  const log = (msg: string) =>
-    setTrace((prev) => [...prev.slice(-7), `${Date.now() % 100000}ms ${msg}`]);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 500);
+    if (!loadingFiles && !loadingRecommendation) {
+      setSecondsWaiting(0);
+      return;
+    }
+    const id = setInterval(() => setSecondsWaiting((s) => s + 1), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [loadingFiles, loadingRecommendation]);
 
   // 1. Fetch full Recommendation for the Architecture Diagram
   useEffect(() => {
-    log(`effect1 fired, mounted=${mounted}`);
-    if (!mounted) return;
     let cancelled = false;
     async function loadArchitecture() {
-      log("loadArchitecture: start");
       setLoadingRecommendation(true);
       try {
         const text = description.trim() || DEFAULT_WORKLOAD;
-        log("loadArchitecture: awaiting api.describe");
         const answer = await api.describe({ description: text, provider: cloud });
-        log("loadArchitecture: api.describe resolved");
         if (!cancelled && answer) {
           setRecommendation(answer);
           if (answer.options?.length) {
@@ -168,37 +153,29 @@ function TerraformStudioContent() {
           }
         }
       } catch (e) {
-        log(`loadArchitecture: threw ${String(e).slice(0, 60)}`);
         console.warn("Could not load full architecture for diagram:", e);
       } finally {
-        log(`loadArchitecture: finally, cancelled=${cancelled}`);
         if (!cancelled) setLoadingRecommendation(false);
       }
     }
     loadArchitecture();
     return () => {
-      log("effect1 cleanup (cancelled=true)");
       cancelled = true;
     };
-  }, [mounted, description, cloud]);
+  }, [description, cloud]);
 
   // 2. Fetch Terraform inspect files when option, cloud, or description changes
   useEffect(() => {
-    log(`effect2 fired, mounted=${mounted}`);
-    if (!mounted) return;
     let cancelled = false;
     async function loadFiles() {
-      log("loadFiles: start");
       setLoadingFiles(true);
       setError(null);
       try {
-        log("loadFiles: awaiting api.describeInspectTf");
         const data = await api.describeInspectTf({
           description: description.trim() || DEFAULT_WORKLOAD,
           option: selectedOption,
           provider: cloud,
         });
-        log("loadFiles: describeInspectTf resolved");
 
         if (!cancelled) {
           const loadedFiles: Record<string, string> = { ...data.files };
@@ -267,7 +244,6 @@ module "managed_db" {
           }
         }
       } catch (err: unknown) {
-        log(`loadFiles: threw ${String(err).slice(0, 60)}`);
         if (!cancelled) {
           console.error("Failed to load Terraform inspect:", err);
           const fallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region);
@@ -275,16 +251,14 @@ module "managed_db" {
           setEditedCode(fallback);
         }
       } finally {
-        log(`loadFiles: finally, cancelled=${cancelled}`);
         if (!cancelled) setLoadingFiles(false);
       }
     }
     loadFiles();
     return () => {
-      log("effect2 cleanup (cancelled=true)");
       cancelled = true;
     };
-  }, [mounted, description, selectedOption, cloud]);
+  }, [description, selectedOption, cloud]);
 
   // Active Option for the Architecture Graph
   const activeOption: Option | null =
@@ -844,12 +818,14 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 </div>
 
                 {loadingFiles ? (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[12.5px] font-mono text-ink-3 p-4 text-left">
+                  <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-[12.5px] font-mono text-ink-3">
                     <div>Generating Terraform IaC for {selectedOption} ({cloud.toUpperCase()})...</div>
-                    <div className="w-full max-w-xl text-[10px] text-ink-2 border border-line rounded p-2 mt-2">
-                      <div>DEBUG tick={tick} mounted={String(mounted)}</div>
-                      {trace.map((t, i) => <div key={i}>{t}</div>)}
-                    </div>
+                    {secondsWaiting >= 4 && (
+                      <div className="text-[11px] text-ink-2">
+                        {secondsWaiting}s — pricing and Terraform generation run as two separate
+                        calls and can take up to 20s
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-1 overflow-hidden font-mono text-[12px] leading-relaxed">
@@ -992,8 +968,11 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 {/* Graph Stage */}
                 <div className="relative flex-1 w-full h-full overflow-hidden bg-canvas">
                   {loadingRecommendation ? (
-                    <div className="flex h-full items-center justify-center text-[12.5px] font-mono text-ink-3">
-                      Building live architecture diagram for {selectedOption}...
+                    <div className="flex h-full flex-col items-center justify-center gap-1.5 text-[12.5px] font-mono text-ink-3">
+                      <div>Building live architecture diagram for {selectedOption}...</div>
+                      {secondsWaiting >= 4 && (
+                        <div className="text-[11px] text-ink-2">{secondsWaiting}s elapsed</div>
+                      )}
                     </div>
                   ) : activeOption?.topology?.nodes?.length ? (
                     <ArchitectureGraph
