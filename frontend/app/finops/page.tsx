@@ -62,6 +62,35 @@ function KpiCard({
   );
 }
 
+/** The `<track><fill style={{width}}/></track>` progress-bar recipe was
+ *  hand-rolled 6 times on this page alone (KPI cards, per-node bill share,
+ *  the mini spend bar, workload utilization), each a near-identical copy
+ *  differing only in height, track color, gradient, and an optional
+ *  transition class. One shared component so a future tweak (radius,
+ *  reduced-motion handling) lands in one place instead of 6. */
+function ProgressBar({
+  pct,
+  gradient,
+  className = "mt-2 h-1",
+  track = "bg-sunk",
+  transitionClass = "",
+}: {
+  pct: number;
+  gradient: string;
+  className?: string;
+  track?: string;
+  transitionClass?: string;
+}) {
+  return (
+    <div className={`${className} w-full overflow-hidden rounded-full ${track}`}>
+      <div
+        className={`h-full rounded-full bg-gradient-to-r ${gradient} ${transitionClass}`}
+        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+      />
+    </div>
+  );
+}
+
 function FinOpsContent() {
   const { getToken } = useAuth();
   const searchParams = useSearchParams();
@@ -391,9 +420,10 @@ function FinOpsContent() {
                 <div className="mt-2.5 text-[11.5px] text-ink-3">
                   Overprovisioned nodes & idle egress
                 </div>
-                <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full" style={{ width: `${Math.min(100, (data.summary.realizable_savings_usd / data.summary.total_monthly_usd) * 100)}%` }} />
-                </div>
+                <ProgressBar
+                  pct={(data.summary.realizable_savings_usd / data.summary.total_monthly_usd) * 100}
+                  gradient="from-amber-500 to-orange-400"
+                />
               </KpiCard>
 
               <KpiCard
@@ -417,9 +447,7 @@ function FinOpsContent() {
                     {Object.values(appliedTechniques).filter(Boolean).length} of {data.techniques.length} optimizations enabled
                   </span>
                 </div>
-                <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700" style={{ width: `${savingsPct}%` }} />
-                </div>
+                <ProgressBar pct={savingsPct} gradient="from-emerald-500 to-teal-400" transitionClass="transition-all duration-700" />
               </KpiCard>
 
               <KpiCard
@@ -436,12 +464,12 @@ function FinOpsContent() {
                   <span className="text-[30px] font-bold tracking-tight text-ink font-mono">{dynamicEfficiencyScore}</span>
                   <span className="text-[13px] font-medium text-ink-3">/100</span>
                 </div>
-                <div className="mt-2.5 relative h-2 w-full overflow-hidden rounded-full bg-sunk">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-accent to-blue-400 transition-all duration-700 ease-out"
-                    style={{ width: `${dynamicEfficiencyScore}%` }}
-                  />
-                </div>
+                <ProgressBar
+                  pct={dynamicEfficiencyScore}
+                  gradient="from-accent to-blue-400"
+                  className="mt-2.5 relative h-2"
+                  transitionClass="transition-all duration-700 ease-out"
+                />
                 <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
                   <span>Poor</span><span>Excellent</span>
                 </div>
@@ -572,9 +600,7 @@ function FinOpsContent() {
                                 {node.waste_usd > 0 ? `Reducible Waste: ${formatCurrency(node.waste_usd, currency, 0)}/mo` : "✓ Optimal"}
                               </span>
                             </div>
-                            <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
-                              <div className="h-full rounded-full bg-gradient-to-r from-red-500/60 to-orange-400/60" style={{ width: `${billShare}%` }} />
-                            </div>
+                            <ProgressBar pct={billShare} gradient="from-red-500/60 to-orange-400/60" />
                             <div className="mt-1 text-[10px] text-ink-3">{billShare}% of bill</div>
                           </button>
                         );
@@ -686,12 +712,11 @@ function FinOpsContent() {
                           {Math.round((activeNode.monthly_usd / data.summary.total_monthly_usd) * 100)}% of total bill
                         </div>
                         {/* Mini spend bar */}
-                        <div className="mt-3 h-1 w-full rounded-full bg-sunk overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-accent to-blue-400"
-                            style={{ width: `${Math.min(100, (activeNode.monthly_usd / data.summary.total_monthly_usd) * 100 * 8)}%` }}
-                          />
-                        </div>
+                        <ProgressBar
+                          pct={(activeNode.monthly_usd / data.summary.total_monthly_usd) * 100 * 8}
+                          gradient="from-accent to-blue-400"
+                          className="mt-3 h-1"
+                        />
                       </div>
 
                       {/* Utilization. Computed once so the label color, bar
@@ -715,16 +740,13 @@ function FinOpsContent() {
                                 {activeNode.utilization}
                               </span>
                             </div>
-                            <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-surface">
-                              <div
-                                className={`h-full rounded-full transition-all duration-1000 ease-out ${
-                                  isLow
-                                    ? "bg-gradient-to-r from-amber-500 to-orange-400"
-                                    : "bg-gradient-to-r from-emerald-500 to-teal-400"
-                                }`}
-                                style={{ width: `${utilPct}%` }}
-                              />
-                            </div>
+                            <ProgressBar
+                              pct={utilPct}
+                              gradient={isLow ? "from-amber-500 to-orange-400" : "from-emerald-500 to-teal-400"}
+                              className="mt-2.5 h-2"
+                              track="bg-surface"
+                              transitionClass="transition-all duration-1000 ease-out"
+                            />
                             <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
                               <span>0%</span><span>50%</span><span>100%</span>
                             </div>
