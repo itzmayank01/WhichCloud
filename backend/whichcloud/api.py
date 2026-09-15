@@ -1838,6 +1838,21 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
     region = option.estimate.region if option else ("ap-south-1" if provider == "aws" else "asia-south1")
     total_cost = float(option.estimate.total_monthly) if option else 469.58
 
+    def _hcl_str(value: str) -> str:
+        """Escape a value for embedding inside an HCL double-quoted string.
+
+        Without this, an option label containing a `"` (nothing stops the
+        engine from producing one) breaks the generated file at that quote,
+        and a stray `${` would be read as HCL interpolation syntax instead
+        of literal text.
+        """
+        return value.replace("\\", "\\\\").replace('"', '\\"').replace("${", "$${")
+
+    label_txt = _hcl_str(option.label if option else "Production")
+    provider_txt = _hcl_str(provider)
+    region_txt = _hcl_str(region)
+    provider_upper_txt = _hcl_str(provider.upper())
+
     # Add WhichCloud Terraform Provider cost reporting and CUR integration module
     files["cost_reports.tf"] = f"""# WhichCloud Terraform Provider - Automated Cloud Cost Reporting
 # Automates infrastructure cost tracking, budget alarms, and report sync.
@@ -1863,20 +1878,20 @@ provider "whichcloud" {{
 
 # 1. Dedicated FinOps Cost Folder for this workload
 resource "whichcloud_folder" "workload_folder" {{
-  title = "{option.label if option else 'Production'} Costs"
+  title = "{label_txt} Costs"
 }}
 
 # 2. Saved Filter using WhichCloud Query Language (VQL)
 resource "whichcloud_saved_filter" "workload_filter" {{
-  title  = "{provider.upper()} {region} Infrastructure"
-  filter = "costs.provider = '{provider}' AND costs.region = '{region}'"
+  title  = "{provider_upper_txt} {region_txt} Infrastructure"
+  filter = "costs.provider = '{provider_txt}' AND costs.region = '{region_txt}'"
 }}
 
 # 3. Automated Cost Report synced with WhichCloud FinOps Console
 resource "whichcloud_cost_report" "workload_cost_report" {{
   folder_token = whichcloud_folder.workload_folder.token
-  title        = "{option.label if option else 'Production'} Cost Report"
-  filter       = "costs.provider = '{provider}'"
+  title        = "{label_txt} Cost Report"
+  filter       = "costs.provider = '{provider_txt}'"
   start_date   = "2026-09-01"
   end_date     = "2026-09-30"
   date_bin     = "cumulative"
@@ -1893,8 +1908,8 @@ module "whichcloud_aws_integration" {{
   source  = "whichcloud-sh/whichcloud-integration/aws"
   version = "~> 1.1.0"
 
-  cur_bucket_name   = "whichcloud-cur-{region}-reports"
-  cur_bucket_region = "{region}"
+  cur_bucket_name   = "whichcloud-cur-{region_txt}-reports"
+  cur_bucket_region = "{region_txt}"
   upgrade_to_cur_2  = true
 }}
 """
