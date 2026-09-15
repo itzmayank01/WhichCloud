@@ -109,8 +109,25 @@ function TerraformStudioContent() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
+  /* Both data-fetching effects below reliably never fired their first
+     network call on a genuinely fresh page load -- confirmed by patching
+     window.fetch on a brand new tab and watching nothing arrive for 10+
+     seconds, while any *subsequent* state change (clicking a pricing tier)
+     fired and completed the same fetch correctly every time. That is the
+     signature of this client component's initial mount effects running
+     during hydration before the browser has actually settled, under this
+     Suspense + useSearchParams combination -- not a bug in the fetch logic
+     itself, which works once triggered. Gating on a `mounted` flag set from
+     its own effect pushes the real data-fetching effects to run on a
+     confirmed-stable client render instead of racing hydration. */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // 1. Fetch full Recommendation for the Architecture Diagram
   useEffect(() => {
+    if (!mounted) return;
     let cancelled = false;
     async function loadArchitecture() {
       setLoadingRecommendation(true);
@@ -143,10 +160,11 @@ function TerraformStudioContent() {
     return () => {
       cancelled = true;
     };
-  }, [description, cloud]);
+  }, [mounted, description, cloud]);
 
   // 2. Fetch Terraform inspect files when option, cloud, or description changes
   useEffect(() => {
+    if (!mounted) return;
     let cancelled = false;
     async function loadFiles() {
       setLoadingFiles(true);
@@ -239,7 +257,7 @@ module "managed_db" {
     return () => {
       cancelled = true;
     };
-  }, [description, selectedOption, cloud]);
+  }, [mounted, description, selectedOption, cloud]);
 
   // Active Option for the Architecture Graph
   const activeOption: Option | null =
