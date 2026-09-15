@@ -882,7 +882,7 @@ function FinOpsContent() {
                         onClick={() => setActiveDiffModal(tech)}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink hover:bg-sunk transition-colors"
                       >
-                        <TerraformLogo className="h-3.5 w-3.5 text-[#5C4EE5]" />
+                        <TerraformLogo className="h-3.5 w-3.5" />
                         <span>View Terraform Diff</span>
                       </button>
                     </div>
@@ -920,7 +920,7 @@ function FinOpsContent() {
 
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-sunk">
-                <TerraformLogo className="h-5 w-5 text-[#5C4EE5]" />
+                <TerraformLogo className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="text-[17px] font-bold text-ink">

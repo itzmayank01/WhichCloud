@@ -135,7 +135,7 @@ function DownloadTerraformButton({
       title="Open Terraform IaC Configuration & Architecture Studio"
       className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink transition-all hover:bg-sunk hover:border-brand hover:text-brand"
     >
-      <TerraformLogo className="h-3.5 w-3.5 text-[#5C4EE5]" />
+      <TerraformLogo className="h-3.5 w-3.5" />
       <span>Terraform</span>
     </Link>
   );

@@ -135,7 +135,7 @@ function DownloadTerraformButton({
         onClick={openStudio}
         className="inline-flex items-center gap-1.5 rounded-lg border border-brand bg-brand/10 px-3.5 py-1.5 text-[13px] font-medium text-brand transition-colors hover:bg-brand hover:text-white"
       >
-        <TerraformLogo className="h-3.5 w-3.5 text-[#5C4EE5]" />
+        <TerraformLogo className="h-3.5 w-3.5" />
         <span>Open in Terraform Studio</span>
       </button>
       <button

@@ -364,7 +364,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
           <span className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#5C4EE5]/15 text-[#5C4EE5]">
-              <TerraformLogo className="h-4.5 w-4.5 text-[#5C4EE5]" />
+              <TerraformLogo className="h-4.5 w-4.5" />
             </span>
             <div>
               <div className="flex items-center gap-2">
@@ -585,7 +585,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             {/* Header with Authentic Terraform Vector Logo, Title & Actions */}
             <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface">
               <div className="flex items-center gap-2">
-                <TerraformLogo className="h-4.5 w-4.5 text-[#5C4EE5]" />
+                <TerraformLogo className="h-4.5 w-4.5" />
                 <h2 className="text-[13.5px] font-semibold text-ink">Terraform Configuration</h2>
               </div>
               <div className="flex items-center gap-2">

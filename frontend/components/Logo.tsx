@@ -39,6 +39,12 @@ export function Wordmark() {
  * Official HashiCorp Terraform brand mark:
  * 4 isometric facets rendered with authentic HashiCorp brand colors:
  * #5C4EE5 (primary violet) and #4040B2 (deep cobalt accent facet).
+ *
+ * Fill is fixed to those two colors rather than `currentColor` -- this is a
+ * third-party brand mark, not part of WhichCloud's own palette, so it should
+ * not silently recolor if a caller's `text-*` class or a hover/dark-theme
+ * state changes. Callers only need `className` for sizing; a `text-*` here
+ * is a no-op by design, not a bug to route around.
  */
 export function TerraformLogo({ className = "h-4 w-4" }: { className?: string }) {
   return (
