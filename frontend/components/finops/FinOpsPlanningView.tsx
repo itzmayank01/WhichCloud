@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
 import { api, FinOpsPlanningResponse } from "@/lib/api";
@@ -16,6 +17,7 @@ export function FinOpsPlanningView({
   currency = "USD",
   accountId = "616551057703",
 }: FinOpsPlanningViewProps) {
+  const { getToken } = useAuth();
   const storageKey = `whichcloud_budget_${provider}_${accountId}`;
 
   const [budgetUsd, setBudgetUsd] = useState<number>(() => {
@@ -32,8 +34,10 @@ export function FinOpsPlanningView({
 
   useEffect(() => {
     let mounted = true;
-    api.finopsPlanning(provider, accountId)
-      .then((res) => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await api.finopsPlanning(provider, accountId, token ?? undefined);
         if (mounted && res) {
           setLiveData(res);
           // If no custom budget was saved, initialize from API
@@ -41,15 +45,15 @@ export function FinOpsPlanningView({
             setBudgetUsd(res.budget_usd);
           }
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Failed to load live planning data:", err);
-      });
+      }
+    })();
 
     return () => {
       mounted = false;
     };
-  }, [provider, accountId, storageKey]);
+  }, [provider, accountId, storageKey, getToken]);
 
   // Spend metrics
   const currentAccrued = liveData ? liveData.current_accrued : (provider === "aws" ? 24.98 : 8420.5);

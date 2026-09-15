@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { api, FinOpsReportResponse } from "@/lib/api";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
@@ -33,6 +34,7 @@ export function CostReportView({
   currency = "USD",
   accountId = "616551057703",
 }: CostReportViewProps) {
+  const { getToken } = useAuth();
   const [data, setData] = useState<FinOpsReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -103,28 +105,31 @@ export function CostReportView({
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    api.finopsReports(
-      provider,
-      interval.toLowerCase().replace(" ", "_"),
-      dateBin.toLowerCase(),
-      selectedGroupings.join(","),
-      accountId
-    )
-      .then((res) => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await api.finopsReports(
+          provider,
+          interval.toLowerCase().replace(" ", "_"),
+          dateBin.toLowerCase(),
+          selectedGroupings.join(","),
+          accountId,
+          token ?? undefined,
+        );
         if (mounted) {
           setData(res);
           setLoading(false);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error(err);
         if (mounted) setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       mounted = false;
     };
-  }, [provider, accountId, interval, dateBin, selectedGroupings]);
+  }, [provider, accountId, interval, dateBin, selectedGroupings, getToken]);
 
   if (loading || !data) {
     return (

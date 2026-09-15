@@ -764,29 +764,47 @@ export const api = {
   connectionVerify: (provider: string, credentials: Record<string, unknown> = {}) =>
     post<ConnectionVerifyResult>("/api/connections/verify", { provider, credentials }),
 
-  finopsLive: (provider = "aws", accountId = "demo") =>
+  // FinOps Live sends account telemetry and executes real infrastructure
+  // actions, so every call here takes the Clerk session token -- same
+  // reasoning as savedArchitectures/deleteArchitecture above. The backend
+  // rejects these without it (see whichcloud.auth.current_owner). Cached with
+  // revalidate: 0 rather than the 300s default: Next's fetch cache keys on
+  // the URL, not on headers, so caching a response that varies by
+  // Authorization risks handing one signed-in user's live AWS data to the
+  // next request that hits the same URL.
+  finopsLive: (provider = "aws", accountId = "demo", token?: string) =>
     get<FinOpsLiveResponse>(
       `/api/finops/live?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      0,
+      token,
     ),
 
-  finopsReports: (provider = "aws", interval = "last_month", bin = "cumulative", groupBy = "service,category", accountId = "demo") =>
+  finopsReports: (provider = "aws", interval = "last_month", bin = "cumulative", groupBy = "service,category", accountId = "demo", token?: string) =>
     get<FinOpsReportResponse>(
       `/api/finops/reports?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}&interval=${encodeURIComponent(interval)}&bin=${encodeURIComponent(bin)}&group_by=${encodeURIComponent(groupBy)}`,
+      0,
+      token,
     ),
 
-  finopsResources: (provider = "aws", accountId = "demo") =>
+  finopsResources: (provider = "aws", accountId = "demo", token?: string) =>
     get<{ resources: any[]; provider: string; account_id: string }>(
       `/api/finops/resources?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      0,
+      token,
     ),
 
-  finopsIssues: (provider = "aws", accountId = "demo") =>
+  finopsIssues: (provider = "aws", accountId = "demo", token?: string) =>
     get<{ issues: any[]; provider: string; account_id: string }>(
       `/api/finops/issues?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      0,
+      token,
     ),
 
-  finopsPlanning: (provider = "aws", accountId = "demo") =>
+  finopsPlanning: (provider = "aws", accountId = "demo", token?: string) =>
     get<FinOpsPlanningResponse>(
       `/api/finops/planning?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      0,
+      token,
     ),
 
   finopsResourceAction: (payload: {
@@ -795,10 +813,12 @@ export const api = {
     resource_id: string;
     region?: string;
     dry_run?: boolean;
-  }) =>
+  }, token?: string) =>
     post<{ ok: boolean; message: string; command?: string; output?: string; dry_run?: boolean }>(
       "/api/finops/resources/action",
       payload,
+      undefined,
+      token,
     ),
 
   finopsDeleteAllResources: (payload: {
@@ -806,7 +826,7 @@ export const api = {
     account_id?: string;
     confirm_phrase: string;
     dry_run?: boolean;
-  }) =>
+  }, token?: string) =>
     post<{
       ok: boolean;
       message: string;
@@ -814,7 +834,7 @@ export const api = {
       total_savings_usd?: number;
       dry_run?: boolean;
       actions?: Array<{ resource: string; type: string; action: string; savings: number; cmd: string }>;
-    }>("/api/finops/resources/delete-all", payload),
+    }>("/api/finops/resources/delete-all", payload, undefined, token),
 };
 
 export type ConnectionSetupStep = {

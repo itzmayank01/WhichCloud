@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
 import { api } from "@/lib/api";
@@ -295,6 +296,7 @@ export function FinOpsResourcesView({
   accountId = "demo",
   onResourceAction,
 }: FinOpsResourcesViewProps) {
+  const { getToken } = useAuth();
   const p = provider.toLowerCase();
   const rawList = DEFAULT_RESOURCES[p] || DEFAULT_RESOURCES.aws;
 
@@ -327,20 +329,22 @@ export function FinOpsResourcesView({
 
   useEffect(() => {
     let mounted = true;
-    api.finopsResources(provider, accountId)
-      .then((res) => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await api.finopsResources(provider, accountId, token ?? undefined);
         if (mounted && res?.resources && res.resources.length > 0) {
           setResources(res.resources);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Live resources fetch error:", err);
-      });
+      }
+    })();
 
     return () => {
       mounted = false;
     };
-  }, [provider, accountId]);
+  }, [provider, accountId, getToken]);
 
   // Listen for global trigger event from top navbar
   useEffect(() => {
@@ -374,12 +378,13 @@ export function FinOpsResourcesView({
     if (!isNukeConfirmed) return;
     setExecutingDeleteAll(true);
     try {
+      const token = await getToken();
       const res = await api.finopsDeleteAllResources({
         provider,
         account_id: accountId,
         confirm_phrase: confirmText.trim(),
         dry_run: isDryRun,
-      });
+      }, token ?? undefined);
 
       if (res.ok) {
         if (isDryRun) {
@@ -422,13 +427,14 @@ export function FinOpsResourcesView({
     if (!confirmModal) return;
     setExecutingAction(true);
     try {
+      const token = await getToken();
       const res = await api.finopsResourceAction({
         provider,
         action: confirmModal.actionType,
         resource_id: confirmModal.resource.id,
         region: confirmModal.resource.region,
         dry_run: isDryRun,
-      });
+      }, token ?? undefined);
 
       if (res.ok) {
         if (isDryRun) {

@@ -2075,7 +2075,7 @@ def connection_verify(body: ConnectionVerifyIn):
 
 
 @app.get("/api/finops/live")
-def finops_live(provider: str = "aws", account_id: str = "demo"):
+def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
     """Returns real/live FinOps cost breakdown, topology, and optimization opportunities."""
     p = provider.lower()
 
@@ -2207,7 +2207,7 @@ def finops_live(provider: str = "aws", account_id: str = "demo"):
 
 
 @app.get("/api/finops/resources")
-def finops_resources(provider: str = "aws", account_id: str = "demo"):
+def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
     """Returns complete, authentic inventory list of active cloud resources."""
     p = provider.lower()
     if p == "aws":
@@ -2225,7 +2225,7 @@ def finops_resources(provider: str = "aws", account_id: str = "demo"):
 
 
 @app.get("/api/finops/issues")
-def finops_issues(provider: str = "aws", account_id: str = "demo"):
+def finops_issues(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
     """Returns authentic, actionable cloud waste anomalies detected in the account."""
     p = provider.lower()
     if p == "aws":
@@ -2251,7 +2251,7 @@ class ResourceActionRequest(BaseModel):
 
 
 @app.post("/api/finops/resources/action")
-def finops_resource_action(req: ResourceActionRequest):
+def finops_resource_action(req: ResourceActionRequest, owner: str = Depends(current_owner)):
     """Execute live resource lifecycle actions directly (stop, terminate, delete, release)."""
     p = req.provider.lower()
     if p == "aws":
@@ -2278,7 +2278,7 @@ class DeleteAllResourcesRequest(BaseModel):
 
 
 @app.post("/api/finops/resources/delete-all")
-def finops_delete_all_resources(req: DeleteAllResourcesRequest):
+def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Depends(current_owner)):
     """Safely execute deletion of all active provisioned resources after physical keyboard confirmation."""
     normalized = req.confirm_phrase.strip().lower()
     valid_confirmations = ["delete all resources", "confirm", "delete all", "confirm delete"]
@@ -2314,7 +2314,7 @@ def finops_delete_all_resources(req: DeleteAllResourcesRequest):
 
 
 @app.get("/api/finops/planning")
-def finops_planning(provider: str = "aws", account_id: str = "demo"):
+def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str = Depends(current_owner)):
     """Returns live budget envelope, actual accrued spend, and 12-month forecast."""
     p = provider.lower()
     if p == "aws":
@@ -2344,6 +2344,7 @@ def finops_reports(
     interval: str = "last_month",
     bin: str = "cumulative",
     group_by: str = "service,category",
+    owner: str = Depends(current_owner),
 ):
     """Returns multi-dimensional Cost Report data with filters and drilldown for the connected account."""
     p = provider.lower()

@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { api, FinOpsLiveResponse, FinOpsNode, FinOpsTechnique, money } from "@/lib/api";
@@ -16,6 +17,7 @@ import { CurrencyCode, formatCurrency } from "@/lib/currency";
 import { getStoredAccount, setStoredAccount, CloudProviderId, CLOUD_PROVIDERS } from "@/lib/connectedAccount";
 
 function FinOpsContent() {
+  const { getToken } = useAuth();
   const searchParams = useSearchParams();
   const providerParam = searchParams.get("provider");
   const accountIdParam = searchParams.get("account_id");
@@ -60,24 +62,26 @@ function FinOpsContent() {
       id: effectiveId,
     });
 
-    api.finopsLive(provider, effectiveId)
-      .then((res) => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await api.finopsLive(provider, effectiveId, token ?? undefined);
         if (mounted) {
           setData(res);
           setAppliedTechniques({});
           setActiveNode(res.nodes.find((n) => n.status === "action_needed") || res.nodes[2]);
           setLoading(false);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error(err);
         if (mounted) setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       mounted = false;
     };
-  }, [provider, accountIdParam]);
+  }, [provider, accountIdParam, getToken]);
 
   const handleSwitchAccount = (newProv: string) => {
     setProvider(newProv);

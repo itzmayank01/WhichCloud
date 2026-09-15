@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
 import { api } from "@/lib/api";
@@ -259,6 +260,7 @@ export function FinOpsIssuesView({
   currency = "USD",
   accountId = "demo",
 }: FinOpsIssuesViewProps) {
+  const { getToken } = useAuth();
   const p = provider.toLowerCase();
   const rawList = DEFAULT_ISSUES[p] || DEFAULT_ISSUES.aws;
 
@@ -271,20 +273,22 @@ export function FinOpsIssuesView({
 
   useEffect(() => {
     let mounted = true;
-    api.finopsIssues(provider, accountId)
-      .then((res) => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await api.finopsIssues(provider, accountId, token ?? undefined);
         if (mounted && res?.issues && res.issues.length > 0) {
           setIssues(res.issues);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Live issues fetch error:", err);
-      });
+      }
+    })();
 
     return () => {
       mounted = false;
     };
-  }, [provider, accountId]);
+  }, [provider, accountId, getToken]);
 
   const filteredIssues = issues.filter((iss) => {
     if (filterSeverity !== "all" && iss.severity !== filterSeverity) return false;
