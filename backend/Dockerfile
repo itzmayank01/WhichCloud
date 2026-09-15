@@ -16,11 +16,26 @@
 
 FROM python:3.12-slim
 
-# Postgres client libraries for psycopg. Removed from the layer afterwards so
-# the build tools do not travel to production.
+# Postgres client libraries for psycopg, plus unzip/curl to install the AWS
+# CLI below. Removed from the layer afterwards so the build tools do not
+# travel to production.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential libpq-dev \
+    && apt-get install -y --no-install-recommends build-essential libpq-dev curl unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# connections/aws_live.py shells out to the `aws` binary directly -- it is
+# not a Python dependency pip can install. Without this, FinOps Live's
+# live-AWS routes fail the moment they leave a machine that happens to have
+# the CLI installed locally (get_aws_cli_path() falls back to a bare "aws"
+# that resolves to nothing in this image). The official installer, not the
+# Debian package, because slim's apt sources do not reliably carry a current
+# awscli build. Credentials come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+# / AWS_DEFAULT_REGION at runtime (the CLI reads those directly) -- never
+# baked into the image.
+RUN curl -sS "https://awscli.amazonaws.com/awscli-exe-linux-$(dpkg --print-architecture | sed 's/amd64/x86_64/;s/arm64/aarch64/').zip" -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/awscliv2.zip /tmp/aws
 
 WORKDIR /app
 
