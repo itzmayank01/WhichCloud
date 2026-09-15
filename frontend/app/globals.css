@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Tailwind v4's default `dark:` variant follows prefers-color-scheme only,
+   with no way for an explicit choice to override it. The theme toggle (see
+   ThemeToggle.tsx and the boot script in layout.tsx) stamps a `dark`/`light`
+   class on <html> precisely so an explicit choice can win over the OS
+   setting; this binds `dark:` utilities to that class instead of the media
+   query so the two mechanisms agree. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Elevation, defined explicitly rather than through the theme namespace,
    which did not generate the utilities. Eighteen different hand-written
    shadows had accumulated across the components, which is eighteen slightly

@@ -22,9 +22,14 @@ import os
 from decimal import Decimal
 from typing import Literal, Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+import time
+from collections import defaultdict, deque
+
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import topology as topo
 from .engine import (
@@ -84,6 +89,76 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+#: Endpoints that mutate real infrastructure or spend a provider credential
+#: check get a much tighter budget than everything else. A stray retry loop
+#: or a scripted abuse attempt against `/resources/action` or `/delete-all`
+#: is not "a lot of reads" the way hammering `/catalog` would be -- each
+#: request there is itself a live AWS CLI call, so the budget has to bound
+#: the damage of a single attacker, not just protect server capacity.
+_STRICT_RATE_PATHS = (
+    "/api/finops/resources/action",
+    "/api/finops/resources/delete-all",
+    "/api/connections/verify",
+    "/api/connections/setup",
+)
+_STRICT_LIMIT = 10
+_STRICT_WINDOW_SECONDS = 60.0
+_DEFAULT_LIMIT = 120
+_DEFAULT_WINDOW_SECONDS = 60.0
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Fixed-window limiter, per client IP, in process memory.
+
+    This is deliberately not a distributed limiter (Redis, etc.) -- it bounds
+    a single-process deployment, which is what this service is today. It is
+    still strictly better than the previous state, which was no limit at
+    all: an unauthenticated caller could retry a destructive endpoint as
+    fast as the network allowed. Swap for a shared store before running more
+    than one worker process, since each process would otherwise track its
+    own window.
+    """
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._hits: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+
+    def _client_key(self, request: Request) -> str:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        return request.client.host if request.client else "unknown"
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        strict = path in _STRICT_RATE_PATHS
+        limit = _STRICT_LIMIT if strict else _DEFAULT_LIMIT
+        window = _STRICT_WINDOW_SECONDS if strict else _DEFAULT_WINDOW_SECONDS
+
+        key = (self._client_key(request), "strict" if strict else "default")
+        now = time.monotonic()
+        hits = self._hits[key]
+        while hits and now - hits[0] > window:
+            hits.popleft()
+
+        if len(hits) >= limit:
+            retry_after = max(1, int(window - (now - hits[0])))
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "ok": False,
+                    "message": f"Rate limit exceeded ({limit} requests / {int(window)}s). Retry later.",
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        hits.append(now)
+        return await call_next(request)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 
 #: `parse_description` has no cache of its own -- unlike `extract_architecture`
@@ -1856,25 +1931,30 @@ class TerraformValidateIn(BaseModel):
 
 @app.post("/describe/terraform/validate")
 def describe_terraform_validate_route(body: TerraformValidateIn):
-    """Validates HCL / Terraform code syntax and returns lint results."""
-    code = body.code
-    open_braces = code.count("{")
-    close_braces = code.count("}")
-    open_brackets = code.count("[")
-    close_brackets = code.count("]")
-    if open_braces != close_braces:
+    """Validates HCL syntax by actually parsing it.
+
+    This checks grammar, not semantics: it catches malformed HCL (unterminated
+    strings, unbalanced blocks, stray tokens) the way `terraform fmt` would,
+    but it does not run `terraform validate` or `terraform init` -- those
+    need a real backend and provider plugins downloaded over the network,
+    which is too slow and too much attack surface for a request handler. A
+    file can pass this and still fail a real `terraform plan` for reasons
+    this cannot see (missing required arguments, bad references, provider
+    version conflicts), so the message says what was actually checked.
+    """
+    import hcl2
+    import io
+
+    try:
+        hcl2.load(io.StringIO(body.code))
+    except Exception as exc:
         return {
             "valid": False,
-            "message": f"Syntax Error: Mismatched curly braces ({open_braces} open '{{' vs {close_braces} close '}}')",
-        }
-    if open_brackets != close_brackets:
-        return {
-            "valid": False,
-            "message": f"Syntax Error: Mismatched brackets ({open_brackets} open '[' vs {close_brackets} close ']')",
+            "message": f"HCL Syntax Error in {body.filename}: {exc}",
         }
     return {
         "valid": True,
-        "message": "Terraform HCL Syntax Valid. Verified structure against WhichCloud Terraform provider schema.",
+        "message": "HCL syntax is well-formed. This checks grammar only, not a real `terraform plan` (no provider/network calls are made).",
     }
 
 
