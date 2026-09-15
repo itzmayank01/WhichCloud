@@ -5,6 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { api, FinOpsReportResponse } from "@/lib/api";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
+import { CostReportsIcon } from "@/components/Logo";
 
 type FilterRule = {
   dimension: "Resource" | "Service" | "Tag" | "Account" | "Region" | "Category";
@@ -202,11 +203,7 @@ export function CostReportView({
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-5 shadow-xs sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#3B82F6] text-white shadow-sm">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-              <rect x="3.5" y="13" width="4" height="7.5" rx="1.2" />
-              <rect x="10" y="8" width="4" height="12.5" rx="1.2" />
-              <rect x="16.5" y="3.5" width="4" height="17" rx="1.2" />
-            </svg>
+            <CostReportsIcon className="h-5 w-5" />
           </div>
           <div>
             <div className="text-[12px] font-medium text-ink-3">Cost Reports</div>

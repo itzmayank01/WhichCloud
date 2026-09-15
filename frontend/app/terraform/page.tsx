@@ -19,7 +19,7 @@ import {
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
 import { Inspector } from "@/components/workspace/Inspector";
-import { TerraformLogo } from "@/components/Logo";
+import { TerraformLogo, CostReportsIcon } from "@/components/Logo";
 
 interface ArchitectureItem {
   label: string;
@@ -1006,11 +1006,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                   <div className="flex items-center gap-3">
                     {/* Authentic Cost Reports Icon */}
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3B82F6] text-white shadow-xs">
-                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-                        <rect x="3.5" y="13" width="4" height="7.5" rx="1.2" />
-                        <rect x="10" y="8" width="4" height="12.5" rx="1.2" />
-                        <rect x="16.5" y="3.5" width="4" height="17" rx="1.2" />
-                      </svg>
+                      <CostReportsIcon className="h-5 w-5" />
                     </div>
                     <div>
                       <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">

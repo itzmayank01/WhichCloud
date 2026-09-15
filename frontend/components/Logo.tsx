@@ -76,3 +76,20 @@ export function TerraformLogo({ className = "h-4 w-4" }: { className?: string })
   );
 }
 
+/**
+ * The Cost Reports analytics badge: three ascending bars, standing in for
+ * the trend a cost report actually shows. Follows currentColor -- unlike
+ * TerraformLogo, this is WhichCloud's own mark, so it should recolor with
+ * whatever badge it sits inside (both call sites wrap it in a colored
+ * square; only the square's size differs between them).
+ */
+export function CostReportsIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <rect x="3.5" y="13" width="4" height="7.5" rx="1.2" />
+      <rect x="10" y="8" width="4" height="12.5" rx="1.2" />
+      <rect x="16.5" y="3.5" width="4" height="17" rx="1.2" />
+    </svg>
+  );
+}
+
