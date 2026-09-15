@@ -1,6 +1,19 @@
 import { MultiCloudArchitecture } from "@/components/MultiCloudArchitecture";
 import { api, type Option } from "@/lib/api";
 
+/** Same message whether the request itself failed or came back too thin to
+ *  show -- a reader can't tell those apart and shouldn't need to; both mean
+ *  "try again in a moment" rather than "this is broken forever." */
+function unavailable() {
+  return (
+    <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-10 text-center">
+      <p className="font-mono text-[14px] leading-relaxed text-ink-3 font-medium">
+        Architectures render from live pricing. Start the API to see all three clouds.
+      </p>
+    </div>
+  );
+}
+
 /**
  * Fetches one workload priced on every cloud and hands it to the switcher.
  * Uses the Balanced shape, which is the option most people actually ship.
@@ -25,16 +38,14 @@ export async function CloudArchitectures() {
       if (balanced) byProvider[provider] = balanced;
     }
   } catch {
-    return (
-      <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-10 text-center">
-        <p className="font-mono text-[14px] leading-relaxed text-ink-3 font-medium">
-          Architectures render from live pricing. Start the API to see all three clouds.
-        </p>
-      </div>
-    );
+    return unavailable();
   }
 
-  if (!Object.keys(byProvider).length) return null;
+  // Used to silently render null -- a fetch that "succeeds" with nothing
+  // usable (a partial response, an empty clouds object) left the section
+  // just missing with no indication why, indistinguishable from a page that
+  // failed to finish loading.
+  if (!Object.keys(byProvider).length) return unavailable();
   return (
     <MultiCloudArchitecture
       byProvider={byProvider}
