@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
@@ -15,6 +15,52 @@ import { FinOpsSettingsView } from "@/components/finops/FinOpsSettingsView";
 import { TerraformLogo } from "@/components/Logo";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
 import { getStoredAccount, setStoredAccount, CloudProviderId, CLOUD_PROVIDERS } from "@/lib/connectedAccount";
+
+/** Shared shell for the four KPI cards above the topology graph: the
+ *  gradient overlay, blur glow, and icon/label/badge header row were
+ *  identical boilerplate repeated at each of the four call sites and had
+ *  already begun drifting (some had a footer progress bar, some didn't).
+ *  Only the tone (border/gradient/blur/icon color) and the body below the
+ *  header are per-card -- those genuinely differ (a trend badge here, a
+ *  progress bar there) so they stay as props/children rather than being
+ *  forced into one shape. */
+function KpiCard({
+  tone,
+  icon,
+  label,
+  badge,
+  children,
+}: {
+  tone: "accent" | "amber" | "emerald";
+  icon: string;
+  label: string;
+  badge: ReactNode;
+  children: ReactNode;
+}) {
+  const toneClasses: Record<typeof tone, { border: string; gradient: string; blur: string; iconColor: string }> = {
+    accent: { border: "border-accent-line/40", gradient: "from-accent/5", blur: "bg-accent/8", iconColor: "text-accent" },
+    amber: { border: "border-amber-500/25", gradient: "from-amber-500/6", blur: "bg-amber-500/10", iconColor: "text-amber-500" },
+    emerald: { border: "border-emerald-500/25", gradient: "from-emerald-500/6", blur: "bg-emerald-500/10", iconColor: "text-emerald-500" },
+  };
+  const t = toneClasses[tone];
+
+  return (
+    <div className={`group relative overflow-hidden rounded-2xl border ${t.border} bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5`}>
+      <div className={`absolute inset-0 bg-gradient-to-br ${t.gradient} via-transparent to-transparent pointer-events-none`} />
+      <div className={`absolute -top-6 -right-6 h-20 w-20 rounded-full ${t.blur} blur-2xl pointer-events-none`} />
+      <div className="relative">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Icon icon={icon} className={`h-4 w-4 ${t.iconColor}`} />
+            <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">{label}</span>
+          </div>
+          {badge}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function FinOpsContent() {
   const { getToken } = useAuth();
@@ -300,126 +346,106 @@ function FinOpsContent() {
             {/* ── KPI Summary Cards ── */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
-              {/* Card 1: Monthly Spend */}
-              <div className="group relative overflow-hidden rounded-2xl border border-accent-line/40 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
-                <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-accent/8 blur-2xl pointer-events-none" />
-                <div className="relative">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Icon icon="mdi:currency-usd" className="h-4 w-4 text-accent" />
-                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Monthly Spend</span>
-                    </div>
-                    <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent border border-accent-line/40">
-                      {data.account.region}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-1.5">
-                    <span className="text-[30px] font-bold tracking-tight text-ink font-mono">
-                      {formatCurrency(currentSpend, currency, 2)}
-                    </span>
-                    <span className="text-[12px] text-ink-3">/mo</span>
-                  </div>
-                  <div className="mt-2.5 flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-500 border border-emerald-500/20">
-                      <Icon icon="mdi:trending-down" className="h-3 w-3" />
-                      {formatCurrency(data.summary.previous_monthly_usd - currentSpend, currency, 0)}
-                    </span>
-                    <span className="text-[11.5px] text-ink-3">vs prev month</span>
-                  </div>
+              <KpiCard
+                tone="accent"
+                icon="mdi:currency-usd"
+                label="Monthly Spend"
+                badge={
+                  <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent border border-accent-line/40">
+                    {data.account.region}
+                  </span>
+                }
+              >
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-[30px] font-bold tracking-tight text-ink font-mono">
+                    {formatCurrency(currentSpend, currency, 2)}
+                  </span>
+                  <span className="text-[12px] text-ink-3">/mo</span>
                 </div>
-              </div>
+                <div className="mt-2.5 flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-500 border border-emerald-500/20">
+                    <Icon icon="mdi:trending-down" className="h-3 w-3" />
+                    {formatCurrency(data.summary.previous_monthly_usd - currentSpend, currency, 0)}
+                  </span>
+                  <span className="text-[11.5px] text-ink-3">vs prev month</span>
+                </div>
+              </KpiCard>
 
-              {/* Card 2: Cloud Waste */}
-              <div className="group relative overflow-hidden rounded-2xl border border-amber-500/25 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
-                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/6 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-amber-500/10 blur-2xl pointer-events-none" />
-                <div className="relative">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Icon icon="mdi:fire" className="h-4 w-4 text-amber-500" />
-                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Cloud Waste</span>
-                    </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-500 border border-amber-500/20">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                      Unused
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-1.5">
-                    <span className="text-[30px] font-bold tracking-tight text-amber-500 font-mono">
-                      {formatCurrency(data.summary.realizable_savings_usd, currency, 0)}
-                    </span>
-                    <span className="text-[12px] text-ink-3">/mo</span>
-                  </div>
-                  <div className="mt-2.5 text-[11.5px] text-ink-3">
-                    Overprovisioned nodes & idle egress
-                  </div>
-                  <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full" style={{ width: `${Math.min(100, (data.summary.realizable_savings_usd / data.summary.total_monthly_usd) * 100)}%` }} />
-                  </div>
+              <KpiCard
+                tone="amber"
+                icon="mdi:fire"
+                label="Cloud Waste"
+                badge={
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-500 border border-amber-500/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    Unused
+                  </span>
+                }
+              >
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-[30px] font-bold tracking-tight text-amber-500 font-mono">
+                    {formatCurrency(data.summary.realizable_savings_usd, currency, 0)}
+                  </span>
+                  <span className="text-[12px] text-ink-3">/mo</span>
                 </div>
-              </div>
+                <div className="mt-2.5 text-[11.5px] text-ink-3">
+                  Overprovisioned nodes & idle egress
+                </div>
+                <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full" style={{ width: `${Math.min(100, (data.summary.realizable_savings_usd / data.summary.total_monthly_usd) * 100)}%` }} />
+                </div>
+              </KpiCard>
 
-              {/* Card 3: Simulated Savings */}
-              <div className="group relative overflow-hidden rounded-2xl border border-emerald-500/25 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/6 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none" />
-                <div className="relative">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Icon icon="mdi:lightning-bolt" className="h-4 w-4 text-emerald-500" />
-                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Simulated Savings</span>
-                    </div>
-                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500 border border-emerald-500/20">
-                      {savingsPct}% reducible
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-1.5">
-                    <span className="text-[30px] font-bold tracking-tight text-emerald-500 font-mono">
-                      +{formatCurrency(totalTechniqueSavings, currency, 0)}
-                    </span>
-                    <span className="text-[12px] text-ink-3">/mo</span>
-                  </div>
-                  <div className="mt-2.5 flex items-center gap-1.5">
-                    <span className="text-[11.5px] text-ink-3">
-                      {Object.values(appliedTechniques).filter(Boolean).length} of {data.techniques.length} optimizations enabled
-                    </span>
-                  </div>
-                  <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700" style={{ width: `${savingsPct}%` }} />
-                  </div>
+              <KpiCard
+                tone="emerald"
+                icon="mdi:lightning-bolt"
+                label="Simulated Savings"
+                badge={
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500 border border-emerald-500/20">
+                    {savingsPct}% reducible
+                  </span>
+                }
+              >
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-[30px] font-bold tracking-tight text-emerald-500 font-mono">
+                    +{formatCurrency(totalTechniqueSavings, currency, 0)}
+                  </span>
+                  <span className="text-[12px] text-ink-3">/mo</span>
                 </div>
-              </div>
+                <div className="mt-2.5 flex items-center gap-1.5">
+                  <span className="text-[11.5px] text-ink-3">
+                    {Object.values(appliedTechniques).filter(Boolean).length} of {data.techniques.length} optimizations enabled
+                  </span>
+                </div>
+                <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700" style={{ width: `${savingsPct}%` }} />
+                </div>
+              </KpiCard>
 
-              {/* Card 4: FinOps Health Score */}
-              <div className="group relative overflow-hidden rounded-2xl border border-accent-line/40 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
-                <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-accent/8 blur-2xl pointer-events-none" />
-                <div className="relative">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Icon icon="mdi:shield-check" className="h-4 w-4 text-accent" />
-                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Health Score</span>
-                    </div>
-                    <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent border border-accent-line/40">
-                      {dynamicEfficiencyScore >= 90 ? "Grade A" : dynamicEfficiencyScore >= 80 ? "Grade B+" : "Grade B"}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-baseline gap-1">
-                    <span className="text-[30px] font-bold tracking-tight text-ink font-mono">{dynamicEfficiencyScore}</span>
-                    <span className="text-[13px] font-medium text-ink-3">/100</span>
-                  </div>
-                  <div className="mt-2.5 relative h-2 w-full overflow-hidden rounded-full bg-sunk">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-accent to-blue-400 transition-all duration-700 ease-out"
-                      style={{ width: `${dynamicEfficiencyScore}%` }}
-                    />
-                  </div>
-                  <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
-                    <span>Poor</span><span>Excellent</span>
-                  </div>
+              <KpiCard
+                tone="accent"
+                icon="mdi:shield-check"
+                label="Health Score"
+                badge={
+                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent border border-accent-line/40">
+                    {dynamicEfficiencyScore >= 90 ? "Grade A" : dynamicEfficiencyScore >= 80 ? "Grade B+" : "Grade B"}
+                  </span>
+                }
+              >
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-[30px] font-bold tracking-tight text-ink font-mono">{dynamicEfficiencyScore}</span>
+                  <span className="text-[13px] font-medium text-ink-3">/100</span>
                 </div>
-              </div>
+                <div className="mt-2.5 relative h-2 w-full overflow-hidden rounded-full bg-sunk">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-accent to-blue-400 transition-all duration-700 ease-out"
+                    style={{ width: `${dynamicEfficiencyScore}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
+                  <span>Poor</span><span>Excellent</span>
+                </div>
+              </KpiCard>
             </div>
 
             {/* ── Topology Graph & Inspector ── */}
