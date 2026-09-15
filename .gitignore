@@ -49,6 +49,12 @@ pricing-data/
 generated/
 *.png
 !docs/**/*.png
+# Vendored AWS architecture icons (scripts/fetch_aws_icons.py) -- these are
+# committed application assets the architecture diagram renders at runtime,
+# not generated/cached data. The blanket *.png rule above silently excluded
+# all 86 of them, so the diagram fell back to a generic glyph for every node
+# on any machine that didn't happen to have them already on disk locally.
+!frontend/public/icons/**/*.png
 
 # OS / editor
 .DS_Store
