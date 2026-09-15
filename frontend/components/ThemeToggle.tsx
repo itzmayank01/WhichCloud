@@ -56,8 +56,19 @@ const OPTIONS: { id: Choice; label: string; icon: React.ReactNode }[] = [
  *  which is what hands the decision back to prefers-color-scheme. */
 function apply(choice: Choice) {
   const root = document.documentElement;
-  if (choice === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", choice);
+  if (choice === "system") {
+    root.removeAttribute("data-theme");
+    root.classList.remove("dark", "light");
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      root.classList.add("dark");
+    } else {
+      root.classList.add("light");
+    }
+  } else {
+    root.setAttribute("data-theme", choice);
+    root.classList.remove("dark", "light");
+    root.classList.add(choice);
+  }
 }
 
 export function ThemeToggle() {
@@ -122,7 +133,7 @@ export function ThemeToggle() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1.5 w-36 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-lg"
+          className="absolute right-0 top-full z-[80] mt-1.5 w-36 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-xl backdrop-blur-sm"
         >
           {OPTIONS.map((option) => (
             <button

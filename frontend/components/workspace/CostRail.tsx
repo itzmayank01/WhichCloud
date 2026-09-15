@@ -270,58 +270,58 @@ export function CostRail({
           </button>
         </div>
       ) : (
-      <div className="border-b border-line p-4">
-        <label
-          htmlFor="workspace-description"
-          className="text-[15px] font-semibold text-ink"
-        >
-          Describe your app
-        </label>
-        <textarea
-          id="workspace-description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={5}
-          placeholder="What the system is for, how many people use it, what happens if it stops, and what you can spend."
-          className="mt-2 w-full resize-y rounded-lg border border-line bg-canvas p-3 text-[13.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-ink-3 focus:border-accent"
-        />
-        <div className="mt-2.5 flex items-center gap-2">
-          <button
-            onClick={() => {
-              setEditing(false);
-              onAsk();
-            }}
-            disabled={busy}
-            className="flex-1 rounded-lg bg-accent px-4 py-2 text-[13.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+        <div className="border-b border-line p-4">
+          <label
+            htmlFor="workspace-description"
+            className="text-[15px] font-semibold text-ink"
           >
-            {busy ? "Working…" : "Price it"}
-          </button>
-          {!description.trim() && (
+            Describe your app
+          </label>
+          <textarea
+            id="workspace-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={5}
+            placeholder="What the system is for, how many people use it, what happens if it stops, and what you can spend."
+            className="mt-2 w-full resize-y rounded-lg border border-line bg-canvas p-3 text-[13.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-ink-3 focus:border-accent"
+          />
+          <div className="mt-2.5 flex items-center gap-2">
             <button
-              onClick={onUseExample}
-              className="shrink-0 rounded-lg border border-line px-3 py-2 text-[12.5px] text-ink-2 transition-colors hover:bg-sunk"
+              onClick={() => {
+                setEditing(false);
+                onAsk();
+              }}
+              disabled={busy}
+              className="flex-1 rounded-lg bg-accent px-4 py-2 text-[13.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              Example
+              {busy ? "Working…" : "Price it"}
             </button>
-          )}
-          {/* Only once there is something to go back TO. Offering "cancel"
+            {!description.trim() && (
+              <button
+                onClick={onUseExample}
+                className="shrink-0 rounded-lg border border-line px-3 py-2 text-[12.5px] text-ink-2 transition-colors hover:bg-sunk"
+              >
+                Example
+              </button>
+            )}
+            {/* Only once there is something to go back TO. Offering "cancel"
               before a first answer exists would close the form and leave an
               empty panel. */}
-          {option && (
-            <button
-              onClick={() => setEditing(false)}
-              className="shrink-0 rounded-lg border border-line px-3 py-2 text-[12.5px] text-ink-2 transition-colors hover:bg-sunk"
-            >
-              Cancel
-            </button>
+            {option && (
+              <button
+                onClick={() => setEditing(false)}
+                className="shrink-0 rounded-lg border border-line px-3 py-2 text-[12.5px] text-ink-2 transition-colors hover:bg-sunk"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+          {error && (
+            <p className="mt-2.5 rounded-lg bg-caution-wash px-3 py-2 text-[12.5px] leading-relaxed text-caution">
+              {error}
+            </p>
           )}
         </div>
-        {error && (
-          <p className="mt-2.5 rounded-lg bg-caution-wash px-3 py-2 text-[12.5px] leading-relaxed text-caution">
-            {error}
-          </p>
-        )}
-      </div>
       )}
 
       {!option ? null : (
@@ -519,9 +519,8 @@ export function CostRail({
                   onMouseEnter={() => onHoverGroup?.(g.key)}
                   onMouseLeave={() => onHoverGroup?.(null)}
                   onClick={() => onSelectGroup?.(g.key)}
-                  className={`cursor-pointer border-t border-rule py-2 transition-colors first:border-t-0 ${
-                    highlightGroup === g.key ? "bg-accent-wash" : ""
-                  }`}
+                  className={`cursor-pointer border-t border-rule py-2 transition-colors first:border-t-0 ${highlightGroup === g.key ? "bg-accent-wash" : ""
+                    }`}
                 >
                   <div className="flex items-baseline gap-3">
                     <div className="min-w-0 flex-1">
@@ -574,104 +573,104 @@ export function CostRail({
           {(option.applied.length > 0 ||
             option.advisory.length > 0 ||
             (result?.not_applied.length ?? 0) > 0) && (
-            <Section title="Why these choices" defaultOpen={false}>
-              {/* WHAT IS HERE, AND WHY IT IS HERE.
+              <Section title="Why these choices" defaultOpen={false}>
+                {/* WHAT IS HERE, AND WHY IT IS HERE.
                   Every derived role traces to something the description said.
                   Before this the panel explained the OPTIMIZATIONS but never
                   the components, so a reader could see that ARM saved $19 and
                   still have no way to find out why they were being sold a web
                   firewall for an internal tool. Baseline roles are grouped at
                   the end rather than each repeating the same policy line. */}
-              {option.topology.nodes.some((n) => n.because) && (
-                <div className="mb-3">
-                  <p className="text-[11.5px] font-medium text-ink-3">
-                    What this architecture contains
-                  </p>
-                  <ul className="mt-1 space-y-1">
-                    {option.topology.nodes
-                      .filter((n) => n.because && !n.baseline)
-                      .map((n) => (
-                        <li
-                          key={n.id}
-                          className="text-[12px] leading-relaxed text-ink-2"
-                        >
-                          <span className="font-medium text-ink">{n.label}</span>
-                          {" — "}
-                          {n.because}
+                {option.topology.nodes.some((n) => n.because) && (
+                  <div className="mb-3">
+                    <p className="text-[11.5px] font-medium text-ink-3">
+                      What this architecture contains
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {option.topology.nodes
+                        .filter((n) => n.because && !n.baseline)
+                        .map((n) => (
+                          <li
+                            key={n.id}
+                            className="text-[12px] leading-relaxed text-ink-2"
+                          >
+                            <span className="font-medium text-ink">{n.label}</span>
+                            {" — "}
+                            {n.because}
+                          </li>
+                        ))}
+                    </ul>
+                    {option.topology.nodes.some((n) => n.baseline && n.kind !== "client") && (
+                      <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">
+                        Present on every architecture by policy, not derived from
+                        this workload:{" "}
+                        {option.topology.nodes
+                          .filter((n) => n.baseline && n.kind !== "client")
+                          .map((n) => n.label)
+                          .join(", ")}
+                        .
+                      </p>
+                    )}
+                  </div>
+                )}
+                {option.applied.length > 0 && (
+                  <div className="space-y-2">
+                    {option.applied.map((t) => (
+                      <div key={t.id} className="rounded-lg bg-sunk px-2.5 py-2">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-[12.5px] font-medium leading-snug text-ink">
+                            {t.name}
+                          </span>
+                          {t.saved_monthly_usd != null && (
+                            <span className="shrink-0 font-mono text-[12px] font-semibold text-save">
+                              −{money(t.saved_monthly_usd)}
+                            </span>
+                          )}
+                        </div>
+                        {t.versus_sku && (
+                          <p className="mt-0.5 font-mono text-[10.5px] text-ink-3">
+                            vs {t.versus_sku}
+                          </p>
+                        )}
+                        {t.reasons.map((r) => (
+                          <p key={r} className="mt-1 text-[12px] leading-relaxed text-ink-2">
+                            · {r}
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {option.advisory.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[11.5px] font-medium text-ink-3">
+                      Also worth doing, not priceable
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {option.advisory.map((t) => (
+                        <li key={t.id} className="text-[12px] leading-relaxed text-ink-2">
+                          {t.name}
                         </li>
                       ))}
-                  </ul>
-                  {option.topology.nodes.some((n) => n.baseline && n.kind !== "client") && (
-                    <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">
-                      Present on every architecture by policy, not derived from
-                      this workload:{" "}
-                      {option.topology.nodes
-                        .filter((n) => n.baseline && n.kind !== "client")
-                        .map((n) => n.label)
-                        .join(", ")}
-                      .
-                    </p>
-                  )}
-                </div>
-              )}
-              {option.applied.length > 0 && (
-                <div className="space-y-2">
-                  {option.applied.map((t) => (
-                    <div key={t.id} className="rounded-lg bg-sunk px-2.5 py-2">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-[12.5px] font-medium leading-snug text-ink">
-                          {t.name}
-                        </span>
-                        {t.saved_monthly_usd != null && (
-                          <span className="shrink-0 font-mono text-[12px] font-semibold text-save">
-                            −{money(t.saved_monthly_usd)}
-                          </span>
-                        )}
-                      </div>
-                      {t.versus_sku && (
-                        <p className="mt-0.5 font-mono text-[10.5px] text-ink-3">
-                          vs {t.versus_sku}
-                        </p>
-                      )}
-                      {t.reasons.map((r) => (
-                        <p key={r} className="mt-1 text-[12px] leading-relaxed text-ink-2">
-                          · {r}
-                        </p>
+                    </ul>
+                  </div>
+                )}
+
+                {(result?.not_applied.length ?? 0) > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[11.5px] font-medium text-ink-3">Ruled out</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {result?.not_applied.map((n) => (
+                        <li key={n.id} className="text-[11.5px] leading-relaxed text-ink-3">
+                          <span className="text-ink-2">{n.name}</span> — {n.reason}
+                        </li>
                       ))}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {option.advisory.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-[11.5px] font-medium text-ink-3">
-                    Also worth doing, not priceable
-                  </p>
-                  <ul className="mt-1 space-y-0.5">
-                    {option.advisory.map((t) => (
-                      <li key={t.id} className="text-[12px] leading-relaxed text-ink-2">
-                        {t.name}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {(result?.not_applied.length ?? 0) > 0 && (
-                <div className="mt-3">
-                  <p className="text-[11.5px] font-medium text-ink-3">Ruled out</p>
-                  <ul className="mt-1 space-y-0.5">
-                    {result?.not_applied.map((n) => (
-                      <li key={n.id} className="text-[11.5px] leading-relaxed text-ink-3">
-                        <span className="text-ink-2">{n.name}</span> — {n.reason}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </Section>
-          )}
+                    </ul>
+                  </div>
+                )}
+              </Section>
+            )}
 
           {/* ── what it gives up ── */}
           {option.tradeoffs.length > 0 && (

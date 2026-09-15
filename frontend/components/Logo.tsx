@@ -36,13 +36,36 @@ export function Wordmark() {
 }
 
 /**
- * Authentic HashiCorp Terraform vector mark:
- * 4 isometric prisms in standard brand color #5C4EE5 / #844FBA.
+ * Official HashiCorp Terraform brand mark:
+ * 4 isometric facets rendered with authentic HashiCorp brand colors:
+ * #5C4EE5 (primary violet) and #4040B2 (deep cobalt accent facet).
  */
-export function TerraformLogo({ className = "h-4 w-4 text-[#5C4EE5]" }: { className?: string }) {
+export function TerraformLogo({ className = "h-4 w-4" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 128 128"
+      className={className}
+      aria-hidden="true"
+      fill="none"
+    >
+      <g fillRule="evenodd">
+        {/* Center facet */}
+        <path
+          d="M77.941 44.5v36.836L46.324 62.918V26.082zm0 0"
+          fill="#5C4EE5"
+        />
+        {/* Top-right accent facet */}
+        <path
+          d="M81.41 81.336l31.633-18.418V26.082L81.41 44.5zm0 0"
+          fill="#4040B2"
+        />
+        {/* Leftmost facet & Bottom facet */}
+        <path
+          d="M11.242 42.36L42.86 60.776V23.941L11.242 5.523zm0 0M77.941 85.375L46.324 66.957v36.82l31.617 18.418zm0 0"
+          fill="#5C4EE5"
+        />
+      </g>
     </svg>
   );
 }

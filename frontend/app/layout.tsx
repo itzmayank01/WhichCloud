@@ -3,7 +3,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Wordmark } from "@/components/Logo";
+import { Wordmark, TerraformLogo } from "@/components/Logo";
 import "./globals.css";
 
 /* Geist and Geist Mono are drawn as one system, which matters on a page that
@@ -96,7 +96,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             hands the decision back to prefers-color-scheme. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var c=localStorage.getItem("whichcloud.theme");if(c==="dark"||c==="light"){document.documentElement.setAttribute("data-theme",c)}}catch(e){}})()`,
+            __html: `(function(){try{var c=localStorage.getItem("whichcloud.theme");if(c==="dark"||c==="light"){document.documentElement.setAttribute("data-theme",c);document.documentElement.classList.add(c)}else if(window.matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.classList.add("dark")}}catch(e){}})()`,
           }}
         />
       </head>
@@ -125,7 +125,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           signInFallbackRedirectUrl="/dashboard"
           signUpFallbackRedirectUrl="/dashboard"
         >
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-8 border-b border-line bg-canvas/85 px-6 backdrop-blur">
+          <header className="sticky top-0 z-40 flex h-16 items-center gap-8 border-b border-line bg-canvas/85 px-6 backdrop-blur">
             <Link href="/" aria-label="WhichCloud home">
               <Wordmark />
             </Link>
@@ -166,9 +166,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 href="/terraform"
                 className="flex items-center gap-1.5 rounded-sm font-medium text-ink-2 transition-colors hover:text-ink"
               >
-                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-[#5C4EE5]" fill="currentColor" aria-hidden>
-                  <path d="M1.44 0v7.575l6.561 3.79V3.79L1.44 0zm7.65 4.417v7.575l6.562 3.79V8.207L9.09 4.417zm7.65 4.417v7.575l6.561 3.79V12.624L16.74 8.834zM1.44 9.07v7.575l6.561 3.79V12.86L1.44 9.07z" />
-                </svg>
+                <TerraformLogo className="h-4 w-4" />
                 Terraform IaC
               </Link>
               <Link

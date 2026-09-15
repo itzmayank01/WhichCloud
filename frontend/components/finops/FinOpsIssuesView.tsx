@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
 import { api } from "@/lib/api";
+import { TerraformLogo } from "@/components/Logo";
 
 export interface FinOpsIssue {
   id: string;
@@ -518,7 +519,7 @@ export function FinOpsIssuesView({
                       className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink hover:bg-sunk transition-colors"
                       title="Inspect Terraform code to fix this issue"
                     >
-                      <Icon icon="logos:terraform-icon" className="h-3.5 w-3.5" />
+                      <TerraformLogo className="h-3.5 w-3.5" />
                       <span>Terraform Diff</span>
                     </button>
 
@@ -577,7 +578,7 @@ export function FinOpsIssuesView({
 
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-sunk">
-                <Icon icon="logos:terraform-icon" className="h-5 w-5" />
+                <TerraformLogo className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="text-[17px] font-bold text-ink">

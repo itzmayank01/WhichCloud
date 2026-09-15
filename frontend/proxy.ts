@@ -1,12 +1,12 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 /**
- * Everything is public except the workspace.
+ * Everything is public except the workspace and FinOps Live.
  *
  * The landing page, the price index and the provenance section are the
  * argument for the product and have to be readable without an account. The
- * dashboard is where a description is sent to a model and stored against a
- * person, so it is the part that needs one.
+ * dashboard and the FinOps Live page are where a description is sent to a
+ * model and stored against a person, so they are the parts that need one.
  *
  * Protection is declared as a matcher rather than by listing public routes.
  * With a public list, a route added later is private by accident and nobody
@@ -14,7 +14,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  * is public until it is deliberately named here, which fails in the direction
  * that gets caught immediately.
  */
-const isProtected = createRouteMatcher(["/dashboard(.*)"]);
+const isProtected = createRouteMatcher(["/dashboard(.*)", "/finops(.*)"]);
 
 export default clerkMiddleware(async (auth, request) => {
   if (isProtected(request)) {

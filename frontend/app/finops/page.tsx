@@ -291,151 +291,190 @@ function FinOpsContent() {
 
         {/* VIEW 1: Overview (Live Topology & Inspector + KPIs) */}
         {activeTab === "overview" && (
-          <div className="space-y-8 mt-6">
-            {/* KPI Summary Cards */}
+          <div className="space-y-6 mt-6">
+
+            {/* ── KPI Summary Cards ── */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[13px] font-medium text-ink-3">
-                  <span>Current Monthly Spend</span>
-                  <span className="rounded-md bg-sunk px-2 py-0.5 text-[11px] font-mono text-ink-2">
-                    {data.account.region}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-[28px] font-bold tracking-tight text-ink font-mono">
-                    {formatCurrency(currentSpend, currency, 2)}
-                  </span>
-                  <span className="text-[12.5px] text-ink-3">/ mo</span>
-                </div>
-                <div className="mt-2 flex items-center gap-1.5 text-[12px] text-ink-2">
-                  <span className="text-emerald-500 font-medium">
-                    ↓ {formatCurrency(data.summary.previous_monthly_usd - currentSpend, currency, 0)}
-                  </span>
-                  <span>vs previous month</span>
+
+              {/* Card 1: Monthly Spend */}
+              <div className="group relative overflow-hidden rounded-2xl border border-accent-line/40 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+                <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-accent/8 blur-2xl pointer-events-none" />
+                <div className="relative">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Icon icon="mdi:currency-usd" className="h-4 w-4 text-accent" />
+                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Monthly Spend</span>
+                    </div>
+                    <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent border border-accent-line/40">
+                      {data.account.region}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-1.5">
+                    <span className="text-[30px] font-bold tracking-tight text-ink font-mono">
+                      {formatCurrency(currentSpend, currency, 2)}
+                    </span>
+                    <span className="text-[12px] text-ink-3">/mo</span>
+                  </div>
+                  <div className="mt-2.5 flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-500 border border-emerald-500/20">
+                      <Icon icon="mdi:trending-down" className="h-3 w-3" />
+                      {formatCurrency(data.summary.previous_monthly_usd - currentSpend, currency, 0)}
+                    </span>
+                    <span className="text-[11.5px] text-ink-3">vs prev month</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[13px] font-medium text-ink-3">
-                  <span>Detected Cloud Waste</span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-500">
-                    <Icon icon="mdi:alert-circle-outline" className="h-3 w-3" />
-                    Unused capacity
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-[28px] font-bold tracking-tight text-amber-500 font-mono">
-                    {formatCurrency(data.summary.realizable_savings_usd, currency, 0)}
-                  </span>
-                  <span className="text-[12.5px] text-ink-3">/ mo</span>
-                </div>
-                <div className="mt-2 text-[12px] text-ink-2">
-                  Overprovisioned nodes & idle egress
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[13px] font-medium text-ink-3">
-                  <span>Simulated Savings</span>
-                  <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-500">
-                    {savingsPct}% reducible
-                  </span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-[28px] font-bold tracking-tight text-emerald-500 font-mono">
-                    +{formatCurrency(totalTechniqueSavings, currency, 0)}
-                  </span>
-                  <span className="text-[12.5px] text-ink-3">/ mo</span>
-                </div>
-                <div className="mt-2 text-[12px] text-ink-2">
-                  {Object.values(appliedTechniques).filter(Boolean).length} of{" "}
-                  {data.techniques.length} optimizations enabled
+              {/* Card 2: Cloud Waste */}
+              <div className="group relative overflow-hidden rounded-2xl border border-amber-500/25 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/6 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-amber-500/10 blur-2xl pointer-events-none" />
+                <div className="relative">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Icon icon="mdi:fire" className="h-4 w-4 text-amber-500" />
+                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Cloud Waste</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-500 border border-amber-500/20">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      Unused
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-1.5">
+                    <span className="text-[30px] font-bold tracking-tight text-amber-500 font-mono">
+                      {formatCurrency(data.summary.realizable_savings_usd, currency, 0)}
+                    </span>
+                    <span className="text-[12px] text-ink-3">/mo</span>
+                  </div>
+                  <div className="mt-2.5 text-[11.5px] text-ink-3">
+                    Overprovisioned nodes & idle egress
+                  </div>
+                  <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full" style={{ width: `${Math.min(100, (data.summary.realizable_savings_usd / data.summary.total_monthly_usd) * 100)}%` }} />
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
-                <div className="flex items-center justify-between text-[13px] font-medium text-ink-3">
-                  <span>FinOps Health Score</span>
-                  <span className="rounded-md bg-accent/10 px-2 py-0.5 text-[11.5px] font-bold text-accent">
-                    {dynamicEfficiencyScore >= 90
-                      ? "Grade A"
-                      : dynamicEfficiencyScore >= 80
-                      ? "Grade B+"
-                      : "Grade B"}
-                  </span>
+              {/* Card 3: Simulated Savings */}
+              <div className="group relative overflow-hidden rounded-2xl border border-emerald-500/25 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/6 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-emerald-500/10 blur-2xl pointer-events-none" />
+                <div className="relative">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Icon icon="mdi:lightning-bolt" className="h-4 w-4 text-emerald-500" />
+                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Simulated Savings</span>
+                    </div>
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500 border border-emerald-500/20">
+                      {savingsPct}% reducible
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-1.5">
+                    <span className="text-[30px] font-bold tracking-tight text-emerald-500 font-mono">
+                      +{formatCurrency(totalTechniqueSavings, currency, 0)}
+                    </span>
+                    <span className="text-[12px] text-ink-3">/mo</span>
+                  </div>
+                  <div className="mt-2.5 flex items-center gap-1.5">
+                    <span className="text-[11.5px] text-ink-3">
+                      {Object.values(appliedTechniques).filter(Boolean).length} of {data.techniques.length} optimizations enabled
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700" style={{ width: `${savingsPct}%` }} />
+                  </div>
                 </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-[28px] font-bold tracking-tight text-ink font-mono">
-                    {dynamicEfficiencyScore}
-                  </span>
-                  <span className="text-[13px] font-medium text-ink-3">/ 100</span>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-sunk">
-                  <div
-                    className="h-full bg-accent transition-all duration-500"
-                    style={{ width: `${dynamicEfficiencyScore}%` }}
-                  />
+              </div>
+
+              {/* Card 4: FinOps Health Score */}
+              <div className="group relative overflow-hidden rounded-2xl border border-accent-line/40 bg-surface p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+                <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-accent/8 blur-2xl pointer-events-none" />
+                <div className="relative">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Icon icon="mdi:shield-check" className="h-4 w-4 text-accent" />
+                      <span className="text-[12px] font-semibold text-ink-3 uppercase tracking-wide">Health Score</span>
+                    </div>
+                    <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent border border-accent-line/40">
+                      {dynamicEfficiencyScore >= 90 ? "Grade A" : dynamicEfficiencyScore >= 80 ? "Grade B+" : "Grade B"}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-[30px] font-bold tracking-tight text-ink font-mono">{dynamicEfficiencyScore}</span>
+                    <span className="text-[13px] font-medium text-ink-3">/100</span>
+                  </div>
+                  <div className="mt-2.5 relative h-2 w-full overflow-hidden rounded-full bg-sunk">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-accent to-blue-400 transition-all duration-700 ease-out"
+                      style={{ width: `${dynamicEfficiencyScore}%` }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
+                    <span>Poor</span><span>Excellent</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Topology Flow Graph & Inspector */}
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-              <div className="relative overflow-hidden rounded-2xl border border-line bg-surface p-6 shadow-xs lg:col-span-2">
-                <div className="flex items-center justify-between border-b border-line pb-4">
-                  <h3 className="text-[16px] font-bold text-ink flex items-center gap-2">
-                    <Icon icon="mdi:graph-outline" className="h-5 w-5 text-accent" />
+            {/* ── Topology Graph & Inspector ── */}
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+
+              {/* Topology Panel */}
+              <div className="relative overflow-hidden rounded-2xl border border-line bg-surface shadow-xs lg:col-span-2">
+                {/* Panel Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-gradient-to-r from-sunk/40 to-transparent">
+                  <h3 className="text-[15px] font-bold text-ink flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/10 border border-accent-line/30">
+                      <Icon icon="mdi:graph-outline" className="h-4 w-4 text-accent" />
+                    </span>
                     Live Topology Graph & Cost Heatmap
                   </h3>
-                  <div className="flex items-center gap-2 text-[11px] font-mono text-ink-3">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                    LIVE TELEMETRY
+                  <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/8 px-2.5 py-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="text-[10.5px] font-mono font-semibold text-emerald-500 tracking-wide">LIVE TELEMETRY</span>
                   </div>
                 </div>
 
-                <div className="space-y-6 pt-5">
-                  {/* Layer 1 */}
+                <div className="p-6 space-y-5">
+
+                  {/* Layer 1 – Edge & Ingress */}
                   <div>
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-                      1. Edge & Ingress Layer
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/15 text-[10px] font-bold text-accent">1</span>
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-ink-3">Edge & Ingress Layer</span>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {data.nodes
-                        .filter(
-                          (n) =>
-                            n.kind === "client" ||
-                            n.kind === "network" ||
-                            n.kind === "loadbalancer"
-                        )
+                        .filter((n) => n.kind === "client" || n.kind === "network" || n.kind === "loadbalancer")
                         .map((node) => {
                           const isSelected = activeNode?.id === node.id;
                           const nodeCost = getNodeMonthlyCost(node);
+                          const hasWaste = node.waste_usd > 0;
                           return (
                             <button
                               key={node.id}
                               onClick={() => setActiveNode(node)}
-                              className={`flex flex-col items-start rounded-xl border p-3.5 text-left transition-all ${
+                              className={`group/card flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-200 ${
                                 isSelected
-                                  ? "border-accent bg-accent/5 ring-1 ring-accent"
-                                  : "border-line bg-surface hover:border-ink-3/50 hover:bg-sunk"
+                                  ? "border-accent/60 bg-accent/5 ring-1 ring-accent/30 shadow-sm"
+                                  : "border-line bg-surface hover:border-accent/30 hover:bg-accent/3"
                               }`}
                             >
                               <div className="flex w-full items-center justify-between">
-                                <span className="text-[13.5px] font-semibold text-ink">
-                                  {node.label}
-                                </span>
-                                <span className="font-mono text-[13px] font-bold text-ink">
-                                  {formatCurrency(nodeCost, currency, 2)}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className={`h-2 w-2 rounded-full ${hasWaste ? "bg-amber-500" : "bg-emerald-500"}`} />
+                                  <span className="text-[13px] font-semibold text-ink truncate max-w-[150px]">{node.label}</span>
+                                </div>
+                                <span className="font-mono text-[13px] font-bold text-ink">{formatCurrency(nodeCost, currency, 2)}</span>
                               </div>
-                              <div className="mt-2 flex w-full items-center justify-between text-[11.5px] text-ink-3">
-                                <span>Util: {node.utilization}</span>
-                                {node.waste_usd > 0 ? (
-                                  <span className="text-amber-500 font-medium">
-                                    Waste: {formatCurrency(node.waste_usd, currency, 0)}
-                                  </span>
+                              <div className="mt-2 flex w-full items-center justify-between text-[11px]">
+                                <span className="text-ink-3">Util: {node.utilization}</span>
+                                {hasWaste ? (
+                                  <span className="font-medium text-amber-500">Waste: {formatCurrency(node.waste_usd, currency, 0)}</span>
                                 ) : (
-                                  <span className="text-emerald-500 font-medium">Healthy</span>
+                                  <span className="font-medium text-emerald-500">✓ Healthy</span>
                                 )}
                               </div>
                             </button>
@@ -444,117 +483,121 @@ function FinOpsContent() {
                     </div>
                   </div>
 
-                  <div className="flex justify-center text-ink-3">
-                    <Icon icon="mdi:arrow-down" className="h-5 w-5 animate-bounce" />
+                  {/* Connector */}
+                  <div className="flex justify-center">
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="h-4 w-px bg-gradient-to-b from-accent/40 to-accent/10" />
+                      <Icon icon="mdi:arrow-down" className="h-4 w-4 text-accent/50" />
+                    </div>
                   </div>
 
-                  {/* Layer 2 */}
+                  {/* Layer 2 – Compute */}
                   <div>
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-                      2. Compute Workloads & Clusters
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500/15 text-[10px] font-bold text-red-500">2</span>
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-ink-3">Compute Workloads & Clusters</span>
                     </div>
                     <div className="grid grid-cols-1 gap-3">
-                      {data.nodes
-                        .filter((n) => n.kind === "compute")
-                        .map((node) => {
-                          const isSelected = activeNode?.id === node.id;
-                          const nodeCost = getNodeMonthlyCost(node);
-                          const isAdjusted = nodeCost < node.monthly_usd;
-                          return (
-                            <button
-                              key={node.id}
-                              onClick={() => setActiveNode(node)}
-                              className={`flex flex-col rounded-xl border p-4 text-left transition-all ${
-                                isSelected
-                                  ? "border-accent bg-accent/5 ring-1 ring-accent"
-                                  : "border-line bg-surface hover:border-ink-3/50 hover:bg-sunk"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
-                                  <span className="text-[14.5px] font-bold text-ink">
-                                    {node.label}
-                                  </span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="font-mono text-[15px] font-bold text-ink">
-                                    {formatCurrency(nodeCost, currency, 2)}
-                                  </span>
-                                  {isAdjusted && (
-                                    <span className="ml-2 font-mono text-[12px] text-emerald-500 line-through">
-                                      {formatCurrency(node.monthly_usd, currency, 2)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
+                      {data.nodes.filter((n) => n.kind === "compute").map((node) => {
+                        const isSelected = activeNode?.id === node.id;
+                        const nodeCost = getNodeMonthlyCost(node);
+                        const isAdjusted = nodeCost < node.monthly_usd;
+                        const billShare = Math.round((node.monthly_usd / data.summary.total_monthly_usd) * 100);
+                        return (
+                          <button
+                            key={node.id}
+                            onClick={() => setActiveNode(node)}
+                            className={`group/card relative flex flex-col overflow-hidden rounded-xl border p-4 text-left transition-all duration-200 ${
+                              isSelected
+                                ? "border-accent/60 bg-accent/5 ring-1 ring-accent/30"
+                                : "border-line bg-surface hover:border-accent/30 hover:bg-accent/3"
+                            }`}
+                          >
+                            {/* Heat bar – visual cost weight */}
+                            <div className="absolute top-0 left-0 h-0.5 bg-gradient-to-r from-red-500/60 to-orange-500/30 rounded-t-xl" style={{ width: `${Math.min(100, billShare * 3)}%` }} />
 
-                              {node.alert && (
-                                <div className="mt-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2 text-[12px] text-amber-500 flex items-center gap-1.5">
-                                  <Icon icon="mdi:alert" className="h-4 w-4 shrink-0" />
-                                  <span>{node.alert}</span>
-                                </div>
-                              )}
-
-                              <div className="mt-3 flex items-center justify-between text-[12px] text-ink-3">
-                                <span>
-                                  Utilization: <strong className="text-ink">{node.utilization}</strong>
-                                </span>
-                                <span className="text-amber-500 font-semibold">
-                                  Reducible Waste: {formatCurrency(node.waste_usd, currency, 0)}/mo
-                                </span>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2.5">
+                                <span className="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)] animate-pulse" />
+                                <span className="text-[14px] font-bold text-ink">{node.label}</span>
                               </div>
-                            </button>
-                          );
-                        })}
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="font-mono text-[15px] font-bold text-ink">{formatCurrency(nodeCost, currency, 2)}</span>
+                                {isAdjusted && (
+                                  <span className="font-mono text-[11.5px] text-emerald-500 line-through opacity-70">{formatCurrency(node.monthly_usd, currency, 2)}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {node.alert && (
+                              <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/8 px-3 py-2 text-[11.5px] text-amber-400 flex items-start gap-2">
+                                <Icon icon="mdi:alert" className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                                <span className="leading-relaxed">{node.alert}</span>
+                              </div>
+                            )}
+
+                            <div className="mt-3 flex items-center justify-between text-[11.5px]">
+                              <span className="text-ink-3">Utilization: <strong className="text-ink">{node.utilization}</strong></span>
+                              <span className={`font-semibold ${node.waste_usd > 0 ? "text-amber-500" : "text-emerald-500"}`}>
+                                {node.waste_usd > 0 ? `Reducible Waste: ${formatCurrency(node.waste_usd, currency, 0)}/mo` : "✓ Optimal"}
+                              </span>
+                            </div>
+                            <div className="mt-2 h-1 w-full rounded-full bg-sunk overflow-hidden">
+                              <div className="h-full rounded-full bg-gradient-to-r from-red-500/60 to-orange-400/60" style={{ width: `${billShare}%` }} />
+                            </div>
+                            <div className="mt-1 text-[10px] text-ink-3">{billShare}% of bill</div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  <div className="flex justify-center text-ink-3">
-                    <Icon icon="mdi:arrow-down" className="h-5 w-5" />
+                  {/* Connector */}
+                  <div className="flex justify-center">
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="h-4 w-px bg-gradient-to-b from-accent/40 to-accent/10" />
+                      <Icon icon="mdi:arrow-down" className="h-4 w-4 text-accent/50" />
+                    </div>
                   </div>
 
-                  {/* Layer 3 */}
+                  {/* Layer 3 – Databases */}
                   <div>
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
-                      3. Databases, Storage & Cache
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/15 text-[10px] font-bold text-blue-400">3</span>
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-ink-3">Databases, Storage & Cache</span>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {data.nodes
-                        .filter(
-                          (n) =>
-                            n.kind === "database" ||
-                            n.kind === "storage" ||
-                            n.kind === "cache" ||
-                            n.kind === "monitoring"
-                        )
+                        .filter((n) => n.kind === "database" || n.kind === "storage" || n.kind === "cache" || n.kind === "monitoring")
                         .map((node) => {
                           const isSelected = activeNode?.id === node.id;
                           const nodeCost = getNodeMonthlyCost(node);
+                          const hasWaste = node.waste_usd > 0;
                           return (
                             <button
                               key={node.id}
                               onClick={() => setActiveNode(node)}
-                              className={`flex flex-col items-start rounded-xl border p-3.5 text-left transition-all ${
+                              className={`group/card flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-200 ${
                                 isSelected
-                                  ? "border-accent bg-accent/5 ring-1 ring-accent"
-                                  : "border-line bg-surface hover:border-ink-3/50 hover:bg-sunk"
+                                  ? "border-accent/60 bg-accent/5 ring-1 ring-accent/30 shadow-sm"
+                                  : "border-line bg-surface hover:border-accent/30 hover:bg-accent/3"
                               }`}
                             >
                               <div className="flex w-full items-center justify-between">
-                                <span className="text-[13px] font-semibold text-ink truncate max-w-[190px]">
-                                  {node.label}
-                                </span>
-                                <span className="font-mono text-[13px] font-bold text-ink">
-                                  {formatCurrency(nodeCost, currency, 2)}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className={`h-2 w-2 rounded-full ${
+                                    node.kind === "database" ? "bg-blue-400" :
+                                    node.kind === "storage" ? "bg-green-400" :
+                                    node.kind === "cache" ? "bg-purple-400" : "bg-ink-3"
+                                  }`} />
+                                  <span className="text-[12.5px] font-semibold text-ink truncate max-w-[160px]">{node.label}</span>
+                                </div>
+                                <span className="font-mono text-[13px] font-bold text-ink">{formatCurrency(nodeCost, currency, 2)}</span>
                               </div>
-                              <div className="mt-2 flex w-full items-center justify-between text-[11.5px] text-ink-3">
-                                <span>Util: {node.utilization}</span>
-                                {node.waste_usd > 0 ? (
-                                  <span className="text-amber-500 font-medium">
-                                    Waste: {formatCurrency(node.waste_usd, currency, 0)}
-                                  </span>
+                              <div className="mt-2 flex w-full items-center justify-between text-[11px]">
+                                <span className="text-ink-3">Util: {node.utilization}</span>
+                                {hasWaste ? (
+                                  <span className="font-semibold text-amber-500">Waste: {formatCurrency(node.waste_usd, currency, 0)}</span>
                                 ) : (
                                   <span className="text-emerald-500">Normal</span>
                                 )}
@@ -564,98 +607,136 @@ function FinOpsContent() {
                         })}
                     </div>
                   </div>
+
                 </div>
               </div>
 
-              {/* Inspector Panel */}
-              <div className="rounded-2xl border border-line bg-surface p-6 shadow-xs flex flex-col justify-between">
+              {/* ── Resource Inspector Panel ── */}
+              <div className="relative flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-xs">
+                {/* Glow accent top edge */}
+                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
+
                 {activeNode ? (
-                  <div>
-                    <div className="flex items-center justify-between border-b border-line pb-4">
-                      <div>
-                        <span className="text-[11px] uppercase font-bold tracking-wider text-ink-3">
-                          Resource Inspector
-                        </span>
-                        <h3 className="text-[16px] font-bold text-ink mt-0.5">
-                          {activeNode.label}
-                        </h3>
-                      </div>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${
+                  <>
+                    {/* Inspector Header */}
+                    <div className="px-5 py-4 border-b border-line bg-gradient-to-r from-sunk/50 to-transparent">
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-ink-3">Resource Inspector</span>
+                      <h3 className="mt-1 text-[15px] font-bold text-ink leading-tight">{activeNode.label}</h3>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border ${
                           activeNode.status === "healthy"
-                            ? "bg-emerald-500/10 text-emerald-500"
+                            ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
                             : activeNode.status === "warning"
-                            ? "bg-amber-500/10 text-amber-500"
-                            : "bg-red-500/10 text-red-500"
-                        }`}
-                      >
-                        {activeNode.status.replace("_", " ")}
-                      </span>
+                            ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                            : "bg-red-500/10 text-red-400 border-red-500/20"
+                        }`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${
+                            activeNode.status === "healthy" ? "bg-emerald-500" :
+                            activeNode.status === "warning" ? "bg-amber-500" : "bg-red-500"
+                          } ${activeNode.status !== "healthy" ? "animate-pulse" : ""}`} />
+                          {activeNode.status.replace("_", " ")}
+                        </span>
+                        <span className="text-[11px] text-ink-3">{activeNode.kind}</span>
+                      </div>
                     </div>
 
-                    <div className="mt-5 space-y-4">
-                      <div className="rounded-xl border border-line bg-sunk p-3.5">
-                        <div className="text-[12px] text-ink-3">Monthly Run-rate</div>
-                        <div className="mt-1 flex items-baseline gap-2">
-                          <span className="font-mono text-[24px] font-bold text-ink">
+                    {/* Inspector Body */}
+                    <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+                      {/* Cost card */}
+                      <div className="relative overflow-hidden rounded-xl border border-accent-line/30 bg-gradient-to-br from-accent/5 to-transparent p-4">
+                        <div className="absolute -top-4 -right-4 h-16 w-16 rounded-full bg-accent/8 blur-xl" />
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Monthly Run-rate</div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <span className="font-mono text-[26px] font-bold text-ink">
                             {formatCurrency(getNodeMonthlyCost(activeNode), currency, 2)}
                           </span>
-                          <span className="text-[12px] text-ink-3">
-                            ({Math.round((activeNode.monthly_usd / data.summary.total_monthly_usd) * 100)}% of total bill)
-                          </span>
                         </div>
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between text-[12.5px] text-ink-2">
-                          <span>Workload Utilization</span>
-                          <span className="font-mono font-bold text-ink">{activeNode.utilization}</span>
+                        <div className="mt-1 text-[11.5px] text-ink-3">
+                          {Math.round((activeNode.monthly_usd / data.summary.total_monthly_usd) * 100)}% of total bill
                         </div>
-                        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-sunk">
+                        {/* Mini spend bar */}
+                        <div className="mt-3 h-1 w-full rounded-full bg-sunk overflow-hidden">
                           <div
-                            className={`h-full ${
-                              (parseInt(activeNode.utilization) || (activeNode.status === "action_needed" ? 15 : 85)) < 30
-                                ? "bg-amber-500"
-                                : "bg-emerald-500"
-                            }`}
-                            style={{
-                              width: isNaN(parseInt(activeNode.utilization))
-                                ? activeNode.status === "healthy"
-                                  ? "100%"
-                                  : "25%"
-                                : `${parseInt(activeNode.utilization)}%`,
-                            }}
+                            className="h-full rounded-full bg-gradient-to-r from-accent to-blue-400"
+                            style={{ width: `${Math.min(100, (activeNode.monthly_usd / data.summary.total_monthly_usd) * 100 * 8)}%` }}
                           />
                         </div>
                       </div>
 
-                      {activeNode.alert && (
-                        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-[12px] text-red-500">
-                          <div className="font-semibold flex items-center gap-1.5">
-                            <Icon icon="mdi:alert-decagram" className="h-4 w-4" />
-                            FinOps Optimization Notice
+                      {/* Utilization */}
+                      <div className="rounded-xl border border-line bg-sunk p-4">
+                        <div className="flex items-center justify-between text-[12px]">
+                          <span className="font-semibold text-ink-2">Workload Utilization</span>
+                          <span className={`font-mono font-bold ${
+                            (parseInt(activeNode.utilization) || 0) < 30 ? "text-amber-500" : "text-emerald-500"
+                          }`}>{activeNode.utilization}</span>
+                        </div>
+                        <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-surface">
+                          <div
+                            className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                              (parseInt(activeNode.utilization) || (activeNode.status === "action_needed" ? 15 : 85)) < 30
+                                ? "bg-gradient-to-r from-amber-500 to-orange-400"
+                                : "bg-gradient-to-r from-emerald-500 to-teal-400"
+                            }`}
+                            style={{
+                              width: isNaN(parseInt(activeNode.utilization))
+                                ? activeNode.status === "healthy" ? "85%" : "15%"
+                                : `${parseInt(activeNode.utilization)}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
+                          <span>0%</span><span>50%</span><span>100%</span>
+                        </div>
+                      </div>
+
+                      {/* Waste info */}
+                      {activeNode.waste_usd > 0 && (
+                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/6 p-3.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11.5px] font-semibold text-amber-500">Reducible Waste</span>
+                            <span className="font-mono text-[14px] font-bold text-amber-500">{formatCurrency(activeNode.waste_usd, currency, 2)}/mo</span>
                           </div>
-                          <p className="mt-1 text-ink-2">{activeNode.alert}</p>
+                          <div className="mt-1 text-[11px] text-ink-3">Could be eliminated with optimization</div>
                         </div>
                       )}
+
+                      {/* Alert notice */}
+                      {activeNode.alert && (
+                        <div className="rounded-xl border border-red-500/20 bg-red-500/6 p-4">
+                          <div className="flex items-center gap-2 font-semibold text-red-400 text-[12px]">
+                            <Icon icon="mdi:alert-decagram" className="h-4 w-4 shrink-0" />
+                            FinOps Optimization Notice
+                          </div>
+                          <p className="mt-2 text-[11.5px] text-ink-2 leading-relaxed">{activeNode.alert}</p>
+                        </div>
+                      )}
+
                     </div>
-                  </div>
+
+                    {/* CTA */}
+                    <div className="p-5 border-t border-line bg-gradient-to-t from-sunk/30 to-transparent">
+                      <button
+                        onClick={() => setActiveTab("recommendations")}
+                        className="group/btn flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent to-accent/80 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm hover:shadow-accent/20 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5"
+                      >
+                        <Icon icon="mdi:wrench" className="h-4 w-4" />
+                        <span>View Remediation Hub</span>
+                        <Icon icon="mdi:arrow-right" className="h-4 w-4 group-hover/btn:translate-x-0.5 transition-transform" />
+                      </button>
+                    </div>
+                  </>
                 ) : (
-                  <div className="flex h-full items-center justify-center text-center text-[13px] text-ink-3">
-                    Click any node to inspect telemetry.
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-sunk">
+                      <Icon icon="mdi:cursor-default-click-outline" className="h-7 w-7 text-ink-3" />
+                    </div>
+                    <p className="text-[13px] text-ink-3 leading-relaxed">Click any node in the topology to inspect its telemetry and cost data.</p>
                   </div>
                 )}
-
-                <div className="mt-6 border-t border-line pt-4">
-                  <button
-                    onClick={() => setActiveTab("recommendations")}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-white hover:opacity-90 transition-opacity"
-                  >
-                    <span>View Remediation Hub</span>
-                    <Icon icon="mdi:arrow-right" className="h-4 w-4" />
-                  </button>
-                </div>
               </div>
+
             </div>
           </div>
         )}

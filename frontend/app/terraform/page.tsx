@@ -349,7 +349,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
   return (
     <div className="flex min-h-screen flex-col bg-canvas text-ink">
       {/* ── TOP HEADER ────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface/95 px-5 py-2.5 backdrop-blur">
+      <header className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface/95 px-5 py-2.5 backdrop-blur">
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -1004,14 +1004,12 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 {/* Cost Report Top Bar with Genuine Vantage/WhichCloud Blue Badge */}
                 <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
                   <div className="flex items-center gap-3">
-                    {/* Authentic Cost Reports Icon Matching Screenshot 1 */}
+                    {/* Authentic Cost Reports Icon */}
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#3B82F6] text-white shadow-xs">
-                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 20h16" />
-                        <path d="M7 16v-4" />
-                        <path d="M12 16V9" />
-                        <path d="M17 16V5" />
-                        <path d="M5 12l5-4 4 3 6-6" strokeWidth="2.2" />
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+                        <rect x="3.5" y="13" width="4" height="7.5" rx="1.2" />
+                        <rect x="10" y="8" width="4" height="12.5" rx="1.2" />
+                        <rect x="16.5" y="3.5" width="4" height="17" rx="1.2" />
                       </svg>
                     </div>
                     <div>

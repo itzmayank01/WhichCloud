@@ -8,16 +8,19 @@
 @utility elev-1 {
   box-shadow: 0 1px 2px rgb(11 13 18 / 0.05);
 }
+
 @utility elev-2 {
   box-shadow:
     0 1px 2px rgb(11 13 18 / 0.04),
     0 8px 20px -12px rgb(11 13 18 / 0.22);
 }
+
 @utility elev-3 {
   box-shadow:
     0 1px 2px rgb(11 13 18 / 0.04),
     0 18px 40px -22px rgb(11 13 18 / 0.28);
 }
+
 @utility elev-4 {
   box-shadow:
     0 2px 4px rgb(11 13 18 / 0.05),
@@ -159,6 +162,7 @@
 .artboard .react-flow__renderer {
   background: #ffffff;
 }
+
 .artboard .react-flow__controls-button {
   background: #ffffff;
   border-bottom: 1px solid #e3e6ea;
@@ -260,7 +264,8 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-sans-family), ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: "cv05" 1, "ss01" 1; /* single-storey a, tighter l */
+  font-feature-settings: "cv05" 1, "ss01" 1;
+  /* single-storey a, tighter l */
 }
 
 /* Every figure lines up in its column and never reflows when it changes. */
@@ -271,12 +276,19 @@ body {
 /* The live price ticker. One strip is duplicated, so translating by exactly
    half the track returns to an identical frame and the loop is invisible. */
 @keyframes ticker {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-\[ticker_48s_linear_infinite\] { animation: none; }
+  .animate-\[ticker_48s_linear_infinite\] {
+    animation: none;
+  }
 }
 
 /* ── staggered reveal, used by components/landing/Reveal.tsx ──
@@ -290,6 +302,7 @@ body {
     opacity: 0;
     transform: translateY(5px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -297,10 +310,12 @@ body {
 }
 
 @keyframes caret-blink {
+
   0%,
   45% {
     opacity: 1;
   }
+
   50%,
   95% {
     opacity: 0;
@@ -328,6 +343,7 @@ body {
 
 /* Motion is decoration here; the panels read the same standing still. */
 @media (prefers-reduced-motion: reduce) {
+
   [data-revealed] .reveal-line,
   [data-revealed] .reveal-caret {
     opacity: 1;
@@ -341,10 +357,12 @@ body {
    the figure beside it is counting to. */
 
 @keyframes diff-flash {
+
   0%,
   35% {
     background-color: rgba(180, 68, 42, 0.09);
   }
+
   100% {
     background-color: transparent;
   }
@@ -373,6 +391,7 @@ body {
     opacity: 0;
     transform: translateX(-6px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -389,6 +408,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   [data-revealed] .diff-flash,
   [data-revealed] .reveal-line.diff-flash,
   [data-revealed] .sku-new {
@@ -451,6 +471,7 @@ html {
     opacity: 0;
     transform: translateY(6px);
   }
+
   18%,
   100% {
     opacity: 1;
@@ -467,13 +488,16 @@ html {
     transform: translateX(-100%);
     opacity: 0;
   }
+
   8% {
     opacity: 1;
   }
+
   38% {
     transform: translateX(220%);
     opacity: 0;
   }
+
   100% {
     transform: translateX(220%);
     opacity: 0;
@@ -485,6 +509,7 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .estimate-row,
   .estimate-scan {
     animation: none;
@@ -500,6 +525,7 @@ html {
     opacity: 0;
     transform: translateY(5px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -515,10 +541,12 @@ html {
     transform: scale(0.3);
     opacity: 0;
   }
+
   60% {
     transform: scale(1.12);
     opacity: 1;
   }
+
   100% {
     transform: scale(1);
     opacity: 1;
@@ -534,20 +562,19 @@ html {
   from {
     background-position: 200% 0;
   }
+
   to {
     background-position: -200% 0;
   }
 }
 
 .working-text {
-  background: linear-gradient(
-    90deg,
-    var(--ink-3) 0%,
-    var(--ink-3) 35%,
-    var(--accent) 50%,
-    var(--ink-3) 65%,
-    var(--ink-3) 100%
-  );
+  background: linear-gradient(90deg,
+      var(--ink-3) 0%,
+      var(--ink-3) 35%,
+      var(--accent) 50%,
+      var(--ink-3) 65%,
+      var(--ink-3) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -556,12 +583,14 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .step-in,
   .tick-pop {
     animation: none;
     opacity: 1;
     transform: none;
   }
+
   .working-text {
     animation: none;
     color: var(--ink-3);

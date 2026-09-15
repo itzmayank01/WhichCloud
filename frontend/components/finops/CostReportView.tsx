@@ -197,12 +197,10 @@ export function CostReportView({
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-5 shadow-xs sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#3B82F6] text-white shadow-sm">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 20h16" />
-              <path d="M7 16v-4" />
-              <path d="M12 16V9" />
-              <path d="M17 16V5" />
-              <path d="M5 12l5-4 4 3 6-6" strokeWidth="2.2" />
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+              <rect x="3.5" y="13" width="4" height="7.5" rx="1.2" />
+              <rect x="10" y="8" width="4" height="12.5" rx="1.2" />
+              <rect x="16.5" y="3.5" width="4" height="17" rx="1.2" />
             </svg>
           </div>
           <div>

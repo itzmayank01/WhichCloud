@@ -88,10 +88,10 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
       pick: cheapest,
       because: meets.length
         ? "Nothing here fits the budget given. This is the least expensive " +
-          "option that still meets what you asked for."
+        "option that still meets what you asked for."
         : "Nothing here both fits the budget and meets what you asked for. " +
-          "This is the least expensive option that runs the workload — see " +
-          "what it does not meet, below.",
+        "This is the least expensive option that runs the workload — see " +
+        "what it does not meet, below.",
     };
   }
 
@@ -182,9 +182,9 @@ export function WorkspaceView({ name }: { name: string | null }) {
     const text = description.trim() || EXAMPLE;
     const picked =
       overrideCloud === null ||
-      overrideCloud === "aws" ||
-      overrideCloud === "gcp" ||
-      overrideCloud === "azure"
+        overrideCloud === "aws" ||
+        overrideCloud === "gcp" ||
+        overrideCloud === "azure"
         ? (overrideCloud as CloudId | null)
         : undefined;
     const provider = picked === undefined ? cloud : picked;
@@ -271,11 +271,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
         type="button"
         onClick={() => setAsking((open) => !open)}
         title="Ask about this architecture"
-        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
-          asking
+        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${asking
             ? "border-accent bg-accent text-white"
             : "border-line-strong bg-surface text-ink hover:bg-sunk"
-        }`}
+          }`}
       >
         <span className="h-3.5 w-3.5">{ToolIcons.ask}</span>
         Ask
@@ -334,11 +333,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     void ask(c.id);
                   }}
                   title={`Price this on ${c.name} — ${c.region}`}
-                  className={`rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors disabled:opacity-50 ${
-                    active
+                  className={`rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors disabled:opacity-50 ${active
                       ? "bg-surface text-ink shadow-sm ring-1 ring-line-strong"
                       : "text-ink-3 hover:text-ink-2"
-                  }`}
+                    }`}
                 >
                   {c.name}
                 </button>
@@ -355,11 +353,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
                 <button
                   key={option.label}
                   onClick={() => setSelected(option.label)}
-                  className={`group flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 transition-all ${
-                    active
+                  className={`group flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 transition-all ${active
                       ? "border-accent bg-accent-wash shadow-sm"
                       : "border-line bg-canvas hover:border-line-strong hover:bg-sunk"
-                  }`}
+                    }`}
                 >
                   <span
                     className={`text-[13px] font-semibold ${active ? "text-ink" : "text-ink-2"}`}
@@ -564,9 +561,8 @@ export function WorkspaceView({ name }: { name: string | null }) {
                   does not mean closing one panel to reach the other. */}
               {picked && (
                 <div
-                  className={`pointer-events-none absolute right-0 p-3 ${
-                    palette ? "bottom-0" : "top-0"
-                  }`}
+                  className={`pointer-events-none absolute right-0 p-3 ${palette ? "bottom-0" : "top-0"
+                    }`}
                 >
                   <SketchInspector
                     selection={picked}
@@ -621,11 +617,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
                           <button
                             key={option.label}
                             onClick={() => setSelected(option.label)}
-                            className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 transition-all ${
-                              option.label === selected
+                            className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 transition-all ${option.label === selected
                                 ? "border-accent bg-accent-wash shadow-sm"
                                 : "border-line bg-canvas hover:border-line-strong hover:bg-sunk"
-                            }`}
+                              }`}
                           >
                             <span className="text-[13px] font-semibold text-ink">
                               {option.label}
@@ -657,9 +652,8 @@ export function WorkspaceView({ name }: { name: string | null }) {
                   is the reader losing the thing they clicked to see. */}
               {inspected && (
                 <div
-                  className={`pointer-events-none absolute top-0 p-3 transition-[right] ${
-                    asking ? "right-[330px]" : "right-0"
-                  }`}
+                  className={`pointer-events-none absolute top-0 p-3 transition-[right] ${asking ? "right-[330px]" : "right-0"
+                    }`}
                 >
                   <Inspector
                     node={inspected}

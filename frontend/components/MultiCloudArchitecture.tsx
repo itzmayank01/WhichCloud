@@ -214,25 +214,29 @@ export function MultiCloudArchitecture({
           </label>
         )}
 
-        <label className="flex items-center gap-2.5 text-[14.5px] text-ink-2">
+        <label className="flex items-center gap-2.5 text-[14.5px] font-semibold text-ink-2">
           Budget
-          <span className="flex items-center rounded-lg border border-line bg-surface pl-2.5">
-            <span className="font-mono text-[14px] text-ink-3">$</span>
+          <span className="group/budget relative flex items-center overflow-hidden rounded-xl border border-line bg-surface shadow-xs transition-all duration-200 focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/20 focus-within:shadow-accent/10 focus-within:shadow-sm">
+            {/* $ prefix badge */}
+            <span className="flex h-full items-center border-r border-line bg-sunk px-2.5 py-2 font-mono text-[13px] font-bold text-ink-3">
+              $
+            </span>
             <input
               type="text"
               inputMode="numeric"
               value={budgetText}
               onChange={(e) => {
-                // Digits only, and no leading zeros to accumulate in front of
-                // what was typed.
                 const digits = e.target.value.replace(/[^\d]/g, "").slice(0, 7);
                 setBudgetText(digits.replace(/^0+(?=\d)/, ""));
               }}
               onBlur={() => setBudgetText(String(budgetValue || 0))}
-              className="tnum w-[86px] bg-transparent py-1.5 pl-1 pr-2.5 font-mono text-[14px] font-medium text-ink outline-none"
+              className="tnum w-[88px] bg-transparent py-2 pl-2 pr-1 font-mono text-[14px] font-semibold text-ink outline-none placeholder:text-ink-3"
               aria-label="Monthly budget in dollars"
             />
-            <span className="pr-2.5 font-mono text-[13px] text-ink-3">/mo</span>
+            {/* /mo suffix pill */}
+            <span className="flex items-center border-l border-line bg-sunk px-2.5 py-2 font-mono text-[12px] font-medium text-ink-3">
+              /mo
+            </span>
           </span>
         </label>
 
