@@ -39,12 +39,23 @@ RUN curl -sS "https://awscli.amazonaws.com/awscli-exe-linux-$(dpkg --print-archi
 
 WORKDIR /app
 
+# Built from the REPO ROOT as build context (not ./backend) -- see
+# render.yaml. knowledge.py resolves the techniques knowledge base as
+# `Path(__file__).resolve().parents[2] / "knowledge-base" / "techniques"`,
+# which is /knowledge-base/techniques once this file lives at
+# /app/whichcloud/knowledge.py. That directory sits beside backend/ in the
+# repo, not inside it, so a build scoped to ./backend can never see it at
+# all -- every route that touches recommendations (recommend, describe,
+# compare, techniques, audit, plan) 500'd with "knowledge base not found"
+# the moment this ran anywhere but a machine with the full repo checked out.
+
 # Dependencies first, so a code change does not re-resolve the whole tree.
-COPY pyproject.toml ./
-COPY whichcloud/__init__.py whichcloud/
+COPY backend/pyproject.toml ./
+COPY backend/whichcloud/__init__.py whichcloud/
 RUN pip install --no-cache-dir -e .
 
-COPY . .
+COPY backend/ .
+COPY knowledge-base /knowledge-base
 
 # Unbuffered, or nothing written to stdout appears in the platform's log
 # viewer until the process exits -- which for a server is never.

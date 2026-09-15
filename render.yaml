@@ -14,7 +14,10 @@ services:
     plan: free
     region: oregon
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    # Must be the repo root, not ./backend: the Dockerfile needs to COPY
+    # knowledge-base/ (sibling to backend/, not inside it) into the image --
+    # see the comment in backend/Dockerfile for why.
+    dockerContext: .
     healthCheckPath: /health
     envVars:
       # Postgres connection string (Neon). This app reads WHICHCLOUD_DSN,
