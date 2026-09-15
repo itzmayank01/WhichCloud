@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { api, type ConnectionSetup } from "@/lib/api";
 import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectAwsPage() {
   const router = useRouter();
+  const { getToken } = useAuth();
   const [setupData, setSetupData] = useState<ConnectionSetup | null>(null);
   const [loading, setLoading] = useState(true);
   const [roleArn, setRoleArn] = useState("");
@@ -21,10 +23,12 @@ export default function ConnectAwsPage() {
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    api
-      .connectionSetup("aws")
-      .then((data) => setSetupData(data))
-      .catch(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const data = await api.connectionSetup("aws", {}, token ?? undefined);
+        setSetupData(data);
+      } catch {
         // Fallback demo setup data
         setSetupData({
           provider: "aws",
@@ -35,9 +39,11 @@ export default function ConnectAwsPage() {
           cloudformation_url:
             "https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?templateURL=https://whichcloud-public.s3.amazonaws.com/cfn/whichcloud-role.yaml&stackName=WhichCloudCostRole",
         });
-      })
-      .finally(() => setLoading(false));
-  }, []);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [getToken]);
 
   const externalId = setupData?.external_id || "whichcloud-sec-8a9021b3";
 
@@ -53,11 +59,12 @@ export default function ConnectAwsPage() {
     setErrorMsg("");
 
     try {
+      const token = await getToken();
       const res = await api.connectionVerify("aws", {
         role_arn: roleArn || "arn:aws:iam::124398214412:role/WhichCloudCostRole",
         external_id: externalId,
         region,
-      });
+      }, token ?? undefined);
 
       if (res.ok) {
         const accId = res.account_id || (roleArn ? roleArn.split(":")[4] : "616551057703") || "616551057703";

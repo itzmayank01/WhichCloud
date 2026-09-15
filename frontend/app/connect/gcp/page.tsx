@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { api } from "@/lib/api";
 import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectGcpPage() {
   const router = useRouter();
+  const { getToken } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [datasetId, setDatasetId] = useState("");
@@ -24,10 +26,11 @@ export default function ConnectGcpPage() {
     setErrorMsg("");
 
     try {
+      const token = await getToken();
       const res = await api.connectionVerify("gcp", {
         project_id: projectId || "gcp-production-9021",
         dataset: datasetId || "billing_export_us",
-      });
+      }, token ?? undefined);
 
       if (res.ok) {
         const accId = res.account_id || projectId || "gcp-prod-981";

@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { api } from "@/lib/api";
 import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectGitHubPage() {
   const router = useRouter();
+  const { getToken } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [repoUrl, setRepoUrl] = useState("github.com/acme-corp/production-infrastructure");
   const [branch, setBranch] = useState("main");
@@ -24,12 +26,13 @@ export default function ConnectGitHubPage() {
     setErrorMsg("");
 
     try {
+      const clerkToken = await getToken();
       const res = await api.connectionVerify("github", {
         repo_url: repoUrl,
         branch: branch,
         github_token: token || "ghp_simulated_read_token_9281",
         iac_path: iacPath,
-      });
+      }, clerkToken ?? undefined);
 
       if (res.ok) {
         setConnectedOrgs((prev) => [...prev, repoUrl]);

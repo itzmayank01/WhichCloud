@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { api } from "@/lib/api";
 import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectAzurePage() {
   const router = useRouter();
+  const { getToken } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [tenantId, setTenantId] = useState("");
   const [appId, setAppId] = useState("");
@@ -28,12 +30,13 @@ export default function ConnectAzurePage() {
     setErrorMsg("");
 
     try {
+      const token = await getToken();
       const res = await api.connectionVerify("azure", {
         tenant_id: tenantId || "1050a480-ef60-43d7-b8db-2123dcd100b6",
         app_id: appId || "2d2233f5-7ad5-4a12-abc7-bad2889d6407",
         client_secret: password || "temp_secret_pass",
         subscription_id: subscriptionId || "sub-azure-enterprise-01",
-      });
+      }, token ?? undefined);
 
       if (res.ok) {
         const accId = res.account_id || subscriptionId || "sub-azure-enterprise-01";

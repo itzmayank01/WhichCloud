@@ -1972,7 +1972,7 @@ class ConnectionVerifyIn(BaseModel):
 
 
 @app.post("/api/connections/setup")
-def connection_setup(body: ConnectionSetupIn):
+def connection_setup(body: ConnectionSetupIn, owner: str = Depends(current_owner)):
     p = body.provider.lower()
     cfg = dict(body.config)
     external_id = ""
@@ -2042,7 +2042,7 @@ def connection_setup(body: ConnectionSetupIn):
 
 
 @app.post("/api/connections/verify")
-def connection_verify(body: ConnectionVerifyIn):
+def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(current_owner)):
     p = body.provider.lower()
     creds = dict(body.credentials)
 

@@ -758,11 +758,16 @@ export const api = {
   deleteArchitecture: (id: string, token: string) =>
     del<{ deleted: boolean }>(`/architecture/saved/${id}`, token),
 
-  connectionSetup: (provider: string, config: Record<string, unknown> = {}) =>
-    post<ConnectionSetup>("/api/connections/setup", { provider, config }),
+  // Both take a Clerk token: setup mints a per-account external ID and
+  // verify is handed real cloud credentials to check, so an unauthenticated
+  // caller could otherwise use this backend as a free oracle to test
+  // stolen/guessed credentials against AWS/Azure/GCP/GitHub without ever
+  // touching those providers from their own IP.
+  connectionSetup: (provider: string, config: Record<string, unknown> = {}, token?: string) =>
+    post<ConnectionSetup>("/api/connections/setup", { provider, config }, undefined, token),
 
-  connectionVerify: (provider: string, credentials: Record<string, unknown> = {}) =>
-    post<ConnectionVerifyResult>("/api/connections/verify", { provider, credentials }),
+  connectionVerify: (provider: string, credentials: Record<string, unknown> = {}, token?: string) =>
+    post<ConnectionVerifyResult>("/api/connections/verify", { provider, credentials }, undefined, token),
 
   // FinOps Live sends account telemetry and executes real infrastructure
   // actions, so every call here takes the Clerk session token -- same
