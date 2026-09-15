@@ -87,7 +87,7 @@ export function MultiCloudArchitecture({
      turned an empty field into 0, so clearing it and typing 1000 left the
      zero in front and read "01000". The string is what the reader typed; the
      number is derived from it. */
-  const [budgetText, setBudgetText] = useState("400");
+  const [budgetText, setBudgetText] = useState("800");
   const budgetValue = Math.max(0, Number(budgetText) || 0);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);

@@ -1,5 +1,6 @@
 import { ClerkProvider, Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { MobileNav } from "@/components/MobileNav";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -184,6 +185,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </nav>
 
             <div className="ml-auto flex items-center gap-4">
+              <MobileNav />
               {/* Before the account controls, matching where every docs site
                   and editor puts it: theme is a property of the reader, not
                   of the session, and it has to be reachable signed out. */}

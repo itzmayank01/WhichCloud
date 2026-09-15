@@ -15,6 +15,12 @@ dist/
 build/
 *.tsbuildinfo
 
+# Vercel project link (created at repo root when deploying via `vercel` CLI
+# from the root instead of frontend/ -- see render.yaml's sibling comment
+# about dockerContext for why root-level deploys matter here)
+.vercel/
+*.log
+
 # Env & secrets  ── NEVER COMMIT
 .env
 .env.*
