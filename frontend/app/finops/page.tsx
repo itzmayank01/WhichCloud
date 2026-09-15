@@ -668,32 +668,43 @@ function FinOpsContent() {
                         </div>
                       </div>
 
-                      {/* Utilization */}
-                      <div className="rounded-xl border border-line bg-sunk p-4">
-                        <div className="flex items-center justify-between text-[12px]">
-                          <span className="font-semibold text-ink-2">Workload Utilization</span>
-                          <span className={`font-mono font-bold ${
-                            (parseInt(activeNode.utilization) || 0) < 30 ? "text-amber-500" : "text-emerald-500"
-                          }`}>{activeNode.utilization}</span>
-                        </div>
-                        <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-surface">
-                          <div
-                            className={`h-full rounded-full transition-all duration-1000 ease-out ${
-                              (parseInt(activeNode.utilization) || (activeNode.status === "action_needed" ? 15 : 85)) < 30
-                                ? "bg-gradient-to-r from-amber-500 to-orange-400"
-                                : "bg-gradient-to-r from-emerald-500 to-teal-400"
-                            }`}
-                            style={{
-                              width: isNaN(parseInt(activeNode.utilization))
-                                ? activeNode.status === "healthy" ? "85%" : "15%"
-                                : `${parseInt(activeNode.utilization)}%`,
-                            }}
-                          />
-                        </div>
-                        <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
-                          <span>0%</span><span>50%</span><span>100%</span>
-                        </div>
-                      </div>
+                      {/* Utilization. Computed once so the label color, bar
+                          color, and bar width can never disagree about the
+                          same node -- they used three different fallback
+                          rules for non-numeric utilization values (e.g.
+                          "Active Task", "Pay-Per-Request") before this,
+                          which could show a red "0%" label next to a green
+                          85%-filled bar. */}
+                      {(() => {
+                        const parsed = parseInt(activeNode.utilization, 10);
+                        const utilPct = Number.isNaN(parsed)
+                          ? (activeNode.status === "healthy" || activeNode.status === "optimized" ? 85 : 15)
+                          : Math.min(100, Math.max(0, parsed));
+                        const isLow = utilPct < 30;
+                        return (
+                          <div className="rounded-xl border border-line bg-sunk p-4">
+                            <div className="flex items-center justify-between text-[12px]">
+                              <span className="font-semibold text-ink-2">Workload Utilization</span>
+                              <span className={`font-mono font-bold ${isLow ? "text-amber-500" : "text-emerald-500"}`}>
+                                {activeNode.utilization}
+                              </span>
+                            </div>
+                            <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-surface">
+                              <div
+                                className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                                  isLow
+                                    ? "bg-gradient-to-r from-amber-500 to-orange-400"
+                                    : "bg-gradient-to-r from-emerald-500 to-teal-400"
+                                }`}
+                                style={{ width: `${utilPct}%` }}
+                              />
+                            </div>
+                            <div className="mt-1.5 flex justify-between text-[10px] text-ink-3">
+                              <span>0%</span><span>50%</span><span>100%</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Waste info */}
                       {activeNode.waste_usd > 0 && (
