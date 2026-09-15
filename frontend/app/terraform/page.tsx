@@ -125,15 +125,32 @@ function TerraformStudioContent() {
     setMounted(true);
   }, []);
 
+  // TEMPORARY diagnostic instrumentation -- remove once the root cause of
+  // the stuck-on-fresh-load bug is found. `tick` proves basic effects/timers
+  // fire post-hydration at all; `trace` records exactly how far each loader
+  // gets, visible directly in the loading UI instead of only in devtools.
+  const [tick, setTick] = useState(0);
+  const [trace, setTrace] = useState<string[]>([]);
+  const log = (msg: string) =>
+    setTrace((prev) => [...prev.slice(-7), `${Date.now() % 100000}ms ${msg}`]);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 500);
+    return () => clearInterval(id);
+  }, []);
+
   // 1. Fetch full Recommendation for the Architecture Diagram
   useEffect(() => {
+    log(`effect1 fired, mounted=${mounted}`);
     if (!mounted) return;
     let cancelled = false;
     async function loadArchitecture() {
+      log("loadArchitecture: start");
       setLoadingRecommendation(true);
       try {
         const text = description.trim() || DEFAULT_WORKLOAD;
+        log("loadArchitecture: awaiting api.describe");
         const answer = await api.describe({ description: text, provider: cloud });
+        log("loadArchitecture: api.describe resolved");
         if (!cancelled && answer) {
           setRecommendation(answer);
           if (answer.options?.length) {
@@ -151,30 +168,37 @@ function TerraformStudioContent() {
           }
         }
       } catch (e) {
+        log(`loadArchitecture: threw ${String(e).slice(0, 60)}`);
         console.warn("Could not load full architecture for diagram:", e);
       } finally {
+        log(`loadArchitecture: finally, cancelled=${cancelled}`);
         if (!cancelled) setLoadingRecommendation(false);
       }
     }
     loadArchitecture();
     return () => {
+      log("effect1 cleanup (cancelled=true)");
       cancelled = true;
     };
   }, [mounted, description, cloud]);
 
   // 2. Fetch Terraform inspect files when option, cloud, or description changes
   useEffect(() => {
+    log(`effect2 fired, mounted=${mounted}`);
     if (!mounted) return;
     let cancelled = false;
     async function loadFiles() {
+      log("loadFiles: start");
       setLoadingFiles(true);
       setError(null);
       try {
+        log("loadFiles: awaiting api.describeInspectTf");
         const data = await api.describeInspectTf({
           description: description.trim() || DEFAULT_WORKLOAD,
           option: selectedOption,
           provider: cloud,
         });
+        log("loadFiles: describeInspectTf resolved");
 
         if (!cancelled) {
           const loadedFiles: Record<string, string> = { ...data.files };
@@ -243,6 +267,7 @@ module "managed_db" {
           }
         }
       } catch (err: unknown) {
+        log(`loadFiles: threw ${String(err).slice(0, 60)}`);
         if (!cancelled) {
           console.error("Failed to load Terraform inspect:", err);
           const fallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region);
@@ -250,11 +275,13 @@ module "managed_db" {
           setEditedCode(fallback);
         }
       } finally {
+        log(`loadFiles: finally, cancelled=${cancelled}`);
         if (!cancelled) setLoadingFiles(false);
       }
     }
     loadFiles();
     return () => {
+      log("effect2 cleanup (cancelled=true)");
       cancelled = true;
     };
   }, [mounted, description, selectedOption, cloud]);
@@ -817,8 +844,12 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 </div>
 
                 {loadingFiles ? (
-                  <div className="flex flex-1 items-center justify-center text-[12.5px] font-mono text-ink-3">
-                    Generating Terraform IaC for {selectedOption} ({cloud.toUpperCase()})...
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[12.5px] font-mono text-ink-3 p-4 text-left">
+                    <div>Generating Terraform IaC for {selectedOption} ({cloud.toUpperCase()})...</div>
+                    <div className="w-full max-w-xl text-[10px] text-ink-2 border border-line rounded p-2 mt-2">
+                      <div>DEBUG tick={tick} mounted={String(mounted)}</div>
+                      {trace.map((t, i) => <div key={i}>{t}</div>)}
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-1 overflow-hidden font-mono text-[12px] leading-relaxed">
