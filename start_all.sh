@@ -27,19 +27,42 @@ if [ -z "$CLERK_JWKS_URL" ]; then
   fi
 fi
 
+# Re-running this script after a crash (or out of habit) used to spawn a
+# second uvicorn/next process fighting the first one for the same port,
+# leaving an orphan that has to be found and killed by hand. Skip a service
+# whose port is already bound instead.
+port_is_listening() {
+  lsof -i ":$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
 pushd backend > /dev/null
-if [ ! -d ".venv" ]; then
-  python3 -m venv .venv
+if port_is_listening 8010; then
+  echo "Backend already listening on :8010, leaving it running."
+else
+  if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+  fi
+  source .venv/bin/activate
+  pip install -e .
+  nohup uvicorn whichcloud.api:app --reload --host 127.0.0.1 --port 8010 > backend.log 2>&1 &
+  disown
 fi
-source .venv/bin/activate
-pip install -e .
-nohup uvicorn whichcloud.api:app --reload --host 127.0.0.1 --port 8010 > backend.log 2>&1 &
 popd > /dev/null
 
 # 3️⃣ Frontend
 pushd frontend > /dev/null
-npm install
-nohup npm run dev > frontend.log 2>&1 &
+if port_is_listening 3000 || port_is_listening 3001; then
+  echo "Frontend already listening on :3000/:3001, leaving it running."
+else
+  # package-lock.json newer than node_modules means a dependency changed
+  # since the last install; otherwise `npm install` is a no-op that still
+  # costs several seconds on every single run of this script.
+  if [ ! -d "node_modules" ] || [ "package-lock.json" -nt "node_modules" ]; then
+    npm install
+  fi
+  nohup npm run dev > frontend.log 2>&1 &
+  disown
+fi
 popd > /dev/null
 
 # Summary
