@@ -32,6 +32,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -47,6 +48,14 @@ from .requirements import Requirement
 #: merely-slow provider still answers; short enough that a hung one fails
 #: over while the user is still watching.
 EXTRACT_TIMEOUT_S = 25.0
+
+#: Wall-clock budget for the WHOLE chain, not one call. With several keys
+#: configured, a run of timeouts could otherwise keep someone waiting minutes
+#: before the chain gave up -- each individual call staying under its own
+#: limit while the total ran away. Once this is spent the chain stops and
+#: reports what it tried, rather than starting another 25-second wait nobody
+#: is still watching for.
+EXTRACT_BUDGET_S = 60.0
 
 Provider = Literal["gemini", "groq", "anthropic", "openai"]
 
@@ -665,30 +674,43 @@ def _draft_with_failover(description: str, provider: Provider, client=None):
     # around the call is the one mechanism that works for all of them. A
     # leaked worker on a genuinely hung call is acceptable: the process
     # carries on and the next provider answers.
-    stalled: set[str] = set()  # providers whose endpoint is hung, not a key
+    # Providers whose endpoint has timed out, and how many of their keys have
+    # done so. A single timeout used to write off every remaining key of that
+    # provider on the theory that they all hit the same slow endpoint -- but a
+    # timeout on a rate-limited free tier often means THAT key is being
+    # throttled into silence rather than answering with a clean 429, and nothing
+    # about it says the next key is in the same state. Three real Groq keys
+    # were configured and only the first was ever tried, because the other two
+    # got skipped the moment it timed out. Two timeouts in a row for the same
+    # provider is what actually indicates a hung endpoint rather than one
+    # throttled key; only then is the rest of that provider written off.
+    stall_count: dict[str, int] = {}
+    STALL_LIMIT = 2
     # One worker per candidate, and NOT a `with` block: a genuinely hung call
     # leaves its thread running, and `with`-exit (shutdown(wait=True)) would
     # block the whole request on that leaked thread -- reintroducing the hang
     # this timeout exists to remove. shutdown(wait=False) at the end lets the
     # request return while the orphan finishes and is discarded.
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(chain)))
+    deadline = time.monotonic() + EXTRACT_BUDGET_S
     try:
         for candidate in chain:
-            # A timeout is an endpoint problem, not a key one: the other keys
-            # of a stalled provider hit the same slow endpoint, so trying them
-            # only burns another EXTRACT_TIMEOUT_S each. Skip straight to the
-            # next provider. (A quota error, by contrast, IS key-specific --
-            # those still walk every key.)
-            if candidate.provider in stalled:
+            # Give each provider up to STALL_LIMIT keys before deciding its
+            # endpoint itself is hung and skipping the rest. (A quota error, by
+            # contrast, IS key-specific -- those still walk every key.)
+            if stall_count.get(candidate.provider, 0) >= STALL_LIMIT:
                 continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             future = pool.submit(
                 _EXTRACTORS[candidate.provider], description, None, candidate.key
             )
             try:
-                return future.result(timeout=EXTRACT_TIMEOUT_S)
+                return future.result(timeout=min(EXTRACT_TIMEOUT_S, remaining))
             except concurrent.futures.TimeoutError:
                 future.cancel()
-                stalled.add(candidate.provider)
+                stall_count[candidate.provider] = stall_count.get(candidate.provider, 0) + 1
                 failures.append((
                     candidate.label,
                     TimeoutError(f"no response in {EXTRACT_TIMEOUT_S:.0f}s (overloaded)"),
