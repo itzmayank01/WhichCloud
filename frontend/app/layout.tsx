@@ -126,7 +126,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           signInFallbackRedirectUrl="/dashboard"
           signUpFallbackRedirectUrl="/dashboard"
         >
-          <header className="sticky top-0 z-40 flex h-16 items-center gap-8 border-b border-line bg-canvas/85 px-6 backdrop-blur">
+          {/* Gaps and padding tighten below md. At 390px the signed-in header
+              (wordmark + menu + theme + Workspace + avatar) overflowed to
+              454px, which scrolled the whole PAGE sideways -- every section
+              under it inherited the horizontal scroll, not just the bar. */}
+          <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-line bg-canvas/85 px-4 backdrop-blur md:gap-8 md:px-6">
             <Link href="/" aria-label="WhichCloud home">
               <Wordmark />
             </Link>
@@ -184,7 +188,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </Link>
             </nav>
 
-            <div className="ml-auto flex items-center gap-4">
+            <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-4">
               <MobileNav />
               {/* Before the account controls, matching where every docs site
                   and editor puts it: theme is a property of the reader, not
@@ -197,7 +201,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   </button>
                 </SignInButton>
                 <SignUpButton>
-                  <button className="rounded-lg bg-accent px-4 py-2 text-[15.5px] font-medium text-white transition-opacity hover:opacity-90">
+                  <button className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-white transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]">
                     Get started
                   </button>
                 </SignUpButton>
@@ -205,7 +209,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Show when="signed-in">
                 <Link
                   href="/dashboard"
-                  className="rounded-lg bg-accent px-4 py-2 text-[15.5px] font-medium text-white transition-opacity hover:opacity-90"
+                  className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-white transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]"
                 >
                   Workspace
                 </Link>

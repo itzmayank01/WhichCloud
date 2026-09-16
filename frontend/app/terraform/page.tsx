@@ -396,8 +396,10 @@ resource "whichcloud_cost_report" "ai_curated_report" {
           </div>
         </div>
 
-        {/* Cloud Switcher */}
-        <div className="flex items-center gap-1.5">
+        {/* Cloud Switcher. Wraps below its own row on narrow screens: the
+            cloud pills plus three priced tier buttons measured 749px, which
+            scrolled the entire /terraform page sideways on a 390px phone. */}
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
           <div className="flex items-center rounded-lg border border-line bg-canvas p-0.5">
             {CLOUDS.map((c) => (
               <button
@@ -424,8 +426,10 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             ))}
           </div>
 
-          {/* Architecture Tier Switcher (Screenshot 2) */}
-          <div className="flex items-center gap-1 rounded-xl border border-line bg-canvas p-1">
+          {/* Architecture Tier Switcher (Screenshot 2). Scrolls rather than
+              wraps: three priced tiers read as one control, and a tier that
+              drops onto its own line stops looking like a peer of the others. */}
+          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-line bg-canvas p-1">
             {allOptions.map((opt) => (
               <button
                 key={opt.label}
