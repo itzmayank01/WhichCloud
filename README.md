@@ -11,7 +11,7 @@ Describe your app in plain English → get 2–3 cost-optimal cloud architecture
 ```
 Plain English
    → LLM extracts Requirement JSON
-   → Engine + Knowledge Base picks services & optimizations
+   → Engine + Knowledge Base picks services & optimizations 
    → Generate Terraform (from vetted modules)
    → Infracost prices it            ← REAL numbers, not LLM guesses
    → mingrammer/diagrams renders it
