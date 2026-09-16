@@ -1997,7 +1997,7 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
     steps = []
     grants = ""
     stores_secret = False
-    cfn_url = ""
+    our_account_id = ""
 
     if p == "aws":
         from whichcloud.connections import aws as conn_aws
@@ -2011,11 +2011,13 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
             {"title": s.title, "body": s.body, "snippet": s.snippet, "language": s.language}
             for s in setup_obj.steps
         ]
-        cfn_url = (
-            "https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review"
-            f"?templateURL=https://whichcloud-public.s3.amazonaws.com/cfn/whichcloud-role.yaml"
-            f"&stackName=WhichCloudCostRole&param_ExternalId={external_id}"
-        )
+        # The account a caller's trust policy has to name. The frontend builds
+        # the CloudFormation Quick-Create link and the predictable role ARN
+        # from this rather than us building a URL server-side: it already
+        # knows its own origin, which is where the public template actually
+        # lives (a prior version of this pointed at an S3 bucket that was
+        # never created, so every Quick-Create link 404'd).
+        our_account_id = conn_aws.OUR_ACCOUNT_ID
     elif p == "azure":
         from whichcloud.connections import azure as conn_azure
 
@@ -2055,7 +2057,7 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
         "grants": grants,
         "stores_secret": stores_secret,
         "steps": steps,
-        "cloudformation_url": cfn_url,
+        "our_account_id": our_account_id,
     }
 
 

@@ -863,7 +863,10 @@ export type ConnectionSetup = {
   grants: string;
   stores_secret: boolean;
   steps: ConnectionSetupStep[];
-  cloudformation_url?: string;
+  /** AWS only: the account a trust policy has to name. Empty if the
+   *  deployment has no WHICHCLOUD_AWS_ACCOUNT_ID configured, in which case
+   *  no AWS connection can be completed yet. */
+  our_account_id?: string;
 };
 
 export type ConnectionVerifyResult = {

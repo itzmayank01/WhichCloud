@@ -129,7 +129,7 @@ def setup(config: dict) -> Setup:
             SetupStep(
                 title="Paste the role ARN back here",
                 body="Copy it from the role's summary page.",
-                snippet="arn:aws:iam::<your-account-id>:role/WhichCloudCostReader",
+                snippet="arn:aws:iam::<your-account-id>:role/WhichCloudCostRole",
             ),
         ],
     )
