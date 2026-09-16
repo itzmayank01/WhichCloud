@@ -18,6 +18,13 @@ export interface ConnectedAccountData extends ProviderBrand {
   id: string;
   name: string;
   connectedAt?: string;
+  /** Clerk user id of whoever connected this.
+   *
+   *  Browser storage is per-BROWSER, not per-person: signing out and signing
+   *  in as someone else left the previous user's connection in place, and the
+   *  app went on presenting their cloud account to the new user. Stamping the
+   *  owner lets a read reject a connection that belongs to somebody else. */
+  ownerId?: string;
 }
 
 /** Branding per provider -- name, logo, default region. Deliberately carries
@@ -65,7 +72,7 @@ const STORAGE_KEY = "whichcloud.connected_account";
  *  indistinguishable from "connected to that account" and every caller
  *  rendered somebody else's data for a brand new user. Callers must handle
  *  null by offering to connect, never by substituting a default. */
-export function getStoredAccount(): ConnectedAccountData | null {
+export function getStoredAccount(currentUserId?: string | null): ConnectedAccountData | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -74,9 +81,19 @@ export function getStoredAccount(): ConnectedAccountData | null {
       const parsed = JSON.parse(raw);
       const brand = CLOUD_PROVIDERS[parsed?.provider as CloudProviderId];
       // An entry without an id is not a connection, whatever else it holds.
-      if (brand && typeof parsed.id === "string" && parsed.id.trim()) {
-        return { ...brand, ...parsed, logo: brand.logo };
+      if (!brand || typeof parsed.id !== "string" || !parsed.id.trim()) return null;
+
+      /* Belongs to a different sign-in: not this user's to see. Also true of
+         an entry saved before owners were recorded -- it cannot be shown to
+         belong to the person now signed in, so it is discarded rather than
+         assumed. Either way the stale entry is removed instead of being left
+         to surface again on the next read. */
+      if (currentUserId && parsed.ownerId !== currentUserId) {
+        localStorage.removeItem(STORAGE_KEY);
+        return null;
       }
+
+      return { ...brand, ...parsed, logo: brand.logo };
     }
   } catch {
     // Unreadable storage is treated as "not connected", never as a default.

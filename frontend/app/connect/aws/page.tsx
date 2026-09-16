@@ -10,7 +10,7 @@ import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectAwsPage() {
   const router = useRouter();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const [setupData, setSetupData] = useState<ConnectionSetup | null>(null);
   const [loading, setLoading] = useState(true);
   const [roleArn, setRoleArn] = useState("");
@@ -88,6 +88,7 @@ export default function ConnectAwsPage() {
           return;
         }
         setStoredAccount({
+          ownerId: userId ?? undefined,
           provider: "aws",
           id: accId,
           name: `AWS Account (${accId})`,
@@ -220,6 +221,7 @@ export default function ConnectAwsPage() {
                 const id = customAccountId.trim();
                 if (!/^\d{12}$/.test(id)) return;
                 setStoredAccount({
+                  ownerId: userId ?? undefined,
                   provider: "aws",
                   id,
                   name: `AWS Account (${id})`,

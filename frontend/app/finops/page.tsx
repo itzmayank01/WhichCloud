@@ -92,22 +92,22 @@ function ProgressBar({
 }
 
 function FinOpsContent() {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const searchParams = useSearchParams();
   const providerParam = searchParams.get("provider");
   const accountIdParam = searchParams.get("account_id");
   const tabParam = (searchParams.get("tab") as NavItemKey) || "overview";
 
-  // Initialize from URL param or stored connected account
-  const [provider, setProvider] = useState<string>(() => {
-    if (providerParam && ["aws", "azure", "gcp", "github"].includes(providerParam)) {
-      return providerParam;
-    }
-    if (typeof window !== "undefined") {
-      return getStoredAccount()?.provider ?? "aws";
-    }
-    return "aws";
-  });
+  /* Only the URL seeds this. Reading storage here cannot be done safely --
+     the initializer runs before `userId` is known, so the ownership check
+     would have nothing to compare against and would hand back whichever
+     provider the PREVIOUS signed-in user had selected. The effect below
+     adopts the stored provider once the owner can actually be verified. */
+  const [provider, setProvider] = useState<string>(() =>
+    providerParam && ["aws", "azure", "gcp", "github"].includes(providerParam)
+      ? providerParam
+      : "aws",
+  );
 
   const [activeTab, setActiveTab] = useState<NavItemKey>(
     ["overview", "reports", "issues", "resources", "planning", "recommendations", "settings"].includes(tabParam)
@@ -137,6 +137,15 @@ function FinOpsContent() {
     return () => clearInterval(id);
   }, [loading]);
 
+  /* Adopt the stored provider once `userId` is known, so the ownership check
+     in getStoredAccount can actually run. A connection belonging to a
+     different sign-in is dropped there and this leaves `provider` alone. */
+  useEffect(() => {
+    if (providerParam || !userId) return;
+    const owned = getStoredAccount(userId);
+    if (owned) setProvider(owned.provider);
+  }, [providerParam, userId]);
+
   // Sync state when URL params or provider changes
   useEffect(() => {
     let mounted = true;
@@ -145,7 +154,7 @@ function FinOpsContent() {
        completed -- never from a per-provider default. That default used to be
        a real account number, so a signed-in user who had connected nothing
        was handed it and this effect went and fetched its data. */
-    const effectiveId = accountIdParam || getStoredAccount()?.id || "";
+    const effectiveId = accountIdParam || getStoredAccount(userId)?.id || "";
 
     if (!effectiveId) {
       setNotConnected(true);
@@ -156,7 +165,7 @@ function FinOpsContent() {
     setNotConnected(false);
     setLoading(true);
     setLoadError(null);
-    setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId });
+    setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId, ownerId: userId ?? undefined });
 
     (async () => {
       try {
@@ -445,6 +454,32 @@ function FinOpsContent() {
             >
               <Icon icon="mdi:file-document-outline" className="h-4 w-4" />
               Executive Memo
+            </button>
+
+            {/* Disconnect. Connecting had no inverse before this: once an
+                account was linked there was no way to unlink it from the UI,
+                so a shared or handed-on device kept showing the previous
+                person's account. Clearing the stored connection returns the
+                page to the Connect prompt. */}
+            <button
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Disconnect this account? WhichCloud will stop showing its cost data until you connect again.",
+                  )
+                ) {
+                  return;
+                }
+                clearStoredAccount();
+                setData(null);
+                setNotConnected(true);
+                window.history.replaceState(null, "", "/finops");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-2 shadow-2xs transition-colors hover:border-red-500/50 hover:text-red-500"
+              title="Disconnect this cloud account from WhichCloud"
+            >
+              <Icon icon="mdi:link-variant-off" className="h-4 w-4" />
+              <span>Disconnect</span>
             </button>
           </div>
         </div>

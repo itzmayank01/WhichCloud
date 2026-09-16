@@ -10,7 +10,7 @@ import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectAzurePage() {
   const router = useRouter();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [tenantId, setTenantId] = useState("");
   const [appId, setAppId] = useState("");
@@ -51,6 +51,7 @@ export default function ConnectAzurePage() {
       if (res.ok) {
         const accId = res.account_id || subscriptionId;
         setStoredAccount({
+          ownerId: userId ?? undefined,
           provider: "azure",
           id: accId,
           name: `Azure subscription (${accId})`,

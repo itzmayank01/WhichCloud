@@ -10,7 +10,7 @@ import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectGcpPage() {
   const router = useRouter();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [datasetId, setDatasetId] = useState("");
@@ -44,6 +44,7 @@ export default function ConnectGcpPage() {
       if (res.ok) {
         const accId = res.account_id || projectId;
         setStoredAccount({
+          ownerId: userId ?? undefined,
           provider: "gcp",
           id: accId,
           name: `Google Cloud project (${accId})`,

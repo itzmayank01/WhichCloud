@@ -10,7 +10,7 @@ import { setStoredAccount } from "@/lib/connectedAccount";
 
 export default function ConnectGitHubPage() {
   const router = useRouter();
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const [showModal, setShowModal] = useState(false);
   // Starts empty: a pre-filled repository reads as one already chosen, and
   // submitting without editing it connected that repo rather than the user's.
@@ -50,6 +50,7 @@ export default function ConnectGitHubPage() {
         setConnectedOrgs((prev) => [...prev, repoUrl]);
         const accId = res.account_id || repoUrl;
         setStoredAccount({
+          ownerId: userId ?? undefined,
           provider: "github",
           id: accId,
           name: `GitHub repository (${accId})`,
