@@ -281,8 +281,17 @@ class RequirementDraft(BaseModel):
 
     @property
     def budget(self) -> float | None:
-        """-1 is the wire representation of 'not mentioned'."""
-        return None if self.budget_monthly_usd < 0 else self.budget_monthly_usd
+        """-1 is the wire representation of 'not mentioned'.
+
+        Zero counts as not-mentioned too. The prompt asks for -1, but models
+        routinely answer "no budget given" with 0 instead, and 0 used to fall
+        through here as a real budget -- which Requirement then rejected with
+        "budget_monthly_usd must be positive when given", failing the whole
+        request for a description that simply never mentioned money. No one
+        has a $0/month budget for cloud infrastructure, so there is no real
+        value being swallowed: both sentinels mean the same thing.
+        """
+        return None if self.budget_monthly_usd <= 0 else self.budget_monthly_usd
 
     @property
     def question(self) -> str | None:
