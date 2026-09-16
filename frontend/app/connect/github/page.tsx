@@ -12,7 +12,9 @@ export default function ConnectGitHubPage() {
   const router = useRouter();
   const { getToken } = useAuth();
   const [showModal, setShowModal] = useState(false);
-  const [repoUrl, setRepoUrl] = useState("github.com/acme-corp/production-infrastructure");
+  // Starts empty: a pre-filled repository reads as one already chosen, and
+  // submitting without editing it connected that repo rather than the user's.
+  const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
   const [token, setToken] = useState("");
   const [iacPath, setIacPath] = useState("terraform/");
@@ -25,22 +27,32 @@ export default function ConnectGitHubPage() {
     setVerifying(true);
     setErrorMsg("");
 
+    /* The repo and the token are the user's own. `github_token` used to fall
+       back to a literal that looked like a PAT, so a blank submit sent a
+       fabricated credential to the verifier and, if it came back ok, stored a
+       repository the user had never named as their connection. */
+    if (!repoUrl.trim() || !token.trim()) {
+      setErrorMsg("Enter the repository to scan and a GitHub token that can read it.");
+      setVerifying(false);
+      return;
+    }
+
     try {
       const clerkToken = await getToken();
       const res = await api.connectionVerify("github", {
         repo_url: repoUrl,
         branch: branch,
-        github_token: token || "ghp_simulated_read_token_9281",
+        github_token: token,
         iac_path: iacPath,
       }, clerkToken ?? undefined);
 
       if (res.ok) {
         setConnectedOrgs((prev) => [...prev, repoUrl]);
-        const accId = res.account_id || repoUrl || "acme-corp/infra";
+        const accId = res.account_id || repoUrl;
         setStoredAccount({
           provider: "github",
           id: accId,
-          name: `GitHub IaC Scanner (${accId})`,
+          name: `GitHub repository (${accId})`,
           region: "us-east-1",
         });
         setTimeout(() => {
@@ -52,29 +64,15 @@ export default function ConnectGitHubPage() {
         setErrorMsg(res.message || "Failed to scan GitHub repository.");
         setVerifying(false);
       }
-    } catch {
-      const accId = repoUrl || "acme-corp/infra";
-      setStoredAccount({
-        provider: "github",
-        id: accId,
-        name: `GitHub IaC Scanner (${accId})`,
-        region: "us-east-1",
-      });
-      router.push(`/finops?provider=github&account_id=${encodeURIComponent(accId)}`);
+    } catch (err) {
+      // A failed scan must not read as a successful one.
+      setErrorMsg(
+        err instanceof Error
+          ? `Could not reach the verification service: ${err.message}`
+          : "Could not reach the verification service. Please try again.",
+      );
+      setVerifying(false);
     }
-  };
-
-  const handleDemoQuickConnect = () => {
-    setVerifying(true);
-    setStoredAccount({
-      provider: "github",
-      id: "acme-corp/cloud-infrastructure",
-      name: "GitHub IaC Scanner (acme-corp/cloud-infrastructure)",
-      region: "us-east-1",
-    });
-    setTimeout(() => {
-      router.push("/finops?provider=github&account_id=acme-corp/cloud-infrastructure");
-    }, 500);
   };
 
   return (
@@ -141,23 +139,11 @@ export default function ConnectGitHubPage() {
             <Icon icon="mdi:github" className="h-4 w-4" />
             Connect GitHub Account
           </button>
-          <button
-            onClick={handleDemoQuickConnect}
-            disabled={verifying}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-5 py-3 text-[14.5px] font-medium text-ink hover:bg-sunk transition-all"
-          >
-            {verifying ? (
-              <>
-                <Icon icon="line-md:loading-loop" className="h-4 w-4" />
-                Connecting Demo...
-              </>
-            ) : (
-              <>
-                <Icon icon="mdi:play-circle-outline" className="h-4 w-4 text-accent" />
-                Quick Demo Repo
-              </>
-            )}
-          </button>
+          {/* "Quick Demo Repo" removed. It stored a fixed repository as a
+              real connection without contacting GitHub or verifying anything,
+              so the app then presented that repo as the signed-in user's and
+              FinOps went on to request data for it. A demo that writes real
+              connection state is indistinguishable from connecting. */}
         </div>
 
         {/* Feature badges */}

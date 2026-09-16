@@ -29,21 +29,31 @@ export default function ConnectAzurePage() {
     setVerifying(true);
     setErrorMsg("");
 
+    /* Every field is the user's own. These used to fall back to a fixed
+       tenant id, app id, client secret and subscription id, so submitting the
+       form blank sent somebody else's directory identifiers to the verifier
+       and, on success, stored that subscription as this user's connection. */
+    if (!tenantId.trim() || !appId.trim() || !password.trim() || !subscriptionId.trim()) {
+      setErrorMsg("Enter your own tenant ID, app ID, client secret and subscription ID.");
+      setVerifying(false);
+      return;
+    }
+
     try {
       const token = await getToken();
       const res = await api.connectionVerify("azure", {
-        tenant_id: tenantId || "1050a480-ef60-43d7-b8db-2123dcd100b6",
-        app_id: appId || "2d2233f5-7ad5-4a12-abc7-bad2889d6407",
-        client_secret: password || "temp_secret_pass",
-        subscription_id: subscriptionId || "sub-azure-enterprise-01",
+        tenant_id: tenantId,
+        app_id: appId,
+        client_secret: password,
+        subscription_id: subscriptionId,
       }, token ?? undefined);
 
       if (res.ok) {
-        const accId = res.account_id || subscriptionId || "sub-azure-enterprise-01";
+        const accId = res.account_id || subscriptionId;
         setStoredAccount({
           provider: "azure",
           id: accId,
-          name: `Azure Enterprise (${accId.slice(0, 12)}...)`,
+          name: `Azure subscription (${accId})`,
           region: "eastus",
         });
         router.push(
@@ -53,15 +63,14 @@ export default function ConnectAzurePage() {
         setErrorMsg(res.message || "Failed to verify Azure credentials.");
         setVerifying(false);
       }
-    } catch {
-      const accId = subscriptionId || "sub-azure-enterprise-01";
-      setStoredAccount({
-        provider: "azure",
-        id: accId,
-        name: `Azure Enterprise (${accId.slice(0, 12)}...)`,
-        region: "eastus",
-      });
-      router.push(`/finops?provider=azure&account_id=${encodeURIComponent(accId)}`);
+    } catch (err) {
+      // A failed verification must not read as a successful one.
+      setErrorMsg(
+        err instanceof Error
+          ? `Could not reach the verification service: ${err.message}`
+          : "Could not reach the verification service. Please try again.",
+      );
+      setVerifying(false);
     }
   };
 

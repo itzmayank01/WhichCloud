@@ -25,19 +25,28 @@ export default function ConnectGcpPage() {
     setVerifying(true);
     setErrorMsg("");
 
+    /* The project is the user's own. This used to fall back to a fixed
+       project id and billing dataset, so a blank submit verified -- and then
+       stored -- a project the user had never named. */
+    if (!projectId.trim() || !datasetId.trim()) {
+      setErrorMsg("Enter your own GCP project ID and billing export dataset.");
+      setVerifying(false);
+      return;
+    }
+
     try {
       const token = await getToken();
       const res = await api.connectionVerify("gcp", {
-        project_id: projectId || "gcp-production-9021",
-        dataset: datasetId || "billing_export_us",
+        project_id: projectId,
+        dataset: datasetId,
       }, token ?? undefined);
 
       if (res.ok) {
-        const accId = res.account_id || projectId || "gcp-prod-981";
+        const accId = res.account_id || projectId;
         setStoredAccount({
           provider: "gcp",
           id: accId,
-          name: `Google Cloud Platform (${accId})`,
+          name: `Google Cloud project (${accId})`,
           region: "us-central1",
         });
         router.push(
@@ -47,15 +56,14 @@ export default function ConnectGcpPage() {
         setErrorMsg(res.message || "Failed to verify GCP project credentials.");
         setVerifying(false);
       }
-    } catch {
-      const accId = projectId || "gcp-prod-981";
-      setStoredAccount({
-        provider: "gcp",
-        id: accId,
-        name: `Google Cloud Platform (${accId})`,
-        region: "us-central1",
-      });
-      router.push(`/finops?provider=gcp&account_id=${encodeURIComponent(accId)}`);
+    } catch (err) {
+      // A failed verification must not read as a successful one.
+      setErrorMsg(
+        err instanceof Error
+          ? `Could not reach the verification service: ${err.message}`
+          : "Could not reach the verification service. Please try again.",
+      );
+      setVerifying(false);
     }
   };
 
