@@ -123,8 +123,12 @@ def test_every_key_is_tried_whatever_the_failure(monkeypatch):
     """
     from whichcloud.architecture import extract as ex
 
-    monkeypatch.setenv("GEMINI_API_KEY", "a,b,c")
-    monkeypatch.setenv("GROQ_API_KEY", "d")
+    # The failing provider must be the one the chain reaches FIRST, or the
+    # walk this test exists to prove never happens -- a working first provider
+    # just answers and nothing else is tried. Groq leads the chain (see CHAIN
+    # in readers.py), so Groq holds the three failing keys here.
+    monkeypatch.setenv("GROQ_API_KEY", "a,b,c")
+    monkeypatch.setenv("GEMINI_API_KEY", "d")
 
     from whichcloud.architecture.schema import Architecture, Service
 
@@ -141,8 +145,8 @@ def test_every_key_is_tried_whatever_the_failure(monkeypatch):
         tried.append(key)
         return answer
 
-    monkeypatch.setitem(ex._EXTRACTORS, "gemini", failing)
-    monkeypatch.setitem(ex._EXTRACTORS, "groq", working)
+    monkeypatch.setitem(ex._EXTRACTORS, "groq", failing)
+    monkeypatch.setitem(ex._EXTRACTORS, "gemini", working)
 
     assert ex._read_with_failover("a shop", None) is answer
     assert tried == ["a", "b", "c", "d"]

@@ -284,6 +284,12 @@ def test_a_reader_that_answers_is_preferred_to_a_better_one_that_cannot(monkeypa
     """
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
+    # Only these two are meant to be configured here. Without this the real
+    # environment's GROQ_API_KEY leaked in and the assertion below silently
+    # became a statement about Groq -- it passed only because Groq happened
+    # to sit behind Gemini in the order at the time.
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("WHICHCLOUD_READER_ORDER", raising=False)
     from whichcloud.intake import available_providers
 

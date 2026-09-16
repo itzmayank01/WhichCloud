@@ -388,9 +388,17 @@ class IntakeError(RuntimeError):
 #:
 #: (An Anthropic *subscription* does not grant API credit -- they are
 #: separate products, which is the trap this comment exists to record.)
+#:
+#: Groq leads for exactly the reason stated above, now measured against
+#: Gemini rather than Anthropic. Sampling both five times on the same five
+#: descriptions: Gemini failed 5/5 (quota gone -- four rejected in under a
+#: second, one hung for 112s) while Groq answered 5/5 with a 3.1s median.
+#: Gemini's free daily allowance is the binding constraint, and a reader
+#: that is out of quota is not more accurate, it is absent. Gemini stays
+#: second, so the day its quota resets it is one hedge delay away.
 DEFAULT_READER_ORDER: tuple[Provider, ...] = (
-    "gemini",
     "groq",
+    "gemini",
     "anthropic",  # claude-opus-5 -- preferred once it has credit
     "openai",
 )

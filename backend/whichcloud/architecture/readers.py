@@ -28,9 +28,16 @@ from dataclasses import dataclass
 
 #: Free tiers first, billed last, so an exhausted free key costs the next
 #: request a retry rather than costing money.
+#:
+#: Groq before Gemini within the free tier: both are free, but Gemini's
+#: allowance is per-day and Groq's is per-minute, so Gemini is the one that
+#: goes away for hours at a time. Measured on the same five descriptions,
+#: Gemini failed 5/5 while Groq answered 5/5 at a 3.1s median -- and leading
+#: with the exhausted one spends a hedge delay per request discovering that
+#: again. See DEFAULT_READER_ORDER in intake.py, which must stay in step.
 CHAIN: tuple[tuple[str, str], ...] = (
-    ("gemini", "GEMINI_API_KEY"),
     ("groq", "GROQ_API_KEY"),
+    ("gemini", "GEMINI_API_KEY"),
     ("anthropic", "ANTHROPIC_API_KEY"),
     ("openai", "OPENAI_API_KEY"),
 )
