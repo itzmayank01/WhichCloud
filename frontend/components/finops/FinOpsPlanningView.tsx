@@ -9,13 +9,15 @@ import { api, FinOpsPlanningResponse } from "@/lib/api";
 interface FinOpsPlanningViewProps {
   provider: string;
   currency?: CurrencyCode;
-  accountId?: string;
+  accountId: string;
 }
 
 export function FinOpsPlanningView({
   provider = "aws",
   currency = "USD",
-  accountId = "616551057703",
+  // No default: see CostReportView -- a literal account number here fetched
+  // another person's data whenever a caller omitted the prop.
+  accountId,
 }: FinOpsPlanningViewProps) {
   const { getToken } = useAuth();
   const storageKey = `whichcloud_budget_${provider}_${accountId}`;

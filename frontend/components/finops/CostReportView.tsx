@@ -27,13 +27,15 @@ type MetricAxis = "cost" | "usage" | "count";
 interface CostReportViewProps {
   provider?: string;
   currency?: CurrencyCode;
-  accountId?: string;
+  accountId: string;
 }
 
 export function CostReportView({
   provider = "aws",
   currency = "USD",
-  accountId = "616551057703",
+  // No default: a real account number here meant a caller that forgot to pass
+  // one silently fetched somebody else's costs.
+  accountId,
 }: CostReportViewProps) {
   const { getToken } = useAuth();
   const [data, setData] = useState<FinOpsReportResponse | null>(null);

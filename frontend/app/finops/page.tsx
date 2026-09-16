@@ -14,7 +14,7 @@ import { FinOpsPlanningView } from "@/components/finops/FinOpsPlanningView";
 import { FinOpsSettingsView } from "@/components/finops/FinOpsSettingsView";
 import { TerraformLogo } from "@/components/Logo";
 import { CurrencyCode, formatCurrency } from "@/lib/currency";
-import { getStoredAccount, setStoredAccount, CloudProviderId, CLOUD_PROVIDERS } from "@/lib/connectedAccount";
+import { getStoredAccount, setStoredAccount, clearStoredAccount, CloudProviderId } from "@/lib/connectedAccount";
 
 /** Shared shell for the four KPI cards above the topology graph: the
  *  gradient overlay, blur glow, and icon/label/badge header row were
@@ -104,7 +104,7 @@ function FinOpsContent() {
       return providerParam;
     }
     if (typeof window !== "undefined") {
-      return getStoredAccount().provider;
+      return getStoredAccount()?.provider ?? "aws";
     }
     return "aws";
   });
@@ -124,6 +124,8 @@ function FinOpsContent() {
   const [copiedDiff, setCopiedDiff] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [notConnected, setNotConnected] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [secondsWaiting, setSecondsWaiting] = useState(0);
 
   useEffect(() => {
@@ -138,15 +140,23 @@ function FinOpsContent() {
   // Sync state when URL params or provider changes
   useEffect(() => {
     let mounted = true;
+
+    /* The account comes from the URL or from a connection this user
+       completed -- never from a per-provider default. That default used to be
+       a real account number, so a signed-in user who had connected nothing
+       was handed it and this effect went and fetched its data. */
+    const effectiveId = accountIdParam || getStoredAccount()?.id || "";
+
+    if (!effectiveId) {
+      setNotConnected(true);
+      setLoading(false);
+      return;
+    }
+
+    setNotConnected(false);
     setLoading(true);
-
-    const effectiveId = accountIdParam || CLOUD_PROVIDERS[provider as CloudProviderId]?.id || "demo";
-
-    // Save active provider to localStorage
-    setStoredAccount({
-      provider: provider as CloudProviderId,
-      id: effectiveId,
-    });
+    setLoadError(null);
+    setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId });
 
     (async () => {
       try {
@@ -159,8 +169,15 @@ function FinOpsContent() {
           setLoading(false);
         }
       } catch (err) {
+        /* Report the failure. Clearing `loading` while leaving `data` null
+           used to leave the "Connecting to Cloud Telemetry" screen up for
+           ever, so a user the server had refused (403, not on the allow-list)
+           saw an endless spinner rather than being told to connect. */
         console.error(err);
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoadError(err instanceof Error ? err.message : "Could not load this account.");
+          setLoading(false);
+        }
       }
     })();
 
@@ -169,22 +186,17 @@ function FinOpsContent() {
     };
   }, [provider, accountIdParam, getToken]);
 
+  /* Switching provider cannot invent an account for the new one. The branding
+     record no longer carries an id (it used to carry a real one), so picking
+     "Azure" with no Azure connection lands on the connect prompt rather than
+     on whatever id happened to be compiled in. */
   const handleSwitchAccount = (newProv: string) => {
     setProvider(newProv);
-    const target = CLOUD_PROVIDERS[newProv as CloudProviderId];
-    if (target && typeof window !== "undefined") {
-      setStoredAccount({
-        provider: newProv as CloudProviderId,
-        id: target.id,
-        name: target.name,
-        region: target.region,
-      });
-      window.history.replaceState(
-        null,
-        "",
-        `/finops?provider=${newProv}&account_id=${encodeURIComponent(target.id)}`
-      );
-    }
+    if (typeof window === "undefined") return;
+    clearStoredAccount();
+    setNotConnected(true);
+    setData(null);
+    window.history.replaceState(null, "", `/finops?provider=${newProv}`);
   };
 
   const toggleTechnique = (techId: string) => {
@@ -200,6 +212,38 @@ function FinOpsContent() {
       setSyncing(false);
     }, 850);
   };
+
+  /* No connection of this user's own, or the server refused the one asked
+     for. Either way the answer is an invitation to connect -- never another
+     account's figures, and never a spinner that resolves to nothing. */
+  if (notConnected || loadError || (!loading && !data)) {
+    const refused = Boolean(loadError) && !notConnected;
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-xl items-center justify-center p-8 text-center">
+        <div>
+          <Icon icon="mdi:cloud-off-outline" className="mx-auto h-10 w-10 text-ink-3" />
+          <h2 className="mt-4 text-[18px] font-semibold text-ink">
+            {refused ? "That account isn't available to you" : "Connect a cloud account"}
+          </h2>
+          <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">
+            {refused
+              ? "Your sign-in does not have access to this account's cost data. Connect an account of your own to see its spend here."
+              : "FinOps Live reads cost and usage from an account you connect. Nothing is shown until one is linked to your sign-in."}
+          </p>
+          <Link
+            href="/connect"
+            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition hover:opacity-90"
+          >
+            <Icon icon="mdi:link-variant" className="h-4 w-4" />
+            Connect an account
+          </Link>
+          {refused && loadError && (
+            <p className="mt-4 font-mono text-[11.5px] text-ink-3">{loadError}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (loading || !data) {
     return (

@@ -2173,7 +2173,7 @@ def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = De
         ]
     else:
         # Default AWS
-        acc_name = f"AWS Production ({account_id or '616551057703'})"
+        acc_name = f"AWS Production ({account_id or 'unknown'})"
         cloud_label = "AWS Cloud"
         cloud_logo = "logos:aws"
         region = "us-east-1"
@@ -2197,7 +2197,7 @@ def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = De
 
     return {
         "account": {
-            "id": account_id or "616551057703",
+            "id": account_id or "unknown",
             "name": acc_name,
             "provider": p,
             "cloud_label": cloud_label,
@@ -2231,7 +2231,7 @@ def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str
             return {
                 "resources": get_live_aws_resources(),
                 "provider": p,
-                "account_id": account_id or "616551057703",
+                "account_id": account_id or "unknown",
             }
         except Exception as exc:
             import logging
@@ -2249,7 +2249,7 @@ def finops_issues(provider: str = "aws", account_id: str = "demo", owner: str = 
             return {
                 "issues": get_live_aws_issues(),
                 "provider": p,
-                "account_id": account_id or "616551057703",
+                "account_id": account_id or "unknown",
             }
         except Exception as exc:
             import logging
@@ -2308,7 +2308,7 @@ def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Dep
         try:
             from whichcloud.connections.aws_live import execute_nuke_all_resources
             return execute_nuke_all_resources(
-                account_id=req.account_id or "616551057703",
+                account_id=req.account_id or "unknown",
                 dry_run=req.dry_run,
             )
         except Exception as exc:
@@ -2335,7 +2335,7 @@ def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str 
     if p == "aws":
         try:
             from whichcloud.connections.aws_live import get_live_aws_planning
-            return get_live_aws_planning(account_id or "616551057703")
+            return get_live_aws_planning(account_id or "unknown")
         except Exception as exc:
             import logging
             logging.getLogger("whichcloud.api").error("Planning fetch error: %s", exc)
@@ -2479,9 +2479,9 @@ def finops_reports(
             {"id": "gh-4", "service": "Terraform VPC Gateways", "resource": "aws_nat_gateway.public", "category": "Network", "subcategory": "NAT Gateway Elastic IP", "account": "GitHub Repo (acme-corp/infra)", "region": "us-east-1", "accrued_usd": 2270.00, "prev_usd": 2250.00, "change_pct": 0.89, "has_network_costs": True, "tag_team": "Network Engineering"},
         ]
     else:
-        # Default AWS (Live account: 616551057703)
-        act_id = account_id if account_id != "demo" else "616551057703"
-        report_name = f"All Resources (AWS {act_id} • awsmayank)"
+        # Default AWS
+        act_id = account_id if account_id and account_id != "demo" else "unknown"
+        report_name = f"All Resources (AWS {act_id})"
         total_accrued = 24.98
         prev_accrued = 27.50
         change_pct = -9.16
@@ -2525,12 +2525,12 @@ def finops_reports(
             ]
 
         table_items = [
-            {"id": "row-aws-1", "service": "Amazon Elastic Container Service", "resource": "GlobalMart-Fargate-Cluster / globalmart-web-service", "category": "Compute", "subcategory": "Fargate Linux", "account": f"AWS ({act_id} • awsmayank)", "region": "us-east-1", "accrued_usd": 9.45, "prev_usd": 10.20, "change_pct": -7.35, "has_network_costs": False, "tag_team": "GlobalMart"},
-            {"id": "row-aws-2", "service": "Amazon Elastic Block Store", "resource": "7x 8GB gp3 Volumes (on stopped EC2 instances)", "category": "Storage", "subcategory": "General Purpose SSD (gp3)", "account": f"AWS ({act_id} • awsmayank)", "region": "us-east-1", "accrued_usd": 4.48, "prev_usd": 4.48, "change_pct": 0.0, "has_network_costs": False, "tag_team": "DevOps"},
-            {"id": "row-aws-3", "service": "Amazon Virtual Private Cloud", "resource": "Idle Elastic IP (50.112.2.95 • eipalloc-04a15828efe75a254)", "category": "Network", "subcategory": "Public IPv4 Idle Address", "account": f"AWS ({act_id} • awsmayank)", "region": "us-west-2", "accrued_usd": 3.65, "prev_usd": 3.65, "change_pct": 0.0, "has_network_costs": True, "tag_team": "Infrastructure"},
-            {"id": "row-aws-4", "service": "Amazon Simple Storage Service", "resource": "16 S3 Buckets (mayank-emr, hrmsonboarding, textract...)", "category": "Storage", "subcategory": "S3 Standard", "account": f"AWS ({act_id} • awsmayank)", "region": "us-east-1", "accrued_usd": 3.20, "prev_usd": 3.45, "change_pct": -7.24, "has_network_costs": False, "tag_team": "Data Team"},
-            {"id": "row-aws-5", "service": "Amazon CloudWatch", "resource": "Vended Logs & Alarms (aws-logs-616551057703)", "category": "Monitoring", "subcategory": "Log Analytics", "account": f"AWS ({act_id} • awsmayank)", "region": "us-east-1", "accrued_usd": 2.80, "prev_usd": 3.10, "change_pct": -9.67, "has_network_costs": False, "tag_team": "Core Operations"},
-            {"id": "row-aws-6", "service": "Amazon DynamoDB", "resource": "StudentData Table", "category": "Database", "subcategory": "Pay-Per-Request", "account": f"AWS ({act_id} • awsmayank)", "region": "us-east-1", "accrued_usd": 0.25, "prev_usd": 0.30, "change_pct": -16.6, "has_network_costs": False, "tag_team": "Academic Lab"},
+            {"id": "row-aws-1", "service": "Amazon Elastic Container Service", "resource": "GlobalMart-Fargate-Cluster / globalmart-web-service", "category": "Compute", "subcategory": "Fargate Linux", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 9.45, "prev_usd": 10.20, "change_pct": -7.35, "has_network_costs": False, "tag_team": "GlobalMart"},
+            {"id": "row-aws-2", "service": "Amazon Elastic Block Store", "resource": "7x 8GB gp3 Volumes (on stopped EC2 instances)", "category": "Storage", "subcategory": "General Purpose SSD (gp3)", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 4.48, "prev_usd": 4.48, "change_pct": 0.0, "has_network_costs": False, "tag_team": "DevOps"},
+            {"id": "row-aws-3", "service": "Amazon Virtual Private Cloud", "resource": "Idle Elastic IP (50.112.2.95 • eipalloc-04a15828efe75a254)", "category": "Network", "subcategory": "Public IPv4 Idle Address", "account": f"AWS ({act_id})", "region": "us-west-2", "accrued_usd": 3.65, "prev_usd": 3.65, "change_pct": 0.0, "has_network_costs": True, "tag_team": "Infrastructure"},
+            {"id": "row-aws-4", "service": "Amazon Simple Storage Service", "resource": "16 S3 Buckets (mayank-emr, hrmsonboarding, textract...)", "category": "Storage", "subcategory": "S3 Standard", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 3.20, "prev_usd": 3.45, "change_pct": -7.24, "has_network_costs": False, "tag_team": "Data Team"},
+            {"id": "row-aws-5", "service": "Amazon CloudWatch", "resource": f"Vended Logs & Alarms (aws-logs-{act_id})", "category": "Monitoring", "subcategory": "Log Analytics", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 2.80, "prev_usd": 3.10, "change_pct": -9.67, "has_network_costs": False, "tag_team": "Core Operations"},
+            {"id": "row-aws-6", "service": "Amazon DynamoDB", "resource": "StudentData Table", "category": "Database", "subcategory": "Pay-Per-Request", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 0.25, "prev_usd": 0.30, "change_pct": -16.6, "has_network_costs": False, "tag_team": "Academic Lab"},
         ]
 
     return {

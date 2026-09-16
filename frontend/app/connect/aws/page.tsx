@@ -16,7 +16,12 @@ export default function ConnectAwsPage() {
   const [roleArn, setRoleArn] = useState("");
   const [region, setRegion] = useState("us-east-1");
   const [verifying, setVerifying] = useState(false);
-  const [customAccountId, setCustomAccountId] = useState("616551057703");
+  /* Starts EMPTY. This was seeded with a real AWS account number belonging to
+     the developer, so every signed-in visitor -- including people with no
+     connection of their own -- was shown someone else's account id, presented
+     as "detected". Nothing here may default to an identifier the current user
+     did not supply. */
+  const [customAccountId, setCustomAccountId] = useState("");
   const [copiedId, setCopiedId] = useState(false);
   const [activeOption, setActiveOption] = useState<"cfn" | "cli" | "terraform" | "console">("cfn");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -60,18 +65,32 @@ export default function ConnectAwsPage() {
 
     try {
       const token = await getToken();
+      if (!roleArn.trim()) {
+        setErrorMsg("Enter the role ARN you created in your own AWS account.");
+        setVerifying(false);
+        return;
+      }
+
       const res = await api.connectionVerify("aws", {
-        role_arn: roleArn || "arn:aws:iam::124398214412:role/WhichCloudCostRole",
+        role_arn: roleArn,
         external_id: externalId,
         region,
       }, token ?? undefined);
 
       if (res.ok) {
-        const accId = res.account_id || (roleArn ? roleArn.split(":")[4] : "616551057703") || "616551057703";
+        // Identity comes from the verified role, never from a literal in this
+        // file: the account is whatever the server confirmed, or the account
+        // segment of the ARN the user themselves typed.
+        const accId = res.account_id || roleArn.split(":")[4] || "";
+        if (!accId) {
+          setErrorMsg("Verified, but no account id came back. Check the role ARN format.");
+          setVerifying(false);
+          return;
+        }
         setStoredAccount({
           provider: "aws",
           id: accId,
-          name: `AWS Account (${accId} • awsmayank)`,
+          name: `AWS Account (${accId})`,
           region,
         });
         router.push(`/finops?provider=aws&account_id=${encodeURIComponent(accId)}`);
@@ -79,16 +98,17 @@ export default function ConnectAwsPage() {
         setErrorMsg(res.message || "Could not verify IAM role. Please check the ARN and permissions.");
         setVerifying(false);
       }
-    } catch {
-      // Allow navigation if local server has any transient network issue
-      const accId = (roleArn ? roleArn.split(":")[4] : "616551057703") || "616551057703";
-      setStoredAccount({
-        provider: "aws",
-        id: accId,
-        name: `AWS Account (${accId} • awsmayank)`,
-        region,
-      });
-      router.push(`/finops?provider=aws&account_id=${encodeURIComponent(accId)}`);
+    } catch (err) {
+      /* A failed verification must NOT look like a successful one. This used
+         to swallow the error, invent a connected account and navigate to the
+         cockpit anyway, so a network blip -- or a user who had connected
+         nothing at all -- landed on FinOps presented as connected. */
+      setErrorMsg(
+        err instanceof Error
+          ? `Could not reach the verification service: ${err.message}`
+          : "Could not reach the verification service. Please try again.",
+      );
+      setVerifying(false);
     }
   };
 
@@ -179,31 +199,35 @@ export default function ConnectAwsPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-accent">
-                    Instant 1-Click Connect
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-500">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    AWS Console Signed In
+                    Connect by account id
                   </span>
                 </div>
+                {/* Was "Connect AWS Account (awsmayank)" beside a green "AWS
+                    Console Signed In" pill. Both were fixed strings: the alias
+                    named the developer's account to every visitor, and the pill
+                    asserted a console session this app cannot observe -- so a
+                    user who had connected nothing was told they were signed in
+                    to someone else's AWS. */}
                 <h3 className="mt-0.5 text-[17px] font-bold text-ink">
-                  Connect AWS Account (awsmayank)
+                  Connect your AWS account
                 </h3>
               </div>
             </div>
 
             <button
+              disabled={!/^\d{12}$/.test(customAccountId.trim())}
               onClick={() => {
-                const id = customAccountId || "616551057703";
+                const id = customAccountId.trim();
+                if (!/^\d{12}$/.test(id)) return;
                 setStoredAccount({
                   provider: "aws",
                   id,
-                  name: `AWS Production (${id})`,
+                  name: `AWS Account (${id})`,
                   region,
                 });
                 router.push(`/finops?provider=aws&account_id=${encodeURIComponent(id)}`);
               }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white hover:opacity-90 transition-all shadow-xs"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition-all shadow-xs hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Icon icon="mdi:lightning-bolt" className="h-4 w-4" />
               <span>Connect Account & Launch Cockpit →</span>
@@ -219,12 +243,17 @@ export default function ConnectAwsPage() {
                 type="text"
                 value={customAccountId}
                 onChange={(e) => setCustomAccountId(e.target.value)}
-                placeholder="616551057703"
+                inputMode="numeric"
+                placeholder="123456789012"
                 className="w-full rounded-xl border border-line bg-surface py-2 pl-32 pr-3 font-mono text-[13px] text-ink focus:border-accent focus:outline-none"
               />
             </div>
+            {/* The "(detected: …)" hint printed a real account number that was
+                never detected from anything -- it was a literal, and it was
+                someone else's. There is nothing to detect before a connection
+                exists, so the copy now just says what to type. */}
             <span className="text-[12px] text-ink-3">
-              Enter your AWS Account ID (detected: <code className="font-mono font-bold text-ink">616551057703</code>)
+              Your 12-digit AWS account ID
             </span>
           </div>
         </div>
@@ -417,7 +446,7 @@ export default function ConnectAwsPage() {
               </label>
               <input
                 type="text"
-                placeholder="arn:aws:iam::124398214412:role/WhichCloudCostRole (Leave blank for Demo Account)"
+                placeholder="arn:aws:iam::123456789012:role/WhichCloudCostRole"
                 value={roleArn}
                 onChange={(e) => setRoleArn(e.target.value)}
                 className="mt-1.5 w-full rounded-lg border border-line bg-canvas px-3.5 py-2 font-mono text-[13.5px] text-ink placeholder:text-ink-3 outline-none focus:border-accent"
