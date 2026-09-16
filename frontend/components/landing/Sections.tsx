@@ -5,6 +5,7 @@ import { ProviderLogoCards } from "@/components/landing/ProviderLogoCards";
 import { InlineIcon } from "@/components/landing/InlineIcon";
 import { CountUp } from "@/components/landing/CountUp";
 import { Reveal } from "@/components/landing/Reveal";
+import { shopRecommendation } from "@/lib/landingData";
 
 /* ─────────────────────────── shared ─────────────────────────── */
 
@@ -152,14 +153,7 @@ async function ProviderCostCard() {
 async function EngineCard() {
   let rec: Recommendation | null = null;
   try {
-    rec = await api.recommend({
-      goal: "an online shop",
-      workload_type: "web",
-      traffic_pattern: "spiky",
-      traffic_scale: "medium",
-      storage_gb: 200,
-      egress_gb: 500,
-    }, 300);
+    rec = await shopRecommendation();
   } catch { /* fall through */ }
 
   const opt = rec?.options[1] ?? rec?.options[0] ?? null;
@@ -262,14 +256,7 @@ async function EngineCard() {
 async function OptimizationsCard() {
   let rec: Recommendation | null = null;
   try {
-    rec = await api.recommend({
-      goal: "an online shop",
-      workload_type: "web",
-      traffic_pattern: "spiky",
-      traffic_scale: "medium",
-      storage_gb: 200,
-      egress_gb: 500,
-    }, 300);
+    rec = await shopRecommendation();
   } catch {
     return (
       <div className={CARD + " p-5"}>

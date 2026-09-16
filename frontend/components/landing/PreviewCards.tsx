@@ -1,4 +1,5 @@
 import { api, freshness, money, type CatalogRow, type Recommendation } from "@/lib/api";
+import { shopRecommendation } from "@/lib/landingData";
 
 /**
  * The product preview under the hero.
@@ -120,14 +121,7 @@ async function Optimizations() {
   let rec: Recommendation | null = null;
 
   try {
-    rec = await api.recommend({
-      goal: "an online shop",
-      workload_type: "web",
-      traffic_pattern: "spiky",
-      traffic_scale: "medium",
-      storage_gb: 200,
-      egress_gb: 500,
-    }, 300);
+    rec = await shopRecommendation();
   } catch {
     return (
       <Card eyebrow="Optimizations" title="Measured, not claimed">
@@ -183,14 +177,7 @@ async function Breakdown() {
   let rec: Recommendation | null = null;
 
   try {
-    rec = await api.recommend({
-      goal: "an online shop",
-      workload_type: "web",
-      traffic_pattern: "spiky",
-      traffic_scale: "medium",
-      storage_gb: 200,
-      egress_gb: 500,
-    }, 300);
+    rec = await shopRecommendation();
   } catch {
     return (
       <Card eyebrow="Architecture" title="Three ways to run it" className="lg:-mt-8">

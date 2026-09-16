@@ -1,5 +1,6 @@
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
 import { api, type Recommendation } from "@/lib/api";
+import { shopRecommendation } from "@/lib/landingData";
 
 /**
  * The architecture diagram on the landing page, built from a real
@@ -8,14 +9,7 @@ import { api, type Recommendation } from "@/lib/api";
 export async function LiveDiagram() {
   let rec: Recommendation | null = null;
   try {
-    rec = await api.recommend({
-      goal: "an online shop",
-      workload_type: "web",
-      traffic_pattern: "spiky",
-      traffic_scale: "medium",
-      storage_gb: 200,
-      egress_gb: 500,
-    }, 300);
+    rec = await shopRecommendation();
   } catch {
     return (
       <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-8 text-center">

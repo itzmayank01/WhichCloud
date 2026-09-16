@@ -1,5 +1,6 @@
 import { MultiCloudArchitecture } from "@/components/MultiCloudArchitecture";
 import { api, type Option } from "@/lib/api";
+import { shopComparison } from "@/lib/landingData";
 
 /** Same message whether the request itself failed or came back too thin to
  *  show -- a reader can't tell those apart and shouldn't need to; both mean
@@ -25,14 +26,7 @@ export async function CloudArchitectures() {
   try {
     const regionMap = await api.regions().catch(() => ({}));
     regions = Object.keys(regionMap ?? {});
-    const compare = await api.compare({
-      goal: "an online shop",
-      workload_type: "web",
-      traffic_pattern: "spiky",
-      traffic_scale: "medium",
-      storage_gb: 200,
-      egress_gb: 500,
-    }, 300);
+    const compare = await shopComparison();
     for (const [provider, options] of Object.entries(compare.clouds)) {
       const balanced = options.find((o) => o.label === "Most reliable") ?? options[0];
       if (balanced) byProvider[provider] = balanced;
