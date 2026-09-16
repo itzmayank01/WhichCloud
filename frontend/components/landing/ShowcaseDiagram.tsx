@@ -117,7 +117,15 @@ export function ShowcaseDiagram() {
       // Never shrink past the point where the labels stop being readable —
       // below that a scrollbar is the honest answer, since an illegible
       // diagram that happens to fit is worse than one you have to pan.
-      setScale(Math.max(MIN_SCALE, Math.min(1, available / W)));
+      //
+      // That trade flips on a phone. At 390px the pane is ~293px against a
+      // 1180px canvas, so the floor held the drawing at 732px and showed
+      // roughly a third of it: pan into the gap between two groups and the
+      // panel is an empty bordered box, which is what it was reported as.
+      // A whole diagram too small to read still reads AS a diagram, and
+      // pinch-zoom recovers the labels, so below `sm` fitting wins.
+      const floor = window.innerWidth < 640 ? available / W : MIN_SCALE;
+      setScale(Math.max(floor, Math.min(1, available / W)));
     };
 
     fit();

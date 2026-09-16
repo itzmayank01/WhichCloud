@@ -330,8 +330,32 @@ body {
   }
 }
 
-[data-revealed] .reveal-line {
+/* Hidden ONLY once JS is known to be present, and revealed on a CSS timer
+   that does not wait for React.
+
+   These three rules used to read `[data-revealed] { opacity: 0 }`, which
+   matches data-revealed="false" -- the value the server renders. So every
+   panel shipped invisible and stayed invisible until the bundle downloaded,
+   React hydrated, an effect ran and an observer fired. On a phone over
+   mobile data that is several seconds of blank bordered boxes, which is
+   exactly what a reader reports as "the page is not loading".
+
+   Two changes fix it. The `html.js` gate means a browser that never runs the
+   bundle shows the content rather than empty frames (the class is set by the
+   inline script in layout.tsx, before first paint, so nothing flashes). The
+   fallback animation below then reveals on a timer in pure CSS, so first
+   paint no longer depends on hydration at all -- the observer only makes the
+   reveal happen sooner and prettier. */
+html.js [data-revealed] .reveal-line {
   opacity: 0;
+}
+
+/* The no-JS-needed safety net. If hydration beats this delay the element is
+   already data-revealed="true" and this never visibly runs; if hydration is
+   slow -- the case that broke -- content still appears on time. */
+html.js [data-revealed="false"] .reveal-line {
+  animation: reveal-line 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 105ms + 600ms);
 }
 
 [data-revealed="true"] .reveal-line {
@@ -340,7 +364,7 @@ body {
 }
 
 /* The caret trails the last line in, then sits and blinks. */
-[data-revealed] .reveal-caret {
+html.js [data-revealed] .reveal-caret {
   opacity: 0;
 }
 
@@ -349,11 +373,18 @@ body {
   animation-delay: calc(var(--i, 0) * 105ms);
 }
 
-/* Motion is decoration here; the panels read the same standing still. */
+/* Motion is decoration here; the panels read the same standing still.
+   Carries the same `html.js` prefix as the rules above deliberately: those
+   gained a compound selector, and without matching specificity here this
+   block would lose to them and a reader who asked for no motion would get
+   the hidden-then-animated treatment anyway. */
 @media (prefers-reduced-motion: reduce) {
 
-  [data-revealed] .reveal-line,
-  [data-revealed] .reveal-caret {
+  html.js [data-revealed] .reveal-line,
+  html.js [data-revealed="false"] .reveal-line,
+  html.js [data-revealed] .reveal-caret,
+  html.js [data-revealed] .sku-new,
+  html.js [data-revealed="false"] .sku-new {
     opacity: 1;
     animation: none;
   }
@@ -406,8 +437,13 @@ body {
   }
 }
 
-[data-revealed] .sku-new {
+html.js [data-revealed] .sku-new {
   opacity: 0;
+}
+
+html.js [data-revealed="false"] .sku-new {
+  animation: sku-swap 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 105ms + 860ms);
 }
 
 [data-revealed="true"] .sku-new {

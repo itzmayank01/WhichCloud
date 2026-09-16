@@ -97,7 +97,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             hands the decision back to prefers-color-scheme. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var c=localStorage.getItem("whichcloud.theme");if(c==="dark"||c==="light"){document.documentElement.setAttribute("data-theme",c);document.documentElement.classList.add(c)}else if(window.matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.classList.add("dark")}}catch(e){}})()`,
+            __html: `(function(){document.documentElement.classList.add("js");try{var c=localStorage.getItem("whichcloud.theme");if(c==="dark"||c==="light"){document.documentElement.setAttribute("data-theme",c);document.documentElement.classList.add(c)}else if(window.matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.classList.add("dark")}}catch(e){}})()`,
           }}
         />
       </head>

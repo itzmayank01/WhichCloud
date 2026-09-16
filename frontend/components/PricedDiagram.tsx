@@ -119,7 +119,13 @@ export function PricedDiagram({
       // Never shrink past the point where the labels stop being readable —
       // below that a scrollbar is the honest answer, since an illegible
       // diagram that happens to fit is worse than one you have to pan.
-      setScale(Math.max(MIN_SCALE, Math.min(1, available / W)));
+      //
+      // Below `sm` the floor is dropped so the whole drawing fits: on a phone
+      // the pane is ~293px against a 1180px canvas, and holding the floor
+      // showed about a third of the diagram, which pans into blank gaps and
+      // reads as an empty panel. Same reasoning as ShowcaseDiagram.
+      const floor = window.innerWidth < 640 ? available / W : MIN_SCALE;
+      setScale(Math.max(floor, Math.min(1, available / W)));
     };
 
     fit();
