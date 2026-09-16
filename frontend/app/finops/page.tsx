@@ -123,6 +123,7 @@ function FinOpsContent() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [copiedDiff, setCopiedDiff] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [secondsWaiting, setSecondsWaiting] = useState(0);
 
   useEffect(() => {
@@ -264,6 +265,8 @@ function FinOpsContent() {
     <div className="flex min-h-[calc(100vh-4rem)] w-full bg-canvas">
       {/* Enterprise Left Sidebar matching user screenshot */}
       <SidebarNav
+        mobileOpen={navOpen}
+        onCloseMobile={() => setNavOpen(false)}
         activeKey={activeTab}
         onSelectKey={(key) => setActiveTab(key)}
         connectedAccount={{
@@ -279,6 +282,18 @@ function FinOpsContent() {
         {/* Top Header with Breadcrumbs & Action Controls */}
         <div className="flex flex-col gap-4 border-b border-line pb-5 md:flex-row md:items-center md:justify-between">
           <div>
+            {/* Opens the nav drawer. Mobile only -- above md the sidebar is a
+                permanent column and needs no trigger. */}
+            <button
+              type="button"
+              onClick={() => setNavOpen(true)}
+              className="mb-3 inline-flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink-2 transition hover:text-ink md:hidden"
+              aria-label="Open FinOps navigation"
+            >
+              <Icon icon="mdi:menu" className="h-4 w-4" />
+              <span>Menu</span>
+            </button>
+
             <div className="flex items-center gap-2 text-[12.5px] font-medium text-ink-3">
               <Link href="/connect" className="hover:text-ink">
                 Connected Accounts

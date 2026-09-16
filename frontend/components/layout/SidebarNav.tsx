@@ -23,6 +23,12 @@ interface SidebarNavProps {
     provider: string;
   };
   onSwitchAccount?: (provider: string) => void;
+  /** Mobile only. The sidebar is a fixed 256px column beside `flex-1` content,
+   *  which on a 390px phone left about 134px for the page itself -- enough to
+   *  wrap "Active Resource Inventory" one word per line. Below `md` it becomes
+   *  an overlay drawer instead, opened from the page header. */
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export function SidebarNav({
@@ -34,6 +40,8 @@ export function SidebarNav({
     provider: "aws",
   },
   onSwitchAccount,
+  mobileOpen = false,
+  onCloseMobile,
 }: SidebarNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -57,14 +65,32 @@ export function SidebarNav({
     if (onSelectKey) {
       onSelectKey(key);
     }
+    // The drawer covers the page on mobile, so leaving it open after a
+    // selection hides the thing the reader just asked to see.
+    onCloseMobile?.();
   };
 
   return (
     <>
+      {/* Backdrop for the mobile drawer. Tapping it closes, which is the
+          gesture people try first and the only way out when the drawer covers
+          the header the trigger lives in. */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/45 md:hidden"
+          onClick={onCloseMobile}
+          aria-hidden
+        />
+      )}
+
       <aside
-        className={`flex flex-col border-r border-line bg-surface transition-all duration-300 select-none ${
-          collapsed ? "w-16" : "w-64"
-        } shrink-0`}
+        className={`flex-col border-r border-line bg-surface select-none shrink-0 overflow-y-auto ${
+          mobileOpen
+            ? "fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shadow-2xl"
+            : "hidden"
+        } md:static md:z-auto md:flex md:w-auto md:max-w-none md:shadow-none md:transition-all md:duration-300 ${
+          collapsed ? "md:w-16" : "md:w-64"
+        }`}
       >
         {/* Top: Workspace / Management Dropdown matching Image 2 */}
         <div className="relative border-b border-line p-3">
