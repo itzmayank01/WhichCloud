@@ -1,5 +1,7 @@
 """Walking the provider chain when one runs out."""
 
+import os
+
 import pytest
 
 from whichcloud.architecture import readers
@@ -12,9 +14,15 @@ def _no_ambient_keys(monkeypatch):
     Without this the developer's own keys leak in: a machine with four Gemini
     keys configured makes a test that sets two see six, and the failure looks
     like a bug in the code rather than in the test.
+
+    Cleared by the same rule discovery uses -- any variable whose name starts
+    with a provider's base name -- rather than by the fixed VAR, VAR_2..VAR_9
+    list this used to walk. Once discovery scanned the environment instead of
+    probing that list, the fixture stopped emptying what the code reads, and a
+    real key from the developer's shell turned up inside a test assertion.
     """
     for _, variable in readers.CHAIN:
-        for name in (variable, *(f"{variable}_{n}" for n in range(2, 10))):
+        for name in [n for n in os.environ if n.startswith(variable)]:
             monkeypatch.delenv(name, raising=False)
 
 
@@ -207,3 +215,41 @@ def test_an_empty_architecture_is_treated_as_a_failure(monkeypatch):
     monkeypatch.setitem(ex._EXTRACTORS, "groq", lambda d, c=None, key=None: real)
 
     assert ex._read_with_failover("a shop", None) is real
+
+
+def test_keys_are_found_however_the_variable_is_spelled(monkeypatch):
+    """Discovery scans the environment rather than probing fixed names.
+
+    Someone who had added seven Groq keys saw only three in /health and a
+    failure naming a handful: the old code looked for exactly VAR and
+    VAR_2..VAR_9, so GROQ_API_KEY3 (no underscore), _10 (past the range) and
+    any named suffix were invisible. Nothing reported them as ignored, so the
+    obvious conclusion was that adding keys did not help.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "plain")
+    monkeypatch.setenv("GROQ_API_KEY_2", "underscored")
+    monkeypatch.setenv("GROQ_API_KEY3", "no-underscore")
+    monkeypatch.setenv("GROQ_API_KEY_10", "past-the-old-range")
+    monkeypatch.setenv("GROQ_API_KEY_BACKUP", "named-suffix")
+
+    keys = [c.key for c in readers.candidates() if c.provider == "groq"]
+    assert keys == [
+        "plain",
+        "underscored",
+        "no-underscore",
+        "past-the-old-range",
+        "named-suffix",
+    ]
+
+
+def test_health_names_the_variables_it_read(monkeypatch):
+    """Names, never values. A count alone cannot answer "is the key I just
+    added being seen?", which is the question someone has when adding one
+    changes nothing."""
+    monkeypatch.setenv("GROQ_API_KEY", "super-secret")
+    monkeypatch.setenv("GROQ_API_KEY_2", "also-secret")
+
+    sources = readers.configured_sources()
+    assert sources["groq"] == ["GROQ_API_KEY", "GROQ_API_KEY_2"]
+    assert "super-secret" not in str(sources)
+    assert "also-secret" not in str(sources)

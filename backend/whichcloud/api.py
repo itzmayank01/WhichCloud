@@ -830,7 +830,7 @@ def health() -> dict:
     if not total:
         raise HTTPException(503, "price catalog is empty — run ingest_prices.py")
 
-    from .architecture.readers import configured
+    from .architecture.readers import configured, configured_sources
     from .pricing import cache as price_cache
 
     return {
@@ -842,6 +842,9 @@ def health() -> dict:
         # configured" and lets you see a new key took effect without a restart
         # being a matter of faith.
         "readers": configured(),
+        # Which env vars supplied them -- names only, never values. A count
+        # cannot tell you whether the key you just added is being seen.
+        "reader_sources": configured_sources(),
         # A cache nobody measures is a cache nobody can tell is broken:
         # a 0% hit rate and a working cache look identical from outside.
         "price_cache": price_cache.STATS.as_dict(),

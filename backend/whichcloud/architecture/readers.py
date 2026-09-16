@@ -24,6 +24,7 @@ Comma-separated values work too, so GEMINI_API_KEY="a,b,c" is three keys.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 #: Free tiers first, billed last, so an exhausted free key costs the next
@@ -95,16 +96,58 @@ class Candidate:
     label: str
 
 
-def _keys_for(variable: str) -> list[str]:
-    """Every key configured under this name, in the order they are tried."""
-    found: list[str] = []
-    for name in (variable, *(f"{variable}_{n}" for n in range(2, 10))):
-        raw = os.getenv(name, "")
+def _suffix_order(suffix: str) -> tuple[int, str]:
+    """Sort GROQ_API_KEY_2 before _10, and named suffixes after numbered."""
+    trimmed = suffix.lstrip("_-")
+    if trimmed.isdigit():
+        return (int(trimmed), "")
+    return (10_000, trimmed.lower())
+
+
+def sources_for(variable: str) -> list[tuple[str, str]]:
+    """(env var name, key) for every key configured under this base name.
+
+    Discovery scans the environment rather than probing a fixed list of names.
+    It used to check exactly `VAR` and `VAR_2`..`VAR_9`, so a key added as
+    `GROQ_API_KEY2` (no underscore), `GROQ_API_KEY_10`, or any named suffix
+    was silently invisible -- the person adding it saw a variable set in their
+    dashboard and a chain that never used it, with nothing anywhere saying
+    why. Anything that starts with the base name and carries a plain
+    alphanumeric suffix now counts.
+
+    The exact name stays first so "the first key tried" is still the one
+    without a suffix; the rest sort numerically, then by name.
+    """
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(name: str, raw: str) -> None:
         for part in raw.split(","):
             key = part.strip()
-            if key and key not in found:
-                found.append(key)
-    return found
+            if key and key not in seen:
+                seen.add(key)
+                out.append((name, key))
+
+    add(variable, os.getenv(variable, ""))
+
+    others: list[tuple[tuple[int, str], str]] = []
+    for name, raw in os.environ.items():
+        if name == variable or not name.startswith(variable) or not raw.strip():
+            continue
+        suffix = name[len(variable):]
+        if not re.fullmatch(r"[_-]?[A-Za-z0-9]+", suffix):
+            continue
+        others.append((_suffix_order(suffix), name))
+
+    for _, name in sorted(others):
+        add(name, os.environ[name])
+
+    return out
+
+
+def _keys_for(variable: str) -> list[str]:
+    """Every key configured under this name, in the order they are tried."""
+    return [key for _, key in sources_for(variable)]
 
 
 def candidates(preferred: str | None = None) -> list[Candidate]:
@@ -152,3 +195,25 @@ def configured() -> dict[str, int]:
         for provider, variable in CHAIN
         if _keys_for(variable)
     }
+
+
+def configured_sources() -> dict[str, list[str]]:
+    """Which environment variables supplied keys, per provider.
+
+    Names, never values. A count alone could not answer the question people
+    actually have when a key seems ignored -- "is the one I just added being
+    seen?" -- because "3" looks the same whether the fourth variable is
+    misspelled, empty, or simply not read. Listing the names that were picked
+    up makes a missing one obvious at a glance.
+    """
+    out: dict[str, list[str]] = {}
+    for provider, variable in CHAIN:
+        names = [name for name, _ in sources_for(variable)]
+        if names:
+            # One entry per variable, in the order the chain will use them.
+            seen: list[str] = []
+            for n in names:
+                if n not in seen:
+                    seen.append(n)
+            out[provider] = seen
+    return out

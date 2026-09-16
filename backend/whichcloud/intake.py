@@ -64,6 +64,11 @@ EXTRACT_BUDGET_S = 14.0
 #: holding the whole request hostage.
 HEDGE_DELAY_S = 4.0
 
+#: Floor for the adaptive gap above. Hedging is not free -- each extra call
+#: spends another key's quota -- so candidates are never started faster than
+#: this however many are queued.
+MIN_HEDGE_DELAY_S = 1.2
+
 Provider = Literal["gemini", "groq", "anthropic", "openai"]
 
 # Free tier, fast, and comfortably capable of structured extraction.
@@ -764,7 +769,20 @@ def _draft_with_failover(description: str, provider: Provider, client=None):
             # keeps running while the next candidate joins the race. When the
             # queue is empty there is nothing left to hedge with, so wait out
             # whatever budget remains instead.
-            slice_s = deadline - now if not queue else min(HEDGE_DELAY_S, deadline - now)
+            #
+            # The gap SHRINKS as the queue grows, so every configured key gets
+            # started inside the budget. At a fixed 4s only four candidates
+            # could ever be launched in a 14s budget -- someone who added
+            # seven Groq keys had most of them never tried, and the failure
+            # named just the four, which reads as the other three not being
+            # configured. Spreading the remaining budget across the remaining
+            # candidates means adding a key always adds an attempt.
+            remaining = deadline - now
+            slice_s = (
+                remaining
+                if not queue
+                else max(MIN_HEDGE_DELAY_S, min(HEDGE_DELAY_S, remaining / (len(queue) + 1)))
+            )
             done, _ = concurrent.futures.wait(
                 pending,
                 timeout=max(0.0, slice_s),
