@@ -304,7 +304,11 @@ function FinOpsContent() {
               <span className="font-mono text-ink-3">{data.account.id}</span>
             </div>
 
-            <div className="mt-2 flex items-center gap-3">
+            {/* Wraps below sm: the icon and the live-cloud pill are fixed
+                width, so on a phone they squeezed the title into a ~200px
+                column and "Active Resources Inventory" broke across three
+                lines. Letting the pill wrap gives the heading the full row. */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-surface p-1.5 shadow-2xs">
                 <Icon
                   icon={
@@ -320,7 +324,7 @@ function FinOpsContent() {
                 />
               </div>
 
-              <h1 className="text-[24px] font-bold tracking-tight text-ink">
+              <h1 className="min-w-0 basis-full text-[20px] font-bold tracking-tight text-ink sm:basis-auto sm:text-[24px]">
                 {activeTab === "overview"
                   ? "Live Topology & Telemetry"
                   : activeTab === "reports"
