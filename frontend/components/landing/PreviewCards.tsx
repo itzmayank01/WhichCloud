@@ -127,7 +127,7 @@ async function Optimizations() {
       traffic_scale: "medium",
       storage_gb: 200,
       egress_gb: 500,
-    });
+    }, 300);
   } catch {
     return (
       <Card eyebrow="Optimizations" title="Measured, not claimed">
@@ -190,7 +190,7 @@ async function Breakdown() {
       traffic_scale: "medium",
       storage_gb: 200,
       egress_gb: 500,
-    });
+    }, 300);
   } catch {
     return (
       <Card eyebrow="Architecture" title="Three ways to run it" className="lg:-mt-8">

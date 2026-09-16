@@ -159,7 +159,7 @@ async function EngineCard() {
       traffic_scale: "medium",
       storage_gb: 200,
       egress_gb: 500,
-    });
+    }, 300);
   } catch { /* fall through */ }
 
   const opt = rec?.options[1] ?? rec?.options[0] ?? null;
@@ -269,7 +269,7 @@ async function OptimizationsCard() {
       traffic_scale: "medium",
       storage_gb: 200,
       egress_gb: 500,
-    });
+    }, 300);
   } catch {
     return (
       <div className={CARD + " p-5"}>

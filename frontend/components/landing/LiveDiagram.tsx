@@ -15,7 +15,7 @@ export async function LiveDiagram() {
       traffic_scale: "medium",
       storage_gb: 200,
       egress_gb: 500,
-    });
+    }, 300);
   } catch {
     return (
       <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-8 text-center">
