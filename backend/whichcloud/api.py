@@ -2091,170 +2091,76 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
 
 @app.get("/api/finops/live")
 def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
-    """Returns real/live FinOps cost breakdown, topology, and optimization opportunities."""
+    """Live FinOps cost breakdown, topology and optimisation opportunities.
+
+    AWS only. Azure, GCP and GitHub used to return a hand-written block of
+    figures here -- fixed totals, fixed node lists, fixed "savings" -- shaped
+    exactly like a real answer and labelled with whatever account id the
+    caller passed. Someone who connected a real GCP project was shown invented
+    spend as their own. Reporting that the provider is not implemented is the
+    honest answer; inventing numbers for a cost tool is the worst kind of
+    wrong, because it looks right.
+    """
     p = provider.lower()
 
-    if p == "aws":
-        try:
-            from whichcloud.connections.aws_live import scan_live_aws_account
-            return scan_live_aws_account()
-        except Exception as exc:
-            import logging
-            logging.getLogger("whichcloud.api").error("Error in live AWS scan: %s", exc)
+    if p != "aws":
+        raise HTTPException(
+            501,
+            f"Live cost data for {p} is not implemented yet. WhichCloud can "
+            "price and compare architectures on every cloud, but reading an "
+            "existing bill is wired up for AWS only so far.",
+        )
 
-    if p == "azure":
-        acc_name = f"Azure Subscription ({account_id or 'Production'})"
-        cloud_label = "Microsoft Azure"
-        cloud_logo = "logos:microsoft-azure"
-        region = "eastus"
-        total_usd = 4680.0
-        prev_usd = 5420.0
-        savings_usd = 1390.0
-        nodes = [
-            {"id": "users", "kind": "client", "label": "Global Users", "monthly_usd": 0.0, "share": 0.0, "utilization": "100%", "waste_usd": 0.0, "status": "healthy"},
-            {"id": "agw", "kind": "loadbalancer", "label": "Application Gateway v2", "monthly_usd": 248.50, "share": 0.053, "utilization": "42%", "waste_usd": 45.0, "status": "optimized"},
-            {"id": "aks", "kind": "compute", "label": "Azure Kubernetes (Standard_D4ds_v5)", "monthly_usd": 1680.00, "share": 0.359, "utilization": "28%", "waste_usd": 520.0, "status": "action_needed", "alert": "3 worker nodes running at < 15% avg CPU"},
-            {"id": "sql", "kind": "database", "label": "Azure SQL Database (Business Critical)", "monthly_usd": 1820.00, "share": 0.389, "utilization": "38%", "waste_usd": 490.0, "status": "action_needed", "alert": "Over-provisioned vCores during non-business hours"},
-            {"id": "redis", "kind": "cache", "label": "Azure Cache for Redis (Premium P1)", "monthly_usd": 412.00, "share": 0.088, "utilization": "22%", "waste_usd": 120.0, "status": "warning"},
-            {"id": "blob", "kind": "storage", "label": "Blob Storage (Hot Tier)", "monthly_usd": 380.50, "share": 0.081, "utilization": "85%", "waste_usd": 140.0, "status": "action_needed", "alert": "4.2 TB inactive data not moved to Cool/Archive"},
-            {"id": "mon", "kind": "monitoring", "label": "Azure Monitor & Log Analytics", "monthly_usd": 139.00, "share": 0.030, "utilization": "70%", "waste_usd": 75.0, "status": "healthy"},
-        ]
-        techniques = [
-            {"id": "azure-res", "name": "1-Year Compute Reservation", "category": "Commitment", "monthly_saving": 480.0, "confidence": "High", "description": "Apply 1-yr reservation for 6x Standard_D4ds_v5 instances", "terraform_diff": '+ reservation {\n+   term = "P1Y"\n+   sku  = "Standard_D4ds_v5"\n+ }'},
-            {"id": "azure-sql-gp", "name": "Switch Azure SQL to General Purpose", "category": "Right-Sizing", "monthly_saving": 490.0, "confidence": "High", "description": "Workload IOPS does not exceed 1,200; General Purpose tier saves 42%", "terraform_diff": '- sku_name = "BC_Gen5_4"\n+ sku_name = "GP_Gen5_4"'},
-            {"id": "azure-lifecycle", "name": "Storage Lifecycle Auto-Tiering", "category": "Tiering", "monthly_saving": 140.0, "confidence": "Medium", "description": "Move blobs untouched for 30+ days to Cool tier", "terraform_diff": '+ rule {\n+   days_after_modification_greater_than = 30\n+   tier_to_cool = true\n+ }'},
-            {"id": "azure-aks-spot", "name": "Spot Node Pool for Batch Jobs", "category": "Spot", "monthly_saving": 280.0, "confidence": "High", "description": "Run batch and queue workers on Spot VMSS with scale-to-zero", "terraform_diff": '+ priority = "Spot"\n+ evict_policy = "Delete"'},
-        ]
-    elif p == "gcp":
-        acc_name = f"GCP Project ({account_id or 'Production'})"
-        cloud_label = "Google Cloud"
-        cloud_logo = "logos:google-cloud"
-        region = "us-central1"
-        total_usd = 4420.0
-        prev_usd = 5100.0
-        savings_usd = 1350.0
-        nodes = [
-            {"id": "users", "kind": "client", "label": "Web & App Clients", "monthly_usd": 0.0, "share": 0.0, "utilization": "100%", "waste_usd": 0.0, "status": "healthy"},
-            {"id": "glb", "kind": "loadbalancer", "label": "Cloud Load Balancing", "monthly_usd": 185.00, "share": 0.042, "utilization": "55%", "waste_usd": 20.0, "status": "healthy"},
-            {"id": "gke", "kind": "compute", "label": "GKE Autopilot (e2-standard-4)", "monthly_usd": 1540.00, "share": 0.348, "utilization": "32%", "waste_usd": 480.0, "status": "action_needed", "alert": "Node count idle during off-peak; cluster autoscaler min is set too high"},
-            {"id": "csql", "kind": "database", "label": "Cloud SQL PostgreSQL (db-custom-8-32)", "monthly_usd": 1780.00, "share": 0.403, "utilization": "24%", "waste_usd": 510.0, "status": "action_needed", "alert": "Overprovisioned memory; 95th percentile memory usage is 11 GB"},
-            {"id": "mstore", "kind": "cache", "label": "Memorystore for Redis (M3)", "monthly_usd": 390.00, "share": 0.088, "utilization": "18%", "waste_usd": 110.0, "status": "warning"},
-            {"id": "gcs", "kind": "storage", "label": "Cloud Storage (Multi-region Standard)", "monthly_usd": 395.00, "share": 0.089, "utilization": "90%", "waste_usd": 160.0, "status": "action_needed", "alert": "Single-region bucket sufficient for static media, saving egress and storage"},
-            {"id": "cmon", "kind": "monitoring", "label": "Cloud Logging & Monitoring", "monthly_usd": 130.00, "share": 0.029, "utilization": "60%", "waste_usd": 70.0, "status": "healthy"},
-        ]
-        techniques = [
-            {"id": "gcp-cud", "name": "1-Year Committed Use Discount (CUD)", "category": "Commitment", "monthly_saving": 460.0, "confidence": "High", "description": "Commit to baseline vCPU and RAM across GKE workloads", "terraform_diff": '+ commitment {\n+   plan = "TWELVE_MONTH"\n+   resources = [{ type = "VCPU", amount = "16" }]\n+ }'},
-            {"id": "gcp-sql-arm", "name": "Cloud SQL Right-Sizing", "category": "Right-Sizing", "monthly_saving": 430.0, "confidence": "High", "description": "Downsize db-custom-8-32 to db-custom-4-16 based on actual peak memory of 11 GB", "terraform_diff": '- tier = "db-custom-8-32768"\n+ tier = "db-custom-4-16384"'},
-            {"id": "gcp-gcs-nearline", "name": "Autoclass / Nearline Storage Policy", "category": "Tiering", "monthly_saving": 160.0, "confidence": "Medium", "description": "Switch unaccessed buckets to Nearline storage automatically", "terraform_diff": '+ autoclass {\n+   enabled = true\n+ }'},
-            {"id": "gcp-spot-pods", "name": "GKE Spot Pods for Background Tasks", "category": "Spot", "monthly_saving": 300.0, "confidence": "High", "description": "Enable GKE Spot selector for asynchronous task queues", "terraform_diff": '+ node_selector = {\n+   "cloud.google.com/gke-spot" = "true"\n+ }'},
-        ]
-    elif p == "github":
-        acc_name = f"GitHub IaC Repo ({account_id or 'acme-corp/cloud-infrastructure'})"
-        cloud_label = "GitHub IaC Scanner"
-        cloud_logo = "mdi:github"
-        region = "terraform/production"
-        total_usd = 4120.0
-        prev_usd = 4850.0
-        savings_usd = 1260.0
-        nodes = [
-            {"id": "users", "kind": "client", "label": "Traffic Source", "monthly_usd": 0.0, "share": 0.0, "utilization": "100%", "waste_usd": 0.0, "status": "healthy"},
-            {"id": "alb", "kind": "loadbalancer", "label": "aws_lb.public_ingress", "monthly_usd": 165.00, "share": 0.040, "utilization": "50%", "waste_usd": 25.0, "status": "healthy"},
-            {"id": "eks", "kind": "compute", "label": "aws_eks_node_group.workers", "monthly_usd": 1580.00, "share": 0.383, "utilization": "26%", "waste_usd": 490.0, "status": "action_needed", "alert": "Static t3.2xlarge instances declared instead of Karpenter / Spot autoscaling"},
-            {"id": "rds", "kind": "database", "label": "aws_rds_cluster.main", "monthly_usd": 1640.00, "share": 0.398, "utilization": "32%", "waste_usd": 460.0, "status": "action_needed", "alert": "Allocated 3,000 IOPS unneeded based on metric telemetry"},
-            {"id": "redis", "kind": "cache", "label": "aws_elasticache_cluster.cache", "monthly_usd": 320.00, "share": 0.078, "utilization": "20%", "waste_usd": 95.0, "status": "warning"},
-            {"id": "s3", "kind": "storage", "label": "aws_s3_bucket.assets", "monthly_usd": 280.00, "share": 0.068, "utilization": "85%", "waste_usd": 120.0, "status": "action_needed", "alert": "Missing lifecycle_rule for prefix /artifacts/ (transition to GLACIER)"},
-            {"id": "cw", "kind": "monitoring", "label": "aws_cloudwatch_log_group.app", "monthly_usd": 135.00, "share": 0.033, "utilization": "60%", "waste_usd": 70.0, "status": "healthy"},
-        ]
-        techniques = [
-            {"id": "gh-karpenter", "name": "Migrate to Karpenter Auto-scaler", "category": "Kubernetes Autoscaling", "monthly_saving": 490.0, "confidence": "High", "description": "Replace fixed node groups with Karpenter just-in-time right-sized instances", "terraform_diff": '+ module "karpenter" {\n+   source = "terraform-aws-modules/eks/aws//modules/karpenter"\n+ }'},
-            {"id": "gh-rds-serverless", "name": "Switch Dev/Staging RDS to Serverless v2", "category": "Right-Sizing", "monthly_saving": 380.0, "confidence": "High", "description": "Scale to 0.5 ACU during quiet hours instead of constant provisioned compute", "terraform_diff": '- serverlessv2_scaling_configuration {}\n+ serverlessv2_scaling_configuration {\n+   min_capacity = 0.5\n+   max_capacity = 8.0\n+ }'},
-            {"id": "gh-s3-glacier", "name": "Add Storage Lifecycle Rules", "category": "Tiering", "monthly_saving": 120.0, "confidence": "High", "description": "Expire temporary build artifacts and transition old logs to Glacier Flexible Retrieval", "terraform_diff": '+ rule {\n+   id     = "expire-stale-artifacts"\n+   status = "Enabled"\n+   expiration { days = 90 }\n+ }'},
-            {"id": "gh-gp3", "name": "Migrate gp2 Volumes to gp3", "category": "Immediate Win", "monthly_saving": 270.0, "confidence": "High", "description": "gp3 is 20% cheaper than gp2 per GB with 3,000 baseline IOPS included free", "terraform_diff": '- volume_type = "gp2"\n+ volume_type = "gp3"'},
-        ]
-    else:
-        # Default AWS
-        acc_name = f"AWS Production ({account_id or 'unknown'})"
-        cloud_label = "AWS Cloud"
-        cloud_logo = "logos:aws"
-        region = "us-east-1"
-        total_usd = 24.98
-        prev_usd = 27.50
-        savings_usd = 9.93
-        nodes = [
-            {"id": "vpc-custom", "kind": "network", "label": "Custom VPC (vpc-06c6c2c1b68e346ae • 10.0.0.0/16)", "monthly_usd": 0.0, "share": 0.0, "utilization": "Active", "waste_usd": 0.0, "status": "healthy"},
-            {"id": "eip-idle", "kind": "network", "label": "Idle Elastic IP (50.112.2.95)", "monthly_usd": 3.65, "share": 0.146, "utilization": "0% Unassociated", "waste_usd": 3.65, "status": "action_needed", "alert": "Unassociated Elastic IP incurring $0.005/hr"},
-            {"id": "ecs-globalmart", "kind": "compute", "label": "ECS Fargate: globalmart-web-service", "monthly_usd": 9.45, "share": 0.378, "utilization": "Active Task", "waste_usd": 0.0, "status": "healthy"},
-            {"id": "ec2-stopped", "kind": "compute", "label": "7x Stopped EC2 Instances", "monthly_usd": 4.48, "share": 0.179, "utilization": "Stopped", "waste_usd": 4.48, "status": "action_needed", "alert": "7 attached gp3 EBS volumes (56 GB) continuously bill storage"},
-            {"id": "s3-fleet", "kind": "storage", "label": "Amazon S3 Fleet (16 Buckets)", "monthly_usd": 3.20, "share": 0.128, "utilization": "Active", "waste_usd": 1.80, "status": "action_needed", "alert": "Missing automated lifecycle rules and Intelligent-Tiering"},
-            {"id": "dynamo-studentdata", "kind": "database", "label": "Amazon DynamoDB: StudentData", "monthly_usd": 0.25, "share": 0.010, "utilization": "Pay-Per-Request", "waste_usd": 0.0, "status": "healthy"},
-            {"id": "cw-logs", "kind": "monitoring", "label": "Amazon CloudWatch & Logs", "monthly_usd": 2.80, "share": 0.112, "utilization": "Active", "waste_usd": 0.0, "status": "healthy"},
-        ]
-        techniques = [
-            {"id": "aws-release-eip", "name": "Release Unassociated Elastic IP (50.112.2.95)", "category": "Immediate Win", "monthly_saving": 3.65, "confidence": "High", "description": "Release idle Elastic IP eipalloc-04a15828efe75a254 in us-west-2", "terraform_diff": '- resource "aws_eip" "terraweek" {\n-   public_ip = "50.112.2.95"\n- }'},
-            {"id": "aws-detach-ebs", "name": "Purge 7 Idle gp3 EBS Volumes on Stopped EC2", "category": "Storage", "monthly_saving": 4.48, "confidence": "High", "description": "Snapshot and terminate stopped dev instances", "terraform_diff": '# Snapshot volumes and terminate stopped instances'},
-            {"id": "aws-s3-lifecycle", "name": "S3 Intelligent-Tiering for 16 Buckets", "category": "Tiering", "monthly_saving": 1.80, "confidence": "High", "description": "Auto-transition cold data after 30 days to Archive Instant Access", "terraform_diff": '+ rule {\n+   days = 30\n+   storage_class = "INTELLIGENT_TIERING"\n+ }'},
-        ]
-
-    return {
-        "account": {
-            "id": account_id or "unknown",
-            "name": acc_name,
-            "provider": p,
-            "cloud_label": cloud_label,
-            "cloud_logo": cloud_logo,
-            "region": region,
-            "synced_at": "Just now",
-            "status": "connected",
-            "resource_count": 38,
-        },
-        "summary": {
-            "total_monthly_usd": total_usd,
-            "previous_monthly_usd": prev_usd,
-            "projected_monthly_usd": round(total_usd * 0.98, 2),
-            "realizable_savings_usd": savings_usd,
-            "savings_percentage": round((savings_usd / total_usd) * 100, 1),
-            "health_grade": "A-",
-            "efficiency_score": 82,
-        },
-        "nodes": nodes,
-        "techniques": techniques,
-    }
-
+    try:
+        from whichcloud.connections.aws_live import scan_live_aws_account
+        return scan_live_aws_account()
+    except Exception as exc:
+        import logging
+        logging.getLogger("whichcloud.api").error("Live AWS scan failed: %s", exc)
+        raise HTTPException(
+            502,
+            f"Could not read live AWS data: {exc}",
+        ) from exc
 
 @app.get("/api/finops/resources")
 def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
     """Returns complete, authentic inventory list of active cloud resources."""
     p = provider.lower()
-    if p == "aws":
-        try:
-            from whichcloud.connections.aws_live import get_live_aws_resources
-            return {
-                "resources": get_live_aws_resources(),
-                "provider": p,
-                "account_id": account_id or "unknown",
-            }
-        except Exception as exc:
-            import logging
-            logging.getLogger("whichcloud.api").error("Error in live resources: %s", exc)
-    return {"resources": [], "provider": p, "account_id": account_id}
+    if p != "aws":
+        raise HTTPException(501, f"Resource inventory for {p} is not implemented yet.")
+    try:
+        from whichcloud.connections.aws_live import get_live_aws_resources
+        return {
+            "resources": get_live_aws_resources(),
+            "provider": p,
+            "account_id": account_id or "unknown",
+        }
+    except Exception as exc:
+        # An empty list used to be returned here, which reads as "you have no
+        # resources" -- a different claim from "we could not look".
+        import logging
+        logging.getLogger("whichcloud.api").error("Live resources failed: %s", exc)
+        raise HTTPException(502, f"Could not read live AWS resources: {exc}") from exc
 
 
 @app.get("/api/finops/issues")
 def finops_issues(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
     """Returns authentic, actionable cloud waste anomalies detected in the account."""
     p = provider.lower()
-    if p == "aws":
-        try:
-            from whichcloud.connections.aws_live import get_live_aws_issues
-            return {
-                "issues": get_live_aws_issues(),
-                "provider": p,
-                "account_id": account_id or "unknown",
-            }
-        except Exception as exc:
-            import logging
-            logging.getLogger("whichcloud.api").error("Error in live issues: %s", exc)
-    return {"issues": [], "provider": p, "account_id": account_id}
+    if p != "aws":
+        raise HTTPException(501, f"Waste detection for {p} is not implemented yet.")
+    try:
+        from whichcloud.connections.aws_live import get_live_aws_issues
+        return {
+            "issues": get_live_aws_issues(),
+            "provider": p,
+            "account_id": account_id or "unknown",
+        }
+    except Exception as exc:
+        # "No issues found" and "we could not check" must not look identical.
+        import logging
+        logging.getLogger("whichcloud.api").error("Live issues failed: %s", exc)
+        raise HTTPException(502, f"Could not read live AWS issues: {exc}") from exc
 
 
 class ResourceActionRequest(BaseModel):
@@ -2332,24 +2238,17 @@ def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Dep
 def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
     """Returns live budget envelope, actual accrued spend, and 12-month forecast."""
     p = provider.lower()
-    if p == "aws":
-        try:
-            from whichcloud.connections.aws_live import get_live_aws_planning
-            return get_live_aws_planning(account_id or "unknown")
-        except Exception as exc:
-            import logging
-            logging.getLogger("whichcloud.api").error("Planning fetch error: %s", exc)
-
-    return {
-        "budget_usd": 50.0,
-        "current_accrued": 24.98,
-        "forecasted_total": 25.50,
-        "budget_utilization": 50,
-        "forecasted_utilization": 51,
-        "monthly_data": [],
-        "unit_economics": [],
-        "account_id": account_id,
-    }
+    if p != "aws":
+        raise HTTPException(501, f"Budget and forecast for {p} is not implemented yet.")
+    try:
+        from whichcloud.connections.aws_live import get_live_aws_planning
+        return get_live_aws_planning(account_id or "unknown")
+    except Exception as exc:
+        # The fallback here returned a budget, an accrued figure and a
+        # forecast -- invented money, indistinguishable from the real answer.
+        import logging
+        logging.getLogger("whichcloud.api").error("Planning fetch failed: %s", exc)
+        raise HTTPException(502, f"Could not read live AWS planning data: {exc}") from exc
 
 
 @app.get("/api/finops/reports")
@@ -2361,8 +2260,15 @@ def finops_reports(
     group_by: str = "service,category",
     owner: str = Depends(finops_owner),
 ):
-    """Returns multi-dimensional Cost Report data with filters and drilldown for the connected account."""
+    """Multi-dimensional Cost Report data for the connected account.
+
+    AWS only, for the same reason as /api/finops/live: the Azure, GCP and
+    GitHub branches below are hand-written totals, legends and daily series.
+    A cost report made of invented money is worse than no cost report.
+    """
     p = provider.lower()
+    if p != "aws":
+        raise HTTPException(501, f"Cost reports for {p} are not implemented yet.")
     b = bin.lower()
     timeframe_label = "Current Billing Month"
     range_label = "Sep 1 - Sep 30, 2026"

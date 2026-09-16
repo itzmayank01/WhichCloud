@@ -257,7 +257,15 @@ async function get<T>(
     headers: bearer(token),
   });
   if (!response.ok) {
-    throw new ApiError(`GET ${path} failed`, response.status);
+    /* Carry the server's explanation. This threw a bare "GET … failed",
+       which discarded the `detail` FastAPI sends -- so a 501 saying which
+       provider is unimplemented, or a 403 saying why access was refused,
+       reached the user as a path and a number. */
+    const detail = await response
+      .json()
+      .then((d) => (typeof d?.detail === "string" ? d.detail : ""))
+      .catch(() => "");
+    throw new ApiError(detail || `GET ${path} failed`, response.status);
   }
   return response.json();
 }

@@ -126,6 +126,7 @@ function FinOpsContent() {
   const [navOpen, setNavOpen] = useState(false);
   const [notConnected, setNotConnected] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadStatus, setLoadStatus] = useState<number | null>(null);
   const [secondsWaiting, setSecondsWaiting] = useState(0);
 
   useEffect(() => {
@@ -165,6 +166,7 @@ function FinOpsContent() {
     setNotConnected(false);
     setLoading(true);
     setLoadError(null);
+    setLoadStatus(null);
     setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId, ownerId: userId ?? undefined });
 
     (async () => {
@@ -185,6 +187,11 @@ function FinOpsContent() {
         console.error(err);
         if (mounted) {
           setLoadError(err instanceof Error ? err.message : "Could not load this account.");
+          setLoadStatus(
+            typeof (err as { status?: unknown })?.status === "number"
+              ? (err as { status: number }).status
+              : null,
+          );
           setLoading(false);
         }
       }
@@ -227,26 +234,39 @@ function FinOpsContent() {
      account's figures, and never a spinner that resolves to nothing. */
   if (notConnected || loadError || (!loading && !data)) {
     const refused = Boolean(loadError) && !notConnected;
+    /* 501 is not a refusal and not a missing connection -- it is this
+       provider not being built yet. Saying "not available to you" there
+       would blame the reader for our gap. */
+    const unsupported = loadStatus === 501;
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-xl items-center justify-center p-8 text-center">
         <div>
-          <Icon icon="mdi:cloud-off-outline" className="mx-auto h-10 w-10 text-ink-3" />
+          <Icon
+            icon={unsupported ? "mdi:progress-wrench" : "mdi:cloud-off-outline"}
+            className="mx-auto h-10 w-10 text-ink-3"
+          />
           <h2 className="mt-4 text-[18px] font-semibold text-ink">
-            {refused ? "That account isn't available to you" : "Connect a cloud account"}
+            {unsupported
+              ? `Live ${provider.toUpperCase()} billing isn't built yet`
+              : refused
+                ? "That account isn't available to you"
+                : "Connect a cloud account"}
           </h2>
           <p className="mt-2 text-[13.5px] leading-relaxed text-ink-3">
-            {refused
-              ? "Your sign-in does not have access to this account's cost data. Connect an account of your own to see its spend here."
-              : "FinOps Live reads cost and usage from an account you connect. Nothing is shown until one is linked to your sign-in."}
+            {unsupported
+              ? "WhichCloud prices and compares architectures on every cloud, but reading an existing bill is wired up for AWS only so far. This page would rather say so than show you invented figures."
+              : refused
+                ? "Your sign-in does not have access to this account's cost data. Connect an account of your own to see its spend here."
+                : "FinOps Live reads cost and usage from an account you connect. Nothing is shown until one is linked to your sign-in."}
           </p>
           <Link
-            href="/connect"
+            href={unsupported ? "/dashboard" : "/connect"}
             className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition hover:opacity-90"
           >
-            <Icon icon="mdi:link-variant" className="h-4 w-4" />
-            Connect an account
+            <Icon icon={unsupported ? "mdi:calculator-variant-outline" : "mdi:link-variant"} className="h-4 w-4" />
+            {unsupported ? "Price an architecture instead" : "Connect an account"}
           </Link>
-          {refused && loadError && (
+          {refused && !unsupported && loadError && (
             <p className="mt-4 font-mono text-[11.5px] text-ink-3">{loadError}</p>
           )}
         </div>
