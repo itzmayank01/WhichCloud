@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@iconify/react";
@@ -35,6 +35,147 @@ interface OptionItem {
 
 const DEFAULT_WORKLOAD =
   "I run operations for a retail chain in India with 120 stores. Nightly batch sync runs 2am to 5am with inventory updates from all stores. In-store POS queries the catalog during store hours. Mobile app for customers with 50k daily active users. 500 GB catalog images with fast delivery to users across India.";
+
+
+/** Cumulative cost accrual across a billing month, with a cursor readout.
+ *
+ *  Replaces a drawing of a chart. What was here was a fixed bezier path, a
+ *  crosshair hard-coded at x=420 and a tooltip pinned at x=260 -- it looked
+ *  interactive and could not respond to the pointer at all, which is what
+ *  "why doesn't it move" was about.
+ *
+ *  Both series are the real priced totals for the selected tier, accrued
+ *  linearly across the month: day d has spent total * d/days. Linear is a
+ *  stated assumption rather than a measurement, and it is the honest one to
+ *  make here -- the estimate is a monthly figure, so any day-to-day wobble
+ *  drawn on top of it would be invented detail. The second series is the
+ *  committed price, which is a real alternative for the same architecture,
+ *  rather than the "Per Active Session" line that had no data behind it.
+ */
+function CostAccrualChart({
+  onDemandMonthly,
+  committedMonthly,
+}: {
+  onDemandMonthly: number;
+  committedMonthly: number;
+}) {
+  const DAYS = 30;
+  const W = 500;
+  const H = 160;
+  const LEFT = 40;
+  const RIGHT = 480;
+  const TOP = 20;
+  const BOTTOM = 130;
+
+  const [hoverDay, setHoverDay] = useState<number | null>(null);
+  /* Measured on the WRAPPER, not the svg. The svg carries overflow-visible so
+     the tooltip can sit outside the plot, which makes its bounding rect the
+     union of the plot AND the overflowing card -- a rect that changes as the
+     card moves. Mapping the pointer through that fed the card's position back
+     into its own input: the readout jumped and could not reach day 30. The
+     wrapper's box is fixed and is exactly what the svg fills. */
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const max = Math.max(onDemandMonthly, committedMonthly, 0.01);
+  const xFor = (d: number) => LEFT + ((d - 1) / (DAYS - 1)) * (RIGHT - LEFT);
+  const yFor = (v: number) => BOTTOM - (v / max) * (BOTTOM - TOP);
+  const valueOn = (total: number, d: number) => (total * d) / DAYS;
+
+  const pathFor = (total: number) =>
+    Array.from({ length: DAYS }, (_, i) => {
+      const d = i + 1;
+      return `${i ? "L" : "M"} ${xFor(d).toFixed(1)} ${yFor(valueOn(total, d)).toFixed(1)}`;
+    }).join(" ");
+
+  /* preserveAspectRatio="none" so the viewBox maps linearly onto the box the
+     chart is drawn in -- otherwise the pointer maths has to undo the letter-
+     boxing the browser applies, and the crosshair sits beside the cursor
+     rather than under it. */
+  const dayFromPointer = (clientX: number) => {
+    const rect = boxRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return null;
+    const vbX = ((clientX - rect.left) / rect.width) * W;
+    const ratio = (vbX - LEFT) / (RIGHT - LEFT);
+    return Math.min(DAYS, Math.max(1, Math.round(ratio * (DAYS - 1)) + 1));
+  };
+
+  const day = hoverDay ?? DAYS;
+  const onDemandAtDay = valueOn(onDemandMonthly, day);
+  const committedAtDay = valueOn(committedMonthly, day);
+  const cursorX = xFor(day);
+  // Keep the card inside the plot when the cursor is near either edge.
+  const cardW = 200;
+  const cardX = Math.min(Math.max(cursorX - cardW / 2, LEFT - 20), RIGHT - cardW + 20);
+
+  return (
+    <div ref={boxRef} className="relative h-44 w-full">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="h-full w-full touch-none overflow-visible"
+        onMouseMove={(e) => setHoverDay(dayFromPointer(e.clientX))}
+        onMouseLeave={() => setHoverDay(null)}
+        onTouchStart={(e) => setHoverDay(dayFromPointer(e.touches[0].clientX))}
+        onTouchMove={(e) => setHoverDay(dayFromPointer(e.touches[0].clientX))}
+        onTouchEnd={() => setHoverDay(null)}
+        role="img"
+        aria-label={`Cumulative cost accrual. By day ${day}, on-demand $${onDemandAtDay.toFixed(2)}, committed $${committedAtDay.toFixed(2)}.`}
+      >
+        <defs>
+          <linearGradient id="tfCostGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#5C4EE5" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#5C4EE5" stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+
+        <path
+          d={`${pathFor(onDemandMonthly)} L ${RIGHT} ${BOTTOM} L ${LEFT} ${BOTTOM} Z`}
+          fill="url(#tfCostGrad)"
+        />
+        <path d={pathFor(onDemandMonthly)} fill="none" stroke="#5C4EE5" strokeWidth="2" />
+        <path
+          d={pathFor(committedMonthly)}
+          fill="none"
+          stroke="#A78BFA"
+          strokeWidth="1.5"
+          strokeDasharray="4 4"
+        />
+
+        <line x1={cursorX} y1={TOP} x2={cursorX} y2={BOTTOM} stroke="#71717A" strokeWidth="1.5" />
+        <circle cx={cursorX} cy={yFor(onDemandAtDay)} r="3.5" fill="#5C4EE5" />
+        <circle cx={cursorX} cy={yFor(committedAtDay)} r="3" fill="#A78BFA" />
+
+        <foreignObject x={cardX} y={TOP + 8} width={cardW} height="86">
+          <div className="rounded-xl border border-line bg-surface/95 p-2.5 text-[11px] shadow-xl backdrop-blur">
+            <div className="mb-1 font-mono text-[10px] text-ink-3">Day {day} of {DAYS}</div>
+            <div className="flex items-center justify-between text-ink">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#5C4EE5]" />
+                Accrued (on-demand):
+              </span>
+              <span className="font-mono font-bold">${onDemandAtDay.toFixed(2)}</span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-ink-3">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#A78BFA]" />
+                Accrued (committed):
+              </span>
+              <span className="font-mono font-bold">${committedAtDay.toFixed(2)}</span>
+            </div>
+          </div>
+        </foreignObject>
+
+        <g className="fill-zinc-400 font-mono text-[9px]" textAnchor="middle">
+          {[1, 6, 12, 18, 24, 30].map((d) => (
+            <text key={d} x={xFor(d)} y={H - 8}>
+              {`${String(d).padStart(2, "0")}.05`}
+            </text>
+          ))}
+        </g>
+      </svg>
+    </div>
+  );
+}
 
 function TerraformStudioContent() {
   const router = useRouter();
@@ -1175,81 +1316,20 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                         <div className="flex items-center gap-4 text-[11.5px] mb-3">
                           <span className="flex items-center gap-1.5 text-ink-2 font-medium">
                             <span className="h-2.5 w-2.5 rounded-full bg-[#5C4EE5]" />
-                            Accrued Costs
+                            Accrued (on-demand)
                           </span>
                           <span className="flex items-center gap-1.5 text-ink-3">
                             <span className="h-2.5 w-2.5 rounded-full bg-[#A78BFA]" />
-                            Per Active Session
+                            With 1-yr commitment
                           </span>
                         </div>
 
-                        <div className="relative h-44 w-full">
-                          <svg viewBox="0 0 500 160" className="h-full w-full overflow-visible">
-                            <defs>
-                              <linearGradient id="tfCostGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#5C4EE5" stopOpacity="0.25" />
-                                <stop offset="100%" stopColor="#5C4EE5" stopOpacity="0.0" />
-                              </linearGradient>
-                            </defs>
-
-                            {/* Area under curve */}
-                            <path
-                              d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30 L 480 150 L 40 150 Z"
-                              fill="url(#tfCostGrad)"
-                            />
-
-                            {/* Solid Accrued Costs Curve */}
-                            <path
-                              d="M 40 120 Q 90 140 140 130 T 240 120 T 340 130 T 420 100 T 480 30"
-                              fill="none"
-                              stroke="#5C4EE5"
-                              strokeWidth="2"
-                            />
-
-                            {/* Light/Dashed Per Active Session Curve */}
-                            <path
-                              d="M 40 130 Q 90 150 140 140 T 240 130 T 340 140 T 420 120 T 480 80"
-                              fill="none"
-                              stroke="#A78BFA"
-                              strokeWidth="1.5"
-                              strokeDasharray="4 4"
-                            />
-
-                            {/* Crosshair indicator line */}
-                            <line x1="420" y1="20" x2="420" y2="150" stroke="#71717A" strokeWidth="1.5" />
-                            <polygon points="415,20 425,20 420,28" fill="#71717A" />
-
-                            {/* Tooltip Card Synchronized with Live Architecture Cost */}
-                            <foreignObject x="260" y="35" width="200" height="80">
-                              <div className="rounded-xl border border-line bg-surface/95 backdrop-blur p-2.5 shadow-xl text-[11px]">
-                                <div className="flex items-center justify-between text-ink">
-                                  <span className="flex items-center gap-1">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-[#5C4EE5]" />
-                                    Accrued Costs:
-                                  </span>
-                                  <span className="font-mono font-bold">${liveMonthly.toFixed(2)}</span>
-                                </div>
-                                <div className="flex items-center justify-between text-ink-3 mt-1.5">
-                                  <span className="flex items-center gap-1">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-[#A78BFA]" />
-                                    Per Active Session:
-                                  </span>
-                                  <span className="font-mono font-bold">${(liveMonthly * 0.78).toFixed(2)}</span>
-                                </div>
-                              </div>
-                            </foreignObject>
-
-                            {/* X-axis labels */}
-                            <g className="text-[9px] fill-zinc-400 font-mono" textAnchor="middle">
-                              <text x="40" y="160">01.05</text>
-                              <text x="120" y="160">06.05</text>
-                              <text x="210" y="160">12.05</text>
-                              <text x="300" y="160">18.05</text>
-                              <text x="390" y="160">23.05</text>
-                              <text x="470" y="160">29.05</text>
-                            </g>
-                          </svg>
-                        </div>
+                        <CostAccrualChart
+                          onDemandMonthly={liveMonthly}
+                          committedMonthly={
+                            activeOption?.monthly_usd ?? liveMonthly
+                          }
+                        />
                       </div>
 
                       {/* Service Breakdown Table (Screenshot 1) */}
