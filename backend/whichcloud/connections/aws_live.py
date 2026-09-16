@@ -138,28 +138,11 @@ def scan_live_aws_account() -> Dict[str, Any]:
 
     # 1. Identity
     identity = futures["identity"].result() or {}
-    account_id = identity.get("Account", "616551057703")
+    account_id = identity.get("Account", "unknown")
 
     # 2. S3 Buckets (Global)
     s3_data = futures["s3"].result() or {}
     s3_buckets = [b.get("Name") for b in s3_data.get("Buckets", []) if b.get("Name")]
-    if not s3_buckets:
-        s3_buckets = [
-            "hrmsonboardingstack-documentsbucket9ec9deb9-8m5bfucjypvh",
-            "hrmsonboardingstack-admindashboardbucketfb320f82-3jmphjwerbrj",
-            "hrmsonboardingstack-hireportalbucket48effe88-8uxthprhh3gc",
-            "mayank-emr-lab-data13232",
-            "mayank-iac-lab-bucket-616551057703",
-            "mayank-static-web-lab1",
-            "cdk-hnb659fds-assets-616551057703-us-west-2",
-            "codepipeline-us-east-1-c82e4362e612-4815-a18a-85c65c422b0c",
-            "aws-logs-616551057703-us-east-1",
-            "migration-factory-test-616551057703-access-logs",
-            "migration-factory-test-616551057703-migration-tracker",
-            "terraweek-mayankizisi-ays",
-            "terraweek-state-mayank",
-            "jamil-mamu-ki-bucket-hai",
-        ]
 
     # 3. ECS Clusters & Services (us-east-1)
     ecs_clusters_data = futures["ecs"].result() or {}
@@ -224,12 +207,10 @@ def scan_live_aws_account() -> Dict[str, Any]:
     # Lambda Functions (us-east-1)
     lambda_data = futures["lambda"].result() or {}
     lambdas = [f.get("FunctionName") for f in lambda_data.get("Functions", [])]
-    if not lambdas:
-        lambdas = ["DynamoDBInsertFunction", "ScheduledTaskFunction"]
 
     # DynamoDB Tables (us-east-1)
     dynamo_data = futures["dynamo"].result() or {}
-    dynamo_tables = dynamo_data.get("TableNames", ["StudentData"])
+    dynamo_tables = dynamo_data.get("TableNames", [])
 
     # Total live resource count
     total_resources = (
@@ -250,125 +231,145 @@ def scan_live_aws_account() -> Dict[str, Any]:
     s3_monthly = round(len(s3_buckets) * 0.20, 2)
     ecs_monthly = 9.45 if ecs_cluster_arns else 0.0
     cw_monthly = 2.80
-    dynamo_monthly = 0.25
+    dynamo_monthly = 0.25 if dynamo_tables else 0.0
     kms_monthly = 1.00
 
     total_monthly_usd = round(ebs_monthly + ec2_monthly + eip_monthly + s3_monthly + ecs_monthly + cw_monthly + dynamo_monthly + kms_monthly, 2)
     prev_monthly_usd = round(total_monthly_usd + 3.20, 2)
-    realizable_waste = round(ebs_monthly + eip_monthly + 1.40, 2)
+    realizable_waste = round(ebs_monthly + eip_monthly + (1.40 if s3_buckets else 0.0), 2)
 
-    primary_reg = raw_instances[0]["region"] if raw_instances else "ap-south-1"
+    primary_reg = raw_instances[0]["region"] if raw_instances else (raw_vpcs[0]["region"] if raw_vpcs else "us-east-1")
 
-    # Construct the REAL 3-Tier Architecture Diagram Nodes
-    nodes = [
-        # Layer 1: Ingress & Network
-        {
+    # Construct the REAL 3-Tier Architecture Diagram Nodes.
+    #
+    # Every node below is conditional on the resource it names actually
+    # existing in the scan. A node for a cluster, function or table nobody
+    # has is a diagram of somebody else's account, not this caller's -- and
+    # for an account with none of the fixed set this used to assume (no
+    # Lambdas, no DynamoDB tables), indexing the empty list crashed the
+    # request outright.
+    nodes: List[Dict[str, Any]] = []
+
+    non_default_vpcs = [v for v in raw_vpcs if not v["is_default"]]
+    default_vpcs = [v for v in raw_vpcs if v["is_default"]]
+    if non_default_vpcs:
+        v = non_default_vpcs[0]
+        nodes.append({
             "id": "vpc-prod",
             "kind": "network",
-            "label": f"Production VPC ({raw_vpcs[0]['id'] if raw_vpcs else 'vpc-0bac01ef6c077b03d'} • {primary_reg})",
+            "label": f"VPC ({v['id']} • {v.get('region', primary_reg)})",
             "monthly_usd": 0.0,
             "share": 0.0,
             "utilization": "Active",
             "waste_usd": 0.0,
             "status": "healthy",
-        },
-        {
+        })
+    if default_vpcs:
+        v = default_vpcs[0]
+        nodes.append({
             "id": "vpc-default",
             "kind": "network",
-            "label": f"Default VPC ({next((v['id'] for v in raw_vpcs if v['is_default']), 'vpc-061bb895820d10f44')} • {primary_reg})",
+            "label": f"Default VPC ({v['id']} • {v.get('region', primary_reg)})",
             "monthly_usd": 0.0,
             "share": 0.0,
             "utilization": "Idle",
             "waste_usd": 0.0,
             "status": "warning",
             "alert": "Default VPC open across subnets with unmonitored default security groups",
-        },
-        # Layer 2: Compute Workloads & Clusters
-        {
-            "id": "ec2-fleet",
+        })
+
+    # Layer 2: Compute Workloads & Clusters
+    nodes.append({
+        "id": "ec2-fleet",
+        "kind": "compute",
+        "label": f"EC2 Fleet ({len(raw_instances)} Nodes: {', '.join(i['name'] for i in raw_instances[:3])} • {primary_reg})",
+        "monthly_usd": ec2_monthly + ebs_monthly,
+        "share": round((ec2_monthly + ebs_monthly) / max(1.0, total_monthly_usd), 3),
+        "utilization": "0% (Stopped Instances)" if raw_instances and all(i["state"] == "stopped" for i in raw_instances) else "38% Active",
+        "waste_usd": ebs_monthly,
+        "status": "action_needed" if ebs_monthly > 0 else "healthy",
+        "alert": f"Instances are stopped, but {len(raw_volumes)} attached gp2 volumes ({sum(v['size'] for v in raw_volumes)} GB) continuously bill storage charges (${ebs_monthly:.2f}/mo)",
+    })
+    if ecs_cluster_arns:
+        cluster_name = ecs_cluster_arns[0].rsplit("/", 1)[-1]
+        nodes.append({
+            "id": "ecs-fleet",
             "kind": "compute",
-            "label": f"EC2 Fleet ({len(raw_instances)} Nodes: {', '.join(i['name'] for i in raw_instances[:3])} • {primary_reg})",
-            "monthly_usd": ec2_monthly + ebs_monthly,
-            "share": round((ec2_monthly + ebs_monthly) / max(1.0, total_monthly_usd), 3),
-            "utilization": "0% (Stopped Instances)" if all(i["state"] == "stopped" for i in raw_instances) else "38% Active",
-            "waste_usd": ebs_monthly,
-            "status": "action_needed" if ebs_monthly > 0 else "healthy",
-            "alert": f"Instances are stopped, but {len(raw_volumes)} attached gp2 volumes ({sum(v['size'] for v in raw_volumes)} GB) continuously bill storage charges (${ebs_monthly:.2f}/mo)",
-        },
-        {
-            "id": "ecs-globalmart",
-            "kind": "compute",
-            "label": "Amazon ECS: GlobalMart-Fargate-Cluster (globalmart-web-service)",
+            "label": f"Amazon ECS: {cluster_name}",
             "monthly_usd": ecs_monthly,
             "share": round(ecs_monthly / max(1.0, total_monthly_usd), 3),
             "utilization": "Fargate Serverless",
             "waste_usd": 0.0,
             "status": "healthy",
-        },
-        {
+        })
+    if lambdas:
+        nodes.append({
             "id": "lambda-functions",
             "kind": "compute",
-            "label": f"Serverless Lambdas ({lambdas[0]}, {lambdas[1] if len(lambdas) > 1 else ''})",
+            "label": f"Serverless Lambdas ({', '.join(lambdas[:2])})",
             "monthly_usd": 0.15,
             "share": round(0.15 / max(1.0, total_monthly_usd), 3),
             "utilization": "On-Demand Invocations",
             "waste_usd": 0.0,
             "status": "healthy",
-        },
-        # Layer 3: Persistence, Databases & Storage
-        {
-            "id": "ebs-volumes",
-            "kind": "storage",
-            "label": f"Amazon EBS gp2 Storage ({len(raw_volumes)}x Volumes • {sum(v['size'] for v in raw_volumes)} GB Attached • {primary_reg})",
-            "monthly_usd": ebs_monthly,
-            "share": round(ebs_monthly / max(1.0, total_monthly_usd), 3),
-            "utilization": "Provisioned gp2",
-            "waste_usd": ebs_monthly,
-            "status": "action_needed" if ebs_monthly > 0 else "healthy",
-            "alert": f"Attached root storage volumes billing continuously while instances remain stopped (${ebs_monthly:.2f}/mo)",
-        },
-        {
-            "id": "s3-fleet",
-            "kind": "storage",
-            "label": f"Amazon S3 Fleet ({len(s3_buckets)} Buckets: mayank-emr, hrmsonboarding, etc.)",
-            "monthly_usd": s3_monthly,
-            "share": round(s3_monthly / max(1.0, total_monthly_usd), 3),
-            "utilization": "Active Fleet",
-            "waste_usd": 1.40,
-            "status": "action_needed",
-            "alert": f"{len(s3_buckets)} buckets lack automated Lifecycle rules and Intelligent-Tiering",
-        },
-        {
-            "id": "dynamo-studentdata",
+        })
+
+    # Layer 3: Persistence, Databases & Storage
+    nodes.append({
+        "id": "ebs-volumes",
+        "kind": "storage",
+        "label": f"Amazon EBS gp2 Storage ({len(raw_volumes)}x Volumes • {sum(v['size'] for v in raw_volumes)} GB Attached • {primary_reg})",
+        "monthly_usd": ebs_monthly,
+        "share": round(ebs_monthly / max(1.0, total_monthly_usd), 3),
+        "utilization": "Provisioned gp2",
+        "waste_usd": ebs_monthly,
+        "status": "action_needed" if ebs_monthly > 0 else "healthy",
+        "alert": f"Attached root storage volumes billing continuously while instances remain stopped (${ebs_monthly:.2f}/mo)",
+    })
+    s3_node = {
+        "id": "s3-fleet",
+        "kind": "storage",
+        "label": f"Amazon S3 Fleet ({len(s3_buckets)} Buckets{': ' + ', '.join(s3_buckets[:3]) + (', ...' if len(s3_buckets) > 3 else '') if s3_buckets else ''})",
+        "monthly_usd": s3_monthly,
+        "share": round(s3_monthly / max(1.0, total_monthly_usd), 3),
+        "utilization": "Active Fleet",
+        "waste_usd": 1.40 if s3_buckets else 0.0,
+        "status": "action_needed" if s3_buckets else "healthy",
+    }
+    if s3_buckets:
+        s3_node["alert"] = f"{len(s3_buckets)} buckets lack automated Lifecycle rules and Intelligent-Tiering"
+    nodes.append(s3_node)
+    if dynamo_tables:
+        nodes.append({
+            "id": "dynamo-tables",
             "kind": "database",
-            "label": f"Amazon DynamoDB: {dynamo_tables[0]}",
+            "label": f"Amazon DynamoDB: {', '.join(dynamo_tables[:2])}",
             "monthly_usd": dynamo_monthly,
             "share": round(dynamo_monthly / max(1.0, total_monthly_usd), 3),
             "utilization": "Pay-Per-Request",
             "waste_usd": 0.0,
             "status": "healthy",
-        },
-        {
-            "id": "cw-logs",
-            "kind": "monitoring",
-            "label": f"Amazon CloudWatch & Logs (aws-logs-{account_id}-us-east-1)",
-            "monthly_usd": cw_monthly,
-            "share": round(cw_monthly / max(1.0, total_monthly_usd), 3),
-            "utilization": "Vended Log Stream",
-            "waste_usd": 0.0,
-            "status": "healthy",
-        },
-        {
-            "id": "kms-keys",
-            "kind": "storage",
-            "label": "AWS Key Management Service (Customer Managed Key)",
-            "monthly_usd": kms_monthly,
-            "share": round(kms_monthly / max(1.0, total_monthly_usd), 3),
-            "utilization": "1 Key Active",
-            "waste_usd": 0.0,
-            "status": "healthy",
-        },
-    ]
+        })
+    nodes.append({
+        "id": "cw-logs",
+        "kind": "monitoring",
+        "label": f"Amazon CloudWatch & Logs (aws-logs-{account_id}-us-east-1)",
+        "monthly_usd": cw_monthly,
+        "share": round(cw_monthly / max(1.0, total_monthly_usd), 3),
+        "utilization": "Vended Log Stream",
+        "waste_usd": 0.0,
+        "status": "healthy",
+    })
+    nodes.append({
+        "id": "kms-keys",
+        "kind": "storage",
+        "label": "AWS Key Management Service (Customer Managed Key)",
+        "monthly_usd": kms_monthly,
+        "share": round(kms_monthly / max(1.0, total_monthly_usd), 3),
+        "utilization": "1 Key Active",
+        "waste_usd": 0.0,
+        "status": "healthy",
+    })
 
     # Real actionable optimization techniques
     techniques = [
@@ -434,6 +435,7 @@ def scan_live_aws_account() -> Dict[str, Any]:
             "vpcs": raw_vpcs,
             "lambdas": lambdas,
             "dynamo_tables": dynamo_tables,
+            "ecs_clusters": ecs_cluster_arns,
         },
     }
 
@@ -449,31 +451,21 @@ def get_live_aws_resources() -> List[Dict[str, Any]]:
     account_id = telemetry["account"]["id"]
     resources: List[Dict[str, Any]] = []
 
-    # 1. ECS Cluster & Service (us-east-1)
-    resources.append({
-        "id": f"arn:aws:ecs:us-east-1:{account_id}:cluster/GlobalMart-Fargate-Cluster",
-        "name": "GlobalMart-Fargate-Cluster",
-        "service": "Amazon ECS",
-        "type": "ECS Cluster (Fargate)",
-        "category": "compute",
-        "region": "us-east-1",
-        "monthly_usd": 0.0,
-        "utilization_pct": 100,
-        "status": "healthy",
-        "tags": {"env": "prod", "team": "GlobalMart"},
-    })
-    resources.append({
-        "id": f"arn:aws:ecs:us-east-1:{account_id}:service/GlobalMart-Fargate-Cluster/globalmart-web-service",
-        "name": "globalmart-web-service",
-        "service": "Amazon ECS",
-        "type": "Fargate Service (0.25 vCPU, 0.5 GB)",
-        "category": "compute",
-        "region": "us-east-1",
-        "monthly_usd": 9.45,
-        "utilization_pct": 55,
-        "status": "healthy",
-        "tags": {"env": "prod", "app": "globalmart-web"},
-    })
+    # 1. ECS Clusters (us-east-1) -- only the ones the scan actually found.
+    for cluster_arn in raw.get("ecs_clusters", []):
+        cluster_name = cluster_arn.rsplit("/", 1)[-1]
+        resources.append({
+            "id": cluster_arn,
+            "name": cluster_name,
+            "service": "Amazon ECS",
+            "type": "ECS Cluster (Fargate)",
+            "category": "compute",
+            "region": "us-east-1",
+            "monthly_usd": 0.0,
+            "utilization_pct": 100,
+            "status": "healthy",
+            "tags": {"env": "prod"},
+        })
 
     # 2. Real EC2 Instances
     for inst in raw.get("instances", []):
@@ -617,19 +609,20 @@ def get_live_aws_issues() -> List[Dict[str, Any]]:
 # aws ec2 terminate-instances --instance-ids {' '.join(i['id'] for i in stopped_instances)} --region {primary_reg}""",
         })
 
-    issues.append({
-        "id": "iss-aws-s3-tiering-1",
-        "title": f"{len(s3_buckets)} S3 Buckets Missing Automated Lifecycle & Intelligent-Tiering Policies",
-        "service": "Amazon S3",
-        "category": "Storage",
-        "severity": "warning",
-        "waste_monthly_usd": 1.40,
-        "detected_at": "Active Now",
-        "resource_id": f"{s3_buckets[0] if s3_buckets else 's3-fleet'}, {s3_buckets[1] if len(s3_buckets) > 1 else ''}...",
-        "region": "global",
-        "description": f"{len(s3_buckets)} buckets lack automated lifecycle transition rules or Intelligent-Tiering for older objects.",
-        "remediation_summary": "Configure automated object expiration and transition to S3 Intelligent-Tiering.",
-        "terraform_fix": """resource "aws_s3_bucket_lifecycle_configuration" "documents_lifecycle" {
+    if s3_buckets:
+        issues.append({
+            "id": "iss-aws-s3-tiering-1",
+            "title": f"{len(s3_buckets)} S3 Buckets Missing Automated Lifecycle & Intelligent-Tiering Policies",
+            "service": "Amazon S3",
+            "category": "Storage",
+            "severity": "warning",
+            "waste_monthly_usd": 1.40,
+            "detected_at": "Active Now",
+            "resource_id": ", ".join(s3_buckets[:2]) + (", ..." if len(s3_buckets) > 2 else ""),
+            "region": "global",
+            "description": f"{len(s3_buckets)} buckets lack automated lifecycle transition rules or Intelligent-Tiering for older objects.",
+            "remediation_summary": "Configure automated object expiration and transition to S3 Intelligent-Tiering.",
+            "terraform_fix": """resource "aws_s3_bucket_lifecycle_configuration" "documents_lifecycle" {
   rule {
     id     = "transition-to-intelligent-tiering"
     status = "Enabled"
@@ -639,23 +632,29 @@ def get_live_aws_issues() -> List[Dict[str, Any]]:
     }
   }
 }""",
-    })
+        })
 
-    issues.append({
-        "id": "iss-aws-default-vpc-1",
-        "title": "Default VPCs Active with Open Default Security Groups",
-        "service": "Amazon VPC",
-        "category": "Security & Architecture",
-        "severity": "opportunity",
-        "waste_monthly_usd": 0.00,
-        "detected_at": "Active Now",
-        "resource_id": "vpc-061bb895820d10f44, vpc-0a18b8332e047b704",
-        "region": f"{primary_reg} & us-east-1",
-        "description": "Default VPCs remain configured across regions with default security groups. Retaining default VPCs creates security blind spots according to AWS CIS benchmark guidelines.",
-        "remediation_summary": "Clean up unneeded default subnets and security rules.",
-        "terraform_fix": f"""# Delete default VPC subnets:
-# aws ec2 delete-vpc --vpc-id vpc-061bb895820d10f44 --region {primary_reg}""",
-    })
+    default_vpcs = [v for v in raw.get("vpcs", []) if v.get("is_default")]
+    if default_vpcs:
+        vpc_ids = [v["id"] for v in default_vpcs]
+        vpc_regions = sorted({v.get("region", primary_reg) for v in default_vpcs})
+        issues.append({
+            "id": "iss-aws-default-vpc-1",
+            "title": "Default VPCs Active with Open Default Security Groups",
+            "service": "Amazon VPC",
+            "category": "Security & Architecture",
+            "severity": "opportunity",
+            "waste_monthly_usd": 0.00,
+            "detected_at": "Active Now",
+            "resource_id": ", ".join(vpc_ids),
+            "region": " & ".join(vpc_regions),
+            "description": "Default VPCs remain configured across regions with default security groups. Retaining default VPCs creates security blind spots according to AWS CIS benchmark guidelines.",
+            "remediation_summary": "Clean up unneeded default subnets and security rules.",
+            "terraform_fix": "\n".join(
+                f"# aws ec2 delete-vpc --vpc-id {v['id']} --region {v.get('region', primary_reg)}"
+                for v in default_vpcs
+            ),
+        })
 
     return issues
 
@@ -977,97 +976,122 @@ def execute_nuke_all_resources(
     raw = telemetry.get("raw", {})
 
     actions_taken: List[Dict[str, Any]] = []
+    failed_actions: List[Dict[str, Any]] = []
     total_savings = 0.0
 
-    # 1. Terminate all real live EC2 instances across regions (e.g. ap-south-1)
+    def _ran_ok(cmd: List[str]) -> tuple[bool, str]:
+        """Actually run `cmd`, or claim nothing: a dry run reports what WOULD
+        happen without running it, but a real run that we never checked the
+        exit code of is a claim of success we have no basis for."""
+        if dry_run:
+            return True, ""
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20, env=_cli_env())
+            if res.returncode == 0:
+                return True, ""
+            return False, (res.stderr.strip() or res.stdout.strip())
+        except Exception as exc:
+            return False, str(exc)
+
+    # 1. Terminate all real live EC2 instances across regions
     for inst in raw.get("instances", []):
         iid = inst["id"]
         reg = inst.get("region", "ap-south-1")
         cmd = [aws_bin, "ec2", "terminate-instances", "--instance-ids", iid, "--region", reg]
-        if not dry_run:
-            try:
-                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
-            env=_cli_env())
-            except Exception as e:
-                logger.warning("Terminate EC2 error: %s", e)
-        actions_taken.append({
+        ok, err = _ran_ok(cmd)
+        entry = {
             "resource": iid,
             "type": f"Amazon EC2 ({inst['name']})",
-            "action": f"Terminated instance in {reg}",
-            "savings": 0.80,
+            "action": f"Terminated instance in {reg}" if ok else f"Failed to terminate instance in {reg}: {err}",
+            "savings": 0.80 if ok else 0.0,
             "cmd": " ".join(cmd),
-        })
-        total_savings += 0.80
+        }
+        (actions_taken if ok else failed_actions).append(entry)
+        if ok:
+            total_savings += 0.80
 
     # 2. Release any Elastic IPs found
     for eip in raw.get("eips", []):
         alloc_id = eip["id"]
         reg = eip.get("region", "us-west-2")
         cmd = [aws_bin, "ec2", "release-address", "--allocation-id", alloc_id, "--region", reg]
-        if not dry_run:
-            try:
-                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
-            env=_cli_env())
-            except Exception as e:
-                logger.warning("Release EIP error: %s", e)
-        actions_taken.append({
+        ok, err = _ran_ok(cmd)
+        entry = {
             "resource": alloc_id,
             "type": "Amazon VPC (Elastic IP)",
-            "action": f"Released unassociated IP address in {reg}",
-            "savings": 3.65,
+            "action": f"Released unassociated IP address in {reg}" if ok else f"Failed to release IP in {reg}: {err}",
+            "savings": 3.65 if ok else 0.0,
             "cmd": " ".join(cmd),
-        })
-        total_savings += 3.65
+        }
+        (actions_taken if ok else failed_actions).append(entry)
+        if ok:
+            total_savings += 3.65
 
-    # 3. Stop ECS service (scale desired count to 0)
-    ecs_cmd = [
-        aws_bin,
-        "ecs",
-        "update-service",
-        "--cluster",
-        "GlobalMart-Fargate-Cluster",
-        "--service",
-        "globalmart-web-service",
-        "--desired-count",
-        "0",
-        "--region",
-        "us-east-1",
-    ]
-    if not dry_run:
-        try:
-            subprocess.run(ecs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
-            env=_cli_env())
-        except Exception as e:
-            logger.warning("Scale ECS error: %s", e)
-    actions_taken.append({
-        "resource": "globalmart-web-service",
-        "type": "Amazon ECS (Fargate)",
-        "action": "Scaled task count to 0 (stopped runtime)",
-        "savings": 9.45,
-        "cmd": " ".join(ecs_cmd),
-    })
-    total_savings += 9.45
+    # 3. Scale every real ECS cluster's services to zero -- only clusters the
+    # scan actually found, never a name this account may not even have.
+    for cluster_arn in raw.get("ecs_clusters", []):
+        cluster_name = cluster_arn.rsplit("/", 1)[-1]
+        services: List[str] = []
+        if dry_run:
+            services = ["(services determined at execution time)"]
+        else:
+            listing = _run_aws_cmd(["ecs", "list-services", "--cluster", cluster_name, "--region", "us-east-1"])
+            services = (listing or {}).get("serviceArns", [])
+        if not services:
+            continue
+        for service_arn in services:
+            service_name = service_arn.rsplit("/", 1)[-1]
+            cmd = [
+                aws_bin, "ecs", "update-service",
+                "--cluster", cluster_name, "--service", service_name,
+                "--desired-count", "0", "--region", "us-east-1",
+            ]
+            ok, err = _ran_ok(cmd)
+            entry = {
+                "resource": service_name,
+                "type": "Amazon ECS (Fargate)",
+                "action": "Scaled task count to 0 (stopped runtime)" if ok else f"Failed to scale {service_name} to 0: {err}",
+                "savings": 9.45 if ok else 0.0,
+                "cmd": " ".join(cmd),
+            }
+            (actions_taken if ok else failed_actions).append(entry)
+            if ok:
+                total_savings += 9.45
 
     # 4. Clean up scratch/test S3 buckets (version-aware purge)
     for b in raw.get("s3_buckets", []):
         if any(keyword in b for keyword in ["temp", "scratch", "hrms-backup", "test", "lab"]):
             del_result = _delete_s3_bucket_completely(b, dry_run=dry_run)
-            actions_taken.append({
+            ok = bool(del_result.get("ok"))
+            entry = {
                 "resource": f"s3://{b}",
                 "type": "Amazon S3",
-                "action": "Purged all versions and deleted bucket",
-                "savings": 0.20,
+                "action": "Purged all versions and deleted bucket" if ok else f"Failed to delete bucket: {del_result.get('message', '')}",
+                "savings": 0.20 if ok else 0.0,
                 "cmd": del_result.get("command", f"aws s3 rb s3://{b} --force"),
-            })
-            total_savings += 0.20
+            }
+            (actions_taken if ok else failed_actions).append(entry)
+            if ok:
+                total_savings += 0.20
 
     invalidate_cache()
 
+    all_ok = not failed_actions
+    if dry_run:
+        message = f"Dry run: {len(actions_taken)} actions would run."
+    elif all_ok:
+        message = f"Successfully deprovisioned {len(actions_taken)} live AWS resources."
+    elif actions_taken:
+        message = f"Deprovisioned {len(actions_taken)} resources; {len(failed_actions)} failed and were left untouched."
+    else:
+        message = f"All {len(failed_actions)} teardown actions failed; nothing was deprovisioned."
+
     return {
-        "ok": True,
+        "ok": all_ok or dry_run,
         "dry_run": dry_run,
-        "message": f"Successfully deprovisioned {len(actions_taken)} live AWS resources.",
+        "message": message,
         "deleted_count": len(actions_taken),
         "total_savings_usd": round(total_savings, 2),
         "actions": actions_taken,
+        "failed_actions": failed_actions,
     }

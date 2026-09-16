@@ -962,10 +962,10 @@ export function CostReportView({
                 <th className="py-3 px-3">Category</th>
                 <th className="py-3 px-3">Subcategory</th>
                 <th className="py-3 px-3 text-right">
-                  {metricAxis === "count" ? "Accrued Count" : "Accrued Costs (Dec 1 - 31)"}
+                  {metricAxis === "count" ? "Accrued Count" : `Accrued Costs (${data.date_range})`}
                 </th>
                 <th className="py-3 px-3 text-right">
-                  {metricAxis === "count" ? "Previous Count" : "Previous Period (Nov 1 - 30)"}
+                  {metricAxis === "count" ? "Previous Count" : "Previous Period"}
                 </th>
                 <th className="py-3 pr-6 text-right">Change %</th>
               </tr>

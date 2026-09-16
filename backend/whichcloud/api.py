@@ -2359,6 +2359,41 @@ def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str 
         raise HTTPException(502, f"Could not read live AWS planning data: {exc}") from exc
 
 
+#: Cost Explorer's service names, sorted into the buckets the report groups
+#: by. Nothing here is a cost figure -- it is only a label for one that came
+#: back from AWS -- so a service this list has never seen just reads "Other"
+#: rather than being guessed at.
+_SERVICE_CATEGORIES: list[tuple[tuple[str, ...], str]] = [
+    (("EC2", "Lambda", "Elastic Container", "Fargate", "Lightsail", "Batch", "Elastic Beanstalk"), "Compute"),
+    (("Simple Storage", "EBS", "Glacier", "Storage Gateway", "Backup", "FSx", "Elastic File System"), "Storage"),
+    (("Relational Database", "DynamoDB", "Redshift", "ElastiCache", "Neptune", "DocumentDB"), "Database"),
+    (("Virtual Private Cloud", "CloudFront", "Route 53", "Direct Connect", "Elastic Load Balancing", "API Gateway", "Transit Gateway"), "Network"),
+    (("CloudWatch", "CloudTrail", "Config", "X-Ray"), "Monitoring"),
+    (("Key Management", "Secrets Manager", "Identity", "Certificate Manager", "GuardDuty", "Shield", "WAF"), "Security"),
+    (("Tax",), "Tax"),
+]
+
+#: A chart needs a color per series, not a truth about the world -- these are
+#: assigned by rank, same as the fixtures they replaced.
+_REPORT_PALETTE = ["#38bdf8", "#f97316", "#10b981", "#eab308", "#9333ea", "#2dd4bf", "#64748b"]
+
+
+def _categorize_service(service: str) -> str:
+    for keywords, label in _SERVICE_CATEGORIES:
+        if any(k.lower() in service.lower() for k in keywords):
+            return label
+    return "Other"
+
+
+def _first_of_month_minus(d, months: int):
+    from datetime import date as _date
+
+    zero_based = d.month - 1 - months
+    year = d.year + zero_based // 12
+    month = zero_based % 12 + 1
+    return _date(year, month, 1)
+
+
 @app.get("/api/finops/reports")
 def finops_reports(
     provider: str = "aws",
@@ -2368,193 +2403,201 @@ def finops_reports(
     group_by: str = "service,category",
     owner: str = Depends(finops_owner),
 ):
-    """Multi-dimensional Cost Report data for the connected account.
+    """Multi-dimensional Cost Report data for the connected account, read
+    straight from Cost Explorer.
 
-    AWS only, for the same reason as /api/finops/live: the Azure, GCP and
-    GitHub branches below are hand-written totals, legends and daily series.
-    A cost report made of invented money is worse than no cost report.
+    AWS only, for the same reason as /api/finops/live: this used to be a
+    hand-written block of totals, legends and daily series per provider --
+    fixed numbers that looked like an answer regardless of what account was
+    connected or whether one was connected at all. A cost report made of
+    invented money is worse than no cost report.
     """
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Cost reports for {p} are not implemented yet.")
+
+    from datetime import date, timedelta
+
+    from whichcloud.connections import aws as aws_conn
+
+    try:
+        conn = store.get_connection(owner, "aws")
+    except Exception as exc:
+        raise HTTPException(503, f"Could not read your connection: {exc}") from exc
+    if not conn:
+        raise HTTPException(
+            409,
+            "Connect your own AWS account first. WhichCloud reads cost "
+            "reports through a role you create in your account, so there is "
+            "nothing to show until that role exists.",
+        )
+
     b = bin.lower()
-    timeframe_label = "Current Billing Month"
-    range_label = "Sep 1 - Sep 30, 2026"
-    comparing_label = "Comparing Aug 1 - Aug 31, 2026 ⇋ Sep 1 - Sep 30, 2026"
+    today = date.today()
+    month_start = today.replace(day=1)
+    tomorrow = today + timedelta(days=1)
 
-    if p == "azure":
-        report_name = "All Resources (Azure Enterprise • sub-azure-01)"
-        total_accrued = 42150.80
-        prev_accrued = 43200.00
-        change_pct = -2.43
-        legend_items = [
-            {"id": "aks", "name": "Azure Kubernetes Service (AKS)", "color": "#38bdf8", "accrued": 18420.50},
-            {"id": "sqldb", "name": "Azure SQL Database", "color": "#f97316", "accrued": 14210.00},
-            {"id": "blob", "name": "Blob Storage (Hot/Cool)", "color": "#10b981", "accrued": 4820.30},
-            {"id": "appgw", "name": "Application Gateway v2", "color": "#eab308", "accrued": 2980.00},
-            {"id": "redis", "name": "Azure Cache for Redis", "color": "#2dd4bf", "accrued": 1720.00},
-        ]
-        if b == "daily":
-            series = [
-                {"date": "Sep 03", "total": 1380.0, "cumulative": 28350.0, "breakdown": {"aks": 605.0, "sqldb": 465.0, "blob": 160.0, "appgw": 95.0, "redis": 55.0}},
-                {"date": "Sep 05", "total": 1410.0, "cumulative": 31170.0, "breakdown": {"aks": 620.0, "sqldb": 475.0, "blob": 160.0, "appgw": 100.0, "redis": 55.0}},
-                {"date": "Sep 07", "total": 1390.0, "cumulative": 33950.0, "breakdown": {"aks": 610.0, "sqldb": 470.0, "blob": 155.0, "appgw": 100.0, "redis": 55.0}},
-                {"date": "Sep 09", "total": 1420.0, "cumulative": 36790.0, "breakdown": {"aks": 625.0, "sqldb": 480.0, "blob": 160.0, "appgw": 100.0, "redis": 55.0}},
-                {"date": "Sep 11", "total": 1430.0, "cumulative": 42150.8, "breakdown": {"aks": 630.0, "sqldb": 485.0, "blob": 160.0, "appgw": 100.0, "redis": 55.0}},
-            ]
-        elif b == "monthly":
-            series = [
-                {"date": "May 2026", "total": 41200.0, "cumulative": 41200.0, "breakdown": {"aks": 18000.0, "sqldb": 13900.0, "blob": 4700.0, "appgw": 2900.0, "redis": 1700.0}},
-                {"date": "Jun 2026", "total": 42500.0, "cumulative": 83700.0, "breakdown": {"aks": 18600.0, "sqldb": 14300.0, "blob": 4850.0, "appgw": 3000.0, "redis": 1750.0}},
-                {"date": "Jul 2026", "total": 43100.0, "cumulative": 126800.0, "breakdown": {"aks": 18800.0, "sqldb": 14500.0, "blob": 4900.0, "appgw": 3150.0, "redis": 1750.0}},
-                {"date": "Aug 2026", "total": 43200.0, "cumulative": 170000.0, "breakdown": {"aks": 18900.0, "sqldb": 14550.0, "blob": 4950.0, "appgw": 3050.0, "redis": 1750.0}},
-                {"date": "Sep 2026", "total": 42150.8, "cumulative": 212150.8, "breakdown": {"aks": 18420.5, "sqldb": 14210.0, "blob": 4820.3, "appgw": 2980.0, "redis": 1720.0}},
-            ]
-        else:
-            series = [
-                {"date": "Aug 15", "total": 7920.00, "cumulative": 7920.00, "breakdown": {"aks": 3480.00, "sqldb": 2650.00, "blob": 910.00, "appgw": 560.00, "redis": 320.00}},
-                {"date": "Aug 22", "total": 8510.20, "cumulative": 16430.20, "breakdown": {"aks": 3720.00, "sqldb": 2860.00, "blob": 980.00, "appgw": 600.20, "redis": 350.00}},
-                {"date": "Aug 29", "total": 8440.00, "cumulative": 24870.20, "breakdown": {"aks": 3690.00, "sqldb": 2840.00, "blob": 970.00, "appgw": 590.00, "redis": 350.00}},
-                {"date": "Sep 05", "total": 8620.40, "cumulative": 33490.60, "breakdown": {"aks": 3770.00, "sqldb": 2910.00, "blob": 990.00, "appgw": 600.40, "redis": 350.00}},
-                {"date": "Sep 12", "total": 8660.20, "cumulative": 42150.80, "breakdown": {"aks": 3760.50, "sqldb": 2950.00, "blob": 970.30, "appgw": 629.40, "redis": 350.00}},
-            ]
-        table_items = [
-            {"id": "az-1", "service": "Azure Kubernetes Service", "resource": "aks-production-nodes-eastus", "category": "Compute", "subcategory": "Standard_D4ds_v5", "account": "Azure Production (sub-azure-01)", "region": "eastus", "accrued_usd": 18420.50, "prev_usd": 17980.20, "change_pct": 2.45, "has_network_costs": False, "tag_team": "Team A"},
-            {"id": "az-2", "service": "Azure SQL Database", "resource": "sqldb-enterprise-core-prod", "category": "Database", "subcategory": "Business Critical 4 vCore", "account": "Azure Production (sub-azure-01)", "region": "eastus", "accrued_usd": 14210.00, "prev_usd": 14800.00, "change_pct": -3.99, "has_network_costs": False, "tag_team": "Database Core"},
-            {"id": "az-3", "service": "Blob Storage", "resource": "stgproductioncoolarchive", "category": "Storage", "subcategory": "Hot Tier Blob", "account": "Azure Production (sub-azure-01)", "region": "eastus", "accrued_usd": 4820.30, "prev_usd": 5100.00, "change_pct": -5.48, "has_network_costs": False, "tag_team": "Data Engineering"},
-            {"id": "az-4", "service": "Application Gateway v2", "resource": "appgw-ingress-prod", "category": "Network", "subcategory": "WAF_v2 Capacity", "account": "Azure Production (sub-azure-01)", "region": "eastus", "accrued_usd": 2980.00, "prev_usd": 3400.00, "change_pct": -12.35, "has_network_costs": True, "tag_team": "DevOps"},
-            {"id": "az-5", "service": "Azure Cache for Redis", "resource": "redis-cache-cluster-p1", "category": "Cache", "subcategory": "Premium P1", "account": "Azure Production (sub-azure-01)", "region": "eastus", "accrued_usd": 1720.00, "prev_usd": 1920.00, "change_pct": -10.42, "has_network_costs": False, "tag_team": "Backend Core"},
-        ]
-    elif p == "gcp":
-        report_name = "All Resources (Google Cloud Platform • gcp-prod-981)"
-        total_accrued = 35420.50
-        prev_accrued = 36800.00
-        change_pct = -3.75
-        legend_items = [
-            {"id": "gke", "name": "Google Kubernetes Engine (GKE)", "color": "#38bdf8", "accrued": 15840.20},
-            {"id": "csql", "name": "Cloud SQL PostgreSQL", "color": "#f97316", "accrued": 11290.00},
-            {"id": "gcs", "name": "Cloud Storage (GCS)", "color": "#10b981", "accrued": 3980.30},
-            {"id": "glb", "name": "Cloud Load Balancing", "color": "#eab308", "accrued": 2410.00},
-            {"id": "bq", "name": "BigQuery Analytics", "color": "#9333ea", "accrued": 1900.00},
-        ]
-        if b == "daily":
-            series = [
-                {"date": "Sep 03", "total": 1160.0, "cumulative": 23800.0, "breakdown": {"gke": 520.0, "csql": 370.0, "gcs": 130.0, "glb": 80.0, "bq": 60.0}},
-                {"date": "Sep 05", "total": 1180.0, "cumulative": 26160.0, "breakdown": {"gke": 530.0, "csql": 375.0, "gcs": 135.0, "glb": 80.0, "bq": 60.0}},
-                {"date": "Sep 07", "total": 1170.0, "cumulative": 28500.0, "breakdown": {"gke": 525.0, "csql": 370.0, "gcs": 135.0, "glb": 80.0, "bq": 60.0}},
-                {"date": "Sep 09", "total": 1190.0, "cumulative": 30880.0, "breakdown": {"gke": 530.0, "csql": 380.0, "gcs": 135.0, "glb": 80.0, "bq": 65.0}},
-                {"date": "Sep 11", "total": 1200.0, "cumulative": 35420.5, "breakdown": {"gke": 535.0, "csql": 385.0, "gcs": 135.0, "glb": 80.0, "bq": 65.0}},
-            ]
-        elif b == "monthly":
-            series = [
-                {"date": "May 2026", "total": 34800.0, "cumulative": 34800.0, "breakdown": {"gke": 15500.0, "csql": 11100.0, "gcs": 3900.0, "glb": 2400.0, "bq": 1900.0}},
-                {"date": "Jun 2026", "total": 35600.0, "cumulative": 70400.0, "breakdown": {"gke": 15900.0, "csql": 11300.0, "gcs": 4000.0, "glb": 2450.0, "bq": 1950.0}},
-                {"date": "Jul 2026", "total": 36100.0, "cumulative": 106500.0, "breakdown": {"gke": 16100.0, "csql": 11500.0, "gcs": 4100.0, "glb": 2450.0, "bq": 1950.0}},
-                {"date": "Aug 2026", "total": 36800.0, "cumulative": 143300.0, "breakdown": {"gke": 16400.0, "csql": 11700.0, "gcs": 4200.0, "glb": 2500.0, "bq": 2000.0}},
-                {"date": "Sep 2026", "total": 35420.5, "cumulative": 178720.5, "breakdown": {"gke": 15840.2, "csql": 11290.0, "gcs": 3980.3, "glb": 2410.0, "bq": 1900.0}},
-            ]
-        else:
-            series = [
-                {"date": "Aug 15", "total": 6680.00, "cumulative": 6680.00, "breakdown": {"gke": 2980.00, "csql": 2130.00, "gcs": 750.00, "glb": 460.00, "bq": 360.00}},
-                {"date": "Aug 22", "total": 7180.20, "cumulative": 13860.20, "breakdown": {"gke": 3210.00, "csql": 2290.00, "gcs": 810.00, "glb": 490.20, "bq": 380.00}},
-                {"date": "Aug 29", "total": 7110.00, "cumulative": 20970.20, "breakdown": {"gke": 3180.00, "csql": 2270.00, "gcs": 800.00, "glb": 480.00, "bq": 380.00}},
-                {"date": "Sep 05", "total": 7240.10, "cumulative": 28210.30, "breakdown": {"gke": 3240.00, "csql": 2300.00, "gcs": 810.00, "glb": 490.10, "bq": 400.00}},
-                {"date": "Sep 12", "total": 7210.20, "cumulative": 35420.50, "breakdown": {"gke": 3230.20, "csql": 2300.00, "gcs": 810.30, "glb": 489.70, "bq": 380.00}},
-            ]
-        table_items = [
-            {"id": "gcp-1", "service": "Google Kubernetes Engine", "resource": "gke-autopilot-cluster-prod", "category": "Compute", "subcategory": "e2-standard-4", "account": "GCP Production (gcp-prod-981)", "region": "us-central1", "accrued_usd": 15840.20, "prev_usd": 16200.00, "change_pct": -2.22, "has_network_costs": False, "tag_team": "Platform"},
-            {"id": "gcp-2", "service": "Cloud SQL", "resource": "csql-postgres-high-avail", "category": "Database", "subcategory": "db-custom-8-32768", "account": "GCP Production (gcp-prod-981)", "region": "us-central1", "accrued_usd": 11290.00, "prev_usd": 11800.00, "change_pct": -4.32, "has_network_costs": False, "tag_team": "Data Core"},
-            {"id": "gcp-3", "service": "Cloud Storage", "resource": "gcs-production-assets", "category": "Storage", "subcategory": "Standard Multi-Region", "account": "GCP Production (gcp-prod-981)", "region": "us-central1", "accrued_usd": 3980.30, "prev_usd": 4250.00, "change_pct": -6.35, "has_network_costs": False, "tag_team": "Media Services"},
-            {"id": "gcp-4", "service": "Cloud Load Balancing", "resource": "glb-frontend-ingress", "category": "Network", "subcategory": "Forwarding Rules", "account": "GCP Production (gcp-prod-981)", "region": "us-central1", "accrued_usd": 2410.00, "prev_usd": 2600.00, "change_pct": -7.31, "has_network_costs": True, "tag_team": "Network Engineering"},
-            {"id": "gcp-5", "service": "BigQuery", "resource": "bq-analytics-billing-export", "category": "Analytics", "subcategory": "Active Storage & Query", "account": "GCP Production (gcp-prod-981)", "region": "us-central1", "accrued_usd": 1900.00, "prev_usd": 1950.00, "change_pct": -2.56, "has_network_costs": False, "tag_team": "Analytics"},
-        ]
-    elif p == "github":
-        report_name = "All Resources (GitHub IaC Scanner • acme-corp/infra)"
-        total_accrued = 24860.20
-        prev_accrued = 26400.00
-        change_pct = -5.83
-        legend_items = [
-            {"id": "eks_tf", "name": "Terraform AWS EKS", "color": "#38bdf8", "accrued": 11200.00},
-            {"id": "rds_tf", "name": "Terraform RDS Aurora", "color": "#f97316", "accrued": 8410.00},
-            {"id": "s3_tf", "name": "Terraform S3 Buckets", "color": "#10b981", "accrued": 2980.20},
-            {"id": "vpc_tf", "name": "Terraform VPC Gateways", "color": "#eab308", "accrued": 2270.00},
-        ]
-        series = [
-            {"date": "Aug 15", "total": 4720.00, "cumulative": 4720.00, "breakdown": {"eks_tf": 2130.00, "rds_tf": 1600.00, "s3_tf": 560.00, "vpc_tf": 430.00}},
-            {"date": "Aug 22", "total": 5050.10, "cumulative": 9770.10, "breakdown": {"eks_tf": 2280.00, "rds_tf": 1710.00, "s3_tf": 600.00, "vpc_tf": 460.10}},
-            {"date": "Aug 29", "total": 4980.00, "cumulative": 14750.10, "breakdown": {"eks_tf": 2240.00, "rds_tf": 1690.00, "s3_tf": 600.00, "vpc_tf": 450.00}},
-            {"date": "Sep 05", "total": 5060.00, "cumulative": 19810.10, "breakdown": {"eks_tf": 2280.00, "rds_tf": 1710.00, "s3_tf": 610.00, "vpc_tf": 460.00}},
-            {"date": "Sep 12", "total": 5050.10, "cumulative": 24860.20, "breakdown": {"eks_tf": 2270.00, "rds_tf": 1700.00, "s3_tf": 610.20, "vpc_tf": 469.90}},
-        ]
-        table_items = [
-            {"id": "gh-1", "service": "Terraform AWS EKS", "resource": "module.eks_workers.aws_node_group", "category": "Compute", "subcategory": "t3.2xlarge NodeGroup", "account": "GitHub Repo (acme-corp/infra)", "region": "us-east-1", "accrued_usd": 11200.00, "prev_usd": 12100.00, "change_pct": -7.44, "has_network_costs": False, "tag_team": "Infrastructure"},
-            {"id": "gh-2", "service": "Terraform RDS Aurora", "resource": "aws_rds_cluster.main", "category": "Database", "subcategory": "Aurora PostgreSQL Serverless", "account": "GitHub Repo (acme-corp/infra)", "region": "us-east-1", "accrued_usd": 8410.00, "prev_usd": 8900.00, "change_pct": -5.51, "has_network_costs": False, "tag_team": "Data Core"},
-            {"id": "gh-3", "service": "Terraform S3 Buckets", "resource": "aws_s3_bucket.artifacts", "category": "Storage", "subcategory": "S3 Standard", "account": "GitHub Repo (acme-corp/infra)", "region": "us-east-1", "accrued_usd": 2980.20, "prev_usd": 3150.00, "change_pct": -5.39, "has_network_costs": False, "tag_team": "DevOps"},
-            {"id": "gh-4", "service": "Terraform VPC Gateways", "resource": "aws_nat_gateway.public", "category": "Network", "subcategory": "NAT Gateway Elastic IP", "account": "GitHub Repo (acme-corp/infra)", "region": "us-east-1", "accrued_usd": 2270.00, "prev_usd": 2250.00, "change_pct": 0.89, "has_network_costs": True, "tag_team": "Network Engineering"},
-        ]
+    if b == "monthly":
+        fetch_start = _first_of_month_minus(month_start, 5)
+        comparing_label = f"Trailing 6 months, {fetch_start:%b %Y} → {today:%b %Y}"
     else:
-        # Default AWS
-        act_id = account_id if account_id and account_id != "demo" else "unknown"
-        report_name = f"All Resources (AWS {act_id})"
-        total_accrued = 24.98
-        prev_accrued = 27.50
-        change_pct = -9.16
+        span_days = (today - month_start).days + 1
+        fetch_start = month_start - timedelta(days=span_days)
+        comparing_label = (
+            f"Comparing {fetch_start:%b %d} - {month_start - timedelta(days=1):%b %d, %Y} "
+            f"⇄ {month_start:%b %d} - {today:%b %d, %Y}"
+        )
 
-        legend_items = [
-            {"id": "ecs", "name": "Amazon ECS (Fargate)", "color": "#38bdf8", "accrued": 9.45},
-            {"id": "ebs", "name": "Amazon EBS (gp3 Volumes)", "color": "#f97316", "accrued": 4.48},
-            {"id": "vpc_eip", "name": "Amazon VPC (Elastic IP)", "color": "#eab308", "accrued": 3.65},
-            {"id": "s3", "name": "Amazon S3 (16 Buckets)", "color": "#10b981", "accrued": 3.20},
-            {"id": "cw", "name": "CloudWatch Logs", "color": "#9333ea", "accrued": 2.80},
-            {"id": "other", "name": "KMS & DynamoDB", "color": "#2dd4bf", "accrued": 1.40},
-        ]
+    try:
+        facts = list(aws_conn.fetch(conn["config"] or {}, "", fetch_start, tomorrow))
+    except ValueError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:
+        import logging
+        logging.getLogger("whichcloud.api").error("Cost Explorer fetch failed: %s", exc)
+        raise HTTPException(502, f"Could not read Cost Explorer: {exc}") from exc
 
-        if b == "daily":
-            # 8 daily points leading up to today
-            series = [
-                {"date": "Sep 05", "total": 0.82, "cumulative": 18.26, "breakdown": {"ecs": 0.31, "ebs": 0.15, "vpc_eip": 0.12, "s3": 0.11, "cw": 0.09, "other": 0.04}},
-                {"date": "Sep 06", "total": 0.84, "cumulative": 19.10, "breakdown": {"ecs": 0.32, "ebs": 0.15, "vpc_eip": 0.12, "s3": 0.11, "cw": 0.09, "other": 0.05}},
-                {"date": "Sep 07", "total": 0.83, "cumulative": 19.93, "breakdown": {"ecs": 0.31, "ebs": 0.15, "vpc_eip": 0.12, "s3": 0.11, "cw": 0.09, "other": 0.05}},
-                {"date": "Sep 08", "total": 0.84, "cumulative": 20.77, "breakdown": {"ecs": 0.32, "ebs": 0.15, "vpc_eip": 0.12, "s3": 0.11, "cw": 0.09, "other": 0.05}},
-                {"date": "Sep 09", "total": 0.85, "cumulative": 21.62, "breakdown": {"ecs": 0.32, "ebs": 0.15, "vpc_eip": 0.12, "s3": 0.11, "cw": 0.10, "other": 0.05}},
-                {"date": "Sep 10", "total": 0.84, "cumulative": 22.46, "breakdown": {"ecs": 0.32, "ebs": 0.15, "vpc_eip": 0.12, "s3": 0.11, "cw": 0.09, "other": 0.05}},
-                {"date": "Sep 11", "total": 0.84, "cumulative": 23.30, "breakdown": {"ecs": 0.32, "ebs": 0.15, "vpc_eip": 0.12, "s3": 0.11, "cw": 0.09, "other": 0.05}},
-                {"date": "Sep 12", "total": 1.68, "cumulative": 24.98, "breakdown": {"ecs": 0.64, "ebs": 0.30, "vpc_eip": 0.25, "s3": 0.22, "cw": 0.18, "other": 0.09}},
-            ]
-        elif b == "monthly":
-            series = [
-                {"date": "May 2026", "total": 28.10, "cumulative": 28.10, "breakdown": {"ecs": 10.60, "ebs": 5.04, "vpc_eip": 4.10, "s3": 3.60, "cw": 3.15, "other": 1.61}},
-                {"date": "Jun 2026", "total": 27.80, "cumulative": 55.90, "breakdown": {"ecs": 10.50, "ebs": 4.98, "vpc_eip": 4.05, "s3": 3.55, "cw": 3.12, "other": 1.60}},
-                {"date": "Jul 2026", "total": 26.50, "cumulative": 82.40, "breakdown": {"ecs": 10.00, "ebs": 4.75, "vpc_eip": 3.90, "s3": 3.40, "cw": 2.95, "other": 1.50}},
-                {"date": "Aug 2026", "total": 27.50, "cumulative": 109.90, "breakdown": {"ecs": 10.40, "ebs": 4.90, "vpc_eip": 4.00, "s3": 3.50, "cw": 3.10, "other": 1.60}},
-                {"date": "Sep 2026", "total": 24.98, "cumulative": 134.88, "breakdown": {"ecs": 9.45, "ebs": 4.48, "vpc_eip": 3.65, "s3": 3.20, "cw": 2.80, "other": 1.40}},
-            ]
-        else:
-            # Weekly / Cumulative default
-            series = [
-                {"date": "Aug 15", "total": 5.80, "cumulative": 5.80, "breakdown": {"ecs": 2.20, "ebs": 1.10, "vpc_eip": 0.90, "s3": 0.80, "cw": 0.50, "other": 0.30}},
-                {"date": "Aug 22", "total": 6.20, "cumulative": 12.00, "breakdown": {"ecs": 2.40, "ebs": 1.12, "vpc_eip": 0.92, "s3": 0.80, "cw": 0.66, "other": 0.30}},
-                {"date": "Aug 29", "total": 6.40, "cumulative": 18.40, "breakdown": {"ecs": 2.40, "ebs": 1.14, "vpc_eip": 0.91, "s3": 0.80, "cw": 0.80, "other": 0.35}},
-                {"date": "Sep 05", "total": 6.58, "cumulative": 24.98, "breakdown": {"ecs": 2.45, "ebs": 1.12, "vpc_eip": 0.92, "s3": 0.80, "cw": 0.84, "other": 0.45}},
-            ]
+    def _sum(rows) -> float:
+        return round(float(sum(f.unblended_usd for f in rows)), 2)
 
-        table_items = [
-            {"id": "row-aws-1", "service": "Amazon Elastic Container Service", "resource": "GlobalMart-Fargate-Cluster / globalmart-web-service", "category": "Compute", "subcategory": "Fargate Linux", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 9.45, "prev_usd": 10.20, "change_pct": -7.35, "has_network_costs": False, "tag_team": "GlobalMart"},
-            {"id": "row-aws-2", "service": "Amazon Elastic Block Store", "resource": "7x 8GB gp3 Volumes (on stopped EC2 instances)", "category": "Storage", "subcategory": "General Purpose SSD (gp3)", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 4.48, "prev_usd": 4.48, "change_pct": 0.0, "has_network_costs": False, "tag_team": "DevOps"},
-            {"id": "row-aws-3", "service": "Amazon Virtual Private Cloud", "resource": "Idle Elastic IP (50.112.2.95 • eipalloc-04a15828efe75a254)", "category": "Network", "subcategory": "Public IPv4 Idle Address", "account": f"AWS ({act_id})", "region": "us-west-2", "accrued_usd": 3.65, "prev_usd": 3.65, "change_pct": 0.0, "has_network_costs": True, "tag_team": "Infrastructure"},
-            {"id": "row-aws-4", "service": "Amazon Simple Storage Service", "resource": "16 S3 Buckets (mayank-emr, hrmsonboarding, textract...)", "category": "Storage", "subcategory": "S3 Standard", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 3.20, "prev_usd": 3.45, "change_pct": -7.24, "has_network_costs": False, "tag_team": "Data Team"},
-            {"id": "row-aws-5", "service": "Amazon CloudWatch", "resource": f"Vended Logs & Alarms (aws-logs-{act_id})", "category": "Monitoring", "subcategory": "Log Analytics", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 2.80, "prev_usd": 3.10, "change_pct": -9.67, "has_network_costs": False, "tag_team": "Core Operations"},
-            {"id": "row-aws-6", "service": "Amazon DynamoDB", "resource": "StudentData Table", "category": "Database", "subcategory": "Pay-Per-Request", "account": f"AWS ({act_id})", "region": "us-east-1", "accrued_usd": 0.25, "prev_usd": 0.30, "change_pct": -16.6, "has_network_costs": False, "tag_team": "Academic Lab"},
-        ]
+    current = [f for f in facts if f.usage_date >= month_start]
+    total_accrued = _sum(current)
+
+    if b == "monthly":
+        prev_month_start = _first_of_month_minus(month_start, 1)
+        previous = [f for f in facts if prev_month_start <= f.usage_date < month_start]
+    else:
+        previous = [f for f in facts if f.usage_date < month_start]
+    previous_accrued = _sum(previous) if fetch_start < month_start else None
+    change_pct = (
+        round(((total_accrued - previous_accrued) / previous_accrued) * 100, 2)
+        if previous_accrued
+        else None
+    )
+
+    # Legend: the services that actually moved money in the current period,
+    # ranked by spend. Past the top six, the rest are one "Other" slice
+    # rather than a legend nobody can read.
+    by_service: dict[str, float] = defaultdict(float)
+    for f in current:
+        by_service[f.service] += float(f.unblended_usd)
+    ranked = sorted(by_service.items(), key=lambda kv: kv[1], reverse=True)
+    top_services = [name for name, _ in ranked[:6]]
+    legend_items = [
+        {"id": f"svc-{i}", "name": name, "color": _REPORT_PALETTE[i % len(_REPORT_PALETTE)], "accrued": round(amount, 2)}
+        for i, (name, amount) in enumerate(ranked[:6])
+    ]
+    other_total = sum(amount for name, amount in ranked[6:])
+    service_to_legend_id = {name: f"svc-{i}" for i, name in enumerate(top_services)}
+    if other_total > 0.005:
+        legend_items.append({"id": "other", "name": "Other services", "color": _REPORT_PALETTE[-1], "accrued": round(other_total, 2)})
+
+    def _bucket_key(f) -> str:
+        return service_to_legend_id.get(f.service, "other")
+
+    def _series_from(rows_by_bucket: dict[str, list], labels: list[str]) -> list[dict]:
+        out = []
+        running = 0.0
+        for label in labels:
+            breakdown: dict[str, float] = defaultdict(float)
+            rows = rows_by_bucket.get(label, [])
+            for f in rows:
+                breakdown[_bucket_key(f)] += float(f.unblended_usd)
+            total = round(sum(breakdown.values()), 2)
+            running = round(running + total, 2)
+            out.append({
+                "date": label,
+                "total": total,
+                "cumulative": running,
+                "breakdown": {k: round(v, 2) for k, v in breakdown.items()},
+            })
+        return out
+
+    if b == "monthly":
+        by_month: dict[str, list] = defaultdict(list)
+        month_labels: list[str] = []
+        cursor = fetch_start
+        while cursor <= today:
+            label = f"{cursor:%b %Y}"
+            if label not in month_labels:
+                month_labels.append(label)
+            cursor = _first_of_month_minus(cursor, -1)
+        for f in facts:
+            by_month[f"{f.usage_date:%b %Y}"].append(f)
+        series = _series_from(by_month, month_labels)
+    elif b == "daily":
+        by_day: dict[str, list] = defaultdict(list)
+        day_labels = []
+        cursor = month_start
+        while cursor <= today:
+            day_labels.append(f"{cursor:%b %d}")
+            cursor += timedelta(days=1)
+        for f in current:
+            by_day[f"{f.usage_date:%b %d}"].append(f)
+        series = _series_from(by_day, day_labels)
+    else:
+        # Weekly and cumulative both read as 7-day buckets across the month
+        # to date -- cumulative just means the chart plots the running total
+        # instead of the per-bucket one, which the frontend already does by
+        # reading `cumulative` instead of `total`.
+        by_week: dict[str, list] = defaultdict(list)
+        week_labels = []
+        cursor = month_start
+        while cursor <= today:
+            label = f"{cursor:%b %d}"
+            week_labels.append(label)
+            for f in current:
+                if cursor <= f.usage_date < cursor + timedelta(days=7):
+                    by_week[label].append(f)
+            cursor += timedelta(days=7)
+        series = _series_from(by_week, week_labels)
+
+    # Table: one row per service+region actually billed this period, ranked
+    # by spend. Region breakdown needs no fallback -- Cost Explorer returns
+    # "NoRegion" for global services, which is already a truthful label.
+    def _by_service_region(rows) -> dict[tuple[str, str], float]:
+        agg: dict[tuple[str, str], float] = defaultdict(float)
+        for f in rows:
+            agg[(f.service, f.region or "global")] += float(f.unblended_usd)
+        return agg
+
+    current_agg = _by_service_region(current)
+    previous_agg = _by_service_region(previous) if previous else {}
+    account_label = conn.get("account_id") or account_id or "unknown"
+
+    table_items = []
+    for i, ((service, region), amount) in enumerate(
+        sorted(current_agg.items(), key=lambda kv: kv[1], reverse=True)[:20]
+    ):
+        prev_amount = previous_agg.get((service, region))
+        row_change = (
+            round(((amount - prev_amount) / prev_amount) * 100, 2)
+            if prev_amount
+            else None
+        )
+        table_items.append({
+            "id": f"row-{i}",
+            "service": service,
+            "resource": service,
+            "category": _categorize_service(service),
+            "subcategory": "",
+            "account": f"AWS ({account_label})",
+            "region": region,
+            "accrued_usd": round(amount, 2),
+            "prev_usd": round(prev_amount, 2) if prev_amount is not None else None,
+            "change_pct": row_change,
+            "has_network_costs": False,
+            "tag_team": "",
+        })
 
     return {
-        "report_name": report_name,
-        "timeframe": timeframe_label,
-        "date_range": range_label,
+        "report_name": f"All Resources (AWS {account_label})",
+        "timeframe": "Trailing 6 months" if b == "monthly" else "Month to Date",
+        "date_range": f"{fetch_start:%b %Y} - {today:%b %Y}" if b == "monthly" else f"{month_start:%b %d} - {today:%b %d, %Y}",
         "comparing_label": comparing_label,
         "date_bin": bin,
         "total_accrued_usd": total_accrued,
-        "previous_accrued_usd": prev_accrued,
+        "previous_accrued_usd": previous_accrued,
         "change_pct": change_pct,
         "group_by": group_by.split(","),
         "legend": legend_items,
