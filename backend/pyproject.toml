@@ -20,6 +20,19 @@ dependencies = [
     "python-multipart>=0.0.9",
     "openai>=1.0",
     "PyJWT[crypto]>=2.8",
+    # connections/aws.py assumes each customer's role with it and asks STS
+    # which account we are. Undeclared until now, so it was present locally
+    # by accident and absent from every clean build -- which meant the AWS
+    # connect flow could not work in production at all: the import raised,
+    # the trust policy rendered a placeholder, and verifying a role failed
+    # before it reached AWS. Same class as python-multipart, PyJWT and
+    # python-hcl2 before it; a long-lived venv hides exactly this.
+    "boto3>=1.34",
+    # Imported directly by secrets.py (Fernet) and connections/gcp.py (JWT
+    # signing). It arrives today only as PyJWT's [crypto] extra, so dropping
+    # that extra would break GCP connect exactly the way the missing boto3
+    # broke AWS connect -- silently, and only off this machine.
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]
