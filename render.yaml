@@ -36,24 +36,27 @@ services:
         sync: false
       - key: CLERK_AUTHORIZED_PARTIES
         sync: false
-      # FinOps Live currently runs on ONE shared set of AWS credentials
-      # (see connections/aws_live.py), not per-tenant ones -- this
-      # allow-list is the only thing standing between "signed in" and
-      # "can see/control the real AWS account below". Empty denies
-      # everyone; see backend/whichcloud/auth.py for the full story.
-      - key: WHICHCLOUD_FINOPS_OWNERS
-        sync: false
       # The deployed frontend's origin(s), comma separated. Set once the
       # Vercel domain is known -- see DEPLOY.md step 4.
       - key: WHICHCLOUD_ALLOWED_ORIGINS
         sync: false
       - key: WHICHCLOUD_ALLOWED_ORIGIN_REGEX
         sync: false
-      # Read directly by the `aws` CLI at runtime (connections/aws_live.py
-      # shells out to it) -- never baked into the image.
+      # This deployment's OWN AWS identity -- read directly by the `aws`
+      # CLI at runtime (connections/aws_live.py shells out to it) and used
+      # to call sts:AssumeRole into each caller's own role. Never baked
+      # into the image.
       - key: AWS_ACCESS_KEY_ID
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
       - key: AWS_DEFAULT_REGION
+        sync: false
+      # The account AWS_ACCESS_KEY_ID above belongs to. Every customer's
+      # IAM trust policy has to name this account as the one allowed to
+      # assume their role (see connections/aws.py:trust_policy) -- unset,
+      # the setup instructions shown to every user contain a placeholder
+      # instead of a real account id, and nobody can create a role that
+      # actually trusts this deployment.
+      - key: WHICHCLOUD_AWS_ACCOUNT_ID
         sync: false

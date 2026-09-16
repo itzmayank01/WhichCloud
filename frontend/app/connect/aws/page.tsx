@@ -16,12 +16,6 @@ export default function ConnectAwsPage() {
   const [roleArn, setRoleArn] = useState("");
   const [region, setRegion] = useState("us-east-1");
   const [verifying, setVerifying] = useState(false);
-  /* Starts EMPTY. This was seeded with a real AWS account number belonging to
-     the developer, so every signed-in visitor -- including people with no
-     connection of their own -- was shown someone else's account id, presented
-     as "detected". Nothing here may default to an identifier the current user
-     did not supply. */
-  const [customAccountId, setCustomAccountId] = useState("");
   const [copiedId, setCopiedId] = useState(false);
   const [activeOption, setActiveOption] = useState<"cfn" | "cli" | "terraform" | "console">("cfn");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -189,76 +183,6 @@ export default function ConnectAwsPage() {
             </span>
           </li>
         </ol>
-
-        {/* Instant 1-Click Connect for signed-in AWS user */}
-        <div className="mt-8 rounded-2xl border border-accent/30 bg-accent/5 p-6 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#232f3e] p-2 text-white shadow-xs">
-                <Icon icon="logos:aws" className="h-6 w-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-accent">
-                    Connect by account id
-                  </span>
-                </div>
-                {/* Was "Connect AWS Account (awsmayank)" beside a green "AWS
-                    Console Signed In" pill. Both were fixed strings: the alias
-                    named the developer's account to every visitor, and the pill
-                    asserted a console session this app cannot observe -- so a
-                    user who had connected nothing was told they were signed in
-                    to someone else's AWS. */}
-                <h3 className="mt-0.5 text-[17px] font-bold text-ink">
-                  Connect your AWS account
-                </h3>
-              </div>
-            </div>
-
-            <button
-              disabled={!/^\d{12}$/.test(customAccountId.trim())}
-              onClick={() => {
-                const id = customAccountId.trim();
-                if (!/^\d{12}$/.test(id)) return;
-                setStoredAccount({
-                  ownerId: userId ?? undefined,
-                  provider: "aws",
-                  id,
-                  name: `AWS Account (${id})`,
-                  region,
-                });
-                router.push(`/finops?provider=aws&account_id=${encodeURIComponent(id)}`);
-              }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition-all shadow-xs hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Icon icon="mdi:lightning-bolt" className="h-4 w-4" />
-              <span>Connect Account & Launch Cockpit →</span>
-            </button>
-          </div>
-
-          <div className="mt-4 flex flex-col sm:flex-row items-center gap-3 pt-3 border-t border-line/60">
-            <div className="relative w-full sm:w-80">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] font-mono text-ink-3">
-                AWS Account ID:
-              </span>
-              <input
-                type="text"
-                value={customAccountId}
-                onChange={(e) => setCustomAccountId(e.target.value)}
-                inputMode="numeric"
-                placeholder="123456789012"
-                className="w-full rounded-xl border border-line bg-surface py-2 pl-32 pr-3 font-mono text-[13px] text-ink focus:border-accent focus:outline-none"
-              />
-            </div>
-            {/* The "(detected: …)" hint printed a real account number that was
-                never detected from anything -- it was a literal, and it was
-                someone else's. There is nothing to detect before a connection
-                exists, so the copy now just says what to type. */}
-            <span className="text-[12px] text-ink-3">
-              Your 12-digit AWS account ID
-            </span>
-          </div>
-        </div>
 
         {/* CloudFormation Template Guidance */}
         <div className="mt-6 rounded-2xl border border-line bg-surface p-6 shadow-xs space-y-3">
