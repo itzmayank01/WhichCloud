@@ -31,12 +31,64 @@ from typing import Iterator
 from .models import BillingFact, Setup, SetupStep, VerifyResult
 
 #: The AWS account this service runs as. The user's trust policy has to
-#: name it, so it has to be configured for the instructions to be
-#: correct -- and instructions containing a placeholder are worse than no
+#: name it, so it has to be correct for the instructions to be correct --
+#: and instructions containing a placeholder are worse than no
 #: instructions, because they look complete and fail at the last step.
 import os
 
-OUR_ACCOUNT_ID = os.getenv("WHICHCLOUD_AWS_ACCOUNT_ID", "")
+_ACCOUNT_ID_ENV = "WHICHCLOUD_AWS_ACCOUNT_ID"
+
+#: Memoised answer from STS. Only a successful answer is kept: an
+#: account id cannot change under a running process, but a failure is
+#: usually transient (no network yet, a throttle, credentials arriving
+#: late), and caching one would turn a blip into an outage that lasts
+#: until someone restarts the service.
+_discovered_account_id: str = ""
+
+
+def our_account_id() -> str:
+    """The account whose credentials this deployment holds.
+
+    Asked of AWS rather than configured, because this deployment cannot
+    do anything useful without AWS credentials anyway: assuming a
+    customer's role IS the product. Given that those credentials exist,
+    their account id is a fact STS will state on request -- so requiring
+    an operator to also type it into an env var adds a second source of
+    truth that can only ever disagree with the first.
+
+    That disagreement is not hypothetical. It is exactly the failure this
+    replaced: the variable was never set on the deployment, so every user
+    was shown a trust policy naming a placeholder, created a role from
+    it, and could not connect -- with nothing in the UI able to explain
+    why, because from the app's side a missing env var and a misconfigured
+    one look the same.
+
+    The env var still wins when set, for the case this cannot serve: a
+    deployment fronted by credentials from one account that intends
+    customers to trust a different one (a dedicated trust account, or a
+    role chain). Setting it is now an override, not a prerequisite.
+    """
+    configured = os.getenv(_ACCOUNT_ID_ENV, "").strip()
+    if configured:
+        return configured
+
+    global _discovered_account_id
+    if _discovered_account_id:
+        return _discovered_account_id
+
+    try:
+        import boto3
+
+        found = str(boto3.client("sts").get_caller_identity().get("Account", ""))
+    except Exception:
+        # No credentials, no network, or a denied call. Returning "" lets
+        # every caller keep its existing "not configured" path rather than
+        # turning a misconfiguration into a 500 -- and, because nothing is
+        # cached here, the next request tries again.
+        return ""
+
+    _discovered_account_id = found
+    return found
 
 #: What we ask for. Read-only, and narrow: Cost Explorer and the identity
 #: call used to prove the role works. Nothing that can see a resource,
@@ -57,7 +109,7 @@ def new_external_id() -> str:
 def trust_policy(external_id: str) -> str:
     import json
 
-    account = OUR_ACCOUNT_ID or "<WHICHCLOUD_AWS_ACCOUNT_ID not configured>"
+    account = our_account_id() or "<WhichCloud AWS account not configured>"
     return json.dumps(
         {
             "Version": "2012-10-17",

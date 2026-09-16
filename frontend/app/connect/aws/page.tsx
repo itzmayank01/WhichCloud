@@ -281,9 +281,10 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
 
         {!loading && !setupError && !ourAccountId && (
           <div className="mt-6 rounded-xl border border-caution/40 bg-caution-wash p-4 text-[13.5px] text-caution">
-            This deployment hasn&apos;t been configured to accept AWS connections yet
-            (WHICHCLOUD_AWS_ACCOUNT_ID is unset on the backend). Nobody can complete this flow
-            until that is set.
+            This deployment can&apos;t accept AWS connections right now: it couldn&apos;t
+            determine its own AWS identity, which is the account your role needs to trust.
+            That usually means the backend is missing AWS credentials. Connecting will work
+            as soon as it can reach AWS &mdash; nothing to do on your side.
           </div>
         )}
 

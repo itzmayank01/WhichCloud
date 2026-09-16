@@ -860,7 +860,7 @@ def health() -> dict:
         # is configured-but-wrong and would read as healthy. It is not a
         # secret: it is printed into every customer's trust policy by design
         # (see connections/aws.py), so it is already public to every user.
-        "aws_connect_account_id": _aws_conn.OUR_ACCOUNT_ID or None,
+        "aws_connect_account_id": _aws_conn.our_account_id() or None,
     }
 
 
@@ -2030,7 +2030,7 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
         # knows its own origin, which is where the public template actually
         # lives (a prior version of this pointed at an S3 bucket that was
         # never created, so every Quick-Create link 404'd).
-        our_account_id = conn_aws.OUR_ACCOUNT_ID
+        our_account_id = conn_aws.our_account_id()
     elif p == "azure":
         from whichcloud.connections import azure as conn_azure
 
