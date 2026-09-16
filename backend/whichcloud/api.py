@@ -831,6 +831,7 @@ def health() -> dict:
         raise HTTPException(503, "price catalog is empty — run ingest_prices.py")
 
     from .architecture.readers import configured, configured_sources
+    from .connections import aws as _aws_conn
     from .pricing import cache as price_cache
 
     return {
@@ -848,6 +849,18 @@ def health() -> dict:
         # A cache nobody measures is a cache nobody can tell is broken:
         # a 0% hit rate and a working cache look identical from outside.
         "price_cache": price_cache.STATS.as_dict(),
+        # Same reasoning as reader_sources, for the one variable that decides
+        # whether anybody can connect an AWS account at all. Without this,
+        # "the connect page says unconfigured" has two indistinguishable
+        # causes -- the host is not supplying the value, or the app is not
+        # reading it -- and telling them apart otherwise needs a shell on the
+        # running container.
+        #
+        # The value itself rather than a boolean, because a typo'd account id
+        # is configured-but-wrong and would read as healthy. It is not a
+        # secret: it is printed into every customer's trust policy by design
+        # (see connections/aws.py), so it is already public to every user.
+        "aws_connect_account_id": _aws_conn.OUR_ACCOUNT_ID or None,
     }
 
 
