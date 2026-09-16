@@ -2080,6 +2080,34 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
     else:
         raise HTTPException(400, f"Unsupported provider {body.provider!r}")
 
+    # A verified connection is recorded against the caller, which is what
+    # makes the FinOps routes per-person: _aws_credentials_for looks this row
+    # up by owner and assumes the role it names. Verifying without saving
+    # meant every reader fell back to the server's own credentials.
+    #
+    # `creds` holds the role ARN and external id for AWS -- identifiers, not
+    # secrets. The AssumeRole design exists so nothing worth stealing is at
+    # rest here. (Azure's client secret would need the `secret` BYTEA column
+    # and Fernet before that provider is wired up; it is not, and this only
+    # runs for a provider whose read path exists.)
+    if res.ok:
+        try:
+            store.save_connection(
+                owner=owner,
+                provider=p,
+                display_name=f"{p.upper()} {res.account_id or ''}".strip(),
+                account_id=res.account_id or "",
+                config=creds,
+                status="active",
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger("whichcloud.api").error("Could not persist connection: %s", exc)
+            raise HTTPException(
+                503,
+                f"Verified your account, but could not save the connection: {exc}",
+            ) from exc
+
     return {
         "ok": res.ok,
         "account_id": res.account_id,
@@ -2087,6 +2115,57 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
         "provider": p,
         "connection_id": f"conn_{p}_{res.account_id or 'demo'}",
     }
+
+
+# ── per-caller AWS credentials ──────────────────────────────────────────
+
+
+def _aws_credentials_for(owner: str) -> dict:
+    """Temporary credentials for THIS caller's own AWS account.
+
+    The whole point of the FinOps routes below. Reads used to run on whatever
+    credentials the server process happened to hold, which made "the connected
+    account" a property of the host rather than of the person asking -- so
+    every authorised caller saw the same account and `account_id` selected
+    nothing.
+
+    Now the caller's connection supplies a role ARN and external id, that role
+    is assumed, and the short-lived credentials returned are the only ones the
+    CLI calls will see. No connection means no data: falling back to the
+    server's credentials is exactly the behaviour being removed, so the
+    failure is a 409 telling them to connect.
+    """
+    try:
+        conn = store.get_connection(owner, "aws")
+    except Exception as exc:
+        raise HTTPException(503, f"Could not read your connection: {exc}") from exc
+
+    if not conn:
+        raise HTTPException(
+            409,
+            "Connect your own AWS account first. WhichCloud reads cost data "
+            "through a role you create in your account, so there is nothing "
+            "to show until that role exists.",
+        )
+
+    from whichcloud.connections import aws as aws_conn
+
+    try:
+        session = aws_conn._session(conn["config"] or {})
+        frozen = session.get_credentials().get_frozen_credentials()
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            f"Could not assume the role on your AWS connection: {exc}",
+        ) from exc
+
+    creds = {
+        "AWS_ACCESS_KEY_ID": frozen.access_key,
+        "AWS_SECRET_ACCESS_KEY": frozen.secret_key,
+    }
+    if frozen.token:
+        creds["AWS_SESSION_TOKEN"] = frozen.token
+    return creds
 
 
 @app.get("/api/finops/live")
@@ -2111,9 +2190,13 @@ def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = De
             "existing bill is wired up for AWS only so far.",
         )
 
+    creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import scan_live_aws_account
-        return scan_live_aws_account()
+        from whichcloud.connections.aws_live import scan_live_aws_account, using_credentials
+        with using_credentials(creds):
+            return scan_live_aws_account()
+    except HTTPException:
+        raise
     except Exception as exc:
         import logging
         logging.getLogger("whichcloud.api").error("Live AWS scan failed: %s", exc)
@@ -2128,13 +2211,18 @@ def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Resource inventory for {p} is not implemented yet.")
+    creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import get_live_aws_resources
+        from whichcloud.connections.aws_live import get_live_aws_resources, using_credentials
+        with using_credentials(creds):
+            resources = get_live_aws_resources()
         return {
-            "resources": get_live_aws_resources(),
+            "resources": resources,
             "provider": p,
             "account_id": account_id or "unknown",
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         # An empty list used to be returned here, which reads as "you have no
         # resources" -- a different claim from "we could not look".
@@ -2149,13 +2237,18 @@ def finops_issues(provider: str = "aws", account_id: str = "demo", owner: str = 
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Waste detection for {p} is not implemented yet.")
+    creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import get_live_aws_issues
+        from whichcloud.connections.aws_live import get_live_aws_issues, using_credentials
+        with using_credentials(creds):
+            issues = get_live_aws_issues()
         return {
-            "issues": get_live_aws_issues(),
+            "issues": issues,
             "provider": p,
             "account_id": account_id or "unknown",
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         # "No issues found" and "we could not check" must not look identical.
         import logging
@@ -2175,20 +2268,28 @@ class ResourceActionRequest(BaseModel):
 def finops_resource_action(req: ResourceActionRequest, owner: str = Depends(finops_owner)):
     """Execute live resource lifecycle actions directly (stop, terminate, delete, release)."""
     p = req.provider.lower()
-    if p == "aws":
-        try:
-            from whichcloud.connections.aws_live import execute_resource_action
+    if p != "aws":
+        raise HTTPException(501, f"Direct resource actions are not supported on {p}.")
+
+    # Destructive work, so the credentials must be the caller's own beyond
+    # doubt: this used to stop and terminate instances in whatever account the
+    # SERVER was configured for, whoever asked.
+    creds = _aws_credentials_for(owner)
+    try:
+        from whichcloud.connections.aws_live import execute_resource_action, using_credentials
+        with using_credentials(creds):
             return execute_resource_action(
                 action=req.action,
                 resource_id=req.resource_id,
                 region=req.region,
                 dry_run=req.dry_run,
             )
-        except Exception as exc:
-            import logging
-            logging.getLogger("whichcloud.api").error("Resource action error: %s", exc)
-            return {"ok": False, "message": str(exc)}
-    return {"ok": False, "message": f"Direct actions not supported on {p}"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import logging
+        logging.getLogger("whichcloud.api").error("Resource action error: %s", exc)
+        return {"ok": False, "message": str(exc)}
 
 
 class DeleteAllResourcesRequest(BaseModel):
@@ -2210,27 +2311,27 @@ def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Dep
         }
 
     p = req.provider.lower()
-    if p == "aws":
-        try:
-            from whichcloud.connections.aws_live import execute_nuke_all_resources
+    if p != "aws":
+        # Was a "multi-cloud fallback" returning ok: True, a deleted_count of
+        # 8 and "have been deleted successfully" -- reporting a destructive
+        # operation as done when nothing was contacted at all. Someone acting
+        # on that would believe their resources were gone.
+        raise HTTPException(501, f"Bulk deletion is not implemented for {p}.")
+
+    creds = _aws_credentials_for(owner)
+    try:
+        from whichcloud.connections.aws_live import execute_nuke_all_resources, using_credentials
+        with using_credentials(creds):
             return execute_nuke_all_resources(
                 account_id=req.account_id or "unknown",
                 dry_run=req.dry_run,
             )
-        except Exception as exc:
-            import logging
-            logging.getLogger("whichcloud.api").error("Delete all error: %s", exc)
-            return {"ok": False, "message": str(exc)}
-
-    # Multi-cloud fallback for demo accounts
-    return {
-        "ok": True,
-        "dry_run": req.dry_run,
-        "message": f"All provisioned resources in {p.upper()} ({req.account_id}) have been deleted successfully.",
-        "deleted_count": 8,
-        "total_savings_usd": 1240.0,
-        "actions": [],
-    }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import logging
+        logging.getLogger("whichcloud.api").error("Delete all error: %s", exc)
+        return {"ok": False, "message": str(exc)}
 
 
 
@@ -2240,9 +2341,13 @@ def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str 
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Budget and forecast for {p} is not implemented yet.")
+    creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import get_live_aws_planning
-        return get_live_aws_planning(account_id or "unknown")
+        from whichcloud.connections.aws_live import get_live_aws_planning, using_credentials
+        with using_credentials(creds):
+            return get_live_aws_planning(account_id or "unknown")
+    except HTTPException:
+        raise
     except Exception as exc:
         # The fallback here returned a budget, an accrued figure and a
         # forecast -- invented money, indistinguishable from the real answer.

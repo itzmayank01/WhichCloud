@@ -628,3 +628,76 @@ def delete_architecture(owner: str, architecture_id: str, dsn: str | None = None
             (owner, architecture_id),
         ).fetchone()
     return row is not None
+
+
+# ── cloud connections ───────────────────────────────────────────────────
+#
+# One row per owner per provider. The owner is the verified Clerk subject and
+# is part of every WHERE clause here for the same reason it is in
+# delete_architecture: a connection is only ever reachable by the person who
+# made it, enforced in SQL rather than by a check the caller might skip.
+
+
+def save_connection(
+    owner: str,
+    provider: str,
+    display_name: str,
+    account_id: str,
+    config: dict,
+    status: str = "active",
+    dsn: str | None = None,
+) -> dict:
+    """Record (or replace) this owner's connection to one provider.
+
+    `config` holds the role ARN and external id -- the things needed to assume
+    the role later. It must never hold a long-lived secret: the AWS flow is
+    AssumeRole precisely so that nothing worth stealing is stored.
+    """
+    with connect(dsn) as conn:
+        row = conn.execute(
+            """
+            INSERT INTO cloud_connections
+                (owner, provider, display_name, account_id, config, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (owner, provider, account_id) DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                account_id   = EXCLUDED.account_id,
+                config       = EXCLUDED.config,
+                status       = EXCLUDED.status,
+                last_error   = ''
+            RETURNING id, owner, provider, display_name, account_id, config, status
+            """,
+            (owner, provider, display_name, account_id, json.dumps(config), status),
+        ).fetchone()
+    return dict(row)
+
+
+def get_connection(owner: str, provider: str, dsn: str | None = None) -> dict | None:
+    """This owner's connection to one provider, or None.
+
+    None is the answer that matters: it means the caller has not connected
+    this provider, and the routes above it must refuse rather than fall back
+    to any credentials the server happens to hold.
+    """
+    with connect(dsn) as conn:
+        row = conn.execute(
+            """
+            SELECT id, owner, provider, display_name, account_id, config, status, last_error
+            FROM cloud_connections
+            WHERE owner = %s AND provider = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (owner, provider),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_connection(owner: str, provider: str, dsn: str | None = None) -> bool:
+    """Forget this owner's connection to one provider."""
+    with connect(dsn) as conn:
+        row = conn.execute(
+            "DELETE FROM cloud_connections WHERE owner = %s AND provider = %s RETURNING id",
+            (owner, provider),
+        ).fetchone()
+    return row is not None

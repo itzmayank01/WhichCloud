@@ -13,9 +13,63 @@ import shutil
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("whichcloud.aws_live")
+
+# ── whose account is being read ─────────────────────────────────────────
+#
+# Every CLI call in this module used to inherit the SERVER's ambient AWS
+# credentials, so "which account" was a property of the machine rather than of
+# the request. `account_id` was passed around and shown in the UI, but it
+# selected nothing -- two different signed-in people reading their own
+# "connected account" were both reading whichever account the host was
+# configured for.
+#
+# Credentials are now bound per request from the caller's own connection.
+# A ContextVar rather than a parameter because the alternative was threading an
+# argument through ~30 call sites and every helper between them, where one
+# missed default would silently restore the old behaviour. There is no default:
+# _cli_env() raises when nothing is bound, so a code path that forgets to bind
+# fails loudly instead of quietly reading the host's account.
+_CREDENTIALS: ContextVar[Optional[Dict[str, str]]] = ContextVar(
+    "whichcloud_aws_credentials", default=None
+)
+
+
+@contextmanager
+def using_credentials(creds: Dict[str, str]):
+    """Bind one caller's temporary AWS credentials for the enclosed work."""
+    token = _CREDENTIALS.set(creds)
+    try:
+        yield
+    finally:
+        _CREDENTIALS.reset(token)
+
+
+class NoCredentialsBound(RuntimeError):
+    """Raised when AWS work is attempted with no caller credentials bound."""
+
+
+def _cli_env() -> Dict[str, str]:
+    """The environment for a CLI call: the caller's credentials, nothing else.
+
+    Every AWS_* variable the host may have is stripped before the caller's are
+    applied, so an operator's own profile on the machine cannot leak into a
+    user's request through AWS_PROFILE or a stray AWS_ACCESS_KEY_ID.
+    """
+    creds = _CREDENTIALS.get()
+    if not creds:
+        raise NoCredentialsBound(
+            "No AWS credentials are bound for this request. Live AWS reads "
+            "require the caller's own connection; the server's credentials "
+            "are deliberately not a fallback."
+        )
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AWS_")}
+    env.update(creds)
+    return env
 
 # In-memory cache for live telemetry results to ensure sub-second UI response
 _CACHE: Dict[str, Any] = {}
@@ -43,6 +97,7 @@ def _run_aws_cmd(args: List[str], timeout: int = 15) -> Optional[Any]:
             stderr=subprocess.PIPE,
             text=True,
             timeout=timeout,
+            env=_cli_env(),
         )
         if res.returncode == 0 and res.stdout.strip():
             return json.loads(res.stdout)
@@ -693,6 +748,7 @@ def _delete_s3_bucket_completely(bucket_name: str, dry_run: bool = False) -> Dic
             stderr=subprocess.PIPE,
             text=True,
             timeout=10,
+            env=_cli_env(),
         )
         if check.returncode == 0:
             return {
@@ -714,6 +770,7 @@ def _delete_s3_bucket_completely(bucket_name: str, dry_run: bool = False) -> Dic
                 stderr=subprocess.PIPE,
                 text=True,
                 timeout=25,
+                env=_cli_env(),
             )
             if ver_res.returncode != 0:
                 break
@@ -738,6 +795,7 @@ def _delete_s3_bucket_completely(bucket_name: str, dry_run: bool = False) -> Dic
                 stderr=subprocess.PIPE,
                 text=True,
                 timeout=25,
+                env=_cli_env(),
             )
     except Exception as exc:
         logger.warning("Error purging object versions in %s: %s", clean_name, exc)
@@ -750,6 +808,7 @@ def _delete_s3_bucket_completely(bucket_name: str, dry_run: bool = False) -> Dic
             stderr=subprocess.PIPE,
             text=True,
             timeout=25,
+            env=_cli_env(),
         )
     except Exception as exc:
         logger.warning("Error recursive rm in %s: %s", clean_name, exc)
@@ -761,6 +820,7 @@ def _delete_s3_bucket_completely(bucket_name: str, dry_run: bool = False) -> Dic
         stderr=subprocess.PIPE,
         text=True,
         timeout=25,
+        env=_cli_env(),
     )
     if res.returncode != 0:
         res = subprocess.run(
@@ -769,6 +829,7 @@ def _delete_s3_bucket_completely(bucket_name: str, dry_run: bool = False) -> Dic
             stderr=subprocess.PIPE,
             text=True,
             timeout=25,
+            env=_cli_env(),
         )
 
     invalidate_cache()
@@ -850,7 +911,8 @@ def execute_resource_action(
     if dry_run:
         test_cmd = cmd + ["--dry-run"] if "ec2" in cmd else cmd
         try:
-            res = subprocess.run(test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+            res = subprocess.run(test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
+            env=_cli_env())
             err_msg = res.stderr.strip()
             if "DryRunOperation" in err_msg or res.returncode == 0:
                 return {
@@ -870,7 +932,8 @@ def execute_resource_action(
             return {"ok": False, "dry_run": True, "message": str(exc), "command": " ".join(cmd)}
 
     try:
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=25)
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=25,
+            env=_cli_env())
         invalidate_cache()
         if res.returncode == 0:
             return {
@@ -923,7 +986,8 @@ def execute_nuke_all_resources(
         cmd = [aws_bin, "ec2", "terminate-instances", "--instance-ids", iid, "--region", reg]
         if not dry_run:
             try:
-                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
+            env=_cli_env())
             except Exception as e:
                 logger.warning("Terminate EC2 error: %s", e)
         actions_taken.append({
@@ -942,7 +1006,8 @@ def execute_nuke_all_resources(
         cmd = [aws_bin, "ec2", "release-address", "--allocation-id", alloc_id, "--region", reg]
         if not dry_run:
             try:
-                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
+            env=_cli_env())
             except Exception as e:
                 logger.warning("Release EIP error: %s", e)
         actions_taken.append({
@@ -970,7 +1035,8 @@ def execute_nuke_all_resources(
     ]
     if not dry_run:
         try:
-            subprocess.run(ecs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+            subprocess.run(ecs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15,
+            env=_cli_env())
         except Exception as e:
             logger.warning("Scale ECS error: %s", e)
     actions_taken.append({

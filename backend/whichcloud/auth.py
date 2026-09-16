@@ -114,36 +114,29 @@ def current_owner(authorization: str | None = Header(default=None)) -> str:
     return str(verify(authorization.split(" ", 1)[1].strip())["sub"])
 
 
-#: Interim lockdown, not the real fix. FinOps Live and the cloud connection
-#: routes were built against a single set of AWS credentials on the server
-#: (see connections/aws_live.py) rather than per-tenant ones -- `account_id`
-#: is a display label, never used to select credentials, and `owner` was
-#: required but never checked against anything. Two different signed-in
-#: users hit the exact same real AWS account, including destructive actions.
-#: A real per-tenant AssumeRole flow already exists (connections/aws.py) and
-#: so does a DB table for it (cloud_connections in infra/init/01_schema.sql)
-#: but neither is wired into the FinOps routes yet -- that's a real backend
-#: rework, tracked separately. Until then, this restricts those routes to an
-#: explicit allow-list so the single shared account isn't reachable by
-#: anyone who happens to sign up.
+#: The allow-list this used to be is gone, because the thing it stood in for
+#: now exists. FinOps Live ran on one set of AWS credentials held by the
+#: server, so `account_id` selected nothing and every signed-in user reached
+#: the same real account; an explicit list of permitted Clerk subjects was the
+#: only thing keeping that account away from anyone who signed up.
 #:
-#: Deliberately has no default and fails closed: an unset or empty list
-#: denies everyone, including the account's owner, rather than silently
-#: allowing every signed-in user the way an empty-list-means-allow-all
-#: reading would.
-_FINOPS_OWNERS = [
-    o.strip()
-    for o in os.getenv("WHICHCLOUD_FINOPS_OWNERS", "").split(",")
-    if o.strip()
-]
+#: Reads and destructive actions now run on credentials assumed from the
+#: caller's OWN connection (see `_aws_credentials_for` in api.py and the
+#: ContextVar in connections/aws_live.py, which raises rather than falling
+#: back to the host's credentials). Isolation therefore comes from the
+#: connection lookup -- no connection, no data, and never anybody else's --
+#: which is both stronger than the list and does not require an operator to
+#: add each new user by hand.
+#:
+#: Authentication is still required: this is `current_owner` under a name the
+#: FinOps routes already use, kept so the intent stays greppable at each call
+#: site rather than becoming an anonymous `current_owner` among many.
 
 
 def finops_owner(owner: str = Depends(current_owner)) -> str:
-    """FastAPI dependency: `current_owner`, additionally checked against
-    `WHICHCLOUD_FINOPS_OWNERS`. See the module-level note above."""
-    if owner not in _FINOPS_OWNERS:
-        raise HTTPException(
-            status_code=403,
-            detail="This account is not on the FinOps access list.",
-        )
+    """FastAPI dependency: the verified caller, for the FinOps routes.
+
+    Access to any particular account is decided further in, by whether this
+    owner has a connection to it -- see the note above.
+    """
     return owner
