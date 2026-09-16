@@ -141,6 +141,15 @@ function DownloadTerraformButton({
   );
 }
 
+/** What the progress line below counts toward, in seconds.
+ *
+ *  Not decoration: the backend abandons the model read at EXTRACT_BUDGET_S
+ *  (14s in intake.py) and pricing the result measures ~0.5s, so a generate
+ *  either lands inside this or fails with a message. Keep the two numbers
+ *  together -- a bar that fills toward a deadline the server does not
+ *  actually enforce is worse than no bar at all. */
+const GENERATE_BUDGET_S = 15;
+
 export function WorkspaceView({ name }: { name: string | null }) {
   const [description, setDescription] = useState("");
   const [asked, setAsked] = useState("");
@@ -148,6 +157,21 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* Seconds spent on the current generate, for the progress line below.
+     The backend caps the read at 14s and pricing costs well under a second,
+     so GENERATE_BUDGET_S is a real ceiling rather than a guess -- which is
+     what lets the bar be determinate instead of an indefinite spinner that
+     says nothing about how much longer it will be. */
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!busy) {
+      setElapsed(0);
+      return;
+    }
+    const started = Date.now();
+    const id = setInterval(() => setElapsed((Date.now() - started) / 1000), 100);
+    return () => clearInterval(id);
+  }, [busy]);
   /* Bumped on every replay press. It is the canvas's React key, so a press
      remounts it and the build-in animation runs again from the first node --
      the animation is a mount effect, and without a new key there is nothing
@@ -686,13 +710,50 @@ export function WorkspaceView({ name }: { name: string | null }) {
               <div className="max-w-sm text-center">
                 {busy ? (
                   <>
-                    <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-accent" />
-                    <p className="mt-4 text-[14px] text-ink-2">
-                      Pricing your architecture…
+                    <p className="text-[14px] font-medium text-ink-2">
+                      Generating architecture…
                     </p>
+
+                    {/* The progress LINE. Determinate, because the wait has a
+                        known ceiling (see GENERATE_BUDGET_S) -- a bar that
+                        fills toward a real deadline tells you the wait is
+                        bounded, which a spinner never can. It eases toward the
+                        budget rather than running linearly off the end: the
+                        last stretch slows down instead of hitting 100% and
+                        sitting there, which would read as stuck. */}
+                    <div
+                      className="mx-auto mt-3 h-1 w-full max-w-xs overflow-hidden rounded-full bg-sunk"
+                      role="progressbar"
+                      aria-label="Generating architecture"
+                      aria-valuemin={0}
+                      aria-valuemax={GENERATE_BUDGET_S}
+                      aria-valuenow={Math.min(elapsed, GENERATE_BUDGET_S)}
+                    >
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-100 ease-linear"
+                        style={{
+                          width: `${Math.min(
+                            96,
+                            100 * (1 - Math.exp(-elapsed / (GENERATE_BUDGET_S / 2.5))),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    <p className="mt-2 font-mono text-[12px] tabular-nums text-ink-3">
+                      {elapsed.toFixed(1)}s
+                      <span className="text-ink-3/70">
+                        {" "}
+                        / up to {GENERATE_BUDGET_S}s
+                      </span>
+                    </p>
+
                     <p className="mt-1 text-[12.5px] text-ink-3">
-                      Reading the description, then costing every service
-                      against the live catalog.
+                      {elapsed < 1.5
+                        ? "Reading the description…"
+                        : elapsed < GENERATE_BUDGET_S
+                          ? "Costing every service against the live catalog."
+                          : "Taking longer than usual — the backend may be waking from idle."}
                     </p>
                   </>
                 ) : result && shown ? (

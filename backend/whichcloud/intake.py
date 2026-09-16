@@ -49,13 +49,20 @@ from .requirements import Requirement
 #: over while the user is still watching.
 EXTRACT_TIMEOUT_S = 25.0
 
-#: Wall-clock budget for the WHOLE chain, not one call. With several keys
-#: configured, a run of timeouts could otherwise keep someone waiting minutes
-#: before the chain gave up -- each individual call staying under its own
-#: limit while the total ran away. Once this is spent the chain stops and
-#: reports what it tried, rather than starting another 25-second wait nobody
-#: is still watching for.
-EXTRACT_BUDGET_S = 60.0
+#: Wall-clock budget for the WHOLE chain, not one call, and the number that
+#: makes "architecture in 15 seconds" a property of the system rather than a
+#: hope about provider latency. Pricing after the read costs ~0.6s (measured),
+#: so the read is effectively the whole budget. When this is spent the chain
+#: stops and reports what it tried rather than keeping someone waiting on a
+#: provider that has already shown it is not answering.
+EXTRACT_BUDGET_S = 14.0
+
+#: How long one candidate gets to answer before the NEXT one starts running
+#: alongside it. Not a timeout: the first call keeps going and can still win.
+#: Sized just above a healthy provider's measured response (~3s for Groq) so
+#: the common case never spends a second key, while a stalled first key stops
+#: holding the whole request hostage.
+HEDGE_DELAY_S = 4.0
 
 Provider = Literal["gemini", "groq", "anthropic", "openai"]
 
@@ -657,6 +664,32 @@ _EXTRACTORS = {
 # ── public entry point ──────────────────────────────────────────────────
 
 
+def _interleave_by_provider(chain):
+    """Round-robin the chain across providers, keeping each provider's order.
+
+    The chain arrives grouped -- every Gemini key, then every Groq key. Hedging
+    down that list spends a second key on the provider that has already failed
+    to answer, which is the one least likely to answer next: whatever is
+    throttling or overloading it applies to its other keys too. Interleaving
+    makes each successive hedge reach for a DIFFERENT provider first, so a
+    single degraded provider costs one hedge delay instead of one per key.
+
+    Preference is preserved: the caller's provider still leads, and within a
+    provider the keys keep their configured order.
+    """
+    by_provider: dict[str, list] = {}
+    for candidate in chain:
+        by_provider.setdefault(candidate.provider, []).append(candidate)
+
+    out = []
+    while by_provider:
+        for provider in list(by_provider):
+            out.append(by_provider[provider].pop(0))
+            if not by_provider[provider]:
+                del by_provider[provider]
+    return out
+
+
 def _draft_with_failover(description: str, provider: Provider, client=None):
     """Try every configured key, not just the first.
 
@@ -677,57 +710,74 @@ def _draft_with_failover(description: str, provider: Provider, client=None):
         return _EXTRACTORS[provider](description, client)
 
     failures: list[tuple[str, Exception]] = []
-    # One executor for the whole chain. Each call runs on a worker thread so a
-    # hung provider can be ABANDONED after EXTRACT_TIMEOUT_S -- the SDKs differ
-    # in how (and whether) they honour a timeout argument, so a wall-clock budget
-    # around the call is the one mechanism that works for all of them. A
-    # leaked worker on a genuinely hung call is acceptable: the process
-    # carries on and the next provider answers.
-    # Providers whose endpoint has timed out, and how many of their keys have
-    # done so. A single timeout used to write off every remaining key of that
-    # provider on the theory that they all hit the same slow endpoint -- but a
-    # timeout on a rate-limited free tier often means THAT key is being
-    # throttled into silence rather than answering with a clean 429, and nothing
-    # about it says the next key is in the same state. Three real Groq keys
-    # were configured and only the first was ever tried, because the other two
-    # got skipped the moment it timed out. Two timeouts in a row for the same
-    # provider is what actually indicates a hung endpoint rather than one
-    # throttled key; only then is the rest of that provider written off.
-    stall_count: dict[str, int] = {}
-    STALL_LIMIT = 2
-    # One worker per candidate, and NOT a `with` block: a genuinely hung call
-    # leaves its thread running, and `with`-exit (shutdown(wait=True)) would
-    # block the whole request on that leaked thread -- reintroducing the hang
-    # this timeout exists to remove. shutdown(wait=False) at the end lets the
-    # request return while the orphan finishes and is discarded.
+    # Hedged racing rather than a strict one-at-a-time walk.
+    #
+    # Measured: Groq answers this prompt in ~3s, Gemini in ~11-29s when it is
+    # not simply 503-ing -- and Gemini is first in the chain. Waiting out the
+    # slow one before even starting the fast one is what made /describe take
+    # ~30s, and no per-call timeout fixes that: shortening it just converts a
+    # slow success into a failure.
+    #
+    # So a candidate that has not answered within HEDGE_DELAY_S does not block
+    # the next one from starting -- it keeps running alongside it, and the
+    # first success anywhere wins. Latency becomes roughly the FASTEST
+    # available provider rather than the sum of everything ahead of it.
+    #
+    # Hedging rather than launching the whole chain at once: when the first
+    # key is healthy it answers inside the hedge delay and nothing else is
+    # ever spent. Free-tier quota is the scarce resource the chain exists to
+    # conserve, so extra calls are issued only once slowness is demonstrated.
+    #
+    # NOT a `with` block: a genuinely hung call leaves its thread running, and
+    # with-exit (shutdown(wait=True)) would block the whole request on that
+    # leaked thread -- reintroducing the hang this exists to remove.
+    # shutdown(wait=False) lets the request return while orphans are discarded.
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(chain)))
     deadline = time.monotonic() + EXTRACT_BUDGET_S
+    queue = _interleave_by_provider(chain)
+    pending: dict[concurrent.futures.Future, str] = {}
     try:
-        for candidate in chain:
-            # Give each provider up to STALL_LIMIT keys before deciding its
-            # endpoint itself is hung and skipping the rest. (A quota error, by
-            # contrast, IS key-specific -- those still walk every key.)
-            if stall_count.get(candidate.provider, 0) >= STALL_LIMIT:
-                continue
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+        while queue or pending:
+            now = time.monotonic()
+            if now >= deadline:
                 break
-            future = pool.submit(
-                _EXTRACTORS[candidate.provider], description, None, candidate.key
+            # Start one more candidate: the first pass through, and thereafter
+            # each time the ones already running have gone quiet for a hedge
+            # delay without answering.
+            if queue:
+                candidate = queue.pop(0)
+                pending[
+                    pool.submit(
+                        _EXTRACTORS[candidate.provider], description, None, candidate.key
+                    )
+                ] = candidate.label
+
+            # Wait only until the next hedge point, so a slow-but-alive call
+            # keeps running while the next candidate joins the race. When the
+            # queue is empty there is nothing left to hedge with, so wait out
+            # whatever budget remains instead.
+            slice_s = deadline - now if not queue else min(HEDGE_DELAY_S, deadline - now)
+            done, _ = concurrent.futures.wait(
+                pending,
+                timeout=max(0.0, slice_s),
+                return_when=concurrent.futures.FIRST_COMPLETED,
             )
-            try:
-                return future.result(timeout=min(EXTRACT_TIMEOUT_S, remaining))
-            except concurrent.futures.TimeoutError:
-                future.cancel()
-                stall_count[candidate.provider] = stall_count.get(candidate.provider, 0) + 1
-                failures.append((
-                    candidate.label,
-                    TimeoutError(f"no response in {EXTRACT_TIMEOUT_S:.0f}s (overloaded)"),
-                ))
-            except Exception as exc:
-                failures.append((candidate.label, exc))
+            for future in done:
+                label = pending.pop(future)
+                try:
+                    return future.result()
+                except Exception as exc:
+                    failures.append((label, exc))
     finally:
         pool.shutdown(wait=False)
+
+    # Anything still running when the budget ran out is reported as the
+    # timeout it effectively was, so the message names every key that was
+    # actually tried rather than silently dropping the ones still in flight.
+    for label in pending.values():
+        failures.append(
+            (label, TimeoutError(f"no response within {EXTRACT_BUDGET_S:.0f}s (overloaded)"))
+        )
 
     if all(is_exhausted(exc) for _, exc in failures):
         raise IntakeError(
