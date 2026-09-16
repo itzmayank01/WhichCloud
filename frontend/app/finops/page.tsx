@@ -123,6 +123,16 @@ function FinOpsContent() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [copiedDiff, setCopiedDiff] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [secondsWaiting, setSecondsWaiting] = useState(0);
+
+  useEffect(() => {
+    if (!loading) {
+      setSecondsWaiting(0);
+      return;
+    }
+    const id = setInterval(() => setSecondsWaiting((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [loading]);
 
   // Sync state when URL params or provider changes
   useEffect(() => {
@@ -201,6 +211,14 @@ function FinOpsContent() {
           <p className="mt-1 text-[13.5px] text-ink-3">
             Querying CloudWatch, Cost Explorer, BigQuery billing exports & CUR tables.
           </p>
+          {secondsWaiting >= 5 && (
+            <p className="mt-2 text-[12px] text-ink-3">
+              {secondsWaiting}s
+              {secondsWaiting >= 15
+                ? " — the backend is waking from idle on the free tier, this can take up to a minute"
+                : ""}
+            </p>
+          )}
         </div>
       </div>
     );
