@@ -2027,7 +2027,43 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
     if p == "aws":
         from whichcloud.connections import aws as conn_aws
 
-        external_id = conn_aws.new_external_id()
+        # STABLE PER PERSON, not per page load.
+        #
+        # This generated a fresh id every time the connect page was opened,
+        # which quietly invalidated work the user had already done: create the
+        # role with the id you were shown, reload the page for any reason, and
+        # the id in the trust policy no longer matches the one being verified.
+        # The failure surfaces as "AWS refused the role ... the external id
+        # does not match", which reads as a mistake they made rather than one
+        # the page made underneath them -- and the obvious response, going back
+        # to AWS to re-check the policy, finds it correct.
+        #
+        # So it is generated once and kept against the caller. Still never
+        # accepted FROM the caller, which is the property that matters: an
+        # external id the caller chooses is one an attacker chooses.
+        existing = None
+        try:
+            existing = store.get_connection(owner, "aws")
+        except Exception:
+            pass  # no database is not a reason to refuse to show instructions
+
+        external_id = ((existing or {}).get("config") or {}).get("external_id", "")
+        if not external_id:
+            external_id = conn_aws.new_external_id()
+            try:
+                store.save_connection(
+                    owner=owner,
+                    provider="aws",
+                    display_name="AWS (pending)",
+                    account_id="",
+                    config={"external_id": external_id},
+                    status="pending",
+                )
+            except Exception:
+                # Unsaved means the next page load issues a different id, which
+                # is the old behaviour rather than a new failure -- so show the
+                # instructions anyway instead of blocking on the database.
+                pass
         cfg["external_id"] = external_id
         setup_obj = conn_aws.setup(cfg)
         grants = setup_obj.grants
@@ -2170,7 +2206,13 @@ def _aws_credentials_for(owner: str) -> dict:
     except Exception as exc:
         raise HTTPException(503, f"Could not read your connection: {exc}") from exc
 
-    if not conn:
+    # A row with no role ARN is a connection that was STARTED and not
+    # finished: opening the connect page reserves an external id against the
+    # caller before they have created anything in AWS. That is still "you have
+    # not connected yet" and has to answer like it, or half-finishing the
+    # wizard would turn the clear 409 below into a 502 about assuming a role
+    # that was never named.
+    if not conn or not ((conn.get("config") or {}).get("role_arn") or "").strip():
         raise HTTPException(
             409,
             "Connect your own AWS account first. WhichCloud reads cost data "

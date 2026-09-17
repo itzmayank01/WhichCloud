@@ -68,16 +68,52 @@ export default function ConnectAwsPage() {
   const templateUrl =
     typeof window !== "undefined" ? `${window.location.origin}/whichcloud-role.yaml` : "";
 
-  const quickCreateUrl = useMemo(() => {
-    if (!externalId || !ourAccountId || !templateUrl) return "";
-    const params = new URLSearchParams({
-      templateURL: templateUrl,
-      stackName: "WhichCloudCostRole",
-      param_ExternalId: externalId,
-      param_TrustedAccountId: ourAccountId,
+  /* CloudShell rather than a CloudFormation quick-create link.
+   *
+   * A quick-create link needs ?templateURL=, and CloudFormation only accepts
+   * one "located in an Amazon S3 bucket or a Systems Manager document --
+   * URLs from S3 static websites are not supported". Pointing it at the copy
+   * this site serves fails with "TemplateURL must be a supported URL", so a
+   * one-click stack is not available to us without publishing the template to
+   * an S3 bucket of our own.
+   *
+   * These two commands need no bucket, no download and no upload: CloudShell
+   * opens in the browser already signed in as the person who is looking at
+   * it, so the whole flow stays inside the console tab they just opened. IAM
+   * is global, so there is no region to get wrong either. */
+  const roleCommand = useMemo(() => {
+    if (!externalId || !ourAccountId) return "";
+    const trust = JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Principal: { AWS: `arn:aws:iam::${ourAccountId}:root` },
+          Action: "sts:AssumeRole",
+          Condition: { StringEquals: { "sts:ExternalId": externalId } },
+        },
+      ],
     });
-    return `https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?${params.toString()}`;
-  }, [externalId, ourAccountId, templateUrl]);
+    const permissions = JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: ["ce:GetCostAndUsage", "ce:GetDimensionValues"],
+          Resource: "*",
+        },
+      ],
+    });
+    return [
+      `aws iam create-role --role-name WhichCloudCostRole \\`,
+      `  --assume-role-policy-document '${trust}' && \\`,
+      `aws iam put-role-policy --role-name WhichCloudCostRole \\`,
+      `  --policy-name WhichCloudCostExplorerReadOnly \\`,
+      `  --policy-document '${permissions}'`,
+    ].join("\n");
+  }, [externalId, ourAccountId]);
+
+  const cloudShellUrl = "https://console.aws.amazon.com/cloudshell/home?region=us-east-1";
 
   const handleCopyExternalId = () => {
     navigator.clipboard.writeText(externalId);
@@ -161,9 +197,23 @@ export default function ConnectAwsPage() {
     }, POLL_INTERVAL_MS);
   };
 
-  const handleOpenConsole = () => {
-    if (!quickCreateUrl || !accountIdValid) return;
-    window.open(quickCreateUrl, "_blank", "noopener,noreferrer");
+  const [copiedCmd, setCopiedCmd] = useState(false);
+
+  const handleCopyCommand = async () => {
+    if (!roleCommand) return;
+    try {
+      await navigator.clipboard.writeText(roleCommand);
+      setCopiedCmd(true);
+      setTimeout(() => setCopiedCmd(false), 2500);
+    } catch {
+      // Clipboard is blocked in some mobile browsers; the command is on
+      // screen and selectable, so this is not worth an error message.
+    }
+  };
+
+  const handleOpenCloudShell = () => {
+    if (!accountIdValid || !roleCommand) return;
+    window.open(cloudShellUrl, "_blank", "noopener,noreferrer");
     startAutoDetect();
   };
 
@@ -191,10 +241,15 @@ export default function ConnectAwsPage() {
     setConnecting(false);
   };
 
-  const cliSnippet = `aws cloudformation create-stack \\
+  /* --template-body with a local file, NOT --template-url: CloudFormation
+   * only accepts a template URL that lives in S3, so the copy this site
+   * serves has to be downloaded first and passed as a body. */
+  const cliSnippet = `curl -O ${templateUrl || "<connect page origin>/whichcloud-role.yaml"}
+
+aws cloudformation create-stack \\
   --stack-name WhichCloudCostRole \\
   --region us-east-1 \\
-  --template-url ${templateUrl || "<connect page origin>/whichcloud-role.yaml"} \\
+  --template-body file://whichcloud-role.yaml \\
   --parameters ParameterKey=ExternalId,ParameterValue=${externalId || "<external-id>"} ParameterKey=TrustedAccountId,ParameterValue=${ourAccountId || "<not configured>"} \\
   --capabilities CAPABILITY_NAMED_IAM`;
 
@@ -298,9 +353,9 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
               <li className="flex items-start gap-2.5">
                 <span className="font-semibold text-ink">2.</span>
                 <span>
-                  Click <strong>Open AWS Console</strong> -- it opens CloudFormation with the role
-                  template, external id and trusted account already filled in. Sign in if you
-                  need to, review the role, and click <strong>Create stack</strong>.
+                  Copy the command below, then click <strong>Open AWS CloudShell</strong>. Sign
+                  in if you need to, paste, and press Enter. It creates a read-only role that
+                  trusts only this deployment.
                 </span>
               </li>
               <li className="flex items-start gap-2.5">
@@ -344,15 +399,33 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
                 </div>
               </div>
 
+              {accountIdValid && roleCommand && (
+                <div className="mt-4 rounded-xl border border-line bg-sunk p-3">
+                  <div className="flex items-center justify-between gap-3 text-[11.5px] font-mono uppercase tracking-wider text-ink-3">
+                    <span>Run this in CloudShell</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyCommand}
+                      className="rounded-md border border-line bg-surface px-2.5 py-1 text-[12px] font-medium normal-case tracking-normal text-ink hover:bg-sunk"
+                    >
+                      {copiedCmd ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                  <pre className="mt-2 overflow-x-auto whitespace-pre text-[11.5px] leading-relaxed font-mono text-ink">
+                    {roleCommand}
+                  </pre>
+                </div>
+              )}
+
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  disabled={!accountIdValid || !quickCreateUrl}
-                  onClick={handleOpenConsole}
+                  disabled={!accountIdValid || !roleCommand}
+                  onClick={handleOpenCloudShell}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition-all shadow-xs hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <Icon icon="mdi:open-in-new" className="h-4 w-4" />
-                  <span>Open AWS Console</span>
+                  <Icon icon="mdi:console" className="h-4 w-4" />
+                  <span>Open AWS CloudShell</span>
                 </button>
 
                 {autoStatus === "waiting" && (
