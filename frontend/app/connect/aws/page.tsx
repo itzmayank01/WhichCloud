@@ -8,8 +8,17 @@ import { Icon } from "@iconify/react";
 import { api, type ConnectionSetup } from "@/lib/api";
 import { setStoredAccount } from "@/lib/connectedAccount";
 
+//: Gap BETWEEN checks, not a tick rate: the next check is scheduled once the
+//: previous one has answered, so a slow backend cannot cause them to overlap.
 const POLL_INTERVAL_MS = 6000;
-const POLL_MAX_ATTEMPTS = 20; // ~2 minutes
+
+//: How long to keep watching. A deadline rather than a count of attempts,
+//: because attempts are not a unit of time when a request can take 30-60s:
+//: the old "20 attempts, one every 6s" gave up after two minutes having
+//: actually completed only a handful of them. Five minutes is sized for
+//: someone signing in to AWS, opening CloudShell (which takes ~30s to boot)
+//: and pasting -- with the backend possibly cold-starting underneath.
+const POLL_WINDOW_MS = 5 * 60 * 1000;
 
 export default function ConnectAwsPage() {
   const router = useRouter();
@@ -29,7 +38,8 @@ export default function ConnectAwsPage() {
 
   const [autoStatus, setAutoStatus] = useState<"idle" | "waiting" | "failed">("idle");
   const pollTimerRef = useRef<number | null>(null);
-  const pollAttemptsRef = useRef(0);
+  const pollStoppedRef = useRef(true);
+  const pollDeadlineRef = useRef(0);
 
   useEffect(() => {
     (async () => {
@@ -53,9 +63,11 @@ export default function ConnectAwsPage() {
 
   useEffect(() => {
     return () => {
-      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+      pollStoppedRef.current = true;
+      if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current);
     };
   }, []);
+
 
   const externalId = setupData?.external_id || "";
   const ourAccountId = setupData?.our_account_id || "";
@@ -122,8 +134,9 @@ export default function ConnectAwsPage() {
   };
 
   const stopPolling = () => {
+    pollStoppedRef.current = true;
     if (pollTimerRef.current) {
-      window.clearInterval(pollTimerRef.current);
+      window.clearTimeout(pollTimerRef.current);
       pollTimerRef.current = null;
     }
   };
@@ -174,27 +187,41 @@ export default function ConnectAwsPage() {
     [getToken, externalId, region, userId, router],
   );
 
-  const startAutoDetect = () => {
-    if (!derivedRoleArn) return;
+  /* A self-scheduling chain, NOT setInterval.
+   *
+   * setInterval fired every 6s whether or not the previous check had come
+   * back. Verification calls AssumeRole through a backend that sleeps when
+   * idle, so the first check after a cold start can take 30-60s -- during
+   * which the interval had already queued ten more, all of them redundant,
+   * all of them hitting a backend that was busy waking up. Scheduling the
+   * next check only once the previous has answered makes overlap
+   * structurally impossible rather than unlikely. */
+  const startAutoDetect = (arn: string) => {
+    if (!arn) return;
     setErrorMsg("");
     setAutoStatus("waiting");
-    pollAttemptsRef.current = 0;
     stopPolling();
-    pollTimerRef.current = window.setInterval(async () => {
-      pollAttemptsRef.current += 1;
-      const ok = await attemptConnect(derivedRoleArn, true);
-      if (ok) {
-        stopPolling();
-        return;
-      }
-      if (pollAttemptsRef.current >= POLL_MAX_ATTEMPTS) {
-        stopPolling();
+    pollStoppedRef.current = false;
+    pollDeadlineRef.current = Date.now() + POLL_WINDOW_MS;
+
+    const check = async () => {
+      if (pollStoppedRef.current) return;
+      const ok = await attemptConnect(arn, true);
+      // Re-read the flag: the user may have cancelled, navigated or edited
+      // the account id while this request was in flight.
+      if (ok || pollStoppedRef.current) return;
+      if (Date.now() >= pollDeadlineRef.current) {
         setAutoStatus("failed");
         setErrorMsg(
-          "Still couldn't find the role after 2 minutes. Make sure the CloudFormation stack finished (status CREATE_COMPLETE), or paste the Role ARN below manually.",
+          "Still can't see that role. Check the command ran without an error in "
+          + "CloudShell, or paste the role ARN under Advanced below.",
         );
+        return;
       }
-    }, POLL_INTERVAL_MS);
+      pollTimerRef.current = window.setTimeout(check, POLL_INTERVAL_MS);
+    };
+
+    pollTimerRef.current = window.setTimeout(check, POLL_INTERVAL_MS);
   };
 
   const [copiedCmd, setCopiedCmd] = useState(false);
@@ -213,8 +240,17 @@ export default function ConnectAwsPage() {
 
   const handleOpenCloudShell = () => {
     if (!accountIdValid || !roleCommand) return;
-    window.open(cloudShellUrl, "_blank", "noopener,noreferrer");
-    startAutoDetect();
+    // A blocked popup returns null. Mobile browsers block these routinely, and
+    // silently starting to watch for a role in a console that never opened
+    // looks exactly like the connection being broken.
+    const opened = window.open(cloudShellUrl, "_blank", "noopener,noreferrer");
+    startAutoDetect(derivedRoleArn);
+    if (!opened) {
+      setErrorMsg(
+        "Your browser blocked the new tab. Open AWS CloudShell yourself and "
+        + "paste the command — this page keeps watching either way.",
+      );
+    }
   };
 
   const handleCheckNow = async () => {
@@ -378,7 +414,14 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
                     inputMode="numeric"
                     placeholder="123456789012"
                     value={awsAccountId}
-                    onChange={(e) => setAwsAccountId(e.target.value.replace(/[^0-9]/g, "").slice(0, 12))}
+                    onChange={(e) => {
+                      setAwsAccountId(e.target.value.replace(/[^0-9]/g, "").slice(0, 12));
+                      // The ARN being watched for is derived from this, so a
+                      // poll started for the previous number is now watching a
+                      // role the user is no longer asking about.
+                      stopPolling();
+                      setAutoStatus("idle");
+                    }}
                     className="mt-1.5 w-full rounded-lg border border-line bg-canvas px-3.5 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-accent"
                   />
                 </div>
