@@ -50,13 +50,29 @@ from .requirements import Requirement
 #: over while the user is still watching.
 EXTRACT_TIMEOUT_S = 25.0
 
-#: Wall-clock budget for the WHOLE chain, not one call, and the number that
-#: makes "architecture in 15 seconds" a property of the system rather than a
-#: hope about provider latency. Pricing after the read costs ~0.6s (measured),
-#: so the read is effectively the whole budget. When this is spent the chain
-#: stops and reports what it tried rather than keeping someone waiting on a
-#: provider that has already shown it is not answering.
-EXTRACT_BUDGET_S = 14.0
+#: Wall-clock budget for the WHOLE chain, not one call. When it is spent the
+#: chain stops and reports what it tried rather than keeping someone waiting
+#: on a provider that has already shown it is not answering.
+#:
+#: Was 14.0, chosen so that read + pricing came to about fifteen seconds on
+#: the assumption -- measured locally -- that pricing costs ~0.6s. Against the
+#: deployed database pricing costs ~8s: a /describe whose draft is already
+#: cached, so doing no model work at all, takes 8.3-8.7s end to end. The
+#: fifteen-second total that 14.0 was protecting has therefore not existed in
+#: production, and the budget was cutting extraction off at 14s to defend it.
+#:
+#: Raising it helps the quota problem rather than trading against it, which is
+#: not obvious. The adaptive gap below is `remaining / (queue + 1)`, so a
+#: SHORTER budget hedges FASTER: at 14s with five keys the gaps collapse to
+#: ~2.3s and all five are started, spending five keys' free-tier quota on one
+#: request. With more room the gap opens back up towards HEDGE_DELAY_S, so a
+#: provider that is merely slow gets to answer before the next key is spent.
+#: More successes and fewer keys burned per success, from the same change.
+#:
+#: The cost is that a request which was always going to fail takes longer to
+#: say so. That is the right way round: this is the free tier, where a cold
+#: start alone is 30-60s, so a few extra seconds to succeed beats a fast 400.
+EXTRACT_BUDGET_S = 24.0
 
 #: How long one candidate gets to answer before the NEXT one starts running
 #: alongside it. Not a timeout: the first call keeps going and can still win.
@@ -807,11 +823,29 @@ def _draft_with_failover(description: str, provider: Provider, client=None):
         )
 
     if all(is_exhausted(exc) for _, exc in failures):
-        raise IntakeError(
-            "Every configured model is out of capacity or too slow right now ("
-            + ", ".join(label for label, _ in failures)
-            + "). Add another key as GEMINI_API_KEY_2 or GROQ_API_KEY."
+        # "Out of quota" and "answered too slowly" both end up here, and they
+        # need opposite responses: the first wants another key, the second
+        # wants more time and would be made WORSE by adding keys, since every
+        # extra candidate is another call started against the same budget.
+        # Reporting them as one thing ("out of capacity or too slow") sent us
+        # looking for exhausted quota when the real answer was a budget tuned
+        # against a pricing cost that production does not have.
+        timed_out = [l for l, e in failures if isinstance(e, TimeoutError)]
+        refused = [l for l, e in failures if not isinstance(e, TimeoutError)]
+
+        parts = []
+        if refused:
+            parts.append(f"out of quota: {', '.join(refused)}")
+        if timed_out:
+            parts.append(
+                f"no answer within {EXTRACT_BUDGET_S:.0f}s: {', '.join(timed_out)}"
+            )
+        advice = (
+            "Add another key as GEMINI_API_KEY_2 or GROQ_API_KEY."
+            if refused
+            else "The keys are working but slow; this usually clears on a retry."
         )
+        raise IntakeError(f"No model could read that ({'; '.join(parts)}). {advice}")
     label, exc = next((f for f in failures if not is_exhausted(f[1])), failures[0])
     raise IntakeError(f"{label} could not read that: {str(exc)[:200]}") from exc
 
