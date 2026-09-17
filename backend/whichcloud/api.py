@@ -23,7 +23,7 @@ from decimal import Decimal
 from typing import Literal, Optional
 
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -161,24 +161,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RateLimitMiddleware)
 
 
-#: `parse_description` has no cache of its own -- unlike `extract_architecture`
-#: and `llm_extract`'s Constraints reading, which measured that the same
-#: model asked the same question twice does not reliably answer the same way.
-#: Without this, `/describe/export.tf` re-reading the description could price
-#: a different architecture than the one already on screen -- exactly the
-#: drift this whole feature exists to rule out. In-process only: good enough
-#: for one request's export to match its own display, not durable across a
-#: restart.
-_intake_cache: dict[str, object] = {}
+#: A read-through in front of `parse_description`, which now keeps its draft
+#: in the database as well -- so this no longer carries the whole burden of
+#: making `/describe/export.tf` price the architecture already on screen
+#: rather than a freshly-read and subtly different one. It saves the
+#: round-trip and the requirement-building, not the model call.
+#:
+#: Bounded, because it used to grow without limit: one entry per distinct
+#: description, for the life of the process, on a 512 MB instance. A large
+#: enough day would end in the OOM killer, and the restart that followed
+#: would empty the only cache a description had -- so the next visitor paid
+#: for a fresh hedged read, which is the exact cost this exists to avoid.
+#: An LRU cannot fail that way, and the durable cache underneath makes an
+#: eviction cheap rather than expensive.
+_INTAKE_CACHE_MAX = 256
+_intake_cache: "OrderedDict[str, object]" = OrderedDict()
 
 
 def _cached_intake(description: str, reader: str | None):
     from .intake import parse_description
 
     key = hashlib.sha256(f"{description.strip()}|{reader or ''}".encode()).hexdigest()
-    if key not in _intake_cache:
-        _intake_cache[key] = parse_description(description, provider=reader)
-    return _intake_cache[key]
+    if key in _intake_cache:
+        _intake_cache.move_to_end(key)
+        return _intake_cache[key]
+
+    value = parse_description(description, provider=reader)
+    _intake_cache[key] = value
+    while len(_intake_cache) > _INTAKE_CACHE_MAX:
+        _intake_cache.popitem(last=False)
+    return value
 
 
 # ── response shapes ─────────────────────────────────────────────────────

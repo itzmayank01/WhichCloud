@@ -30,6 +30,7 @@ Both providers fill `RequirementDraft`; only the transport differs.
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import json
 import os
 import time
@@ -815,10 +816,64 @@ def _draft_with_failover(description: str, provider: Provider, client=None):
     raise IntakeError(f"{label} could not read that: {str(exc)[:200]}") from exc
 
 
+#: Marks intake drafts inside `constraints_cache`, which holds two different
+#: readings of a description: llm_extract's Constraints and this module's
+#: RequirementDraft. They share a table because they are the same KIND of
+#: thing -- structure read out of prose, kept because a model asked twice does
+#: not answer twice the same -- and reusing it means this cache needs no new
+#: table, so it works on an already-deployed database without a migration
+#: somebody has to remember to run.
+#:
+#: It is part of the hashed key, not just a column, so a collision with a
+#: Constraints row is not merely unlikely but unrepresentable.
+_DRAFT_NAMESPACE = "intake-draft"
+_DRAFT_SCHEMA_VERSION = "1"
+
+
+def _draft_cache_key(description: str, provider: str) -> str:
+    parts = "|".join(
+        [_DRAFT_NAMESPACE, description.strip(), provider, _DRAFT_SCHEMA_VERSION]
+    )
+    return hashlib.sha256(parts.encode()).hexdigest()
+
+
+def _cached_draft(key: str) -> RequirementDraft | None:
+    from .pricing import store
+
+    try:
+        stored = store.cached_constraints(key)
+    except Exception:
+        return None                  # a cold cache must never block a read
+    if not stored:
+        return None
+    try:
+        return RequirementDraft.model_validate_json(stored)
+    except Exception:
+        return None                  # a stale-shaped row is re-read, not fatal
+
+
+def _store_draft(key: str, description: str, provider: str, draft: RequirementDraft) -> None:
+    from .pricing import store
+
+    try:
+        store.cache_constraints(
+            key,
+            description,
+            provider,
+            f"{_DRAFT_NAMESPACE}/{provider}",
+            _DRAFT_SCHEMA_VERSION,
+            draft.model_dump_json(),
+        )
+    except Exception:
+        pass                         # failing to cache is not failing to answer
+
+
 def parse_description(
     description: str,
     provider: Provider | None = None,
     client=None,
+    *,
+    use_cache: bool = True,
 ) -> Intake:
     """Turn a plain-English description into a validated Requirement.
 
@@ -828,6 +883,23 @@ def parse_description(
 
     Raises IntakeError if the description is empty, no provider is reachable,
     or the extraction fails our own validation.
+
+    The draft is cached durably, for the reason `extract_architecture` and
+    llm_extract's Constraints reading already are -- a model asked the same
+    question twice does not answer it the same way -- and for a second reason
+    those two do not have to care about: this read HEDGES. A description that
+    is slow to answer starts a second provider alongside the first, and a
+    third alongside those, so one uncached read can spend several keys'
+    free-tier quota rather than one. Until now the only thing standing between
+    a description and that cost was an in-process dict, which every restart
+    emptied -- and on a host that sleeps when idle, "every restart" is most of
+    the day. The same description then cost its several keys again on the next
+    visit, which is how an account with plenty of keys configured still ran out
+    of them.
+
+    Pass use_cache=False for tests that must not touch the database. An
+    injected `client` skips the cache too: it is a stub whose whole purpose is
+    to be called.
     """
     if not description or not description.strip():
         raise IntakeError("Describe what you're building — the input was empty.")
@@ -839,7 +911,18 @@ def parse_description(
             f"Unknown provider {provider!r}. Choose one of: {', '.join(_EXTRACTORS)}"
         )
 
-    draft = _draft_with_failover(description, provider, client)
+    cacheable = use_cache and client is None
+    key = _draft_cache_key(description, provider) if cacheable else ""
+
+    draft = _cached_draft(key) if cacheable else None
+    if draft is None:
+        draft = _draft_with_failover(description, provider, client)
+        # Never cache nothing. A draft that reads as no requirement at all is
+        # a failure that happens to validate, and storing it would serve that
+        # emptiness back for every later request for the same description --
+        # permanently, since the first answer is the one kept.
+        if cacheable and draft.goal.strip():
+            _store_draft(key, description, provider, draft)
 
     try:
         requirement = draft.to_requirement()
