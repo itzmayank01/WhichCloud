@@ -18,7 +18,12 @@ import {
   Stats,
 } from "@/components/landing/Sections";
 
-export const revalidate = 300;
+//: 60s revalidation keeps the page fresh without waiting so long on cold
+//: starts. Render free tier sleeps after 15 min idle, so regenerating every
+//: 60s means at most ~60s latency on a cold start (regeneration waits for
+//: Render to boot). At 300s, a late-night visitor after a long sleep pays the
+//: full cold start penalty of 30-60s plus the 5-min cache window.
+export const revalidate = 60;
 
 /* ── small visuals used inside the feature blocks ── */
 
@@ -160,10 +165,24 @@ function TerraformVisual() {
 function Loading({ height }: { height: number }) {
   return (
     <div
-      className="animate-pulse rounded-xl border border-line bg-sunk"
+      className="relative overflow-hidden rounded-xl border border-line bg-sunk"
       style={{ height }}
       aria-hidden
-    />
+    >
+      {/* Animated gradient shimmer that's more visible than bare pulse */}
+      <div
+        className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-ink/5 to-transparent"
+        style={{
+          animation: "shimmer 2s infinite",
+        }}
+      />
+      <style>{`
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
+    </div>
   );
 }
 
@@ -172,6 +191,25 @@ function Loading({ height }: { height: number }) {
 export default function Home() {
   return (
     <>
+      {/* Loading indicator: visible immediately while data streams in. Free tier
+          cold starts can take 30-60s, so show the user that SOMETHING is happening.
+          Invisible once content loads (JS takes over on first paint). */}
+      <div className="sticky top-16 left-0 right-0 z-30 h-1 overflow-hidden bg-transparent">
+        <div
+          className="h-full bg-accent"
+          style={{
+            animation: "loading-bar 3s ease-in-out infinite",
+          }}
+        />
+        <style>{`
+          @keyframes loading-bar {
+            0% { width: 10%; }
+            50% { width: 80%; }
+            100% { width: 100%; }
+          }
+        `}</style>
+      </div>
+
       {/* hero */}
       <section className="px-6 pt-16 pb-20 text-center sm:pt-24">
         <h1 className="mx-auto max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.02] tracking-[-0.035em]">
