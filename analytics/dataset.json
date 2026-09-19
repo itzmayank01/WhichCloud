@@ -1,0 +1,15 @@
+{
+ "AwsAccountId": "616551057703",
+ "DataSetId": "whichcloud-costs",
+ "Name": "WhichCloud Costs",
+ "ImportMode": "DIRECT_QUERY",
+ "PhysicalTableMap": {"costs": {"RelationalTable": {
+   "DataSourceArn": "arn:aws:quicksight:ap-south-1:616551057703:datasource/whichcloud-athena",
+   "Catalog": "AwsDataCatalog", "Schema": "whichcloud", "Name": "costs_v",
+   "InputColumns": [
+     {"Name":"workload","Type":"STRING"},{"Name":"tier","Type":"STRING"},
+     {"Name":"provider","Type":"STRING"},{"Name":"region","Type":"STRING"},
+     {"Name":"service","Type":"STRING"},{"Name":"sku","Type":"STRING"},
+     {"Name":"monthly_cost","Type":"DECIMAL"}]}}},
+ "Permissions": [{"Principal":"arn:aws:quicksight:ap-south-1:616551057703:user/default/616551057703","Actions":["quicksight:DescribeDataSet","quicksight:DescribeDataSetPermissions","quicksight:PassDataSet","quicksight:DescribeIngestion","quicksight:ListIngestions","quicksight:UpdateDataSet","quicksight:DeleteDataSet","quicksight:CreateIngestion","quicksight:CancelIngestion","quicksight:UpdateDataSetPermissions"]}]
+}

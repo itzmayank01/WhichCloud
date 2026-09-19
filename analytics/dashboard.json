@@ -1,0 +1,704 @@
+{
+ "AwsAccountId": "616551057703",
+ "DashboardId": "whichcloud-cost-dashboard",
+ "Name": "WhichCloud Cost Analytics",
+ "Definition": {
+  "DataSetIdentifierDeclarations": [
+   {
+    "Identifier": "costs",
+    "DataSetArn": "arn:aws:quicksight:ap-south-1:616551057703:dataset/whichcloud-costs"
+   }
+  ],
+  "CalculatedFields": [
+   {
+    "DataSetIdentifier": "costs",
+    "Name": "service_family",
+    "Expression": "split({sku}, ':', 1)"
+   },
+   {
+    "DataSetIdentifier": "costs",
+    "Name": "is_free",
+    "Expression": "ifelse({monthly_cost} = 0, 1, 0)"
+   }
+  ],
+  "Sheets": [
+   {
+    "SheetId": "overview",
+    "Name": "WhichCloud Cost Analytics",
+    "Visuals": [
+     {
+      "KPIVisual": {
+       "VisualId": "kpi_total",
+       "Title": {
+        "Visibility": "VISIBLE",
+        "FormatText": {
+         "PlainText": "Total monthly cost (13 workloads x 3 tiers)"
+        }
+       },
+       "ChartConfiguration": {
+        "FieldWells": {
+         "Values": [
+          {
+           "NumericalMeasureField": {
+            "FieldId": "k1",
+            "Column": {
+             "DataSetIdentifier": "costs",
+             "ColumnName": "monthly_cost"
+            },
+            "AggregationFunction": {
+             "SimpleNumericalAggregation": "SUM"
+            },
+            "FormatConfiguration": {
+             "FormatConfiguration": {
+              "CurrencyDisplayFormatConfiguration": {
+               "Symbol": "USD",
+               "NumberScale": "NONE",
+               "DecimalPlacesConfiguration": {
+                "DecimalPlaces": 0
+               }
+              }
+             }
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "KPIVisual": {
+       "VisualId": "kpi_items",
+       "Title": {
+        "Visibility": "VISIBLE",
+        "FormatText": {
+         "PlainText": "Priced line items"
+        }
+       },
+       "ChartConfiguration": {
+        "FieldWells": {
+         "Values": [
+          {
+           "CategoricalMeasureField": {
+            "FieldId": "k2",
+            "Column": {
+             "DataSetIdentifier": "costs",
+             "ColumnName": "sku"
+            },
+            "AggregationFunction": "COUNT"
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "KPIVisual": {
+       "VisualId": "kpi_free",
+       "Title": {
+        "Visibility": "VISIBLE",
+        "FormatText": {
+         "PlainText": "Free / included line items ($0)"
+        }
+       },
+       "ChartConfiguration": {
+        "FieldWells": {
+         "Values": [
+          {
+           "NumericalMeasureField": {
+            "FieldId": "k3",
+            "Column": {
+             "DataSetIdentifier": "costs",
+             "ColumnName": "is_free"
+            },
+            "AggregationFunction": {
+             "SimpleNumericalAggregation": "SUM"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "BarChartVisual": {
+       "VisualId": "bar_workload_tier",
+       "Title": {
+        "Visibility": "VISIBLE",
+        "FormatText": {
+         "PlainText": "Monthly cost by workload and architecture tier (click a bar to filter)"
+        }
+       },
+       "ChartConfiguration": {
+        "FieldWells": {
+         "BarChartAggregatedFieldWells": {
+          "Category": [
+           {
+            "CategoricalDimensionField": {
+             "FieldId": "b1",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "workload"
+             }
+            }
+           }
+          ],
+          "Values": [
+           {
+            "NumericalMeasureField": {
+             "FieldId": "b2",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "monthly_cost"
+             },
+             "AggregationFunction": {
+              "SimpleNumericalAggregation": "SUM"
+             },
+             "FormatConfiguration": {
+              "FormatConfiguration": {
+               "CurrencyDisplayFormatConfiguration": {
+                "Symbol": "USD",
+                "NumberScale": "AUTO",
+                "DecimalPlacesConfiguration": {
+                 "DecimalPlaces": 1
+                }
+               }
+              }
+             }
+            }
+           }
+          ],
+          "Colors": [
+           {
+            "CategoricalDimensionField": {
+             "FieldId": "b3",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "tier"
+             }
+            }
+           }
+          ]
+         }
+        },
+        "Orientation": "HORIZONTAL",
+        "BarsArrangement": "CLUSTERED",
+        "SortConfiguration": {
+         "CategorySort": [
+          {
+           "FieldSort": {
+            "FieldId": "b2",
+            "Direction": "DESC"
+           }
+          }
+         ],
+         "ColorSort": [
+          {
+           "FieldSort": {
+            "FieldId": "b3",
+            "Direction": "ASC"
+           }
+          }
+         ]
+        },
+        "VisualPalette": {
+         "ColorMap": [
+          {
+           "Element": {
+            "FieldId": "b3",
+            "FieldValue": "1 Cheapest"
+           },
+           "Color": "#2E7D32"
+          },
+          {
+           "Element": {
+            "FieldId": "b3",
+            "FieldValue": "2 Balanced"
+           },
+           "Color": "#1E88E5"
+          },
+          {
+           "Element": {
+            "FieldId": "b3",
+            "FieldValue": "3 Grow-into"
+           },
+           "Color": "#F57C00"
+          }
+         ]
+        }
+       },
+       "Actions": [
+        {
+         "CustomActionId": "act_workload",
+         "Name": "Click to filter dashboard",
+         "Status": "ENABLED",
+         "Trigger": "DATA_POINT_CLICK",
+         "ActionOperations": [
+          {
+           "FilterOperation": {
+            "SelectedFieldsConfiguration": {
+             "SelectedFieldOptions": "ALL_FIELDS"
+            },
+            "TargetVisualsConfiguration": {
+             "SameSheetTargetVisualConfiguration": {
+              "TargetVisualOptions": "ALL_VISUALS"
+             }
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "BarChartVisual": {
+       "VisualId": "bar_tier",
+       "Title": {
+        "Visibility": "VISIBLE",
+        "FormatText": {
+         "PlainText": "Cost of reliability: total by tier (click to filter)"
+        }
+       },
+       "ChartConfiguration": {
+        "FieldWells": {
+         "BarChartAggregatedFieldWells": {
+          "Category": [
+           {
+            "CategoricalDimensionField": {
+             "FieldId": "t1",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "tier"
+             }
+            }
+           }
+          ],
+          "Values": [
+           {
+            "NumericalMeasureField": {
+             "FieldId": "t2",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "monthly_cost"
+             },
+             "AggregationFunction": {
+              "SimpleNumericalAggregation": "SUM"
+             },
+             "FormatConfiguration": {
+              "FormatConfiguration": {
+               "CurrencyDisplayFormatConfiguration": {
+                "Symbol": "USD",
+                "NumberScale": "AUTO",
+                "DecimalPlacesConfiguration": {
+                 "DecimalPlaces": 1
+                }
+               }
+              }
+             }
+            }
+           }
+          ]
+         }
+        },
+        "Orientation": "VERTICAL",
+        "SortConfiguration": {
+         "CategorySort": [
+          {
+           "FieldSort": {
+            "FieldId": "t1",
+            "Direction": "ASC"
+           }
+          }
+         ]
+        },
+        "VisualPalette": {
+         "ColorMap": [
+          {
+           "Element": {
+            "FieldId": "t1",
+            "FieldValue": "1 Cheapest"
+           },
+           "Color": "#2E7D32"
+          },
+          {
+           "Element": {
+            "FieldId": "t1",
+            "FieldValue": "2 Balanced"
+           },
+           "Color": "#1E88E5"
+          },
+          {
+           "Element": {
+            "FieldId": "t1",
+            "FieldValue": "3 Grow-into"
+           },
+           "Color": "#F57C00"
+          }
+         ]
+        }
+       },
+       "Actions": [
+        {
+         "CustomActionId": "act_tier",
+         "Name": "Click to filter dashboard",
+         "Status": "ENABLED",
+         "Trigger": "DATA_POINT_CLICK",
+         "ActionOperations": [
+          {
+           "FilterOperation": {
+            "SelectedFieldsConfiguration": {
+             "SelectedFieldOptions": "ALL_FIELDS"
+            },
+            "TargetVisualsConfiguration": {
+             "SameSheetTargetVisualConfiguration": {
+              "TargetVisualOptions": "ALL_VISUALS"
+             }
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "BarChartVisual": {
+       "VisualId": "bar_drivers",
+       "Title": {
+        "Visibility": "VISIBLE",
+        "FormatText": {
+         "PlainText": "Top 10 cost drivers by service family (click to filter)"
+        }
+       },
+       "ChartConfiguration": {
+        "FieldWells": {
+         "BarChartAggregatedFieldWells": {
+          "Category": [
+           {
+            "CategoricalDimensionField": {
+             "FieldId": "d1",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "service_family"
+             }
+            }
+           }
+          ],
+          "Values": [
+           {
+            "NumericalMeasureField": {
+             "FieldId": "d2",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "monthly_cost"
+             },
+             "AggregationFunction": {
+              "SimpleNumericalAggregation": "SUM"
+             },
+             "FormatConfiguration": {
+              "FormatConfiguration": {
+               "CurrencyDisplayFormatConfiguration": {
+                "Symbol": "USD",
+                "NumberScale": "AUTO",
+                "DecimalPlacesConfiguration": {
+                 "DecimalPlaces": 1
+                }
+               }
+              }
+             }
+            }
+           }
+          ]
+         }
+        },
+        "Orientation": "HORIZONTAL",
+        "SortConfiguration": {
+         "CategorySort": [
+          {
+           "FieldSort": {
+            "FieldId": "d2",
+            "Direction": "DESC"
+           }
+          }
+         ],
+         "CategoryItemsLimit": {
+          "ItemsLimit": 10,
+          "OtherCategories": "EXCLUDE"
+         }
+        }
+       },
+       "Actions": [
+        {
+         "CustomActionId": "act_drivers",
+         "Name": "Click to filter dashboard",
+         "Status": "ENABLED",
+         "Trigger": "DATA_POINT_CLICK",
+         "ActionOperations": [
+          {
+           "FilterOperation": {
+            "SelectedFieldsConfiguration": {
+             "SelectedFieldOptions": "ALL_FIELDS"
+            },
+            "TargetVisualsConfiguration": {
+             "SameSheetTargetVisualConfiguration": {
+              "TargetVisualOptions": "ALL_VISUALS"
+             }
+            }
+           }
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "TableVisual": {
+       "VisualId": "tbl",
+       "Title": {
+        "Visibility": "VISIBLE",
+        "FormatText": {
+         "PlainText": "Workload cost detail"
+        }
+       },
+       "ChartConfiguration": {
+        "FieldWells": {
+         "TableAggregatedFieldWells": {
+          "GroupBy": [
+           {
+            "CategoricalDimensionField": {
+             "FieldId": "r1",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "workload"
+             }
+            }
+           },
+           {
+            "CategoricalDimensionField": {
+             "FieldId": "r2",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "tier"
+             }
+            }
+           }
+          ],
+          "Values": [
+           {
+            "NumericalMeasureField": {
+             "FieldId": "r3",
+             "Column": {
+              "DataSetIdentifier": "costs",
+              "ColumnName": "monthly_cost"
+             },
+             "AggregationFunction": {
+              "SimpleNumericalAggregation": "SUM"
+             },
+             "FormatConfiguration": {
+              "FormatConfiguration": {
+               "CurrencyDisplayFormatConfiguration": {
+                "Symbol": "USD",
+                "NumberScale": "NONE",
+                "DecimalPlacesConfiguration": {
+                 "DecimalPlaces": 0
+                }
+               }
+              }
+             }
+            }
+           }
+          ]
+         }
+        },
+        "SortConfiguration": {
+         "RowSort": [
+          {
+           "FieldSort": {
+            "FieldId": "r3",
+            "Direction": "DESC"
+           }
+          }
+         ]
+        }
+       }
+      }
+     }
+    ],
+    "FilterControls": [
+     {
+      "Dropdown": {
+       "FilterControlId": "fc_workload",
+       "Title": "Workload",
+       "SourceFilterId": "f_workload",
+       "Type": "MULTI_SELECT"
+      }
+     },
+     {
+      "Dropdown": {
+       "FilterControlId": "fc_tier",
+       "Title": "Architecture tier",
+       "SourceFilterId": "f_tier",
+       "Type": "MULTI_SELECT"
+      }
+     }
+    ],
+    "Layouts": [
+     {
+      "Configuration": {
+       "GridLayout": {
+        "Elements": [
+         {
+          "ElementId": "fc_workload",
+          "ElementType": "FILTER_CONTROL",
+          "ColumnIndex": 0,
+          "RowIndex": 0,
+          "ColumnSpan": 12,
+          "RowSpan": 3
+         },
+         {
+          "ElementId": "fc_tier",
+          "ElementType": "FILTER_CONTROL",
+          "ColumnIndex": 0,
+          "RowIndex": 3,
+          "ColumnSpan": 12,
+          "RowSpan": 3
+         },
+         {
+          "ElementId": "kpi_total",
+          "ElementType": "VISUAL",
+          "ColumnIndex": 12,
+          "RowIndex": 0,
+          "ColumnSpan": 8,
+          "RowSpan": 6
+         },
+         {
+          "ElementId": "kpi_items",
+          "ElementType": "VISUAL",
+          "ColumnIndex": 20,
+          "RowIndex": 0,
+          "ColumnSpan": 8,
+          "RowSpan": 6
+         },
+         {
+          "ElementId": "kpi_free",
+          "ElementType": "VISUAL",
+          "ColumnIndex": 28,
+          "RowIndex": 0,
+          "ColumnSpan": 8,
+          "RowSpan": 6
+         },
+         {
+          "ElementId": "bar_workload_tier",
+          "ElementType": "VISUAL",
+          "ColumnIndex": 0,
+          "RowIndex": 6,
+          "ColumnSpan": 22,
+          "RowSpan": 14
+         },
+         {
+          "ElementId": "bar_tier",
+          "ElementType": "VISUAL",
+          "ColumnIndex": 22,
+          "RowIndex": 6,
+          "ColumnSpan": 14,
+          "RowSpan": 14
+         },
+         {
+          "ElementId": "bar_drivers",
+          "ElementType": "VISUAL",
+          "ColumnIndex": 0,
+          "RowIndex": 20,
+          "ColumnSpan": 18,
+          "RowSpan": 12
+         },
+         {
+          "ElementId": "tbl",
+          "ElementType": "VISUAL",
+          "ColumnIndex": 18,
+          "RowIndex": 20,
+          "ColumnSpan": 18,
+          "RowSpan": 12
+         }
+        ]
+       }
+      }
+     }
+    ]
+   }
+  ],
+  "FilterGroups": [
+   {
+    "FilterGroupId": "fg_workload",
+    "CrossDataset": "SINGLE_DATASET",
+    "Status": "ENABLED",
+    "Filters": [
+     {
+      "CategoryFilter": {
+       "FilterId": "f_workload",
+       "Column": {
+        "DataSetIdentifier": "costs",
+        "ColumnName": "workload"
+       },
+       "Configuration": {
+        "FilterListConfiguration": {
+         "MatchOperator": "CONTAINS",
+         "SelectAllOptions": "FILTER_ALL_VALUES"
+        }
+       }
+      }
+     }
+    ],
+    "ScopeConfiguration": {
+     "SelectedSheets": {
+      "SheetVisualScopingConfigurations": [
+       {
+        "SheetId": "overview",
+        "Scope": "ALL_VISUALS"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "FilterGroupId": "fg_tier",
+    "CrossDataset": "SINGLE_DATASET",
+    "Status": "ENABLED",
+    "Filters": [
+     {
+      "CategoryFilter": {
+       "FilterId": "f_tier",
+       "Column": {
+        "DataSetIdentifier": "costs",
+        "ColumnName": "tier"
+       },
+       "Configuration": {
+        "FilterListConfiguration": {
+         "MatchOperator": "CONTAINS",
+         "SelectAllOptions": "FILTER_ALL_VALUES"
+        }
+       }
+      }
+     }
+    ],
+    "ScopeConfiguration": {
+     "SelectedSheets": {
+      "SheetVisualScopingConfigurations": [
+       {
+        "SheetId": "overview",
+        "Scope": "ALL_VISUALS"
+       }
+      ]
+     }
+    }
+   }
+  ]
+ },
+ "DashboardPublishOptions": {
+  "AdHocFilteringOption": {
+   "AvailabilityStatus": "ENABLED"
+  }
+ }
+}

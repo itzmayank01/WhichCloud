@@ -1,0 +1,842 @@
+workload,tier,provider,region,service,sku,monthly_cost
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Compute × 1 (spot),t4g.xlarge:spot,2.4
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,468.75
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Egress,egress:internet,9.56
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,6.0
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Event bus,eventbridge:events,0.0
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,206.25
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Object storage write requests,s3:put-requests,0.3
+batch-etl,Cheapest that meets your requirements,aws,ap-south-1,Object storage read requests,s3:get-requests,0.06
+batch-etl,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,468.75
+batch-etl,Balanced — production-ready,aws,ap-south-1,Egress,egress:internet,9.56
+batch-etl,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,6.0
+batch-etl,Balanced — production-ready,aws,ap-south-1,Notifications,sns:requests,0.0
+batch-etl,Balanced — production-ready,aws,ap-south-1,Event bus,eventbridge:events,0.0
+batch-etl,Balanced — production-ready,aws,ap-south-1,Athena data scanned,athena:scanned,3.66
+batch-etl,Balanced — production-ready,aws,ap-south-1,Glue ETL,glue:etl-dpu-hour,26.4
+batch-etl,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+batch-etl,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,206.25
+batch-etl,Balanced — production-ready,aws,ap-south-1,Object storage write requests,s3:put-requests,0.3
+batch-etl,Balanced — production-ready,aws,ap-south-1,Object storage read requests,s3:get-requests,0.06
+batch-etl,Balanced — production-ready,aws,ap-south-1,Secrets × 2,secretsmanager:secret,0.8
+batch-etl,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+batch-etl,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,468.75
+batch-etl,The architecture to grow into,aws,ap-south-1,Egress,egress:internet,9.56
+batch-etl,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,6.0
+batch-etl,The architecture to grow into,aws,ap-south-1,Notifications,sns:requests,0.0
+batch-etl,The architecture to grow into,aws,ap-south-1,Event bus,eventbridge:events,0.0
+batch-etl,The architecture to grow into,aws,ap-south-1,Athena data scanned,athena:scanned,3.66
+batch-etl,The architecture to grow into,aws,ap-south-1,Glue ETL,glue:etl-dpu-hour,26.4
+batch-etl,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,322.5
+batch-etl,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,32.25
+batch-etl,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,48.75
+batch-etl,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+batch-etl,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+batch-etl,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,206.25
+batch-etl,The architecture to grow into,aws,ap-south-1,Warehouse nodes × 2,rg.large,631.6
+batch-etl,The architecture to grow into,aws,ap-south-1,Object storage write requests,s3:put-requests,0.3
+batch-etl,The architecture to grow into,aws,ap-south-1,Object storage read requests,s3:get-requests,0.06
+batch-etl,The architecture to grow into,aws,ap-south-1,Secrets × 2,secretsmanager:secret,0.8
+batch-etl,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,0.0
+batch-etl,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.2
+batch-etl,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Compute × 2,t4g.medium,32.7
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,12.5
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Load balancer,alb,17.45
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.44
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Archived retention,s3:glacier-instant,1.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,NAT data processing,nat:gb-processed,0.03
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,27.5
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,VPC flow logs,vpc:flow-logs,3.35
+budget-floor-conflict,Cheapest that meets your requirements,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,12.5
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Load balancer,alb,17.45
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.44
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Archived retention,s3:glacier-instant,1.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,NAT data processing,nat:gb-processed,0.03
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,27.5
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,VPC flow logs,vpc:flow-logs,3.35
+budget-floor-conflict,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,12.5
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Load balancer,alb,17.45
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.44
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,1.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,NAT data processing,nat:gb-processed,0.03
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,27.5
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,VPC flow logs,vpc:flow-logs,3.35
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Database (standby — second region),db.t4g.large,121.91
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Audit logging (standby — second region),cloudtrail:management-events,0.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,TLS certificate (standby — second region),acm:public-certificate,0.0
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 1 tasks (standby — second region),fargate:arm-vcpu-hour,17.4
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,Fargate memory × 1 tasks (standby — second region),fargate:arm-gb-hour,3.81
+budget-floor-conflict,The architecture to grow into,aws,ap-south-1,KMS keys × 1 (standby — second region),kms:key,1.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Compute × 2,t4g.medium,32.7
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,59.77
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Egress,egress:internet,54.81
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Load balancer,alb,17.45
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,437.09
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Transactional email,ses:outbound-email,3.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Queue requests,sqs:requests,0.04
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Notifications,sns:requests,0.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,205.59
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,4.11
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Archived retention,s3:glacier-instant,4.78
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,"Interface endpoints × 10 (ECR, SSM, Secrets Manager, CloudWatch Logs, KMS — cheaper than the NAT data they divert)",vpce:interface-hour,94.9
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Interface endpoint data processing,vpce:gb-processed,20.05
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,NAT data processing,nat:gb-processed,5.61
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,131.48
+coaching-platform,Cheapest that meets your requirements,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,59.77
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Egress,egress:internet,54.81
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Load balancer,alb,17.45
+coaching-platform,Balanced — production-ready,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,437.09
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Transactional email,ses:outbound-email,3.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Queue requests,sqs:requests,0.04
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Notifications,sns:requests,0.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,205.59
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,4.11
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Archived retention,s3:glacier-instant,4.78
+coaching-platform,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,"Interface endpoints × 10 (ECR, SSM, Secrets Manager, CloudWatch Logs, KMS — cheaper than the NAT data they divert)",vpce:interface-hour,94.9
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Interface endpoint data processing,vpce:gb-processed,20.05
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+coaching-platform,Balanced — production-ready,aws,ap-south-1,NAT data processing,nat:gb-processed,5.61
+coaching-platform,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,131.48
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+coaching-platform,Balanced — production-ready,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+coaching-platform,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+coaching-platform,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,59.77
+coaching-platform,The architecture to grow into,aws,ap-south-1,Egress,egress:internet,54.81
+coaching-platform,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Load balancer,alb,17.45
+coaching-platform,The architecture to grow into,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,437.09
+coaching-platform,The architecture to grow into,aws,ap-south-1,Transactional email,ses:outbound-email,3.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Queue requests,sqs:requests,0.04
+coaching-platform,The architecture to grow into,aws,ap-south-1,Notifications,sns:requests,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,205.59
+coaching-platform,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,4.11
+coaching-platform,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,4.78
+coaching-platform,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,"Interface endpoints × 10 (ECR, SSM, Secrets Manager, CloudWatch Logs, KMS — cheaper than the NAT data they divert)",vpce:interface-hour,94.9
+coaching-platform,The architecture to grow into,aws,ap-south-1,Interface endpoint data processing,vpce:gb-processed,20.05
+coaching-platform,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+coaching-platform,The architecture to grow into,aws,ap-south-1,NAT data processing,nat:gb-processed,5.61
+coaching-platform,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+coaching-platform,The architecture to grow into,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,131.48
+coaching-platform,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+coaching-platform,The architecture to grow into,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+coaching-platform,The architecture to grow into,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+coaching-platform,The architecture to grow into,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+coaching-platform,The architecture to grow into,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+coaching-platform,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+coaching-platform,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+coaching-platform,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Database (standby — second region),db.t4g.large,121.91
+coaching-platform,The architecture to grow into,aws,ap-south-1,Audit logging (standby — second region),cloudtrail:management-events,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,TLS certificate (standby — second region),acm:public-certificate,0.0
+coaching-platform,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 1 tasks (standby — second region),fargate:arm-vcpu-hour,17.4
+coaching-platform,The architecture to grow into,aws,ap-south-1,Fargate memory × 1 tasks (standby — second region),fargate:arm-gb-hour,3.81
+coaching-platform,The architecture to grow into,aws,ap-south-1,KMS keys × 1 (standby — second region),kms:key,1.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Compute × 6,c6g.2xlarge,746.35
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Database (Multi-AZ),db.t4g.large:multi-az,243.82
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,50.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Load balancer,alb,17.45
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,27.25
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,CDN requests,cloudfront:requests-https,72.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,172.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.44
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Archived retention,s3:glacier-instant,4.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,NAT data processing,nat:gb-processed,0.7
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,110.0
+ecommerce-scale,Cheapest that meets your requirements,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Database (Multi-AZ),db.t4g.large:multi-az,243.82
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Database read replica × 2,db.t4g.large,243.82
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,50.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Cache,cache.m8g.large,81.39
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Load balancer,alb,17.45
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,27.25
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,CDN requests,cloudfront:requests-https,72.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,172.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.44
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Archived retention,s3:glacier-instant,4.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,NAT data processing,nat:gb-processed,0.7
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,110.0
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Fargate vCPU × 6 tasks,fargate:arm-vcpu-hour,626.25
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Fargate memory × 6 tasks,fargate:arm-gb-hour,137.18
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,65.16
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,7.14
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.21
+ecommerce-scale,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Database (Multi-AZ),db.t4g.large:multi-az,243.82
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Database read replica × 2,db.t4g.large,243.82
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,50.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Cache,cache.m8g.large,81.39
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Load balancer,alb,17.45
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,27.25
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,CDN requests,cloudfront:requests-https,72.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,172.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.44
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,4.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,NAT data processing,nat:gb-processed,0.7
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,110.0
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 6 tasks,fargate:arm-vcpu-hour,626.25
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Fargate memory × 6 tasks,fargate:arm-gb-hour,137.18
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,65.16
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,7.14
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.21
+ecommerce-scale,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Transactional email,ses:outbound-email,120.0
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Queue requests,sqs:requests,1.44
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Lambda requests,lambda:requests,0.24
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Lambda duration,lambda:duration,2.0
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,API Gateway requests,apigateway:http-requests,1.26
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,DynamoDB reads,dynamodb:read-request-units,0.17
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,DynamoDB writes,dynamodb:write-request-units,2.56
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,DynamoDB storage,dynamodb:storage,0.0
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,1.18
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,0.39
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+event-webhook,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,0.76
+event-webhook,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+event-webhook,Balanced — production-ready,aws,ap-south-1,Transactional email,ses:outbound-email,120.0
+event-webhook,Balanced — production-ready,aws,ap-south-1,Queue requests,sqs:requests,1.44
+event-webhook,Balanced — production-ready,aws,ap-south-1,Notifications,sns:requests,0.0
+event-webhook,Balanced — production-ready,aws,ap-south-1,Lambda requests,lambda:requests,0.24
+event-webhook,Balanced — production-ready,aws,ap-south-1,Lambda duration,lambda:duration,2.0
+event-webhook,Balanced — production-ready,aws,ap-south-1,API Gateway requests,apigateway:http-requests,1.26
+event-webhook,Balanced — production-ready,aws,ap-south-1,DynamoDB reads,dynamodb:read-request-units,0.17
+event-webhook,Balanced — production-ready,aws,ap-south-1,DynamoDB writes,dynamodb:write-request-units,2.56
+event-webhook,Balanced — production-ready,aws,ap-south-1,DynamoDB storage,dynamodb:storage,0.0
+event-webhook,Balanced — production-ready,aws,ap-south-1,Event bus,eventbridge:events,1.2
+event-webhook,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,1.18
+event-webhook,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,0.39
+event-webhook,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+event-webhook,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+event-webhook,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,0.76
+event-webhook,Balanced — production-ready,aws,ap-south-1,Secrets × 3,secretsmanager:secret,1.2
+event-webhook,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,5.5
+event-webhook,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+event-webhook,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,1.37
+event-webhook,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+event-webhook,The architecture to grow into,aws,ap-south-1,Transactional email,ses:outbound-email,120.0
+event-webhook,The architecture to grow into,aws,ap-south-1,Queue requests,sqs:requests,1.44
+event-webhook,The architecture to grow into,aws,ap-south-1,Notifications,sns:requests,0.0
+event-webhook,The architecture to grow into,aws,ap-south-1,Lambda requests,lambda:requests,0.24
+event-webhook,The architecture to grow into,aws,ap-south-1,Lambda duration,lambda:duration,2.0
+event-webhook,The architecture to grow into,aws,ap-south-1,API Gateway requests,apigateway:http-requests,1.26
+event-webhook,The architecture to grow into,aws,ap-south-1,DynamoDB reads,dynamodb:read-request-units,0.17
+event-webhook,The architecture to grow into,aws,ap-south-1,DynamoDB writes,dynamodb:write-request-units,2.56
+event-webhook,The architecture to grow into,aws,ap-south-1,DynamoDB storage,dynamodb:storage,0.0
+event-webhook,The architecture to grow into,aws,ap-south-1,Event bus,eventbridge:events,1.2
+event-webhook,The architecture to grow into,aws,ap-south-1,Firehose delivery,firehose:ingest,0.16
+event-webhook,The architecture to grow into,aws,ap-south-1,Athena data scanned,athena:scanned,0.25
+event-webhook,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,1.18
+event-webhook,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,0.39
+event-webhook,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,0.22
+event-webhook,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+event-webhook,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+event-webhook,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,0.76
+event-webhook,The architecture to grow into,aws,ap-south-1,Event stream shards × 2,kinesis:shard-hour,25.55
+event-webhook,The architecture to grow into,aws,ap-south-1,Event stream PUT units,kinesis:put-payload-units,0.02
+event-webhook,The architecture to grow into,aws,ap-south-1,Object storage write requests,s3:put-requests,6.0
+event-webhook,The architecture to grow into,aws,ap-south-1,Secrets × 3,secretsmanager:secret,1.2
+event-webhook,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,5.5
+event-webhook,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.2
+event-webhook,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Compute × 1,t4g.medium,16.35
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Database,db.t4g.micro,15.33
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,6.25
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,21.5
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.23
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Archived retention,s3:glacier-instant,0.5
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,NAT gateway × 1,nat:gateway-hour,40.88
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,NAT data processing,nat:gb-processed,0.03
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,13.75
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,VPC flow logs,vpc:flow-logs,3.35
+fintech-bengaluru,Cheapest that meets your requirements,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Database,db.t4g.micro,15.33
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,6.25
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,21.5
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.23
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Archived retention,s3:glacier-instant,0.5
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,NAT gateway × 1,nat:gateway-hour,40.88
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,NAT data processing,nat:gb-processed,0.03
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,13.75
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Fargate vCPU × 1 tasks,fargate:arm-vcpu-hour,34.79
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Fargate memory × 1 tasks,fargate:arm-gb-hour,7.62
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,3.62
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.06
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,VPC flow logs,vpc:flow-logs,3.35
+fintech-bengaluru,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Database,db.t4g.micro,15.33
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,6.25
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,21.5
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.23
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,0.5
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,NAT gateway × 1,nat:gateway-hour,40.88
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,NAT data processing,nat:gb-processed,0.03
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,13.75
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 1 tasks,fargate:arm-vcpu-hour,34.79
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Fargate memory × 1 tasks,fargate:arm-gb-hour,7.62
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,3.62
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.06
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,VPC flow logs,vpc:flow-logs,3.35
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Database (standby — second region),db.t4g.large,121.91
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Audit logging (standby — second region),cloudtrail:management-events,0.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,TLS certificate (standby — second region),acm:public-certificate,0.0
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 1 tasks (standby — second region),fargate:arm-vcpu-hour,17.4
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,Fargate memory × 1 tasks (standby — second region),fargate:arm-gb-hour,3.81
+fintech-bengaluru,The architecture to grow into,aws,ap-south-1,KMS keys × 1 (standby — second region),kms:key,1.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Compute × 2,t4g.medium,32.7
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,12.77
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Load balancer,alb,17.45
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.94
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.52
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Archived retention,s3:glacier-instant,1.02
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,NAT data processing,nat:gb-processed,0.15
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,28.1
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,VPC flow logs,vpc:flow-logs,18.43
+hospital-pune-public,Cheapest that meets your requirements,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,12.77
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Load balancer,alb,17.45
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,6.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,CDN requests,cloudfront:requests-https,0.22
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.94
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.52
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Archived retention,s3:glacier-instant,1.02
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,NAT data processing,nat:gb-processed,0.15
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,28.1
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,VPC flow logs,vpc:flow-logs,2.76
+hospital-pune-public,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,12.77
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Load balancer,alb,17.45
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,6.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,CDN requests,cloudfront:requests-https,0.22
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.94
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.52
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,1.02
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,NAT data processing,nat:gb-processed,0.15
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,28.1
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,VPC flow logs,vpc:flow-logs,2.76
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Database (standby — second region),db.t4g.large,121.91
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Audit logging (standby — second region),cloudtrail:management-events,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,TLS certificate (standby — second region),acm:public-certificate,0.0
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 1 tasks (standby — second region),fargate:arm-vcpu-hour,17.4
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,Fargate memory × 1 tasks (standby — second region),fargate:arm-gb-hour,3.81
+hospital-pune-public,The architecture to grow into,aws,ap-south-1,KMS keys × 1 (standby — second region),kms:key,1.0
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Compute × 2,t4g.medium,32.7
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,12.77
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Load balancer,alb,17.45
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.94
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.52
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Archived retention,s3:glacier-instant,1.02
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,NAT data processing,nat:gb-processed,0.15
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,28.1
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,VPC flow logs,vpc:flow-logs,18.43
+hospital-pune,Cheapest that meets your requirements,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,12.77
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Load balancer,alb,17.45
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.94
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.52
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Archived retention,s3:glacier-instant,1.02
+hospital-pune,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+hospital-pune,Balanced — production-ready,aws,ap-south-1,NAT data processing,nat:gb-processed,0.15
+hospital-pune,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,28.1
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+hospital-pune,Balanced — production-ready,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+hospital-pune,Balanced — production-ready,aws,ap-south-1,VPC flow logs,vpc:flow-logs,18.43
+hospital-pune,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Database (Multi-AZ),db.t4g.micro:multi-az,30.66
+hospital-pune,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,12.77
+hospital-pune,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Load balancer,alb,17.45
+hospital-pune,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,43.94
+hospital-pune,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,3.52
+hospital-pune,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,1.02
+hospital-pune,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Region-deny guardrail,organizations:scp,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,NAT gateway × 2,nat:gateway-hour,81.76
+hospital-pune,The architecture to grow into,aws,ap-south-1,NAT data processing,nat:gb-processed,0.15
+hospital-pune,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+hospital-pune,The architecture to grow into,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,28.1
+hospital-pune,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 2 tasks,fargate:arm-vcpu-hour,69.58
+hospital-pune,The architecture to grow into,aws,ap-south-1,Fargate memory × 2 tasks,fargate:arm-gb-hour,15.24
+hospital-pune,The architecture to grow into,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+hospital-pune,The architecture to grow into,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,7.24
+hospital-pune,The architecture to grow into,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+hospital-pune,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+hospital-pune,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.09
+hospital-pune,The architecture to grow into,aws,ap-south-1,VPC flow logs,vpc:flow-logs,18.43
+hospital-pune,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Database (standby — second region),db.t4g.large,121.91
+hospital-pune,The architecture to grow into,aws,ap-south-1,Audit logging (standby — second region),cloudtrail:management-events,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,TLS certificate (standby — second region),acm:public-certificate,0.0
+hospital-pune,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 1 tasks (standby — second region),fargate:arm-vcpu-hour,17.4
+hospital-pune,The architecture to grow into,aws,ap-south-1,Fargate memory × 1 tasks (standby — second region),fargate:arm-gb-hour,3.81
+hospital-pune,The architecture to grow into,aws,ap-south-1,KMS keys × 1 (standby — second region),kms:key,1.0
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,Compute × 1,t4g.medium,16.35
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,Database,db.t4g.micro,15.33
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,0.5
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,1.1
+internal-low-stakes,Cheapest that meets your requirements,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Database,db.t4g.micro,15.33
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,0.5
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,1.1
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Fargate vCPU × 1 tasks,fargate:arm-vcpu-hour,34.79
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Fargate memory × 1 tasks,fargate:arm-gb-hour,7.62
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,3.62
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.06
+internal-low-stakes,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Database,db.t4g.micro,15.33
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,0.5
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,9.0
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Authentication (MAU),cognito:user-pool-mau,0.0
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,1.1
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Fargate vCPU × 1 tasks,fargate:arm-vcpu-hour,34.79
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Fargate memory × 1 tasks,fargate:arm-gb-hour,7.62
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Secrets × 1,secretsmanager:secret,0.4
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Threat detection: Fargate,guardduty:fargate-vcpu,3.62
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Threat detection: database,guardduty:rds-vcpu,2.38
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,4.5
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.06
+internal-low-stakes,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Compute × 2,c6g.xlarge,46.01
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,0.25
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,0.86
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,0.17
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,"Interface endpoints × 3 (ECR, SSM, Secrets Manager, CloudWatch Logs, KMS — cheaper than the NAT data they divert)",vpce:interface-hour,28.47
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Interface endpoint data processing,vpce:gb-processed,0.05
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,0.55
+ml-inference,Cheapest that meets your requirements,aws,ap-south-1,Object storage read requests,s3:get-requests,0.0
+ml-inference,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,0.25
+ml-inference,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+ml-inference,Balanced — production-ready,aws,ap-south-1,Lambda requests,lambda:requests,9.72
+ml-inference,Balanced — production-ready,aws,ap-south-1,Lambda duration,lambda:duration,12.96
+ml-inference,Balanced — production-ready,aws,ap-south-1,API Gateway requests,apigateway:http-requests,51.03
+ml-inference,Balanced — production-ready,aws,ap-south-1,Model endpoint × 2,sagemaker:ml.c6i.xlarge,110.16
+ml-inference,Balanced — production-ready,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,0.86
+ml-inference,Balanced — production-ready,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,0.17
+ml-inference,Balanced — production-ready,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+ml-inference,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+ml-inference,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,0.55
+ml-inference,Balanced — production-ready,aws,ap-south-1,Object storage read requests,s3:get-requests,0.0
+ml-inference,Balanced — production-ready,aws,ap-south-1,Secrets × 2,secretsmanager:secret,0.8
+ml-inference,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,242.5
+ml-inference,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+ml-inference,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,0.25
+ml-inference,The architecture to grow into,aws,ap-south-1,Cache,cache.m8g.large,81.39
+ml-inference,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+ml-inference,The architecture to grow into,aws,ap-south-1,Lambda requests,lambda:requests,9.72
+ml-inference,The architecture to grow into,aws,ap-south-1,Lambda duration,lambda:duration,12.96
+ml-inference,The architecture to grow into,aws,ap-south-1,API Gateway requests,apigateway:http-requests,51.03
+ml-inference,The architecture to grow into,aws,ap-south-1,DynamoDB reads,dynamodb:read-request-units,6.93
+ml-inference,The architecture to grow into,aws,ap-south-1,DynamoDB writes,dynamodb:write-request-units,34.51
+ml-inference,The architecture to grow into,aws,ap-south-1,DynamoDB storage,dynamodb:storage,0.0
+ml-inference,The architecture to grow into,aws,ap-south-1,Model endpoint × 2,sagemaker:ml.c6i.xlarge,110.16
+ml-inference,The architecture to grow into,aws,ap-south-1,Athena data scanned,athena:scanned,0.25
+ml-inference,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,0.86
+ml-inference,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,0.17
+ml-inference,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,0.04
+ml-inference,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+ml-inference,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+ml-inference,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,0.55
+ml-inference,The architecture to grow into,aws,ap-south-1,Object storage read requests,s3:get-requests,0.0
+ml-inference,The architecture to grow into,aws,ap-south-1,Secrets × 2,secretsmanager:secret,0.8
+ml-inference,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,242.5
+ml-inference,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.2
+ml-inference,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Lambda requests,lambda:requests,10.8
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Lambda duration,lambda:duration,10.8
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,API Gateway requests,apigateway:http-requests,2.83
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,DynamoDB reads,dynamodb:read-request-units,11.54
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,DynamoDB writes,dynamodb:write-request-units,19.17
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,DynamoDB storage,dynamodb:storage,80.94
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Connection minutes,apigateway:ws-connection,4.5
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Connection messages,apigateway:ws-messages,27.0
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,16.99
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Search nodes × 3,m6g.large.search,183.96
+realtime-chat,Cheapest that meets your requirements,aws,ap-south-1,Search storage,opensearch:gp3-storage,10.75
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Cache,cache.m8g.large,81.39
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Notifications,sns:requests,2.2
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Lambda requests,lambda:requests,10.8
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Lambda duration,lambda:duration,10.8
+realtime-chat,Balanced — production-ready,aws,ap-south-1,API Gateway requests,apigateway:http-requests,2.83
+realtime-chat,Balanced — production-ready,aws,ap-south-1,DynamoDB reads,dynamodb:read-request-units,11.54
+realtime-chat,Balanced — production-ready,aws,ap-south-1,DynamoDB writes,dynamodb:write-request-units,19.17
+realtime-chat,Balanced — production-ready,aws,ap-south-1,DynamoDB storage,dynamodb:storage,80.94
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Connection minutes,apigateway:ws-connection,4.5
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Connection messages,apigateway:ws-messages,27.0
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,16.99
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Search nodes × 3,m6g.large.search,183.96
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Search storage,opensearch:gp3-storage,10.75
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Secrets × 2,secretsmanager:secret,0.8
+realtime-chat,Balanced — production-ready,aws,ap-south-1,Distributed tracing,xray:traces-recorded,13.0
+realtime-chat,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+realtime-chat,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,15.45
+realtime-chat,The architecture to grow into,aws,ap-south-1,Cache,cache.m8g.large,81.39
+realtime-chat,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,7.5
+realtime-chat,The architecture to grow into,aws,ap-south-1,Notifications,sns:requests,2.2
+realtime-chat,The architecture to grow into,aws,ap-south-1,Lambda requests,lambda:requests,10.8
+realtime-chat,The architecture to grow into,aws,ap-south-1,Lambda duration,lambda:duration,10.8
+realtime-chat,The architecture to grow into,aws,ap-south-1,API Gateway requests,apigateway:http-requests,2.83
+realtime-chat,The architecture to grow into,aws,ap-south-1,DynamoDB reads,dynamodb:read-request-units,11.54
+realtime-chat,The architecture to grow into,aws,ap-south-1,DynamoDB writes,dynamodb:write-request-units,19.17
+realtime-chat,The architecture to grow into,aws,ap-south-1,DynamoDB storage,dynamodb:storage,80.94
+realtime-chat,The architecture to grow into,aws,ap-south-1,Connection minutes,apigateway:ws-connection,4.5
+realtime-chat,The architecture to grow into,aws,ap-south-1,Connection messages,apigateway:ws-messages,27.0
+realtime-chat,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,26.57
+realtime-chat,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,2.21
+realtime-chat,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,2.32
+realtime-chat,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+realtime-chat,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+realtime-chat,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,16.99
+realtime-chat,The architecture to grow into,aws,ap-south-1,Event stream shards × 1,kinesis:shard-hour,12.78
+realtime-chat,The architecture to grow into,aws,ap-south-1,Event stream PUT units,kinesis:put-payload-units,0.54
+realtime-chat,The architecture to grow into,aws,ap-south-1,Search nodes × 3,m6g.large.search,183.96
+realtime-chat,The architecture to grow into,aws,ap-south-1,Search storage,opensearch:gp3-storage,10.75
+realtime-chat,The architecture to grow into,aws,ap-south-1,Object storage write requests,s3:put-requests,1.35
+realtime-chat,The architecture to grow into,aws,ap-south-1,Secrets × 2,secretsmanager:secret,0.8
+realtime-chat,The architecture to grow into,aws,ap-south-1,Distributed tracing,xray:traces-recorded,13.0
+realtime-chat,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.2
+realtime-chat,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+static-site,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,0.12
+static-site,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,3.0
+static-site,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+static-site,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+static-site,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+static-site,Cheapest that meets your requirements,aws,ap-south-1,DNS queries,route53:dns-queries,0.01
+static-site,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,0.28
+static-site,Cheapest that meets your requirements,aws,ap-south-1,Object storage read requests,s3:get-requests,0.01
+static-site,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,0.12
+static-site,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,3.0
+static-site,Balanced — production-ready,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,5.75
+static-site,Balanced — production-ready,aws,ap-south-1,CDN requests,cloudfront:requests-https,0.04
+static-site,Balanced — production-ready,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+static-site,Balanced — production-ready,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+static-site,Balanced — production-ready,aws,ap-south-1,WAF request inspection,waf:request,0.02
+static-site,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+static-site,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+static-site,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+static-site,Balanced — production-ready,aws,ap-south-1,DNS queries,route53:dns-queries,0.01
+static-site,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,0.28
+static-site,Balanced — production-ready,aws,ap-south-1,Object storage read requests,s3:get-requests,0.01
+static-site,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+static-site,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,0.12
+static-site,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,3.0
+static-site,The architecture to grow into,aws,ap-south-1,CDN data transfer,cloudfront:data-transfer-out,5.75
+static-site,The architecture to grow into,aws,ap-south-1,CDN requests,cloudfront:requests-https,0.04
+static-site,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,0.43
+static-site,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,0.02
+static-site,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,0.01
+static-site,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+static-site,The architecture to grow into,aws,ap-south-1,WAF Web ACL,waf:webacl,5.0
+static-site,The architecture to grow into,aws,ap-south-1,WAF rules × 3,waf:rule,3.0
+static-site,The architecture to grow into,aws,ap-south-1,WAF request inspection,waf:request,0.02
+static-site,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+static-site,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+static-site,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+static-site,The architecture to grow into,aws,ap-south-1,DNS queries,route53:dns-queries,0.01
+static-site,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,0.28
+static-site,The architecture to grow into,aws,ap-south-1,Object storage read requests,s3:get-requests,0.01
+static-site,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,0.2
+static-site,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,Compute × 40,t3a.large,1439.56
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,Object storage,s3:general-purpose,10.0
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,Monitoring,cloudwatch:metrics,36.0
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,NAT gateway × 1,nat:gateway-hour,40.88
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,NAT data processing,nat:gb-processed,4.48
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,DNS queries,route53:dns-queries,0.08
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,Backup storage,backup:warm-storage,132.0
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,Block storage,ebs:gp3,364.8
+vm-migration,Cheapest that meets your requirements,aws,ap-south-1,Object storage write requests,s3:put-requests,0.02
+vm-migration,Balanced — production-ready,aws,ap-south-1,Compute × 40,t3a.large,1439.56
+vm-migration,Balanced — production-ready,aws,ap-south-1,Object storage,s3:general-purpose,10.0
+vm-migration,Balanced — production-ready,aws,ap-south-1,Monitoring,cloudwatch:metrics,36.0
+vm-migration,Balanced — production-ready,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+vm-migration,Balanced — production-ready,aws,ap-south-1,"Interface endpoints × 3 (ECR, SSM, Secrets Manager, CloudWatch Logs, KMS — cheaper than the NAT data they divert)",vpce:interface-hour,28.47
+vm-migration,Balanced — production-ready,aws,ap-south-1,Interface endpoint data processing,vpce:gb-processed,0.4
+vm-migration,Balanced — production-ready,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+vm-migration,Balanced — production-ready,aws,ap-south-1,NAT gateway × 1,nat:gateway-hour,40.88
+vm-migration,Balanced — production-ready,aws,ap-south-1,NAT data processing,nat:gb-processed,4.48
+vm-migration,Balanced — production-ready,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+vm-migration,Balanced — production-ready,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+vm-migration,Balanced — production-ready,aws,ap-south-1,DNS queries,route53:dns-queries,0.08
+vm-migration,Balanced — production-ready,aws,ap-south-1,Backup storage,backup:warm-storage,132.0
+vm-migration,Balanced — production-ready,aws,ap-south-1,Block storage,ebs:gp3,364.8
+vm-migration,Balanced — production-ready,aws,ap-south-1,Object storage write requests,s3:put-requests,0.02
+vm-migration,Balanced — production-ready,aws,ap-south-1,Secrets × 4,secretsmanager:secret,1.6
+vm-migration,Balanced — production-ready,aws,ap-south-1,Threat detection: compute,guardduty:ec2-vcpu,144.8
+vm-migration,Balanced — production-ready,aws,ap-south-1,VPC flow logs,vpc:flow-logs,13.4
+vm-migration,Balanced — production-ready,aws,ap-south-1,KMS keys × 1,kms:key,1.0
+vm-migration,The architecture to grow into,aws,ap-south-1,Compute × 40,t3a.large,1439.56
+vm-migration,The architecture to grow into,aws,ap-south-1,Object storage,s3:general-purpose,10.0
+vm-migration,The architecture to grow into,aws,ap-south-1,Monitoring,cloudwatch:metrics,36.0
+vm-migration,The architecture to grow into,aws,ap-south-1,Cross-region backup copy (storage at destination),backup:cross-region-warm,206.4
+vm-migration,The architecture to grow into,aws,ap-south-1,Cross-region backup transfer (changed data),transfer:inter-region,17.2
+vm-migration,The architecture to grow into,aws,ap-south-1,Archived retention,s3:glacier-instant,1.0
+vm-migration,The architecture to grow into,aws,ap-south-1,"Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT)",vpce:gateway,0.0
+vm-migration,The architecture to grow into,aws,ap-south-1,"Interface endpoints × 3 (ECR, SSM, Secrets Manager, CloudWatch Logs, KMS — cheaper than the NAT data they divert)",vpce:interface-hour,28.47
+vm-migration,The architecture to grow into,aws,ap-south-1,Interface endpoint data processing,vpce:gb-processed,0.4
+vm-migration,The architecture to grow into,aws,ap-south-1,Object Lock (WORM retention),s3:object-lock,0.0
+vm-migration,The architecture to grow into,aws,ap-south-1,Audit logging,cloudtrail:management-events,0.0
+vm-migration,The architecture to grow into,aws,ap-south-1,NAT gateway × 1,nat:gateway-hour,40.88
+vm-migration,The architecture to grow into,aws,ap-south-1,NAT data processing,nat:gb-processed,4.48
+vm-migration,The architecture to grow into,aws,ap-south-1,TLS certificate,acm:public-certificate,0.0
+vm-migration,The architecture to grow into,aws,ap-south-1,DNS hosted zone × 1,route53:hosted-zone,0.5
+vm-migration,The architecture to grow into,aws,ap-south-1,DNS queries,route53:dns-queries,0.08
+vm-migration,The architecture to grow into,aws,ap-south-1,Backup storage,backup:warm-storage,132.0
+vm-migration,The architecture to grow into,aws,ap-south-1,Block storage,ebs:gp3,364.8
+vm-migration,The architecture to grow into,aws,ap-south-1,Object storage write requests,s3:put-requests,0.02
+vm-migration,The architecture to grow into,aws,ap-south-1,Secrets × 4,secretsmanager:secret,1.6
+vm-migration,The architecture to grow into,aws,ap-south-1,Threat detection: compute,guardduty:ec2-vcpu,144.8
+vm-migration,The architecture to grow into,aws,ap-south-1,Security posture checks,securityhub:compliance-check,1.2
+vm-migration,The architecture to grow into,aws,ap-south-1,VPC flow logs,vpc:flow-logs,13.4
+vm-migration,The architecture to grow into,aws,ap-south-1,KMS keys × 1,kms:key,1.0
