@@ -10,11 +10,23 @@ const LABEL: Record<string, string> = {
   gcp: "Google Cloud",
 };
 
+function Skeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 300 }} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
+        <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
+      </div>
+    </div>
+  );
+}
+
 /**
  * Fills the hero showcase from one comparison.
  *
  * Moved to client-side so ISR regeneration never waits on three parallel
- * API calls. Page renders immediately, then hydrates with data once it arrives.
+ * API calls. Page renders immediately with skeleton, then hydrates with data.
  */
 export function HeroShowcaseSection() {
   const [data, setData] = useState<ShowcaseData | null>(null);
@@ -114,17 +126,5 @@ export function HeroShowcaseSection() {
       });
   }, []);
 
-  /* Render immediately with skeleton, then swap in real data. */
-  if (!data) {
-    return (
-      <div className="space-y-4">
-        <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 300 }} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
-          <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
-        </div>
-      </div>
-    );
-  }
-  return <HeroShowcase data={data} />;
+  return data ? <HeroShowcase data={data} /> : <Skeleton />;
 }
