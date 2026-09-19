@@ -1,19 +1,27 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { LiveBadge } from "@/components/landing/LiveBadge";
 import { api } from "@/lib/api";
 
 /**
  * Supplies the live badge with the catalog's real refresh time.
  *
- * Kept separate, and suspended in the page, so the hero heading is never
- * waiting on a network call to paint. If /health cannot be reached the badge
- * renders without a timestamp rather than guessing one.
+ * Moved to client-side so ISR page generation never waits on /health.
+ * The page renders immediately with no timestamp, then hydrates with the real
+ * one once it arrives. Much faster than blocking Vercel during a cold start.
  */
-export async function HeroFreshness() {
-  let updatedAt: string | null = null;
-  try {
-    updatedAt = (await api.health()).last_updated ?? null;
-  } catch {
-    /* badge renders without the age */
-  }
+export function HeroFreshness() {
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .health()
+      .then((h) => setUpdatedAt(h.last_updated ?? null))
+      .catch(() => {
+        /* badge renders without the age if /health fails */
+      });
+  }, []);
+
   return <LiveBadge updatedAt={updatedAt} />;
 }

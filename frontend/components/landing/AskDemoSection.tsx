@@ -1,15 +1,8 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { AskDemo, type Scenario } from "@/components/landing/AskDemo";
 import { api, comparableTotals, money } from "@/lib/api";
-
-/**
- * Builds the demo's scenarios out of the live catalog.
- *
- * Every price the animation shows is one the engine returned for that
- * question, so the panel is a recording of the product rather than a mock-up
- * of it. If the API is unreachable the section does not render, which is the
- * right failure: a demo of pricing with invented prices is worse than no
- * demo.
- */
 
 const LABELS: Record<string, string> = {
   aws: "AWS",
@@ -56,39 +49,48 @@ const QUESTIONS = [
   },
 ];
 
-async function build(q: (typeof QUESTIONS)[number]): Promise<Scenario | null> {
-  try {
-    /* Cached: the landing page asks these same fixed questions on every
-       visit, so one engine run per five minutes serves everyone. */
-    const compare = await api.compare(q.body, 300);
+/**
+ * Builds the demo's scenarios out of the live catalog.
+ *
+ * Moved to client-side so ISR regeneration never waits on three parallel
+ * comparison calls. Page renders immediately, then hydrates with data once it arrives.
+ */
+export function AskDemoSection() {
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
 
-    /* Compared on the services every cloud prices, not on raw totals.
-       Requiring every cloud to be complete used to hide this section
-       entirely the moment AWS gained components the others have no
-       adapter for; ranking the raw totals instead would have been worse,
-       since a cloud missing eleven components looks cheapest precisely
-       because it is missing them. */
-    const priced = comparableTotals(compare.clouds, "Most reliable");
-    if (priced.length < 2) return null;
+  useEffect(() => {
+    Promise.all(
+      QUESTIONS.map(async (q) => {
+        try {
+          const compare = await api.compare(q.body, 300);
+          const priced = comparableTotals(compare.clouds, "Most reliable");
+          if (priced.length < 2) return null;
 
-    return {
-      question: q.question,
-      chips: q.chips,
-      rows: priced.map((r, i) => ({
-        provider: r.provider,
-        label: LABELS[r.provider] ?? r.provider,
-        monthly: `${money(r.total, 0)}/mo`,
-        cheapest: i === 0,
-      })),
-    };
-  } catch {
-    return null;
-  }
-}
+          return {
+            question: q.question,
+            chips: q.chips,
+            rows: priced.map((r, i) => ({
+              provider: r.provider,
+              label: LABELS[r.provider] ?? r.provider,
+              monthly: `${money(r.total, 0)}/mo`,
+              cheapest: i === 0,
+            })),
+          };
+        } catch {
+          return null;
+        }
+      }),
+    )
+      .then((built) => {
+        const filtered = built.filter((s): s is Scenario => s !== null);
+        if (filtered.length > 0) {
+          setScenarios(filtered);
+        }
+      })
+      .catch(() => {
+        /* Renders nothing on any fetch failure */
+      });
+  }, []);
 
-export async function AskDemoSection() {
-  const built = await Promise.all(QUESTIONS.map(build));
-  const scenarios = built.filter((s): s is Scenario => s !== null);
-  if (!scenarios.length) return null;
-  return <AskDemo scenarios={scenarios} />;
+  return scenarios.length > 0 ? <AskDemo scenarios={scenarios} /> : null;
 }
