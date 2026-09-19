@@ -23,5 +23,6 @@ export function HeroFreshness() {
       });
   }, []);
 
+  /* Always render. Badge hydrates with timestamp once /health responds. */
   return <LiveBadge updatedAt={updatedAt} />;
 }

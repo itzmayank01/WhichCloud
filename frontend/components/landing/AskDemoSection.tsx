@@ -92,5 +92,20 @@ export function AskDemoSection() {
       });
   }, []);
 
-  return scenarios.length > 0 ? <AskDemo scenarios={scenarios} /> : null;
+  /* Always render something. Show skeleton while loading, real content once it arrives. */
+  const displayScenarios = scenarios.length > 0 ? scenarios : QUESTIONS.map((q) => ({
+    question: q.question,
+    chips: q.chips,
+    rows: [
+      { provider: "aws", label: "AWS", monthly: "—", cheapest: false },
+      { provider: "azure", label: "Microsoft Azure", monthly: "—", cheapest: false },
+      { provider: "gcp", label: "Google Cloud", monthly: "—", cheapest: false },
+    ],
+  }));
+
+  return (
+    <div className={scenarios.length === 0 ? "opacity-50" : ""}>
+      <AskDemo scenarios={displayScenarios} />
+    </div>
+  );
 }

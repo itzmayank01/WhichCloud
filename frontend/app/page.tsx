@@ -191,25 +191,6 @@ function Loading({ height }: { height: number }) {
 export default function Home() {
   return (
     <>
-      {/* Loading indicator: visible immediately while data streams in. Free tier
-          cold starts can take 30-60s, so show the user that SOMETHING is happening.
-          Invisible once content loads (JS takes over on first paint). */}
-      <div className="sticky top-16 left-0 right-0 z-30 h-1 overflow-hidden bg-transparent">
-        <div
-          className="h-full bg-accent"
-          style={{
-            animation: "loading-bar 3s ease-in-out infinite",
-          }}
-        />
-        <style>{`
-          @keyframes loading-bar {
-            0% { width: 10%; }
-            50% { width: 80%; }
-            100% { width: 100%; }
-          }
-        `}</style>
-      </div>
-
       {/* hero */}
       <section className="px-6 pt-16 pb-20 text-center sm:pt-24">
         <h1 className="mx-auto max-w-4xl text-balance text-[clamp(2.5rem,6.5vw,4.5rem)] font-semibold leading-[1.02] tracking-[-0.035em]">

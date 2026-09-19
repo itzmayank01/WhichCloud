@@ -114,5 +114,17 @@ export function HeroShowcaseSection() {
       });
   }, []);
 
-  return data ? <HeroShowcase data={data} /> : null;
+  /* Render immediately with skeleton, then swap in real data. */
+  if (!data) {
+    return (
+      <div className="space-y-4">
+        <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 300 }} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
+          <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
+        </div>
+      </div>
+    );
+  }
+  return <HeroShowcase data={data} />;
 }
