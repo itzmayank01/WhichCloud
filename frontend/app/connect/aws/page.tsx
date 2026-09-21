@@ -370,6 +370,23 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
           </div>
         )}
 
+        {/* Every other branch here is gated on `!loading`, and nothing was
+            gated on `loading` -- so while the setup call was in flight the
+            page rendered its heading and then stopped. On a backend that
+            sleeps after 15 minutes idle that is a blank page for up to a
+            minute, with no indication anything is happening, which reads as
+            the connect page being broken rather than slow. */}
+        {loading && (
+          <div className="mt-6 space-y-4" aria-busy="true">
+            <p className="text-[13.5px] text-ink-3">
+              Preparing your connection details&hellip; this can take up to a minute
+              if the service has been idle.
+            </p>
+            <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 120 }} />
+            <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
+          </div>
+        )}
+
         {!loading && !setupError && !ourAccountId && (
           <div className="mt-6 rounded-xl border border-caution/40 bg-caution-wash p-4 text-[13.5px] text-caution">
             This deployment can&apos;t accept AWS connections right now: it couldn&apos;t
