@@ -247,12 +247,87 @@ export class ApiError extends Error {
   }
 }
 
+/* The backend sleeps after 15 minutes idle and takes 30-60s to wake, and
+ * until it is up Render's edge answers instead of the app. Two things follow,
+ * and the second is the one that bites:
+ *
+ *   - the edge answers 502/503/504 rather than anything this app wrote;
+ *   - those edge responses carry no CORS headers, because the app that sets
+ *     them is not running yet. In a browser that is not a slow request, it is
+ *     a hard TypeError -- "No 'Access-Control-Allow-Origin' header" -- with
+ *     nothing to retry it.
+ *
+ * That was survivable while the landing page fetched server-side, where there
+ * is no CORS check at all and a cold start only meant a slow build. Moving
+ * those fetches into the browser made a cold start into a broken page: the
+ * first visitor after an idle period got failed fetches and placeholders that
+ * never resolved. Retrying here is what makes the move safe.
+ *
+ * Deliberately NOT retried: any response the app itself produced, including
+ * 4xx and 5xx. Those are answers -- repeating them wastes the caller's time
+ * and, on /describe, a second read of the same description. Only a waking
+ * service is retried. */
+const WAKE_RETRY_DELAYS_MS = [3000, 6000, 12000, 20000, 20000]; // ~61s
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Gateway statuses Render's edge returns while the service boots. */
+const WAKING = new Set([502, 503, 504]);
+
+/* IN THE BROWSER ONLY, and the build is why.
+ *
+ * CORS is a browser rule; there is no preflight and no origin check when
+ * Next fetches this API from a server. So the failure this retry exists to
+ * absorb cannot happen server-side -- there a sleeping backend is merely
+ * slow, and Next already retries a page that fails to generate.
+ *
+ * Retrying on the server is worse than useless: `next build` gives each page
+ * 60 seconds, and a ~61s retry budget spends the whole allowance inside one
+ * fetch. Every statically generated page that reads the API then times out
+ * and the build FAILS -- which is how this was found, on / and /prices,
+ * before it could reach a deploy.
+ *
+ * So the server keeps the old behaviour of failing fast, and only the
+ * browser waits for the service to wake. */
+const RETRYING = typeof window !== "undefined";
+
+async function fetchThroughWake(
+  input: string,
+  init: RequestInit & { next?: { revalidate: number } },
+): Promise<Response> {
+  if (!RETRYING) return fetch(input, init);
+
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= WAKE_RETRY_DELAYS_MS.length; attempt++) {
+    const last = attempt === WAKE_RETRY_DELAYS_MS.length;
+    try {
+      const response = await fetch(input, init);
+      if (WAKING.has(response.status) && !last) {
+        await sleep(WAKE_RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      return response;
+    } catch (err) {
+      /* fetch() rejects with TypeError for a network or CORS failure, which
+         is exactly the shape a cold backend produces. A genuine programming
+         error would reject the same way, so this retries it too -- at the
+         cost of some delay before the same failure surfaces. */
+      lastError = err;
+      if (last) break;
+      await sleep(WAKE_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw lastError;
+}
+
 async function get<T>(
   path: string,
   revalidate = 300,
   token?: string,
 ): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await fetchThroughWake(`${BASE}${path}`, {
     next: { revalidate },
     headers: bearer(token),
   });
@@ -280,7 +355,7 @@ function bearer(token?: string): Record<string, string> {
 }
 
 async function del<T>(path: string, token?: string): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await fetchThroughWake(`${BASE}${path}`, {
     method: "DELETE",
     headers: bearer(token),
   });
@@ -310,7 +385,7 @@ async function post<T>(
   revalidate?: number,
   token?: string,
 ): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await fetchThroughWake(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...bearer(token) },
     body: JSON.stringify(body),
@@ -686,7 +761,7 @@ export const api = {
 
   /** The diagram as a file. Returns the SVG source, not a parsed object. */
   architectureSvg: async (body: Record<string, unknown>): Promise<string> => {
-    const response = await fetch(`${BASE}/architecture/export.svg`, {
+    const response = await fetchThroughWake(`${BASE}/architecture/export.svg`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -697,7 +772,7 @@ export const api = {
 
   /** One priced tier as a downloadable Terraform project. */
   planExportTf: async (body: Record<string, unknown>): Promise<Blob> => {
-    const response = await fetch(`${BASE}/plan/export.tf`, {
+    const response = await fetchThroughWake(`${BASE}/plan/export.tf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -708,7 +783,7 @@ export const api = {
 
   /** One priced option from `/describe`, as a downloadable Terraform project. */
   describeExportTf: async (body: Record<string, unknown>): Promise<Blob> => {
-    const response = await fetch(`${BASE}/describe/export.tf`, {
+    const response = await fetchThroughWake(`${BASE}/describe/export.tf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -744,7 +819,7 @@ export const api = {
   audit: async (file: File): Promise<AuditReport> => {
     const form = new FormData();
     form.append("file", file);
-    const response = await fetch(`${BASE}/audit`, { method: "POST", body: form });
+    const response = await fetchThroughWake(`${BASE}/audit`, { method: "POST", body: form });
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
       throw new ApiError(detail.detail ?? "Could not read that file", response.status);
