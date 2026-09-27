@@ -38,7 +38,9 @@ needs_terraform = pytest.mark.skipif(
 
 def _validate(tmp_path: Path, files: dict[str, str]) -> None:
     for name, content in files.items():
-        (tmp_path / name).write_text(content)
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
 
     init = subprocess.run(
         [TERRAFORM, "init", "-backend=false", "-input=false"],
@@ -82,7 +84,10 @@ def test_ec2_with_database_and_alb(tmp_path):
     files = terraform_export.generate(spec, estimate(spec, "aws"))
     assert "module \"database\"" in files["main.tf"]
     assert "module \"alb\"" in files["main.tf"]
-    assert "multi_az               = var.database_multi_az" in files["main.tf"]
+    assert "multi_az = var.database_multi_az" in files["main.tf"]
+    # Deletion protection and backup retention ARE environment properties --
+    # unlike multi_az, they carry no price tag, so they're safe to vary.
+    assert "local.env.deletion_protection" in files["main.tf"]
     _validate(tmp_path, files)
 
 
@@ -104,6 +109,82 @@ def test_minimal_compute_only_still_validates(tmp_path):
     spec = ArchitectureSpec(name="tiny", region="india", compute_count=1)
     files = terraform_export.generate(spec, estimate(spec, "aws"))
     _validate(tmp_path, files)
+
+
+@needs_terraform
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_generated_for_either_environment_still_validates(tmp_path, environment):
+    """Same module, either environment -- both must be real, valid HCL, not
+    just the default ("dev") that every other fixture in this file exercises."""
+    spec = ArchitectureSpec(
+        name="app", region="india", compute_count=3, compute_vcpu=2,
+        compute_memory_gb=8.0, load_balancer=True,
+        database_vcpu=2, database_memory_gb=8.0, database_multi_az=True,
+        nat_gateway_count=2,
+    )
+    files = terraform_export.generate(spec, estimate(spec, "aws"), environment=environment)
+    assert f'default = "{environment}"' in files["variables.tf"]
+    _validate(tmp_path, files)
+
+
+# ── environment parameterization (no terraform binary needed) ───────────
+
+
+def test_dev_and_prod_tfvars_both_generated_and_differ():
+    spec = ArchitectureSpec(
+        name="app", region="india", compute_count=3, compute_vcpu=2,
+        compute_memory_gb=8.0, database_vcpu=2, database_memory_gb=8.0,
+    )
+    files = terraform_export.generate(spec, estimate(spec, "aws"))
+    dev_vars = files["environments/dev.tfvars"]
+    prod_vars = files["environments/prod.tfvars"]
+    assert 'environment = "dev"' in dev_vars
+    assert 'environment = "prod"' in prod_vars
+    # The one deliberately environment-scaled number: dev runs a single
+    # instance regardless of how large the priced fleet is.
+    assert "compute_count = 1" in dev_vars
+    assert "compute_count = 3" in prod_vars
+
+
+def test_environment_variable_has_a_closed_validation():
+    spec = ArchitectureSpec(name="tiny", region="india", compute_count=1)
+    files = terraform_export.generate(spec, estimate(spec, "aws"))
+    variables = files["variables.tf"]
+    assert 'variable "environment"' in variables
+    assert 'contains(["dev", "prod"], var.environment)' in variables
+
+
+def test_unknown_environment_falls_back_to_dev():
+    spec = ArchitectureSpec(name="tiny", region="india", compute_count=1)
+    files = terraform_export.generate(spec, estimate(spec, "aws"), environment="staging")
+    assert 'default = "dev"' in files["variables.tf"]
+
+
+def test_database_ha_setting_is_priced_not_environment_driven():
+    """The one thing that must NOT vary by environment: Multi-AZ is a real
+    line item on the bill, so an environment switch must never silently
+    change what gets built relative to what was estimated."""
+    spec = ArchitectureSpec(
+        name="app", region="india", compute_count=1,
+        database_vcpu=2, database_memory_gb=8.0, database_multi_az=True,
+    )
+    est = estimate(spec, "aws")
+    dev_files = terraform_export.generate(spec, est, environment="dev")
+    prod_files = terraform_export.generate(spec, est, environment="prod")
+    assert "multi_az = var.database_multi_az" in dev_files["main.tf"]
+    assert "multi_az = var.database_multi_az" in prod_files["main.tf"]
+    assert "default = true" in dev_files["variables.tf"]  # database_multi_az
+
+
+def test_resource_names_carry_the_environment_so_stacks_do_not_collide():
+    spec = ArchitectureSpec(
+        name="app", region="india", compute_count=1,
+        database_vcpu=2, database_memory_gb=8.0,
+    )
+    files = terraform_export.generate(spec, estimate(spec, "aws"))
+    main = files["main.tf"]
+    assert "${var.project_name}-${var.environment}-vpc" in main
+    assert "${var.project_name}-${var.environment}-db" in main
 
 
 # ── generator-level assertions (no terraform binary needed) ─────────────

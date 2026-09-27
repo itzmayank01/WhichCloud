@@ -184,10 +184,17 @@ function TerraformStudioContent() {
   const descriptionParam = searchParams.get("description") || "";
   const optionParam = searchParams.get("option") || "Most optimized";
   const cloudParam = (searchParams.get("cloud") || "aws") as CloudId;
+  const environmentParam = (searchParams.get("environment") || "dev") as "dev" | "prod";
 
   const [description, setDescription] = useState(descriptionParam || DEFAULT_WORKLOAD);
   const [selectedOption, setSelectedOption] = useState(optionParam);
   const [cloud, setCloud] = useState<CloudId>(cloudParam);
+  // Only AWS gets real per-environment Terraform today (deletion protection,
+  // snapshot-on-destroy, backup retention, environment-qualified naming) --
+  // see terraform_export.py. Azure and GCP accept the parameter but do not
+  // yet act on it, so the toggle stays AWS-only rather than implying a
+  // difference the download would not actually contain.
+  const [environment, setEnvironment] = useState<"dev" | "prod">(environmentParam);
 
   // Recommendation & Architecture Data
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
@@ -317,6 +324,7 @@ function TerraformStudioContent() {
           description: description.trim() || DEFAULT_WORKLOAD,
           option: selectedOption,
           provider: cloud,
+          environment,
         });
 
         if (!cancelled) {
@@ -400,7 +408,7 @@ module "managed_db" {
     return () => {
       cancelled = true;
     };
-  }, [description, selectedOption, cloud]);
+  }, [description, selectedOption, cloud, environment]);
 
   // Active Option for the Architecture Graph
   const activeOption: Option | null =
@@ -464,6 +472,7 @@ module "managed_db" {
         description: description.trim() || DEFAULT_WORKLOAD,
         option: selectedOption,
         provider: cloud,
+        environment,
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -567,6 +576,32 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               </button>
             ))}
           </div>
+
+          {/* Environment switcher. AWS-only for now: variables.tf, main.tf's
+              locals.env and environments/*.tfvars only exist in
+              terraform_export.py -- Azure and GCP accept the parameter but
+              do not yet act on it, so showing the toggle there would promise
+              a difference the download would not contain. */}
+          {cloud === "aws" && (
+            <div
+              className="flex items-center rounded-lg border border-line bg-canvas p-0.5"
+              title="Deletion protection, snapshot-on-destroy and backup retention differ by environment; instance sizes and Multi-AZ never do -- those are exactly what was priced."
+            >
+              {(["dev", "prod"] as const).map((env) => (
+                <button
+                  key={env}
+                  onClick={() => setEnvironment(env)}
+                  className={`rounded-md px-2.5 py-1 text-[11.5px] font-semibold uppercase transition-all ${
+                    environment === env
+                      ? "bg-surface text-ink shadow-sm border border-line"
+                      : "text-ink-3 hover:text-ink"
+                  }`}
+                >
+                  {env}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Architecture Tier Switcher (Screenshot 2). Scrolls rather than
               wraps: three priced tiers read as one control, and a tier that
@@ -929,6 +964,31 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                   </svg>
                   <span className="truncate">terraform.tfvars</span>
                 </button>
+
+                {/* 6b. environments/ -- AWS only, see the environment switcher above */}
+                {cloud === "aws" && (
+                  <div className="ml-4 pl-2 border-l border-line/70 flex flex-col gap-0.5">
+                    {(["dev", "prod"] as const).map((env) => {
+                      const path = `environments/${env}.tfvars`;
+                      const isActive = activeFile === path;
+                      return (
+                        <button
+                          key={path}
+                          type="button"
+                          onClick={() => setActiveFile(path)}
+                          className={`flex items-center gap-1.5 w-full rounded-md px-2 py-1 text-[11.5px] transition-all text-left ${
+                            isActive
+                              ? "bg-[#F3F0FF] dark:bg-[#5C4EE5]/20 text-[#5C4EE5] dark:text-[#A78BFA] font-semibold shadow-xs"
+                              : "text-ink-3 hover:text-ink hover:bg-surface/60 font-medium"
+                          }`}
+                        >
+                          <span className="font-mono text-[10px] opacity-70">&lt;&gt;</span>
+                          <span className="truncate">{env}.tfvars</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* 7. README.md */}
                 <button

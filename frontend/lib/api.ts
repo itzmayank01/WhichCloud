@@ -798,6 +798,9 @@ export const api = {
     option: string;
     provider?: string;
     reader?: string;
+    /** "dev" or "prod" -- selects which environments/*.tfvars the generated
+     *  variables.tf defaults to. The project always carries both. */
+    environment?: "dev" | "prod";
   }) =>
     post<{
       files: Record<string, string>;

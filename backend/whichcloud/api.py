@@ -812,6 +812,10 @@ class PlanExportIn(BaseModel):
     #: cannot disagree: exporting a cloud the tier was not priced on would
     #: hand out resources nobody costed.
     provider: Literal["aws", "gcp", "azure"] = "aws"
+    #: Only changes which default `variables.tf` and `README.md` are written
+    #: for -- the generated project always carries both `environments/*.tfvars`,
+    #: so this is a convenience for the download, not a second code path.
+    environment: Literal["dev", "prod"] = "dev"
 
 
 class DescribeExportIn(BaseModel):
@@ -828,6 +832,8 @@ class DescribeExportIn(BaseModel):
     #: main.tf full of aws_instance and aws_db_instance is something a person
     #: can run.
     provider: Literal["aws", "gcp", "azure"] | None = None
+    #: Same convenience as `PlanExportIn.environment` -- see there.
+    environment: Literal["dev", "prod"] = "dev"
 
 
 class SaveArchitectureIn(BaseModel):
@@ -1687,7 +1693,7 @@ def plan_export_terraform_route(body: PlanExportIn):
         "gcp": terraform_export_gcp,
         "azure": terraform_export_azure,
     }[body.provider]
-    files = generator.generate(tier.spec, tier.estimate)
+    files = generator.generate(tier.spec, tier.estimate, environment=body.environment)
     archive = terraform_export.zip_bytes(files)
     return Response(
         content=archive,
@@ -1851,7 +1857,7 @@ def describe_export_terraform_route(body: DescribeExportIn):
     if option is None:
         raise HTTPException(404, f"no priced option named {body.option!r}")
 
-    files = generator.generate(option.spec, option.estimate)
+    files = generator.generate(option.spec, option.estimate, environment=body.environment)
     archive = terraform_export.zip_bytes(files)
     return Response(
         content=archive,
@@ -1899,7 +1905,7 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
 
     files: dict[str, str] = {}
     if option:
-        files = generator.generate(option.spec, option.estimate)
+        files = generator.generate(option.spec, option.estimate, environment=body.environment)
 
     region = option.estimate.region if option else ("ap-south-1" if provider == "aws" else "asia-south1")
     total_cost = float(option.estimate.total_monthly) if option else 469.58

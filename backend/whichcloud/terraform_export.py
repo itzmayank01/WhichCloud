@@ -62,8 +62,39 @@ def _not_generated(spec: ArchitectureSpec, estimate: Estimate) -> list[str]:
     return missing
 
 
-def generate(spec: ArchitectureSpec, estimate: Estimate) -> dict[str, str]:
-    """AWS only. Returns {filename: contents} for a downloadable project."""
+#: The only two environments the generated `locals.env` map (in `_main_tf`)
+#: resolves. Kept as a Python set purely to validate the caller's input --
+#: the actual per-environment VALUES live once, in the HCL itself, so there
+#: is exactly one place that says what "prod" means rather than a Python
+#: copy that could drift from the generated file it is meant to describe.
+#:
+#: Multi-AZ and NAT-gateway redundancy are deliberately NOT environment
+#: properties here: `test_terraform_matches_estimate.py` holds this generator
+#: to the promise that what it builds matches what the estimate charged for,
+#: and multi_az/NAT count are real line items on that bill. Making them
+#: environment-driven would let a "dev" export quietly build less than a
+#: "prod" export was priced for, or vice versa -- exactly the drift this
+#: tool exists to prevent. Deletion protection, snapshot-on-destroy and
+#: backup retention carry no such price tag, which is what makes them safe
+#: to vary by environment instead.
+_VALID_ENVIRONMENTS = {"dev", "prod"}
+
+
+def generate(
+    spec: ArchitectureSpec, estimate: Estimate, environment: str = "dev"
+) -> dict[str, str]:
+    """AWS only. Returns {filename: contents} for a downloadable project.
+
+    `environment` selects which entry of the generated `locals.env` map
+    (see `_main_tf`) `variables.tf`'s own default resolves to -- it only
+    changes which of the two `environments/*.tfvars` files this run's README
+    tells the reader to pass with `-var-file`. The generated HCL itself
+    always carries both dev and prod, which is what makes it the same module
+    for both rather than two.
+    """
+    if environment not in _VALID_ENVIRONMENTS:
+        environment = "dev"
+
     has_fargate = spec.fargate_task_count > 0
     has_ec2 = spec.compute_count > 0 and not has_fargate
     has_compute = has_fargate or has_ec2
@@ -88,6 +119,7 @@ def generate(spec: ArchitectureSpec, estimate: Estimate) -> dict[str, str]:
         has_storage=has_alb or has_storage,
         region=region,
         az_count=az_count,
+        environment=environment,
         compute_count=spec.compute_count,
         compute_sku=compute_sku,
         database_sku=database_sku,
@@ -121,9 +153,12 @@ def generate(spec: ArchitectureSpec, estimate: Estimate) -> dict[str, str]:
         compute_sku=compute_sku,
         database_sku=database_sku,
     )
+    files["environments/dev.tfvars"] = _env_tfvars("dev", spec)
+    files["environments/prod.tfvars"] = _env_tfvars("prod", spec)
     files["README.md"] = _readme(
         spec=spec,
         estimate=estimate,
+        environment=environment,
         has_ec2=has_ec2,
         has_fargate=has_fargate,
         has_db=has_db,
@@ -132,6 +167,26 @@ def generate(spec: ArchitectureSpec, estimate: Estimate) -> dict[str, str]:
         has_network=has_network,
     )
     return files
+
+
+def _env_tfvars(environment: str, spec: ArchitectureSpec) -> str:
+    """The one value a caller must set to choose an environment.
+
+    Deletion protection, snapshot-on-destroy and backup retention are
+    derived in `locals.env` inside main.tf from this single value -- putting
+    them here too would let the two disagree. `compute_count` is the one
+    exception: prod runs the fleet size that was actually priced, dev runs a
+    single instance, because a dev-shaped clone of a 3-instance production
+    fleet is not what "dev environment" means to anyone paying for it.
+    """
+    compute_count = spec.compute_count if environment == "prod" else min(1, spec.compute_count)
+    lines = [
+        f'environment = "{environment}"',
+        "",
+    ]
+    if spec.compute_count > 0:
+        lines += [f"compute_count = {compute_count}", ""]
+    return "\n".join(lines)
 
 
 def zip_bytes(files: dict[str, str]) -> bytes:
@@ -154,6 +209,7 @@ def _variables_tf(
     has_storage: bool,
     region: str,
     az_count: int,
+    environment: str,
     compute_count: int,
     compute_sku: str | None,
     database_sku: str | None,
@@ -178,6 +234,22 @@ def _variables_tf(
         "variable \"project_name\" {",
         "  type    = string",
         '  default = "whichcloud-app"',
+        "}",
+        "",
+        "# Selects the entry of locals.env (main.tf) that deletion",
+        "# protection, snapshot-on-destroy and backup retention below are",
+        "# drawn from. Pass with -var-file=environments/dev.tfvars or",
+        "# environments/prod.tfvars -- never edit this default in place, or",
+        "# dev and prod stop being two runs of the same module and become",
+        "# two copies of it.",
+        "variable \"environment\" {",
+        "  type    = string",
+        f'  default = "{environment}"',
+        "",
+        "  validation {",
+        "    condition     = contains([\"dev\", \"prod\"], var.environment)",
+        "    error_message = \"environment must be \\\"dev\\\" or \\\"prod\\\".\"",
+        "  }",
         "}",
     ]
     if has_ec2:
@@ -291,6 +363,38 @@ def _main_tf(
             "  region = var.aws_region\n"
             "}\n"
         ),
+        (
+            "# The ONLY place dev and prod differ. Every resource below reads\n"
+            "# deletion-protection, snapshot-on-destroy and backup-retention\n"
+            "# settings from local.env rather than from a hardcoded value or a\n"
+            "# second copy of this file -- that is what makes this one reusable\n"
+            "# module instead of two maintained ones. Instance types, DB\n"
+            "# classes, Multi-AZ and NAT redundancy are deliberately absent\n"
+            "# here: those come from what WhichCloud priced, in variables.tf,\n"
+            "# and stay identical across environments so the Terraform never\n"
+            "# builds something other than what the estimate charged for.\n"
+            "locals {\n"
+            "  env_defaults = {\n"
+            "    dev = {\n"
+            "      deletion_protection     = false\n"
+            "      skip_final_snapshot     = true\n"
+            "      backup_retention_period = 1\n"
+            "    }\n"
+            "    prod = {\n"
+            "      deletion_protection     = true\n"
+            "      skip_final_snapshot     = false\n"
+            "      backup_retention_period = 7\n"
+            "    }\n"
+            "  }\n"
+            "  env = local.env_defaults[var.environment]\n"
+            "\n"
+            "  common_tags = {\n"
+            "    Environment = var.environment\n"
+            "    Project     = var.project_name\n"
+            "    ManagedBy   = \"terraform\"\n"
+            "  }\n"
+            "}\n"
+        ),
     ]
 
     if has_network:
@@ -304,7 +408,7 @@ def _main_tf(
             f'  source  = "terraform-aws-modules/vpc/aws"\n'
             f'  version = "{_VPC_MODULE_VERSION}"\n'
             "\n"
-            "  name = \"${var.project_name}-vpc\"\n"
+            "  name = \"${var.project_name}-${var.environment}-vpc\"\n"
             "  cidr = \"10.0.0.0/16\"\n"
             "\n"
             "  azs             = slice(data.aws_availability_zones.available.names, 0, var.az_count)\n"
@@ -314,6 +418,8 @@ def _main_tf(
             f"  enable_nat_gateway = {str(spec.nat_gateway_count > 0).lower()}\n"
             f"  single_nat_gateway = {str(single_nat).lower()}\n"
             "  enable_dns_hostnames = true\n"
+            "\n"
+            "  tags = local.common_tags\n"
             "}\n"
         )
 
@@ -336,14 +442,18 @@ def _main_tf(
             f'  source  = "terraform-aws-modules/autoscaling/aws"\n'
             f'  version = "{_ASG_MODULE_VERSION}"\n'
             "\n"
-            "  name = \"${var.project_name}-asg\"\n"
+            "  name = \"${var.project_name}-${var.environment}-asg\"\n"
             "\n"
             "  image_id        = data.aws_ami.app.id\n"
             "  instance_type   = var.compute_instance_type\n"
+            "  # var.compute_count is the fleet size -- WhichCloud priced the\n"
+            "  # exact number above, and environments/dev.tfvars overrides it\n"
+            "  # to 1 so a dev stack does not run and pay for prod's fleet.\n"
             "  min_size        = var.compute_count\n"
             "  max_size        = var.compute_count\n"
             "  desired_capacity = var.compute_count\n"
             "  vpc_zone_identifier = module.vpc.private_subnets\n"
+            "  tags = local.common_tags\n"
             + (
                 "  traffic_source_attachments = {\n"
                 "    alb = {\n"
@@ -363,12 +473,12 @@ def _main_tf(
             f'  source  = "terraform-aws-modules/ecs/aws"\n'
             f'  version = "{_ECS_MODULE_VERSION}"\n'
             "\n"
-            "  cluster_name = \"${var.project_name}-cluster\"\n"
+            "  cluster_name = \"${var.project_name}-${var.environment}-cluster\"\n"
             "}\n"
         )
         blocks.append(
             "resource \"aws_ecs_task_definition\" \"app\" {\n"
-            "  family                   = \"${var.project_name}-task\"\n"
+            "  family                   = \"${var.project_name}-${var.environment}-task\"\n"
             "  requires_compatibilities = [\"FARGATE\"]\n"
             "  network_mode             = \"awsvpc\"\n"
             "  cpu                      = var.fargate_cpu\n"
@@ -392,7 +502,10 @@ def _main_tf(
         )
         blocks.append(
             "resource \"aws_iam_role\" \"ecs_execution\" {\n"
-            "  name = \"${var.project_name}-ecs-execution\"\n"
+            "  # IAM is account-wide, not per-VPC -- dev and prod deployed into\n"
+            "  # the same account would collide on this name without the\n"
+            "  # environment in it.\n"
+            "  name = \"${var.project_name}-${var.environment}-ecs-execution\"\n"
             "\n"
             "  assume_role_policy = jsonencode({\n"
             "    Version = \"2012-10-17\"\n"
@@ -412,7 +525,7 @@ def _main_tf(
         )
         blocks.append(
             "resource \"aws_security_group\" \"fargate_service\" {\n"
-            "  name_prefix = \"${var.project_name}-svc-\"\n"
+            "  name_prefix = \"${var.project_name}-${var.environment}-svc-\"\n"
             "  vpc_id      = module.vpc.vpc_id\n"
             "\n"
             "  egress {\n"
@@ -425,7 +538,7 @@ def _main_tf(
         )
         blocks.append(
             "resource \"aws_ecs_service\" \"app\" {\n"
-            "  name            = \"${var.project_name}-service\"\n"
+            "  name            = \"${var.project_name}-${var.environment}-service\"\n"
             "  cluster         = module.ecs_cluster.cluster_arn\n"
             "  task_definition = aws_ecs_task_definition.app.arn\n"
             "  desired_count   = var.fargate_desired_count\n"
@@ -454,7 +567,7 @@ def _main_tf(
             f'  source  = "terraform-aws-modules/alb/aws"\n'
             f'  version = "{_ALB_MODULE_VERSION}"\n'
             "\n"
-            "  name    = \"${var.project_name}-alb\"\n"
+            "  name    = \"${var.project_name}-${var.environment}-alb\"\n"
             "  vpc_id  = module.vpc.vpc_id\n"
             "  subnets = module.vpc.public_subnets\n"
             "\n"
@@ -492,14 +605,17 @@ def _main_tf(
             "      forward  = { target_group_key = \"app\" }\n"
             "    }\n"
             "  }\n"
+            "\n"
+            "  tags = local.common_tags\n"
             "}\n"
         )
 
     if has_db:
         blocks.append(
             "resource \"aws_db_subnet_group\" \"app\" {\n"
-            "  name       = \"${var.project_name}-db\"\n"
+            "  name       = \"${var.project_name}-${var.environment}-db\"\n"
             "  subnet_ids = module.vpc.private_subnets\n"
+            "  tags       = local.common_tags\n"
             "}\n"
         )
         blocks.append(
@@ -507,7 +623,7 @@ def _main_tf(
             f'  source  = "terraform-aws-modules/rds/aws"\n'
             f'  version = "{_RDS_MODULE_VERSION}"\n'
             "\n"
-            "  identifier = \"${var.project_name}-db\"\n"
+            "  identifier = \"${var.project_name}-${var.environment}-db\"\n"
             "\n"
             "  engine         = \"postgres\"\n"
             "  engine_version = \"16\"\n"
@@ -519,17 +635,26 @@ def _main_tf(
             "  password = var.database_password\n"
             "  port     = 5432\n"
             "\n"
-            "  multi_az               = var.database_multi_az\n"
+            "  multi_az = var.database_multi_az\n"
+            "\n"
+            "  # Everything below this line is the dev/prod difference. Same\n"
+            "  # engine, same instance class, same Multi-AZ setting -- only\n"
+            "  # whether the instance can be torn down without a snapshot,\n"
+            "  # and how many days of backups survive it, changes.\n"
+            "  deletion_protection     = local.env.deletion_protection\n"
+            "  skip_final_snapshot     = local.env.skip_final_snapshot\n"
+            "  backup_retention_period = local.env.backup_retention_period\n"
+            "\n"
             "  db_subnet_group_name   = aws_db_subnet_group.app.name\n"
             "  create_db_subnet_group = false\n"
             "  vpc_security_group_ids = [aws_security_group.database.id]\n"
             "\n"
-            "  skip_final_snapshot = true\n"
+            "  tags = local.common_tags\n"
             "}\n"
         )
         blocks.append(
             "resource \"aws_security_group\" \"database\" {\n"
-            "  name_prefix = \"${var.project_name}-db-\"\n"
+            "  name_prefix = \"${var.project_name}-${var.environment}-db-\"\n"
             "  vpc_id      = module.vpc.vpc_id\n"
             "\n"
             "  ingress {\n"
@@ -553,6 +678,8 @@ def _main_tf(
             "  block_public_policy     = true\n"
             "  ignore_public_acls      = true\n"
             "  restrict_public_buckets = true\n"
+            "\n"
+            "  tags = local.common_tags\n"
             + (
                 "\n"
                 "  lifecycle_rule = [{\n"
@@ -629,6 +756,7 @@ def _readme(
     *,
     spec: ArchitectureSpec,
     estimate: Estimate,
+    environment: str,
     has_ec2: bool,
     has_fargate: bool,
     has_db: bool,
@@ -685,17 +813,57 @@ def _readme(
             *[f"- {line}" for line in not_generated],
             "",
         ]
+    env_table = [
+        "| | dev | prod |",
+        "|---|---|---|",
+        "| Database deletion protection | no | yes |",
+        "| Database destroyable without a final snapshot | yes | no |",
+        "| Database backup retention | 1 day | 7 days |",
+        "| Resource names, tags | `*-dev-*`, `Environment=dev` | `*-prod-*`, `Environment=prod` |",
+    ]
+    if has_ec2:
+        env_table.append(
+            f"| Compute fleet size | 1 (`environments/dev.tfvars`) | "
+            f"{spec.compute_count} (`environments/prod.tfvars`) |"
+        )
+
     lines += [
+        "## Environments",
+        "",
+        "One module, two environments — `environments/dev.tfvars` and "
+        "`environments/prod.tfvars` set `environment`, and deletion "
+        "protection, snapshot and backup-retention behaviour below follow "
+        "from it in `main.tf`'s `locals.env` block, along with the name "
+        "every resource gets so a dev and a prod stack can coexist in the "
+        "same AWS account. Instance types, DB classes, Multi-AZ and NAT "
+        "redundancy never change between environments: those are exactly "
+        "what WhichCloud priced, and stay that way everywhere so this file "
+        "and the bill you saw can't disagree.",
+        "",
+        *env_table,
+        "",
+        f"This project was generated for **{environment}**; the default in "
+        "`variables.tf` reflects that, but a plan or apply against the "
+        "other environment's tfvars is the same module, not a different one:",
+        "",
+        "```bash",
+        "terraform plan -var-file=environments/dev.tfvars",
+        "terraform plan -var-file=environments/prod.tfvars",
+        "```",
+        "",
+        "Diff the two plans and every difference traces back to one line in "
+        "`locals.env` — that is the whole point of the exercise.",
+        "",
         "## Use it",
         "",
         "```bash",
         "cp terraform.tfvars.example terraform.tfvars   # fill in secrets",
         "terraform init",
-        "terraform plan",
-        "terraform apply",
+        "terraform plan -var-file=environments/{environment}.tfvars",
+        "terraform apply -var-file=environments/{environment}.tfvars",
         "```",
         "",
         "Open this folder directly in VS Code or any editor — nothing here "
         "needs WhichCloud running to work.",
     ]
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines).replace("{environment}", environment) + "\n"

@@ -111,8 +111,17 @@ def _zones(spec: ArchitectureSpec) -> list[str]:
     return ["1", "2", "3"] if spec.compute_count >= 3 else ["1", "2"]
 
 
-def generate(spec: ArchitectureSpec, estimate: Estimate) -> dict[str, str]:
-    """Azure. Returns {filename: contents} for a downloadable project."""
+def generate(
+    spec: ArchitectureSpec, estimate: Estimate, environment: str = "dev"
+) -> dict[str, str]:
+    """Azure. Returns {filename: contents} for a downloadable project.
+
+    `environment` is accepted for interface parity with `terraform_export`
+    (AWS), which is first to get real dev/prod parameterization -- it is not
+    yet used here, so every export from this generator is environment-neutral
+    rather than silently mislabelled as one or the other.
+    """
+    del environment
     has_compute = spec.compute_count > 0
     has_db = bool(spec.database_vcpu)
     has_storage = spec.storage_gb > 0
