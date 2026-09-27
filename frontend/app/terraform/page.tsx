@@ -251,14 +251,15 @@ function TerraformStudioContent() {
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
   /* This page fires two LLM-backed calls at nearly the same moment --
-     api.describe() below and api.describeInspectTf() in the next effect.
-     Each takes ~10-11s alone (measured directly against the backend), but
-     Render's free tier runs it with WEB_CONCURRENCY=1: a single worker, so
-     two concurrent LLM-heavy requests queue behind each other instead of
-     running truly in parallel, doubling the wait to ~20s. That's not a
-     hang -- both effects fire correctly and both requests do complete --
-     but with no indication of why it's slow, a real 20-second wait reads
-     as broken. secondsWaiting only drives the loading copy below. */
+     api.describe() below and api.describeInspectTf() in the next effect --
+     for the same description. They used to race an after-the-fact cache on
+     the backend and both pay the full ~10-11s LLM read, which Render's
+     single worker (WEB_CONCURRENCY=1) then serialised into a ~20s wait.
+     The backend now shares one read between concurrent identical requests
+     (see `_cached_intake` in api.py), so the pair together cost about what
+     one used to: ~10-11s, occasionally longer only when the free-tier
+     backend is waking from idle. secondsWaiting only drives the loading
+     copy below. */
   const [secondsWaiting, setSecondsWaiting] = useState(0);
   useEffect(() => {
     if (!loadingFiles && !loadingRecommendation) {
@@ -968,7 +969,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                     {secondsWaiting >= 4 && (
                       <div className="text-[11px] text-ink-2 text-center px-4">
                         {secondsWaiting}s — pricing and Terraform generation run as two separate
-                        calls, usually ~20s{secondsWaiting >= 20 ? ", longer than usual because the backend is waking from idle" : ""}
+                        calls, usually ~10s{secondsWaiting >= 15 ? ", longer than usual because the backend is waking from idle" : ""}
                       </div>
                     )}
                   </div>
@@ -1117,7 +1118,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                       <div>Building live architecture diagram for {selectedOption}...</div>
                       {secondsWaiting >= 4 && (
                         <div className="text-[11px] text-ink-2">
-                          {secondsWaiting}s elapsed{secondsWaiting >= 20 ? " — backend is waking from idle" : ""}
+                          {secondsWaiting}s elapsed{secondsWaiting >= 15 ? " — backend is waking from idle" : ""}
                         </div>
                       )}
                     </div>

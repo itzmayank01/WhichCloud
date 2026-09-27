@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
+import threading
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -176,21 +177,58 @@ app.add_middleware(RateLimitMiddleware)
 #: eviction cheap rather than expensive.
 _INTAKE_CACHE_MAX = 256
 _intake_cache: "OrderedDict[str, object]" = OrderedDict()
+_intake_cache_lock = threading.Lock()
+#: One Event per description currently being read by the LLM, so a second
+#: caller for the *same* text waits on the first read instead of starting its
+#: own. Sync routes run in FastAPI's thread pool, and /terraform fires two of
+#: them -- api.describe and api.describeInspectTf -- for the same description
+#: from separate effects within milliseconds of each other. Both used to miss
+#: this cache (it only ever held *completed* reads) and each pay the full
+#: ~10s LLM read, which Render's single worker then serialises into a ~20s
+#: wait that reads as a hang with no indication why.
+_intake_inflight: dict[str, threading.Event] = {}
 
 
 def _cached_intake(description: str, reader: str | None):
     from .intake import parse_description
 
     key = hashlib.sha256(f"{description.strip()}|{reader or ''}".encode()).hexdigest()
-    if key in _intake_cache:
-        _intake_cache.move_to_end(key)
-        return _intake_cache[key]
 
-    value = parse_description(description, provider=reader)
-    _intake_cache[key] = value
-    while len(_intake_cache) > _INTAKE_CACHE_MAX:
-        _intake_cache.popitem(last=False)
-    return value
+    while True:
+        with _intake_cache_lock:
+            if key in _intake_cache:
+                _intake_cache.move_to_end(key)
+                return _intake_cache[key]
+            event = _intake_inflight.get(key)
+            if event is None:
+                event = _intake_inflight[key] = threading.Event()
+                owner = True
+            else:
+                owner = False
+
+        if not owner:
+            # Someone else is already reading this exact description. Wait
+            # for them rather than the lock, so callers for other keys are
+            # never blocked by this one.
+            event.wait()
+            continue
+
+        try:
+            value = parse_description(description, provider=reader)
+        except BaseException:
+            with _intake_cache_lock:
+                _intake_inflight.pop(key, None)
+            event.set()
+            raise
+
+        with _intake_cache_lock:
+            _intake_cache[key] = value
+            _intake_cache.move_to_end(key)
+            while len(_intake_cache) > _INTAKE_CACHE_MAX:
+                _intake_cache.popitem(last=False)
+            _intake_inflight.pop(key, None)
+        event.set()
+        return value
 
 
 # ── response shapes ─────────────────────────────────────────────────────
