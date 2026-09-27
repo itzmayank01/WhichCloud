@@ -274,7 +274,7 @@ export default function ConnectAzurePage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="sub-azure-prod-01 (Optional for Demo)"
+                  placeholder="sub-azure-prod-01"
                   value={subscriptionId}
                   onChange={(e) => setSubscriptionId(e.target.value)}
                   className="mt-1.5 w-full rounded-lg border border-line bg-canvas px-3.5 py-2 font-mono text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent"

@@ -256,7 +256,7 @@ export default function ConnectGitHubPage() {
 
               <div>
                 <label className="block text-[13px] font-medium text-ink">
-                  Personal Access Token (or leave blank for Demo)
+                  Personal Access Token
                 </label>
                 <input
                   type="password"

@@ -227,7 +227,7 @@ export default function ConnectGcpPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. whichcloud-prod-123 (Optional for Demo)"
+                  placeholder="e.g. whichcloud-prod-123"
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
                   className="mt-1.5 w-full rounded-lg border border-line bg-canvas px-3.5 py-2 font-mono text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-accent"
