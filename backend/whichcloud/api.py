@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import os
 import threading
 from decimal import Decimal
@@ -227,6 +228,77 @@ def _cached_intake(description: str, reader: str | None):
             while len(_intake_cache) > _INTAKE_CACHE_MAX:
                 _intake_cache.popitem(last=False)
             _intake_inflight.pop(key, None)
+        event.set()
+        return value
+
+
+#: `/recommend` and `/compare` are pure functions of (requirement, catalog
+#: state): the same structured body always prices the same way until the
+#: catalog is re-ingested. The landing page relies on exactly this -- its
+#: demo cards ask a handful of fixed questions on every visit, and
+#: lib/api.ts's `post(..., revalidate)` was written assuming a repeat ask
+#: comes back cheaply. On the deployed backend it does not: there is no
+#: Next.js server between a client-fetched call and this API (the `next`
+#: fetch option those calls pass is a browser no-op), Redis price caching
+#: is optional infra this deployment does not run, and the engine itself is
+#: CPU-bound enough that four of the landing page's own calls arriving
+#: together on Render's single worker measured 16s alone and ~46s wall-clock
+#: together -- the panels sitting blank that long is indistinguishable from
+#: broken. Single-flight plus a TTL closes exactly this gap: concurrent
+#: identical requests share one computation, and repeat visitors within the
+#: TTL get it from memory instead of re-running the engine.
+#:
+#: The TTL is not a freshness mechanism the way the intake cache's isn't
+#: either -- prices are re-ingested roughly daily -- it bounds how long a
+#: missed re-ingest could serve a stale figure, and 300s matches what the
+#: frontend already assumes for its cached demo queries.
+_ENGINE_CACHE_MAX = 256
+_ENGINE_CACHE_TTL_S = 300
+_engine_cache: "OrderedDict[str, tuple[float, object]]" = OrderedDict()
+_engine_cache_lock = threading.Lock()
+_engine_inflight: dict[str, threading.Event] = {}
+
+
+def _cached_engine_call(cache_key: str, compute):
+    """Single-flight, TTL'd memoisation for an expensive pure computation.
+    Same shape as `_cached_intake`; kept separate because this one expires
+    and that one does not -- an LLM read of the same text is timelessly
+    correct, a priced recommendation is only correct until the next ingest.
+    """
+    while True:
+        with _engine_cache_lock:
+            hit = _engine_cache.get(cache_key)
+            if hit is not None:
+                cached_at, value = hit
+                if time.monotonic() - cached_at < _ENGINE_CACHE_TTL_S:
+                    _engine_cache.move_to_end(cache_key)
+                    return value
+                del _engine_cache[cache_key]
+            event = _engine_inflight.get(cache_key)
+            if event is None:
+                event = _engine_inflight[cache_key] = threading.Event()
+                owner = True
+            else:
+                owner = False
+
+        if not owner:
+            event.wait()
+            continue
+
+        try:
+            value = compute()
+        except BaseException:
+            with _engine_cache_lock:
+                _engine_inflight.pop(cache_key, None)
+            event.set()
+            raise
+
+        with _engine_cache_lock:
+            _engine_cache[cache_key] = (time.monotonic(), value)
+            _engine_cache.move_to_end(cache_key)
+            while len(_engine_cache) > _ENGINE_CACHE_MAX:
+                _engine_cache.popitem(last=False)
+            _engine_inflight.pop(cache_key, None)
         event.set()
         return value
 
@@ -1053,6 +1125,14 @@ def techniques() -> dict:
     }
 
 
+def _requirement_cache_key(prefix: str, body: BaseModel) -> str:
+    """A stable key for a structured request body -- same fields, same
+    values, same key, regardless of what order the client happened to send
+    them in."""
+    payload = json.dumps(body.model_dump(), sort_keys=True, default=str)
+    return f"{prefix}:{hashlib.sha256(payload.encode()).hexdigest()}"
+
+
 @app.post("/recommend", response_model=RecommendationOut)
 def recommend_route(body: RecommendIn) -> RecommendationOut:
     """Three priced architectures for a structured requirement."""
@@ -1062,25 +1142,29 @@ def recommend_route(body: RecommendIn) -> RecommendationOut:
         raise HTTPException(400, str(exc)) from exc
 
     provider = requirement.provider_preference or "aws"
-    try:
-        options = recommend(requirement, provider)
-    except Exception as exc:
-        raise HTTPException(500, f"recommendation failed: {exc}") from exc
 
-    return RecommendationOut(
-        goal=requirement.goal,
-        region=requirement.region,
-        options=[_option_out(o, provider) for o in options],
-        criticality=options[0].criticality if options else "MEDIUM",
-        cheapest_compliant=_cheapest_compliant(options),
-        diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
-        not_applied=[
-            {"id": t.id, "name": t.name, "reason": why}
-            for t, why in why_not(requirement, provider)
-        ],
-        sizing_basis=SIZING_BASIS,
-        provider=provider,
-    )
+    def compute() -> RecommendationOut:
+        try:
+            options = recommend(requirement, provider)
+        except Exception as exc:
+            raise HTTPException(500, f"recommendation failed: {exc}") from exc
+
+        return RecommendationOut(
+            goal=requirement.goal,
+            region=requirement.region,
+            options=[_option_out(o, provider) for o in options],
+            criticality=options[0].criticality if options else "MEDIUM",
+            cheapest_compliant=_cheapest_compliant(options),
+            diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
+            not_applied=[
+                {"id": t.id, "name": t.name, "reason": why}
+                for t, why in why_not(requirement, provider)
+            ],
+            sizing_basis=SIZING_BASIS,
+            provider=provider,
+        )
+
+    return _cached_engine_call(_requirement_cache_key("recommend", body), compute)
 
 
 @app.post("/compare")
@@ -1095,48 +1179,50 @@ def compare_route(body: RecommendIn) -> dict:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    results = recommend_across_clouds(requirement)
-    providers = tuple(results)
+    def compute() -> dict:
+        results = recommend_across_clouds(requirement)
+        providers = tuple(results)
 
-    # WHAT MAY HONESTLY BE COMPARED, and what may not.
-    #
-    # The interface used to intersect line-item LABELS to work out which
-    # services all three clouds priced. That is a guess about equivalence
-    # made from text; knowledge-base/service-mappings is the answer, and
-    # it refuses on anything unmapped rather than assuming.
-    from whichcloud import mappings
-    from whichcloud.estimator import comparable_lines
+        # WHAT MAY HONESTLY BE COMPARED, and what may not.
+        #
+        # The interface used to intersect line-item LABELS to work out which
+        # services all three clouds priced. That is a guess about equivalence
+        # made from text; knowledge-base/service-mappings is the answer, and
+        # it refuses on anything unmapped rather than assuming.
+        from whichcloud import mappings
+        from whichcloud.estimator import comparable_lines
 
-    first = next(iter(results.values()), [])
-    estimates = [
-        options[0].estimate
-        for options in results.values() if options
-    ]
-    categories, refusals, caveats = (
-        comparable_lines(estimates, providers) if estimates else ([], [], [])
-    )
+        estimates = [
+            options[0].estimate
+            for options in results.values() if options
+        ]
+        categories, refusals, caveats = (
+            comparable_lines(estimates, providers) if estimates else ([], [], [])
+        )
 
-    return {
-        "goal": requirement.goal,
-        "region": requirement.region,
-        "sizing_basis": SIZING_BASIS,
-        "clouds": {
-            provider: [_option_out(o, provider).model_dump() for o in options]
-            for provider, options in results.items()
-        },
-        # The categories the compared totals actually cover. A total is
-        # only like-for-like over these.
-        "comparable_categories": categories,
-        # Services one cloud prices and another has no equivalent for, or
-        # that nobody has established an equivalence for. Each carries
-        # its reason, because a refusal nobody can check is not much
-        # better than a guess.
-        "not_comparable": refusals,
-        # Services that DO compare, but where the billing models differ
-        # enough that the difference is not purely price.
-        "comparison_caveats": caveats,
-        "mapping_coverage": mappings.coverage(),
-    }
+        return {
+            "goal": requirement.goal,
+            "region": requirement.region,
+            "sizing_basis": SIZING_BASIS,
+            "clouds": {
+                provider: [_option_out(o, provider).model_dump() for o in options]
+                for provider, options in results.items()
+            },
+            # The categories the compared totals actually cover. A total is
+            # only like-for-like over these.
+            "comparable_categories": categories,
+            # Services one cloud prices and another has no equivalent for, or
+            # that nobody has established an equivalence for. Each carries
+            # its reason, because a refusal nobody can check is not much
+            # better than a guess.
+            "not_comparable": refusals,
+            # Services that DO compare, but where the billing models differ
+            # enough that the difference is not purely price.
+            "comparison_caveats": caveats,
+            "mapping_coverage": mappings.coverage(),
+        }
+
+    return _cached_engine_call(_requirement_cache_key("compare", body), compute)
 
 
 def _designed_refusal(description: str, evidence: str) -> dict:
