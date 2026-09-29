@@ -389,6 +389,18 @@ export function CostRail({
                   −{money(option.measured_saving_usd)}/mo already optimised
                 </p>
               )}
+              {/* What this NUMBER buys, not why it was picked -- `because`
+                  below answers a different question and only appears under
+                  the recommended tier. Without this, switching to "Most
+                  optimized" showed a price several times "Most reliable"'s
+                  with nothing on screen to say what the extra money bought:
+                  a real jump (a full analytics path, edge protection, warm
+                  capacity) read as an unexplained, possibly broken number. */}
+              {option.rationale && (
+                <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink-2">
+                  {option.rationale}
+                </p>
+              )}
             </div>
             {/* The shape as an aligned definition list. Labels in one column,
                 values in another, values in mono so figures and identifiers
