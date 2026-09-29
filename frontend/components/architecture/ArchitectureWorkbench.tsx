@@ -157,8 +157,12 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
       const link = document.createElement("a");
       link.href = url;
       link.download = "aws-architecture.svg";
+      // See app/terraform/page.tsx's handleDownloadZip for why the click
+      // and the revoke are no longer back-to-back on the same line.
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch {
       setError("Could not export SVG.");
     }

@@ -478,8 +478,18 @@ module "managed_db" {
       const link = document.createElement("a");
       link.href = url;
       link.download = `whichcloud-${cloud}-${selectedOption.toLowerCase().replace(/\s+/g, "-")}.zip`;
+      // Attached before the click, not left detached: some browsers only
+      // reliably honour a synthetic click's `download` attribute on an
+      // anchor that is actually in the document. Revoked on a delay, not
+      // right after click() -- click() returns as soon as the click event
+      // has been dispatched, not once the browser has finished reading the
+      // blob to save it, so revoking synchronously could free the data out
+      // from under a download still in progress, which is exactly what a
+      // present-but-empty (or truncated) .tf inside the zip would look like.
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Failed to generate Terraform ZIP.");
     } finally {

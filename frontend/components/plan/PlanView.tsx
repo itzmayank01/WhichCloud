@@ -53,8 +53,15 @@ function DownloadTerraformButton({
       const link = document.createElement("a");
       link.href = url;
       link.download = "whichcloud-terraform.zip";
+      // Attached before the click and revoked on a delay -- see the same
+      // fix in app/terraform/page.tsx's handleDownloadZip for why: some
+      // browsers only honour a detached anchor's download inconsistently,
+      // and revoking synchronously can free the blob before the browser
+      // has finished reading it, which looks like a present-but-empty zip.
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Export failed.");
     } finally {

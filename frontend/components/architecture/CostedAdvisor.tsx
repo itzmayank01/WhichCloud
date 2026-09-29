@@ -119,8 +119,13 @@ function DownloadTerraformButton({
       const link = document.createElement("a");
       link.href = url;
       link.download = "whichcloud-terraform.zip";
+      // See app/terraform/page.tsx's handleDownloadZip: attached before
+      // the click, revoked on a delay rather than synchronously, so a
+      // slow browser can't have the blob freed out from under it mid-save.
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Export failed.");
     } finally {
