@@ -193,3 +193,47 @@ def test_engine_errors_are_not_cached(client, monkeypatch):
     second = client.post("/compare", json=BODY)
     assert second.status_code == 200
     assert call_count["n"] == 2
+
+
+@needs_db
+def test_warmer_populates_the_cache_for_every_known_landing_page_query(client):
+    """The production incident this whole file exists for was the FIRST
+    visitor after a cold start/cache expiry paying the full cost -- the
+    warmer is what's supposed to make that visitor rare. Assert it actually
+    leaves every query it claims to warm sitting in the cache, hit-ready."""
+    api_module._warm_landing_page_queries()
+
+    for raw in api_module._LANDING_PAGE_COMPARE_QUERIES:
+        key = api_module._requirement_cache_key(
+            "compare", api_module.RecommendIn(**raw)
+        )
+        assert key in api_module._engine_cache, f"not warmed: {raw['goal']!r}"
+
+    for raw in api_module._LANDING_PAGE_RECOMMEND_QUERIES:
+        key = api_module._requirement_cache_key(
+            "recommend", api_module.RecommendIn(**raw)
+        )
+        assert key in api_module._engine_cache, f"not warmed: {raw['goal']!r}"
+
+
+def test_warmer_never_raises_even_if_a_query_is_malformed(monkeypatch):
+    """A future edit to the warm-query list that typos a field must not take
+    the whole app down at startup -- see the per-query try/except in
+    `_warm_landing_page_queries`."""
+    monkeypatch.setattr(
+        api_module, "_LANDING_PAGE_COMPARE_QUERIES", [{"goal": "x", "workload_type": "not-a-real-type"}]
+    )
+    monkeypatch.setattr(api_module, "_LANDING_PAGE_RECOMMEND_QUERIES", [])
+    api_module._warm_landing_page_queries()  # must not raise
+
+
+def test_warmer_does_not_start_under_pytest():
+    """`_start_cache_warmer` checks `"pytest" in sys.modules` before
+    spawning its background thread -- confirm it actually takes that
+    branch when run the way every other test in this suite runs."""
+    import threading
+
+    before = threading.active_count()
+    api_module._start_cache_warmer()
+    after = threading.active_count()
+    assert after == before, "warmer thread started during a pytest run"

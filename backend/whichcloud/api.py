@@ -16,6 +16,7 @@ Two things it deliberately exposes that a typical API would hide:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -48,6 +49,15 @@ from .pricing.models import REGIONS
 from .auth import current_owner, finops_owner
 from .requirements import Requirement
 
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # _start_cache_warmer is defined further down, beside the routes it
+    # warms -- fine to reference by name here, since this only runs once
+    # the whole module (and that name) already exists, on actual startup.
+    _start_cache_warmer()
+    yield
+
+
 app = FastAPI(
     title="WhichCloud",
     description=(
@@ -56,6 +66,7 @@ app = FastAPI(
         "second source; sizing is heuristic and labelled as such."
     ),
     version="0.1.0",
+    lifespan=_lifespan,
 )
 
 # The frontend runs on a different port in development, and on a different
@@ -1223,6 +1234,73 @@ def compare_route(body: RecommendIn) -> dict:
         }
 
     return _cached_engine_call(_requirement_cache_key("compare", body), compute)
+
+
+#: The landing page's fixed demo queries. Kept in sync BY HAND with
+#: frontend/components/landing/HeroShowcaseSection.tsx, AskDemoSection.tsx
+#: and lib/landingData.ts -- if one of those bodies changes, this cache
+#: warms the wrong (or an extra, harmless) key rather than a wrong result,
+#: since a warm miss still falls through to a normal cold compute on the
+#: real request. Getting this list stale costs latency, not correctness.
+_LANDING_PAGE_COMPARE_QUERIES: list[dict] = [
+    {"goal": "a video streaming API", "workload_type": "api", "traffic_pattern": "steady", "traffic_scale": "high", "storage_gb": 2000, "egress_gb": 5000},
+    {"goal": "an online shop", "workload_type": "web", "traffic_pattern": "spiky", "traffic_scale": "medium", "storage_gb": 200, "egress_gb": 500},
+    {"goal": "a read-heavy API", "workload_type": "api", "traffic_pattern": "steady", "traffic_scale": "medium", "storage_gb": 100, "egress_gb": 300},
+    {"goal": "nightly batch processing", "workload_type": "batch", "traffic_pattern": "steady", "traffic_scale": "low", "storage_gb": 500, "egress_gb": 50},
+]
+_LANDING_PAGE_RECOMMEND_QUERIES: list[dict] = [
+    {"goal": "an online shop", "workload_type": "web", "traffic_pattern": "spiky", "traffic_scale": "medium", "storage_gb": 200, "egress_gb": 500},
+]
+
+#: Comfortably under _ENGINE_CACHE_TTL_S (300s) so a refresh always lands
+#: well before the previous one could expire -- a real visitor should never
+#: be the one to observe a gap between them.
+_CACHE_WARM_INTERVAL_S = 180
+
+
+def _warm_landing_page_queries() -> None:
+    """Recompute the landing page's fixed queries through the same cached
+    routes a browser would call, so the cache a real visitor hits is warm
+    rather than something this process has never been asked for yet.
+
+    Calling the route functions directly rather than duplicating their
+    logic keeps this warmer unable to drift from what a request actually
+    returns -- there is one code path, this just calls it early and on a
+    timer instead of waiting for a person to.
+    """
+    import logging
+
+    log = logging.getLogger("whichcloud.api")
+    for raw in _LANDING_PAGE_COMPARE_QUERIES:
+        try:
+            compare_route(RecommendIn(**raw))
+        except Exception as exc:  # noqa: BLE001 -- a warm miss must never crash the warmer
+            log.warning("cache warm (compare) failed for %r: %s", raw.get("goal"), exc)
+    for raw in _LANDING_PAGE_RECOMMEND_QUERIES:
+        try:
+            recommend_route(RecommendIn(**raw))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("cache warm (recommend) failed for %r: %s", raw.get("goal"), exc)
+
+
+def _warm_landing_page_queries_forever() -> None:
+    while True:
+        _warm_landing_page_queries()
+        time.sleep(_CACHE_WARM_INTERVAL_S)
+
+
+def _start_cache_warmer() -> None:
+    # A background daemon thread rather than an awaited startup step: the
+    # first request after a cold start should not wait behind this, it
+    # should race it -- whichever finishes first populates the cache for
+    # the other. Not started under pytest: the whole point of a test run is
+    # to control what the engine is asked and when, and a warmer ticking in
+    # the background every 180s would do that behind the suite's back.
+    import sys
+
+    if "pytest" in sys.modules:
+        return
+    threading.Thread(target=_warm_landing_page_queries_forever, daemon=True).start()
 
 
 def _designed_refusal(description: str, evidence: str) -> dict:
