@@ -76,6 +76,13 @@ class VerifyResult:
     #: blending two accounts' costs into one report.
     account_id: str = ""
     message: str = ""
+    #: Adapter-specific payload beyond the one-line message -- e.g.
+    #: GitHub's scan returns priced line items here. Empty for every
+    #: adapter that has nothing more to say than `message`; deliberately
+    #: a free-form dict rather than a new field per adapter; this is
+    #: where an adapter says MORE, not a second source of truth about
+    #: whether the connection worked (that is still `ok`/`message`).
+    data: dict = field(default_factory=dict)
 
 
 @dataclass

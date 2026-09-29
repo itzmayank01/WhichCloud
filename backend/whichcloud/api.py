@@ -2365,13 +2365,22 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
     # and Fernet before that provider is wired up; it is not, and this only
     # runs for a provider whose read path exists.)
     if res.ok:
+        # GitHub's `github_token` is a real secret (repo read access),
+        # unlike AWS's role ARN/external id above -- it is read once for
+        # the scan in connections/github.py and must not end up at rest
+        # here. Stripped rather than saved-then-redacted-on-read: a value
+        # that is never written cannot later leak from a dump or a log of
+        # this table.
+        saved_config = creds
+        if p == "github":
+            saved_config = {k: v for k, v in creds.items() if k != "github_token"}
         try:
             store.save_connection(
                 owner=owner,
                 provider=p,
                 display_name=f"{p.upper()} {res.account_id or ''}".strip(),
                 account_id=res.account_id or "",
-                config=creds,
+                config=saved_config,
                 status="active",
             )
         except Exception as exc:
@@ -2388,6 +2397,9 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
         "message": res.message,
         "provider": p,
         "connection_id": f"conn_{p}_{res.account_id or 'demo'}",
+        # Empty for every adapter except GitHub's scan today -- see
+        # VerifyResult.data's docstring in connections/models.py.
+        "data": res.data,
     }
 
 

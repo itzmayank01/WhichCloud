@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
-import { api } from "@/lib/api";
+import { api, money, type ConnectionVerifyResult } from "@/lib/api";
 import { setStoredAccount } from "@/lib/connectedAccount";
 
+type ScanResult = {
+  accountId: string;
+  message: string;
+} & NonNullable<ConnectionVerifyResult["data"]>;
+
 export default function ConnectGitHubPage() {
-  const router = useRouter();
   const { getToken, userId } = useAuth();
   const [showModal, setShowModal] = useState(false);
   // Starts empty: a pre-filled repository reads as one already chosen, and
@@ -21,6 +24,12 @@ export default function ConnectGitHubPage() {
   const [verifying, setVerifying] = useState(false);
   const [connectedOrgs, setConnectedOrgs] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  /* The scanned result, shown on THIS page rather than by navigating to
+     /finops. /api/finops/live 501s every non-AWS provider on purpose --
+     this is a predicted cost from static Terraform, not a bill, and the
+     codebase has already been burned once by a page that let those two
+     things look the same. See connections/github.py's module docstring. */
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,11 +65,16 @@ export default function ConnectGitHubPage() {
           name: `GitHub repository (${accId})`,
           region: "us-east-1",
         });
-        setTimeout(() => {
-          router.push(
-            `/finops?provider=github&account_id=${encodeURIComponent(accId)}`
-          );
-        }, 600);
+        setScanResult({
+          accountId: accId,
+          message: res.message,
+          items: res.data?.items ?? [],
+          missing: res.data?.missing ?? [],
+          monthly_cost: res.data?.monthly_cost ?? 0,
+          region: res.data?.region ?? "",
+        });
+        setShowModal(false);
+        setVerifying(false);
       } else {
         setErrorMsg(res.message || "Failed to scan GitHub repository.");
         setVerifying(false);
@@ -114,7 +128,86 @@ export default function ConnectGitHubPage() {
         </div>
       </div>
 
-      {/* Main Card matching Screenshot 5 */}
+      {/* Main Card matching Screenshot 5 -- or the scan result, once there is one. */}
+      {scanResult ? (
+        <div className="mt-14 flex flex-col items-center">
+          <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface p-6 shadow-xs">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+                  <Icon icon="mdi:check-circle" className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <h3 className="text-[16px] font-bold text-ink">{scanResult.accountId}</h3>
+                  <p className="text-[12.5px] text-ink-3">{scanResult.message}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setScanResult(null);
+                  setRepoUrl("");
+                  setToken("");
+                }}
+                className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-[12.5px] font-medium text-ink-2 hover:bg-sunk hover:text-ink"
+              >
+                Scan another repo
+              </button>
+            </div>
+
+            {/* Predicted, not billed -- said once, plainly, next to the number
+                itself rather than buried in copy above it. /api/finops/live
+                is where "live" spend lives; this is a static-analysis guess. */}
+            <div className="mt-5 rounded-xl border border-line bg-canvas p-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[13px] text-ink-2">Predicted monthly cost</span>
+                <span className="font-mono text-[24px] font-bold text-ink">
+                  {money(scanResult.monthly_cost ?? 0)}
+                  <span className="text-[13px] font-normal text-ink-3">/mo</span>
+                </span>
+              </div>
+              <p className="mt-1 text-[11.5px] text-ink-3">
+                From static analysis of this repository&apos;s Terraform
+                {scanResult.region ? ` in ${scanResult.region}` : ""} — not a live bill.
+              </p>
+            </div>
+
+            {(scanResult.items?.length ?? 0) > 0 && (
+              <div className="mt-4">
+                <h4 className="text-[12.5px] font-semibold uppercase tracking-wide text-ink-3">
+                  Priced resources
+                </h4>
+                <div className="mt-2 divide-y divide-line rounded-xl border border-line">
+                  {scanResult.items!.map((item) => (
+                    <div key={item.label} className="flex items-center justify-between px-3 py-2 text-[13px]">
+                      <div>
+                        <div className="text-ink">{item.label}</div>
+                        <div className="font-mono text-[11.5px] text-ink-3">{item.sku}</div>
+                      </div>
+                      <div className="font-mono font-semibold text-ink">{money(item.monthly)}/mo</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(scanResult.missing?.length ?? 0) > 0 && (
+              <div className="mt-4">
+                <h4 className="text-[12.5px] font-semibold uppercase tracking-wide text-ink-3">
+                  Not priced
+                </h4>
+                <ul className="mt-2 space-y-1.5 rounded-xl border border-line bg-canvas p-3 text-[12.5px] text-ink-2">
+                  {scanResult.missing!.map((reason) => (
+                    <li key={reason} className="flex gap-2">
+                      <Icon icon="mdi:information-outline" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-3" />
+                      <span>{reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="mt-20 flex flex-col items-center justify-center text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface border border-line shadow-xs">
           <Icon icon="mdi:github" className="h-10 w-10 text-ink" />
@@ -178,6 +271,7 @@ export default function ConnectGitHubPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* GitHub Setup Modal */}
       {showModal && (

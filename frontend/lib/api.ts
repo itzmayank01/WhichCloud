@@ -953,6 +953,15 @@ export type ConnectionVerifyResult = {
   message: string;
   provider: string;
   connection_id: string;
+  /** Adapter-specific payload beyond `message` -- populated by GitHub's
+   *  Terraform scan (see connections/github.py), empty for every other
+   *  provider. A predicted cost from static code, never live billing data. */
+  data?: {
+    items?: Array<{ label: string; sku: string; monthly: number }>;
+    missing?: string[];
+    monthly_cost?: number;
+    region?: string;
+  };
 };
 
 export type FinOpsNode = {
