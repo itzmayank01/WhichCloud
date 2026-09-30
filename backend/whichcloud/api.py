@@ -30,10 +30,11 @@ from collections import OrderedDict, defaultdict, deque
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from . import github_app
 from . import topology as topo
 from .engine import (
     SIZING_BASIS,
@@ -2401,6 +2402,144 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
         # VerifyResult.data's docstring in connections/models.py.
         "data": res.data,
     }
+
+
+# ── GitHub App: sign-in-scoped repo listing ──────────────────────────────
+#
+# Deliberately separate from /api/connections/{setup,verify}'s `github`
+# branch above, which is a different, narrower feature: given a PAT and a
+# repo that already contains Terraform, price it directly, no repo
+# listing, no installation. This is "let me pick from my own repos",
+# built on a GitHub App installation rather than a pasted token.
+
+
+def _shape_repo(repo: dict) -> dict:
+    return {
+        "full_name": repo.get("full_name", ""),
+        "private": bool(repo.get("private")),
+        "language": repo.get("language"),
+        "pushed_at": repo.get("pushed_at"),
+        "html_url": repo.get("html_url", ""),
+        "default_branch": repo.get("default_branch", "main"),
+    }
+
+
+@app.get("/api/github/connect")
+def github_connect(owner: str = Depends(current_owner)) -> dict:
+    """Where to send the browser to install the App and authorize as this owner."""
+    try:
+        return {"authorize_url": github_app.install_url(owner)}
+    except github_app.GitHubAppError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/github/oauth/callback")
+def github_oauth_callback(
+    code: str | None = None,
+    installation_id: int | None = None,
+    setup_action: str | None = None,
+    state: str | None = None,
+) -> RedirectResponse:
+    """Where GitHub sends the browser back after Install & Authorize.
+
+    A plain browser navigation, not an API call the frontend awaits -- so
+    every outcome, success or failure, ends in a redirect to the picker
+    page rather than a JSON body nobody is there to read.
+    """
+    from urllib.parse import quote
+
+    frontend = os.getenv("WHICHCLOUD_FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    target = f"{frontend}/connect/github-app"
+
+    def _fail(message: str) -> RedirectResponse:
+        return RedirectResponse(f"{target}?error={quote(message)}")
+
+    if not state:
+        return _fail("Missing state -- please start the connection again.")
+    try:
+        owner = github_app.verify_state(state)
+    except github_app.GitHubAppError as exc:
+        return _fail(str(exc))
+
+    if not (code and installation_id and setup_action == "install"):
+        return _fail("GitHub did not complete the installation.")
+
+    try:
+        user = github_app.exchange_code_for_user(code)
+        account = github_app.installation_account(installation_id)
+    except github_app.GitHubAppError as exc:
+        return _fail(str(exc))
+
+    try:
+        store.save_github_installation(
+            owner=owner,
+            installation_id=installation_id,
+            account_login=account["login"],
+            account_type=account["type"],
+            github_login=user.get("login", ""),
+        )
+    except Exception as exc:
+        return _fail(f"Connected, but could not save it: {exc}")
+
+    return RedirectResponse(f"{target}?connected=1")
+
+
+@app.get("/api/github/repos")
+def github_repos(owner: str = Depends(current_owner)) -> dict:
+    """This owner's repos: everything their installation(s) grant, plus
+    their public repos as a fallback so an install-in-progress user still
+    sees something."""
+    installations = store.list_github_installations(owner)
+    repos: dict[str, dict] = {}
+    errors: list[str] = []
+
+    for inst in installations:
+        try:
+            for r in github_app.list_installation_repos(inst["installation_id"]):
+                repos[r["full_name"]] = _shape_repo(r)
+        except github_app.GitHubAppError as exc:
+            errors.append(str(exc))
+
+    github_login = next((i["github_login"] for i in installations if i["github_login"]), "")
+    if github_login:
+        try:
+            for r in github_app.list_public_repos(github_login):
+                repos.setdefault(r["full_name"], _shape_repo(r))
+        except github_app.GitHubAppError:
+            pass  # the public list is a bonus, not load-bearing
+
+    return {
+        "installed": bool(installations),
+        "github_login": github_login,
+        "repos": sorted(repos.values(), key=lambda r: r["pushed_at"] or "", reverse=True),
+        "errors": errors,
+    }
+
+
+@app.post("/api/github/webhook")
+async def github_webhook(request: Request) -> dict:
+    """`installation` (deleted) and `installation_repositories` events.
+
+    Repo lists are never cached server-side -- /api/github/repos always
+    asks GitHub fresh -- so only the `installation` deletion needs a
+    database change here; an added/removed repository is already reflected
+    the next time the picker loads.
+    """
+    raw = await request.body()
+    try:
+        github_app.verify_webhook_signature(raw, request.headers.get("X-Hub-Signature-256"))
+    except github_app.GitHubAppError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    event = request.headers.get("X-GitHub-Event", "")
+    body = json.loads(raw)
+
+    if event == "installation" and body.get("action") == "deleted":
+        installation_id = (body.get("installation") or {}).get("id")
+        if installation_id:
+            store.delete_github_installations_by_installation_id(installation_id)
+
+    return {"ok": True}
 
 
 # ── per-caller AWS credentials ──────────────────────────────────────────

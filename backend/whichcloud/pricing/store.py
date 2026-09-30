@@ -701,3 +701,70 @@ def delete_connection(owner: str, provider: str, dsn: str | None = None) -> bool
             (owner, provider),
         ).fetchone()
     return row is not None
+
+
+# ── GitHub App installations ────────────────────────────────────────────
+#
+# What is stored is the mapping from an owner to an installation id --
+# never a token. See github_app.py: every read mints a fresh installation
+# access token from the App's private key, which GitHub itself expires
+# within the hour.
+
+
+def save_github_installation(
+    owner: str,
+    installation_id: int,
+    account_login: str,
+    account_type: str,
+    github_login: str,
+    dsn: str | None = None,
+) -> None:
+    """Record (or refresh) that this owner administers this installation."""
+    with connect(dsn) as conn:
+        conn.execute(
+            """
+            INSERT INTO github_installations
+                (owner, installation_id, account_login, account_type, github_login)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (owner, installation_id) DO UPDATE SET
+                account_login = EXCLUDED.account_login,
+                account_type  = EXCLUDED.account_type,
+                github_login  = EXCLUDED.github_login
+            """,
+            (owner, installation_id, account_login, account_type, github_login),
+        )
+
+
+def list_github_installations(owner: str, dsn: str | None = None) -> list[dict]:
+    """Every installation this owner administers, most recent first."""
+    with connect(dsn) as conn:
+        return [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT installation_id, account_login, account_type, github_login, created_at
+                FROM github_installations
+                WHERE owner = %s
+                ORDER BY created_at DESC
+                """,
+                (owner,),
+            ).fetchall()
+        ]
+
+
+def delete_github_installations_by_installation_id(
+    installation_id: int, dsn: str | None = None
+) -> int:
+    """Forget an installation everywhere.
+
+    Called from the uninstall webhook, which names only an installation id
+    -- GitHub does not tell us which of our owners administered it, and an
+    installation can (rarely) have been linked by more than one, so this
+    clears every row rather than assuming exactly one.
+    """
+    with connect(dsn) as conn:
+        rows = conn.execute(
+            "DELETE FROM github_installations WHERE installation_id = %s RETURNING id",
+            (installation_id,),
+        ).fetchall()
+    return len(rows)

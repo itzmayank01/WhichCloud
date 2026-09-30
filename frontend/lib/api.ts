@@ -855,6 +855,16 @@ export const api = {
   connectionVerify: (provider: string, credentials: Record<string, unknown> = {}, token?: string) =>
     post<ConnectionVerifyResult>("/api/connections/verify", { provider, credentials }, undefined, token),
 
+  // GitHub App sign-in: distinct from connectionSetup/connectionVerify's
+  // `github` branch above, which is the PAT-based Terraform scanner. This
+  // is "list my repos", so both calls carry the Clerk token and neither
+  // caches -- the list depends on which installations exist right now.
+  githubConnect: (token?: string) =>
+    get<{ authorize_url: string }>("/api/github/connect", 0, token),
+
+  githubRepos: (token?: string) =>
+    get<GitHubReposResponse>("/api/github/repos", 0, token),
+
   // FinOps Live sends account telemetry and executes real infrastructure
   // actions, so every call here takes the Clerk session token -- same
   // reasoning as savedArchitectures/deleteArchitecture above. The backend
@@ -962,6 +972,29 @@ export type ConnectionVerifyResult = {
     monthly_cost?: number;
     region?: string;
   };
+};
+
+/** One row in the GitHub App repo picker. Shaped by the backend from
+ *  GitHub's own repo object -- see `_shape_repo` in api.py -- so this type
+ *  only needs the fields the picker actually renders. */
+export type GitHubRepo = {
+  full_name: string;
+  private: boolean;
+  language: string | null;
+  pushed_at: string | null;
+  html_url: string;
+  default_branch: string;
+};
+
+export type GitHubReposResponse = {
+  /** Whether the App is installed anywhere for this owner. False means the
+   *  list below (if non-empty) is public repos only. */
+  installed: boolean;
+  github_login: string;
+  repos: GitHubRepo[];
+  /** Per-installation fetch failures -- e.g. one installation revoked
+   *  mid-session -- surfaced rather than silently dropped. */
+  errors: string[];
 };
 
 export type FinOpsNode = {

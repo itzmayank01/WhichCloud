@@ -245,3 +245,34 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 
 CREATE INDEX IF NOT EXISTS idx_sync_runs_connection
     ON sync_runs (connection_id, started_at DESC);
+
+-- ── GitHub App installations ─────────────────────────────────────────
+--
+-- One row per (WhichCloud owner, GitHub installation). What is stored is
+-- the mapping only -- never a token. Reading anything from GitHub mints a
+-- fresh installation access token from the App's own private key (see
+-- github_app.py) that expires within the hour; this table exists so the
+-- server knows which installation ids a given owner may ask a token for,
+-- and so the uninstall webhook -- which names only an installation id,
+-- never an owner -- has something to delete.
+CREATE TABLE IF NOT EXISTS github_installations (
+    id               BIGSERIAL PRIMARY KEY,
+    owner            TEXT NOT NULL,              -- verified Clerk subject
+    installation_id  BIGINT NOT NULL,
+    account_login    TEXT NOT NULL DEFAULT '',   -- where the app was installed
+    account_type     TEXT NOT NULL DEFAULT ''
+                     CHECK (account_type IN ('', 'User', 'Organization')),
+    github_login     TEXT NOT NULL DEFAULT '',   -- the authorizing user's own login
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    -- Re-installing (e.g. after a token issue) should update the row
+    -- rather than double it.
+    UNIQUE (owner, installation_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_github_installations_owner
+    ON github_installations (owner, created_at DESC);
+
+-- The uninstall webhook looks up by installation id alone.
+CREATE INDEX IF NOT EXISTS idx_github_installations_installation
+    ON github_installations (installation_id);
