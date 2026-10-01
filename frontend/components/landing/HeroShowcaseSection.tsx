@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { HeroShowcase, type ShowcaseData } from "@/components/landing/HeroShowcase";
+import { ShimmerBlock } from "@/components/ui/ShimmerBlock";
 import { api } from "@/lib/api";
 
 const LABEL: Record<string, string> = {
@@ -10,14 +11,44 @@ const LABEL: Record<string, string> = {
   gcp: "Google Cloud",
 };
 
-function Skeleton() {
+//: Render's free tier sleeps the backend after 15 minutes idle; the first
+//: request after that wakes it, which the client already retries through
+//: (see fetchThroughWake in lib/api.ts) but can still take the better part
+//: of a minute. Said here rather than left silent, same reasoning as the
+//: AWS connect page's identical wait.
+const SLOW_HINT_DELAY_MS = 6000;
+
+function Skeleton({ slow }: { slow: boolean }) {
   return (
     <div className="space-y-4">
-      <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 300 }} />
+      <ShimmerBlock height={300} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
-        <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
+        <ShimmerBlock height={200} />
+        <ShimmerBlock height={200} />
       </div>
+      {slow && (
+        <p className="text-center text-[12.5px] text-ink-3">
+          Waking up the pricing engine&hellip; first load after a few idle
+          minutes can take up to a minute.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-line bg-canvas px-6 py-10 text-center">
+      <p className="text-[13.5px] text-ink-2">
+        Couldn&apos;t load the live example. The pricing engine may still be
+        waking up, or the request timed out.
+      </p>
+      <button
+        onClick={onRetry}
+        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-2 hover:bg-sunk hover:text-ink"
+      >
+        Retry
+      </button>
     </div>
   );
 }
@@ -30,8 +61,24 @@ function Skeleton() {
  */
 export function HeroShowcaseSection() {
   const [data, setData] = useState<ShowcaseData | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [slow, setSlow] = useState(false);
+  // Bumped to re-run the effect below from the retry button, without
+  // duplicating the fetch-and-shape logic in two places.
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setFailed(false);
+    setSlow(false);
+    setAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
+    // `failed`/`slow` are reset by retry() before it bumps `attempt`, so
+    // the initial mount (where both already default to false) needs no
+    // reset here.
+    const slowTimer = setTimeout(() => setSlow(true), SLOW_HINT_DELAY_MS);
+
     Promise.all([
       api.compare(
         {
@@ -55,10 +102,16 @@ export function HeroShowcaseSection() {
           }))
           .filter((r) => r.option);
 
-        if (balanced.length < 2) return;
+        if (balanced.length < 2) {
+          setFailed(true);
+          return;
+        }
 
         const whole = balanced.filter((r) => r.option.complete);
-        if (whole.length === 0) return;
+        if (whole.length === 0) {
+          setFailed(true);
+          return;
+        }
 
         const cheapest = whole.reduce((a, b) =>
           a.option.monthly_usd <= b.option.monthly_usd ? a : b,
@@ -122,9 +175,16 @@ export function HeroShowcaseSection() {
         });
       })
       .catch(() => {
-        /* Renders nothing on any fetch failure */
+        setFailed(true);
+      })
+      .finally(() => {
+        clearTimeout(slowTimer);
       });
-  }, []);
 
-  return data ? <HeroShowcase data={data} /> : <Skeleton />;
+    return () => clearTimeout(slowTimer);
+  }, [attempt]);
+
+  if (data) return <HeroShowcase data={data} />;
+  if (failed) return <LoadError onRetry={retry} />;
+  return <Skeleton slow={slow} />;
 }

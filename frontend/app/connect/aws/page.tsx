@@ -7,6 +7,7 @@ import { useAuth } from "@clerk/nextjs";
 import { Icon } from "@iconify/react";
 import { api, type ConnectionSetup } from "@/lib/api";
 import { setStoredAccount } from "@/lib/connectedAccount";
+import { ShimmerBlock } from "@/components/ui/ShimmerBlock";
 
 //: Gap BETWEEN checks, not a tick rate: the next check is scheduled once the
 //: previous one has answered, so a slow backend cannot cause them to overlap.
@@ -382,8 +383,8 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
               Preparing your connection details&hellip; this can take up to a minute
               if the service has been idle.
             </p>
-            <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 120 }} />
-            <div className="animate-pulse rounded-xl border border-line bg-sunk" style={{ height: 200 }} />
+            <ShimmerBlock height={120} />
+            <ShimmerBlock height={200} />
           </div>
         )}
 

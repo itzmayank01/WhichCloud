@@ -91,18 +91,11 @@ _CONFIGURED_ORIGINS = [
     if origin.strip()
 ]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[*_LOCAL_ORIGINS, *_CONFIGURED_ORIGINS],
-    # Vercel gives every deployment its own hostname, so a preview build is a
-    # different origin from the production one and from every other preview.
-    # Naming them individually would mean editing this list per deploy; the
-    # pattern is anchored at both ends so it cannot match a domain that merely
-    # CONTAINS the project name.
-    allow_origin_regex=os.getenv("WHICHCLOUD_ALLOWED_ORIGIN_REGEX") or None,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
+# NOTE: CORSMiddleware is registered BELOW the rate limiter, not here.
+# Starlette builds the stack so the LAST-added middleware is the OUTERMOST
+# one, and CORS has to be outermost or any middleware that short-circuits
+# above it answers without CORS headers. See the note at the add_middleware
+# call after RateLimitMiddleware.
 
 
 #: Endpoints that mutate real infrastructure or spend a provider credential
@@ -119,7 +112,19 @@ _STRICT_RATE_PATHS = (
 )
 _STRICT_LIMIT = 10
 _STRICT_WINDOW_SECONDS = 60.0
-_DEFAULT_LIMIT = 120
+#: Read-only endpoints, which is everything not named above. Was 120/min,
+#: which sounds generous and is not: ONE landing page visit makes seven
+#: backend calls (four /compare, two /health, one /techniques), so this
+#: capped a single browser at about seventeen page views a minute -- and
+#: server-side rendering on Vercel issues its calls from Vercel's IP, not
+#: the visitor's, so every SSR request for every visitor in a region shares
+#: a single bucket. Reloading the landing page a few times was enough to
+#: trip it.
+#:
+#: Nothing here mutates anything or spends a credential; the cost of an
+#: extra read is a cached engine call. The budget that actually bounds
+#: damage is _STRICT_LIMIT, which is unchanged.
+_DEFAULT_LIMIT = 600
 _DEFAULT_WINDOW_SECONDS = 60.0
 
 
@@ -173,6 +178,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(RateLimitMiddleware)
+
+# Registered LAST, which makes it the OUTERMOST middleware -- Starlette
+# builds the stack in reverse registration order.
+#
+# This is not a style preference. CORS used to be registered first, so the
+# rate limiter sat outside it, and a 429 returned from `dispatch` above
+# never passed back through this middleware. The browser therefore saw a
+# response with no Access-Control-Allow-Origin and reported "blocked by
+# CORS policy" instead of "rate limited" -- and `fetchThroughWake` in
+# lib/api.ts treats that failure as a thrown TypeError (a cold backend
+# looks identical), so it retried five times over ~61 seconds, multiplying
+# a single rate-limited page load into roughly forty more requests and
+# guaranteeing the limit stayed tripped. One landing page visit makes
+# seven calls, so this was reachable in ordinary use, and it presented as
+# the landing page's panels sitting blank for a minute.
+#
+# Outermost means every response gets CORS headers, including ones no
+# route ever saw.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[*_LOCAL_ORIGINS, *_CONFIGURED_ORIGINS],
+    # Vercel gives every deployment its own hostname, so a preview build is a
+    # different origin from the production one and from every other preview.
+    # Naming them individually would mean editing this list per deploy; the
+    # pattern is anchored at both ends so it cannot match a domain that merely
+    # CONTAINS the project name.
+    allow_origin_regex=os.getenv("WHICHCLOUD_ALLOWED_ORIGIN_REGEX") or None,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
 #: A read-through in front of `parse_description`, which now keeps its draft

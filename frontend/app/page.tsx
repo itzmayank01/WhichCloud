@@ -9,6 +9,7 @@ import { AskDemoSection } from "@/components/landing/AskDemoSection";
 import { PipelineSection } from "@/components/landing/PipelineSection";
 import { HeroFreshness } from "@/components/landing/HeroFreshness";
 import { HeroShowcaseSection } from "@/components/landing/HeroShowcaseSection";
+import { ShimmerBlock } from "@/components/ui/ShimmerBlock";
 import { AskBadge, ChartBadge } from "@/components/landing/Badges";
 import { Provenance } from "@/components/landing/Provenance";
 import {
@@ -163,27 +164,7 @@ function TerraformVisual() {
    reserves roughly the height of the real thing so the page does not jump
    when the content lands. */
 function Loading({ height }: { height: number }) {
-  return (
-    <div
-      className="relative overflow-hidden rounded-xl border border-line bg-sunk"
-      style={{ height }}
-      aria-hidden
-    >
-      {/* Animated gradient shimmer that's more visible than bare pulse */}
-      <div
-        className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-ink/5 to-transparent"
-        style={{
-          animation: "shimmer 2s infinite",
-        }}
-      />
-      <style>{`
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      `}</style>
-    </div>
-  );
+  return <ShimmerBlock height={height} />;
 }
 
 /* ─────────────────────────── page ─────────────────────────── */
