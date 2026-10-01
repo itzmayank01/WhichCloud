@@ -100,6 +100,30 @@ def test_cors_is_the_outermost_middleware():
     assert app.user_middleware[0].cls is CORSMiddleware
 
 
+def test_public_read_endpoints_are_cacheable(fresh_client):
+    resp = fresh_client.get("/health")
+    assert resp.status_code == 200
+    cache_control = resp.headers.get("cache-control", "")
+    assert "public" in cache_control
+    assert "max-age=" in cache_control
+    assert "stale-while-revalidate" in cache_control
+
+
+def test_an_authorized_request_is_never_publicly_cached(fresh_client):
+    """A shared cache holding a caller-specific answer would serve one
+    person's data to the next visitor. Pinned because the allow-list makes
+    it look safe by path alone."""
+    resp = fresh_client.get("/health", headers={"Authorization": "Bearer whatever"})
+    assert "public" not in resp.headers.get("cache-control", "")
+
+
+def test_per_user_routes_are_not_in_the_cacheable_allow_list():
+    for path in api_module._CACHEABLE_PATHS:
+        assert not path.startswith("/api/finops"), path
+        assert not path.startswith("/api/github"), path
+        assert not path.startswith("/api/connections"), path
+
+
 def test_the_default_read_budget_clears_several_landing_page_visits():
     """One landing page visit is seven backend calls.
 

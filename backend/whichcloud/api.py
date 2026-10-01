@@ -179,6 +179,54 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RateLimitMiddleware)
 
+
+#: Public, read-only routes whose answer is the same for everybody.
+#:
+#: Every response this service sends is currently uncacheable -- no
+#: Cache-Control anywhere -- so a browser, a CDN and Next's data cache all
+#: have to re-ask for figures that change when the catalog is re-ingested,
+#: which is weekly at most. The landing page alone asked for /health three
+#: times per view.
+#:
+#: Strictly an allow-list, and deliberately not "every GET". `/api/finops/*`
+#: and `/api/github/*` answer differently per caller; a shared cache in
+#: front of those would serve one person's account data to the next
+#: visitor, which is the single worst bug this file could grow.
+_CACHEABLE_PATHS = {
+    "/health": 60,
+    "/techniques": 300,
+    "/provenance": 300,
+    "/regions": 300,
+    "/catalog": 300,
+}
+
+
+class PublicCacheMiddleware(BaseHTTPMiddleware):
+    """Let shared caches hold the public read-only answers.
+
+    `stale-while-revalidate` is the half that matters on a free tier that
+    sleeps: once an answer has been served, nobody waits for the refresh,
+    they get the previous one instantly while it happens behind them.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.method != "GET" or response.status_code != 200:
+            return response
+        # `Authorization` means the answer may be caller-specific even on an
+        # allow-listed path; never let a shared cache hold one of those.
+        if request.headers.get("authorization"):
+            return response
+        max_age = _CACHEABLE_PATHS.get(request.url.path)
+        if max_age is not None:
+            response.headers["Cache-Control"] = (
+                f"public, max-age={max_age}, stale-while-revalidate=86400"
+            )
+        return response
+
+
+app.add_middleware(PublicCacheMiddleware)
+
 # Registered LAST, which makes it the OUTERMOST middleware -- Starlette
 # builds the stack in reverse registration order.
 #

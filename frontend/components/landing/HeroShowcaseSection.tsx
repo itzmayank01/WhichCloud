@@ -3,13 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { HeroShowcase, type ShowcaseData } from "@/components/landing/HeroShowcase";
 import { ShimmerBlock } from "@/components/ui/ShimmerBlock";
-import { api } from "@/lib/api";
-
-const LABEL: Record<string, string> = {
-  aws: "AWS",
-  azure: "Microsoft Azure",
-  gcp: "Google Cloud",
-};
 
 //: Render's free tier sleeps the backend after 15 minutes idle; the first
 //: request after that wakes it, which the client already retries through
@@ -54,17 +47,23 @@ function LoadError({ onRetry }: { onRetry: () => void }) {
 }
 
 /**
- * Fills the hero showcase from one comparison.
+ * Fills the hero showcase from one same-origin, edge-cached request.
  *
- * Moved to client-side so ISR regeneration never waits on three parallel
- * API calls. Page renders immediately with skeleton, then hydrates with data.
+ * The comparison, the reduction and the catalog counts all happen in
+ * app/api/landing/showcase/route.ts now. This component used to do that
+ * work itself, from the browser, on every page view: three cross-origin
+ * calls (each POST preceded by a CORS preflight), ~270 KB of comparison
+ * JSON reduced on the visitor's CPU to the few dozen numbers the panel
+ * shows, and none of it cached -- `next: { revalidate }` is a server-side
+ * fetch option the browser ignores, and a POST is never served from the
+ * HTTP cache regardless. See that route's docstring for the full account.
  */
 export function HeroShowcaseSection() {
   const [data, setData] = useState<ShowcaseData | null>(null);
   const [failed, setFailed] = useState(false);
   const [slow, setSlow] = useState(false);
   // Bumped to re-run the effect below from the retry button, without
-  // duplicating the fetch-and-shape logic in two places.
+  // duplicating the fetch logic in two places.
   const [attempt, setAttempt] = useState(0);
 
   const retry = useCallback(() => {
@@ -74,114 +73,30 @@ export function HeroShowcaseSection() {
   }, []);
 
   useEffect(() => {
-    // `failed`/`slow` are reset by retry() before it bumps `attempt`, so
-    // the initial mount (where both already default to false) needs no
-    // reset here.
+    // `failed`/`slow` are reset by retry() before it bumps `attempt`, so the
+    // initial mount (where both already default to false) needs no reset.
     const slowTimer = setTimeout(() => setSlow(true), SLOW_HINT_DELAY_MS);
+    // Abandoned rather than applied if this effect is torn down -- a retry,
+    // or the visitor leaving -- instead of setting state on a dead component.
+    let live = true;
 
-    Promise.all([
-      api.compare(
-        {
-          goal: "a video streaming API",
-          workload_type: "api",
-          traffic_pattern: "steady",
-          traffic_scale: "high",
-          storage_gb: 2000,
-          egress_gb: 5000,
-        },
-        300,
-      ),
-      api.techniques().catch(() => ({ count: 0, techniques: [] })),
-      api.health().catch(() => ({ prices: 0, providers: [] as string[] })),
-    ])
-      .then(([compare, techs, health]) => {
-        const balanced = Object.entries(compare.clouds)
-          .map(([id, options]) => ({
-            id,
-            option: options.find((o) => o.label === "Most reliable") ?? options[0],
-          }))
-          .filter((r) => r.option);
-
-        if (balanced.length < 2) {
-          setFailed(true);
-          return;
-        }
-
-        const whole = balanced.filter((r) => r.option.complete);
-        if (whole.length === 0) {
-          setFailed(true);
-          return;
-        }
-
-        const cheapest = whole.reduce((a, b) =>
-          a.option.monthly_usd <= b.option.monthly_usd ? a : b,
-        );
-        const win = cheapest.option;
-
-        const richest = whole.reduce((a, b) =>
-          (b.option.applied?.length ?? 0) > (a.option.applied?.length ?? 0) ? b : a,
-        );
-
-        const shared = balanced
-          .map((r) => new Set(r.option.items.map((i) => i.label.replace(/ ×.*$/, ""))))
-          .reduce((a, b) => new Set([...a].filter((x) => b.has(x))));
-
-        const categories = [...shared].sort();
-
-        setData({
-          chart: {
-            categories,
-            clouds: balanced
-              .sort((a, b) => a.option.monthly_usd - b.option.monthly_usd)
-              .map((r) => {
-                const segments = categories.map((label) => ({
-                  label,
-                  value: r.option.items
-                    .filter((i) => i.label.replace(/ ×.*$/, "") === label)
-                    .reduce((sum, i) => sum + i.monthly_usd, 0),
-                }));
-                return {
-                  id: r.id,
-                  label: LABEL[r.id] ?? r.id,
-                  total: segments.reduce((sum, s) => sum + s.value, 0),
-                  segments,
-                };
-              }),
-          },
-          quote: "a video streaming API for India, busy all day",
-          breakdown: [...win.items]
-            .sort((a, b) => b.monthly_usd - a.monthly_usd)
-            .slice(0, 5)
-            .map((i) => ({
-              label: i.label.replace(/ ×.*$/, ""),
-              sku: i.sku ?? "—",
-              monthly: i.monthly_usd,
-            })),
-          total: win.monthly_usd,
-          saved: richest.option.measured_saving_usd,
-          techniquesTested: techs.count ?? 0,
-          catalogSize: health.prices ?? 0,
-          applied: (richest.option.applied ?? [])
-            .filter((a) => (a.saved_monthly_usd ?? 0) > 0)
-            .sort((a, b) => (b.saved_monthly_usd ?? 0) - (a.saved_monthly_usd ?? 0))
-            .slice(0, 4)
-            .map((a) => ({
-              name: a.name,
-              saved: a.saved_monthly_usd ?? 0,
-              versus: a.versus_sku ?? "the default",
-              category: a.category ?? "compute",
-            })),
-          advisory: (richest.option.advisory ?? []).slice(0, 3).map((a) => a.name),
-        });
+    fetch("/api/landing/showcase")
+      .then((res) => {
+        if (!res.ok) throw new Error(`showcase ${res.status}`);
+        return res.json() as Promise<ShowcaseData>;
+      })
+      .then((showcase) => {
+        if (live) setData(showcase);
       })
       .catch(() => {
-        setFailed(true);
+        if (live) setFailed(true);
       })
-      .finally(() => {
-        clearTimeout(slowTimer);
-      });
+      .finally(() => clearTimeout(slowTimer));
 
-    return () => clearTimeout(slowTimer);
+    return () => {
+      live = false;
+      clearTimeout(slowTimer);
+    };
   }, [attempt]);
 
   if (data) return <HeroShowcase data={data} />;
