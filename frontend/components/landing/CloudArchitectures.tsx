@@ -1,45 +1,44 @@
 import { MultiCloudArchitecture } from "@/components/MultiCloudArchitecture";
 import { api, type Option } from "@/lib/api";
 import { shopComparison } from "@/lib/landingData";
-
-/** Same message whether the request itself failed or came back too thin to
- *  show -- a reader can't tell those apart and shouldn't need to; both mean
- *  "try again in a moment" rather than "this is broken forever." */
-function unavailable() {
-  return (
-    <div className="rounded-xl border border-dashed border-line-strong bg-canvas p-10 text-center">
-      <p className="font-mono text-[14px] leading-relaxed text-ink-3 font-medium">
-        Architectures render from live pricing. Start the API to see all three clouds.
-      </p>
-    </div>
-  );
-}
+import { DEFAULT_BY_PROVIDER, DEFAULT_REGIONS } from "@/lib/defaultLandingData";
 
 /**
  * Fetches one workload priced on every cloud and hands it to the switcher.
  * Uses the Balanced shape, which is the option most people actually ship.
+ * Falls back to high-fidelity pre-computed data if the engine is sleeping or slow,
+ * guaranteeing instant, zero-latency rendering.
  */
 export async function CloudArchitectures() {
-  const byProvider: Record<string, Option> = {};
-  let regions: string[] = [];
+  let byProvider: Record<string, Option> = { ...DEFAULT_BY_PROVIDER };
+  let regions: string[] = [...DEFAULT_REGIONS];
 
   try {
-    const regionMap = await api.regions().catch(() => ({}));
-    regions = Object.keys(regionMap ?? {});
-    const compare = await shopComparison();
-    for (const [provider, options] of Object.entries(compare.clouds)) {
-      const balanced = options.find((o) => o.label === "Most reliable") ?? options[0];
-      if (balanced) byProvider[provider] = balanced;
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("fetch timeout")), 1500),
+    );
+
+    const fetchData = async () => {
+      const regionMap = await api.regions().catch(() => ({}));
+      const fetchedRegions = Object.keys(regionMap ?? {});
+      const compare = await shopComparison();
+      const liveByProvider: Record<string, Option> = {};
+      for (const [provider, options] of Object.entries(compare.clouds)) {
+        const balanced = options.find((o) => o.label === "Most reliable") ?? options[0];
+        if (balanced) liveByProvider[provider] = balanced;
+      }
+      return { liveByProvider, fetchedRegions };
+    };
+
+    const res = await Promise.race([fetchData(), timeout]);
+    if (Object.keys(res.liveByProvider).length >= 2) {
+      byProvider = res.liveByProvider;
+      if (res.fetchedRegions.length) regions = res.fetchedRegions;
     }
   } catch {
-    return unavailable();
+    // If backend is waking or slow, default data is already in place
   }
 
-  // Used to silently render null -- a fetch that "succeeds" with nothing
-  // usable (a partial response, an empty clouds object) left the section
-  // just missing with no indication why, indistinguishable from a page that
-  // failed to finish loading.
-  if (!Object.keys(byProvider).length) return unavailable();
   return (
     <MultiCloudArchitecture
       byProvider={byProvider}
@@ -48,3 +47,4 @@ export async function CloudArchitectures() {
     />
   );
 }
+

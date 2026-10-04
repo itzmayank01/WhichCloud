@@ -1,0 +1,3535 @@
+{
+  "aws": {
+    "label": "Most reliable",
+    "rationale": "Survives an availability-zone failure: extra capacity and a standby database.",
+    "provider": "aws",
+    "region": "ap-south-1",
+    "monthly_usd": 567.075,
+    "complete": true,
+    "within_budget": null,
+    "budget_saturated": false,
+    "ondemand_monthly_usd": 664.165,
+    "shape_parts": [
+      {
+        "label": "tier",
+        "value": "Most reliable"
+      },
+      {
+        "label": "compute",
+        "value": "3 × 2 vCPU / 8 GB arm64"
+      },
+      {
+        "label": "database",
+        "value": "multi-AZ"
+      },
+      {
+        "label": "region",
+        "value": "ap-south-1"
+      }
+    ],
+    "commitment_covers": [
+      "Cache",
+      "Compute",
+      "Database"
+    ],
+    "steady_monthly_usd": 543.423,
+    "shape": "3× 2 vCPU / 8 GB arm64 · multi-AZ db",
+    "items": [
+      {
+        "label": "Compute × 3 (1-yr commitment)",
+        "sku": "t4g.large:commit1yr",
+        "unit": "hour",
+        "unit_price": 0.0324,
+        "quantity": 2190,
+        "monthly_usd": 70.956,
+        "group": "compute",
+        "group_label": "Compute",
+        "caveats": [
+          "Assumes a commitment you have not made. The on-demand price is what you pay today."
+        ]
+      },
+      {
+        "label": "Database (Multi-AZ) (1-yr reserved)",
+        "sku": "db.t4g.large:multi-az:commit1yr",
+        "unit": "hour",
+        "unit_price": 0.2642,
+        "quantity": 730,
+        "monthly_usd": 192.866,
+        "group": "database",
+        "group_label": "Database",
+        "caveats": [
+          "Assumes a commitment you have not made. The on-demand price is what you pay today."
+        ]
+      },
+      {
+        "label": "Object storage (standard)",
+        "sku": "s3:general-purpose",
+        "unit": "GB-month",
+        "unit_price": 0.025,
+        "quantity": 80,
+        "monthly_usd": 2,
+        "group": "storage",
+        "group_label": "Object storage",
+        "caveats": []
+      },
+      {
+        "label": "Object storage (infrequent access)",
+        "sku": "s3:standard-ia",
+        "unit": "GB-month",
+        "unit_price": 0.0138,
+        "quantity": 120,
+        "monthly_usd": 1.656,
+        "group": "storage",
+        "group_label": "Object storage",
+        "caveats": []
+      },
+      {
+        "label": "Cross-AZ data transfer (in+out)",
+        "sku": "transfer:intra-region-az",
+        "unit": "GB",
+        "unit_price": 0.01,
+        "quantity": 1000,
+        "monthly_usd": 10,
+        "group": "compute",
+        "group_label": "Compute",
+        "caveats": []
+      },
+      {
+        "label": "Cache",
+        "sku": "cache.t4g.medium:commit1yr",
+        "unit": "hour",
+        "unit_price": 0.055,
+        "quantity": 730,
+        "monthly_usd": 40.15,
+        "group": "cache",
+        "group_label": "Cache",
+        "caveats": [
+          "Assumes a commitment you have not made. The on-demand price is what you pay today."
+        ]
+      },
+      {
+        "label": "Monitoring",
+        "sku": "cloudwatch:metrics",
+        "unit": "metric-month",
+        "unit_price": 0.3,
+        "quantity": 30,
+        "monthly_usd": 9,
+        "group": "monitoring",
+        "group_label": "Monitoring",
+        "caveats": []
+      },
+      {
+        "label": "Load balancer",
+        "sku": "alb",
+        "unit": "hour",
+        "unit_price": 0.0239,
+        "quantity": 730,
+        "monthly_usd": 17.447,
+        "group": "loadbalancer",
+        "group_label": "Load balancer",
+        "caveats": []
+      },
+      {
+        "label": "CDN data transfer",
+        "sku": "cloudfront:data-transfer-out",
+        "unit": "GB",
+        "unit_price": 0.109,
+        "quantity": 500,
+        "monthly_usd": 54.5,
+        "group": "cdn",
+        "group_label": "CDN data transfer",
+        "caveats": []
+      },
+      {
+        "label": "CDN requests",
+        "sku": "cloudfront:requests-https",
+        "unit": "Requests",
+        "unit_price": 0.0000012,
+        "quantity": 250000,
+        "monthly_usd": 0.3,
+        "group": "cdn",
+        "group_label": "CDN data transfer",
+        "caveats": []
+      },
+      {
+        "label": "Audit logging",
+        "sku": "cloudtrail:management-events",
+        "unit": "Events",
+        "unit_price": 0,
+        "quantity": 1,
+        "monthly_usd": 0,
+        "group": "audit",
+        "group_label": "Audit logging",
+        "caveats": []
+      },
+      {
+        "label": "NAT gateway × 2",
+        "sku": "nat:gateway-hour",
+        "unit": "hour",
+        "unit_price": 0.056,
+        "quantity": 1460,
+        "monthly_usd": 81.76,
+        "group": "nat",
+        "group_label": "NAT gateway",
+        "caveats": []
+      },
+      {
+        "label": "NAT data processing",
+        "sku": "nat:gb-processed",
+        "unit": "GB",
+        "unit_price": 0.056,
+        "quantity": 500,
+        "monthly_usd": 28,
+        "group": "nat",
+        "group_label": "NAT gateway",
+        "caveats": []
+      },
+      {
+        "label": "TLS certificate",
+        "sku": "acm:public-certificate",
+        "unit": "month",
+        "unit_price": 0,
+        "quantity": 1,
+        "monthly_usd": 0,
+        "group": "tls",
+        "group_label": "TLS certificate",
+        "caveats": []
+      },
+      {
+        "label": "DNS hosted zone × 1",
+        "sku": "route53:hosted-zone",
+        "unit": "month",
+        "unit_price": 0.5,
+        "quantity": 1,
+        "monthly_usd": 0.5,
+        "group": "dns",
+        "group_label": "DNS hosted zone",
+        "caveats": []
+      },
+      {
+        "label": "DNS queries",
+        "sku": "route53:dns-queries",
+        "unit": "query",
+        "unit_price": 4e-7,
+        "quantity": 10000000,
+        "monthly_usd": 4,
+        "group": "dns",
+        "group_label": "DNS hosted zone",
+        "caveats": []
+      },
+      {
+        "label": "Authentication (MAU)",
+        "sku": "cognito:user-pool-mau",
+        "unit": "MAU",
+        "unit_price": 0,
+        "quantity": 25000,
+        "monthly_usd": 0,
+        "group": "auth",
+        "group_label": "Authentication",
+        "caveats": []
+      },
+      {
+        "label": "Backup storage",
+        "sku": "backup:warm-storage",
+        "unit": "GB-month",
+        "unit_price": 0.055,
+        "quantity": 200,
+        "monthly_usd": 11,
+        "group": "backup",
+        "group_label": "Backup storage",
+        "caveats": []
+      },
+      {
+        "label": "Database storage",
+        "sku": "rds:gp3-storage-multi-az",
+        "unit": "GB-month",
+        "unit_price": 0.262,
+        "quantity": 100,
+        "monthly_usd": 26.2,
+        "group": "database",
+        "group_label": "Database",
+        "caveats": []
+      },
+      {
+        "label": "Load balancer LCUs",
+        "sku": "alb:lcu-hour",
+        "unit": "LCU-hour",
+        "unit_price": 0.008,
+        "quantity": 730,
+        "monthly_usd": 5.84,
+        "group": "loadbalancer",
+        "group_label": "Load balancer",
+        "caveats": []
+      },
+      {
+        "label": "Secrets × 1",
+        "sku": "secretsmanager:secret",
+        "unit": "Secrets",
+        "unit_price": 0.4,
+        "quantity": 1,
+        "monthly_usd": 0.4,
+        "group": "secrets",
+        "group_label": "Secrets",
+        "caveats": []
+      },
+      {
+        "label": "Distributed tracing",
+        "sku": "xray:traces-recorded",
+        "unit": "trace",
+        "unit_price": 0.00000475,
+        "quantity": 2000000,
+        "monthly_usd": 9.5,
+        "group": "tracing",
+        "group_label": "Distributed tracing",
+        "caveats": []
+      },
+      {
+        "label": "KMS keys × 1",
+        "sku": "kms:key",
+        "unit": "Keys",
+        "unit_price": 1,
+        "quantity": 1,
+        "monthly_usd": 1,
+        "group": "kms",
+        "group_label": "KMS keys",
+        "caveats": []
+      }
+    ],
+    "missing": [],
+    "measured_saving_usd": 184.063,
+    "saving_pct": 24.504551760129296,
+    "applied": [
+      {
+        "id": "arm-managed-database",
+        "name": "ARM instances for the managed database",
+        "category": "database",
+        "summary": "Run the managed PostgreSQL on ARM (db.t4g / db.m7g) instead of x86. Same engine, same behaviour, lower hourly rate — and unlike application compute there is nothing to rebuild, because the provider runs the database.",
+        "obviousness": "low",
+        "confidence": "high",
+        "tool": "AWS RDS Graviton instance classes",
+        "tool_url": "https://aws.amazon.com/rds/instance-types/",
+        "tradeoffs": [
+          "Not every engine version is offered on ARM classes in every region",
+          "Migrating an existing instance class requires a maintenance window",
+          "Smaller selection of instance sizes than x86 in some regions"
+        ],
+        "saved_monthly_usd": 65.7,
+        "versus_sku": "db.t3.large:multi-az",
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": true
+      },
+      {
+        "id": "burstable-instances-for-low-duty",
+        "name": "Burstable instances for workloads that idle",
+        "category": "compute",
+        "summary": "T-family instances cost less per hour than fixed-performance families of the same size, and bank CPU credits while idle. For a workload that is mostly idle with occasional peaks, that is the correct shape.",
+        "obviousness": "medium",
+        "confidence": "medium",
+        "tool": "EC2 burstable performance instances",
+        "tool_url": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances.html",
+        "tradeoffs": [
+          "Sustained load exhausts credits. The failure is either throttling or a surcharge, and both are worse than having paid for the right shape.",
+          "Credit balance is another thing to monitor.",
+          "Not suitable for latency-sensitive work where a throttle is visible to a user."
+        ],
+        "saved_monthly_usd": 12.702,
+        "versus_sku": "m6g.large",
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": true
+      },
+      {
+        "id": "committed-use-discount",
+        "name": "Commit to a year of usage (Savings Plan / Reserved / CUD)",
+        "category": "compute",
+        "summary": "Commit to a baseline level of compute for one year in exchange for a lower hourly rate. The largest single discount available on a steady workload, and the first thing any cost review applies.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "AWS Cost Explorer — Savings Plans recommendations",
+        "tool_url": "https://docs.aws.amazon.com/cost-management/latest/userguide/ce-sp-recommendations.html",
+        "tradeoffs": [
+          "Locks in twelve months of spend whether or not the workload survives",
+          "Commit to the steady floor, not the peak — over-committing wastes more than it saves, and the unused commitment is still billed",
+          "Savings Plans keep instance-family freedom; Standard RIs are cheaper still but pin you to a family",
+          "Does not apply to spot capacity, which is already discounted further"
+        ],
+        "saved_monthly_usd": 97.09,
+        "versus_sku": "t4g.large",
+        "reasons": [
+          "suits web workloads",
+          "steady baseline that will still be running in a year, so a one-year commitment is safe to take"
+        ],
+        "priced": true
+      },
+      {
+        "id": "graviton-arm-compute",
+        "name": "ARM-based compute (AWS Graviton / Azure Ampere / GCP Axion)",
+        "category": "compute",
+        "summary": "Run the same workload on ARM processors instead of x86. Comparable performance for most workloads, lower hourly price.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "docker buildx (multi-arch images)",
+        "tool_url": "https://github.com/docker/buildx",
+        "tradeoffs": [
+          "Container images must be built for arm64 (multi-arch build required)",
+          "Rare x86-only dependencies (some proprietary agents, older native libs) will not run",
+          "Smaller instance-type selection than x86 in some regions",
+          "Real benefit may exceed the list-price gap if the workload performs better per core, but that requires benchmarking the specific workload"
+        ],
+        "saved_monthly_usd": 7.227,
+        "versus_sku": "t3a.large:commit1yr",
+        "reasons": [
+          "suits web workloads",
+          "no x86-only dependencies declared"
+        ],
+        "priced": true
+      },
+      {
+        "id": "storage-lifecycle-tiering",
+        "name": "Move cold objects to an infrequent-access class",
+        "category": "storage",
+        "summary": "Most of what a bucket holds is never read again after its first few weeks. A lifecycle policy moves those objects to an infrequent-access class at roughly half the price, automatically, with no application change.",
+        "obviousness": "medium",
+        "confidence": "medium",
+        "tool": "S3 Lifecycle configuration",
+        "tool_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html",
+        "tradeoffs": [
+          "Retrieval carries a per-GB fee, so data read often costs MORE on this class",
+          "Minimum storage duration (30 days IA / 90 days archive) — deleting early is billed as though the object had stayed",
+          "First-byte latency rises on archive classes, from milliseconds to minutes",
+          "Objects under 128 KB are not worth transitioning; the per-object overhead outweighs the per-GB saving"
+        ],
+        "saved_monthly_usd": 1.344,
+        "versus_sku": "s3:general-purpose",
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": true
+      }
+    ],
+    "advisory": [
+      {
+        "id": "egress-free-object-storage",
+        "name": "Serve static assets from egress-free storage",
+        "category": "network",
+        "summary": "Hyperscalers charge for every gigabyte leaving their network. Cloudflare R2 and similar stores charge nothing for egress. Moving images, video and downloads there removes what is often the second-largest line on the bill.",
+        "obviousness": "low",
+        "confidence": "medium",
+        "tool": "Cloudflare R2",
+        "tool_url": "https://developers.cloudflare.com/r2/",
+        "tradeoffs": [
+          "A second vendor to operate, monitor and pay",
+          "Cross-provider latency if the origin and the store are far apart",
+          "Not suitable for dynamic responses, only cacheable static objects",
+          "Data residency and compliance need checking separately",
+          "Migration effort for existing buckets and rewritten asset URLs"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "egress-is-the-bill-nobody-forecasts",
+        "name": "Cut egress before cutting compute",
+        "category": "network",
+        "summary": "Data leaving a cloud is billed per GB at a rate that does not fall with volume the way compute does. On media and analytics workloads it routinely exceeds the compute it serves, and it is the line least often forecast.",
+        "obviousness": "low",
+        "confidence": "medium",
+        "tool": "CloudFront (edge offload)",
+        "tool_url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/",
+        "tradeoffs": [
+          "Compression costs CPU on both ends, and for small responses the overhead exceeds the saving.",
+          "Co-locating a consumer to avoid egress may conflict with a data residency requirement, which is a constraint and not a preference.",
+          "Egress is the charge most likely to be a surprise, so reducing it also reduces the value of the alarm it would otherwise raise."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "graviton-managed-cache",
+        "name": "ARM-based managed cache nodes",
+        "category": "memory",
+        "summary": "ElastiCache and its equivalents publish lower rates for Graviton node families than for the x86 ones at the same size, and a cache is a workload with no binary compatibility question at all.",
+        "obviousness": "low",
+        "confidence": "high",
+        "tool": "ElastiCache on Graviton",
+        "tool_url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/CacheNodes.SupportedTypes.html",
+        "tradeoffs": [
+          "Node family availability varies by region; some smaller ARM sizes are not offered everywhere.",
+          "Changing node family is a replacement, so it needs a maintenance window or a warm secondary."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "zram-memory-compression",
+        "name": "zram / zswap in-memory compression",
+        "category": "memory",
+        "summary": "Compress memory pages in RAM instead of paging to disk, so the same workload fits on a smaller instance tier. Trades a little CPU for a lot of effective RAM.",
+        "obviousness": "low",
+        "confidence": "low",
+        "tool": "zram (Linux kernel module)",
+        "tool_url": "https://docs.kernel.org/admin-guide/blockdev/zram.html",
+        "tradeoffs": [
+          "Costs CPU cycles; harmful if the workload is already CPU-bound",
+          "Benefit depends entirely on how compressible the workload's pages are",
+          "Not available on managed/serverless compute where you don't control the kernel",
+          "Must be load-tested before downsizing — do not downsize on theory"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "single-nat-when-availability-not-stated",
+        "name": "One NAT gateway unless a zone failure has to be survived",
+        "category": "network",
+        "summary": "A NAT gateway per availability zone is the right answer for a workload that stated it cannot go down. For one that did not, the second gateway is $41/month of standby nobody asked for.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "VPC NAT gateway placement",
+        "tool_url": "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html",
+        "tradeoffs": [
+          "Losing the AZ holding the gateway takes outbound connectivity with it. Inbound traffic and anything already established survives, but patching, agent check-in and third-party API calls stop.",
+          "Cross-AZ traffic to reach the single gateway is billed, which claws back a little of the saving on chatty workloads."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "vpc-endpoints-instead-of-nat",
+        "name": "VPC endpoints instead of NAT data processing",
+        "category": "network",
+        "summary": "Traffic from private subnets to S3, DynamoDB and the AWS APIs can take a private route instead of paying a NAT gateway to process every gigabyte.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "AWS PrivateLink / VPC endpoints",
+        "tool_url": "https://docs.aws.amazon.com/vpc/latest/privatelink/",
+        "tradeoffs": [
+          "Interface endpoints bill per AZ per hour whether used or not, so a low-traffic workload can pay more for the endpoint than the NAT data it diverts. The engine's `_endpoint_plan` only adds them where the diverted volume justifies the hourly cost.",
+          "Each endpoint is another resource to manage and to get the security group right on.",
+          "Gateway endpoints exist only for S3 and DynamoDB. Everything else needs the interface kind."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cache-in-front-of-read-load",
+        "name": "Cache reads instead of growing the database",
+        "category": "database",
+        "summary": "A cache node is materially cheaper per read served than the database instance it protects. Where the same rows are read repeatedly, caching them is cheaper than sizing the database for the traffic.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "Amazon ElastiCache",
+        "tool_url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/",
+        "tradeoffs": [
+          "Stale reads. Every cache is a decision about how wrong you are willing to be, and for how long.",
+          "Invalidation is application work, and getting it wrong is a correctness bug rather than a performance one.",
+          "Another component to run out of memory, fail over and monitor."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cache-to-shrink-database",
+        "name": "Cache reads so the database can be smaller",
+        "category": "database",
+        "summary": "Most read-heavy applications ask the database the same questions repeatedly. An in-memory cache in front absorbs those reads, which often means a database one or two sizes down carries the same traffic.",
+        "obviousness": "high",
+        "confidence": "low",
+        "tool": "Valkey (open-source Redis fork)",
+        "tool_url": "https://github.com/valkey-io/valkey",
+        "tradeoffs": [
+          "The cache itself costs money and can erase the saving",
+          "Stale reads unless invalidation is done carefully",
+          "Cache stampede on expiry can hit the database harder than no cache at all",
+          "Adds a failure mode and an operational component",
+          "Application changes required; not a configuration switch"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cdn-offload-origin-egress",
+        "name": "Serve repeat bytes from the edge, not the origin",
+        "category": "network",
+        "summary": "Origin egress is billed per GB at full rate. A CDN in front of it serves cache hits at a lower rate and stops the origin paying for the same object twice.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "Amazon CloudFront",
+        "tool_url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/",
+        "tradeoffs": [
+          "Personalised or per-user responses cache poorly; a CDN in front of them is pure added cost.",
+          "Invalidations cost money and take minutes, so deploys need a cache-busting strategy rather than a purge habit.",
+          "Another hop to debug when something is stale."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "multi-az-database-only-when-stated",
+        "name": "Multi-AZ database only where downtime was said to matter",
+        "category": "database",
+        "summary": "Multi-AZ is a published SKU at roughly double the single-AZ rate, not a multiplier. It is required by a stated availability need and is pure cost without one.",
+        "obviousness": "high",
+        "confidence": "high",
+        "tool": "Amazon RDS Multi-AZ deployments",
+        "tool_url": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html",
+        "tradeoffs": [
+          "Losing the zone holding the single instance is an outage lasting as long as a restore. That is the whole trade, and it is only acceptable where the workload said so.",
+          "Single-AZ patching windows are user-visible; Multi-AZ ones are not."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "read-replica-only-when-read-heavy",
+        "name": "A read replica only where reads actually dominate",
+        "category": "database",
+        "summary": "A replica doubles the database line. It earns that on a read-heavy workload and buys nothing on a write-heavy or low-traffic one, where it is a second instance kept warm to serve traffic that never arrives.",
+        "obviousness": "high",
+        "confidence": "high",
+        "tool": "Amazon RDS read replicas",
+        "tool_url": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.html",
+        "tradeoffs": [
+          "A workload that later becomes read-heavy will need one, and adding it under load is worse than having it.",
+          "Replicas also serve as a failover target on some engines, so removing one can lengthen recovery even when it was not needed for capacity."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "rightsize-from-measured-load",
+        "name": "Size the fleet from the rate, not from a round number",
+        "category": "compute",
+        "summary": "Instance counts chosen by habit -- three, or four, or \"one per environment\" -- are usually above what the stated rate needs. Sizing from the rate removes the difference.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "AWS Compute Optimizer",
+        "tool_url": "https://docs.aws.amazon.com/compute-optimizer/latest/ug/",
+        "tradeoffs": [
+          "Sizing to the stated peak leaves no headroom for a peak that was understated, and traffic figures given from memory usually are.",
+          "An availability floor of two instances applies regardless, so this cannot take a highly available workload below that."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "rightsize-idle-capacity",
+        "name": "Right-size over-provisioned instances",
+        "category": "compute",
+        "summary": "Most instances are picked once, generously, and never revisited. Matching the instance to observed utilisation is the least glamorous and most reliable saving available.",
+        "obviousness": "high",
+        "confidence": "low",
+        "tool": "AWS Compute Optimizer",
+        "tool_url": "https://aws.amazon.com/compute-optimizer/",
+        "tradeoffs": [
+          "Sizing to the average causes incidents at the peak",
+          "Needs real metrics; guessing smaller is not right-sizing",
+          "Requires a restart, so a maintenance window",
+          "Burstable instance families can mask sustained CPU need"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      }
+    ],
+    "tradeoffs": [
+      "The standby database roughly doubles the largest line on the bill",
+      "Still one region — a regional outage is not covered"
+    ],
+    "compliant": true,
+    "unmet": [],
+    "topology": {
+      "nodes": [
+        {
+          "id": "users",
+          "label": "Users",
+          "kind": "client",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "",
+          "detail": "",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "data"
+        },
+        {
+          "id": "cdn",
+          "label": "CDN data transfer",
+          "kind": "cdn",
+          "monthly_usd": 54.8,
+          "share": 0.09663624740995459,
+          "sku": "cloudfront:data-transfer-out",
+          "detail": "500.0 GB",
+          "priced": true,
+          "optimized_by": [],
+          "because": "public readers of the same content, cached at the edge rather than fetched from the origin each time",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "loadbalancer",
+          "label": "Load balancer",
+          "kind": "loadbalancer",
+          "monthly_usd": 23.287,
+          "share": 0.041065114843715556,
+          "sku": "alb",
+          "detail": "alb",
+          "priced": true,
+          "optimized_by": [],
+          "because": "more than one instance to distribute across, and a health check to fail out of",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "compute",
+          "label": "Compute",
+          "kind": "compute",
+          "monthly_usd": 80.956,
+          "share": 0.14276065776131905,
+          "sku": "t4g.large:commit1yr",
+          "detail": "t4g.large:commit1yr × 3",
+          "priced": true,
+          "optimized_by": [
+            "graviton-arm-compute"
+          ],
+          "because": "3 instance(s) sized to the stated load; something has to serve the requests",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "cache",
+          "label": "Cache",
+          "kind": "cache",
+          "monthly_usd": 40.15,
+          "share": 0.07080192214433717,
+          "sku": "cache.t4g.medium:commit1yr",
+          "detail": "cache.t4g.medium:commit1yr",
+          "priced": true,
+          "optimized_by": [],
+          "because": "repeated reads that would otherwise hit the primary every time",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "database",
+          "label": "Database",
+          "kind": "database",
+          "monthly_usd": 219.066,
+          "share": 0.3863086893268086,
+          "sku": "db.t4g.large:multi-az:commit1yr",
+          "detail": "db.t4g.large:multi-az:commit1yr",
+          "priced": true,
+          "optimized_by": [
+            "arm-managed-database"
+          ],
+          "because": "relational records the workload reads and writes transactionally",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "storage",
+          "label": "Object storage",
+          "kind": "storage",
+          "monthly_usd": 3.656,
+          "share": 0.006447118987788211,
+          "sku": "s3:general-purpose",
+          "detail": "80.0 GB",
+          "priced": true,
+          "optimized_by": [],
+          "because": "200 GB of objects to keep",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "monitoring",
+          "label": "Monitoring",
+          "kind": "monitoring",
+          "monthly_usd": 9,
+          "share": 0.015870916545430498,
+          "sku": "cloudwatch:metrics",
+          "detail": "cloudwatch:metrics",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        },
+        {
+          "id": "audit",
+          "label": "Audit logging",
+          "kind": "audit",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "cloudtrail:management-events",
+          "detail": "cloudtrail:management-events",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        },
+        {
+          "id": "kms",
+          "label": "KMS keys",
+          "kind": "kms",
+          "monthly_usd": 1,
+          "share": 0.0017634351717144999,
+          "sku": "kms:key",
+          "detail": "kms:key",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "secrets",
+          "label": "Secrets",
+          "kind": "secrets",
+          "monthly_usd": 0.4,
+          "share": 0.0007053740686857999,
+          "sku": "secretsmanager:secret",
+          "detail": "secretsmanager:secret",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "nat",
+          "label": "NAT gateway",
+          "kind": "nat",
+          "monthly_usd": 109.76,
+          "share": 0.1935546444473835,
+          "sku": "nat:gateway-hour",
+          "detail": "nat:gateway-hour",
+          "priced": true,
+          "optimized_by": [],
+          "because": "private instances that still need outbound access",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "tls",
+          "label": "TLS certificate",
+          "kind": "tls",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "acm:public-certificate",
+          "detail": "acm:public-certificate",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "dns",
+          "label": "DNS hosted zone",
+          "kind": "dns",
+          "monthly_usd": 4.5,
+          "share": 0.007935458272715249,
+          "sku": "route53:hosted-zone",
+          "detail": "route53:hosted-zone",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "data"
+        },
+        {
+          "id": "auth",
+          "label": "Authentication",
+          "kind": "auth",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "cognito:user-pool-mau",
+          "detail": "cognito:user-pool-mau",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "backup",
+          "label": "Backup storage",
+          "kind": "backup",
+          "monthly_usd": 11,
+          "share": 0.019397786888859497,
+          "sku": "backup:warm-storage",
+          "detail": "backup:warm-storage",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "tracing",
+          "label": "Distributed tracing",
+          "kind": "tracing",
+          "monthly_usd": 9.5,
+          "share": 0.016752634131287747,
+          "sku": "xray:traces-recorded",
+          "detail": "xray:traces-recorded",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        }
+      ],
+      "edges": [
+        {
+          "source": "users",
+          "target": "dns",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "cdn",
+          "target": "loadbalancer",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "cdn",
+          "target": "storage",
+          "label": "assets",
+          "kind": "flow"
+        },
+        {
+          "source": "loadbalancer",
+          "target": "compute",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "cache",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "database",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "kms",
+          "target": "database",
+          "label": "encrypts",
+          "kind": "flow"
+        },
+        {
+          "source": "dns",
+          "target": "loadbalancer",
+          "label": "resolves",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "auth",
+          "label": "sign-in",
+          "kind": "flow"
+        },
+        {
+          "source": "storage",
+          "target": "backup",
+          "label": "backs up",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "nat",
+          "label": "outbound",
+          "kind": "flow"
+        },
+        {
+          "source": "kms",
+          "target": "database",
+          "label": "encrypts",
+          "kind": "attaches"
+        },
+        {
+          "source": "secrets",
+          "target": "compute",
+          "label": "supplies credentials",
+          "kind": "attaches"
+        },
+        {
+          "source": "tls",
+          "target": "cdn",
+          "label": "terminates TLS",
+          "kind": "attaches"
+        },
+        {
+          "source": "auth",
+          "target": "loadbalancer",
+          "label": "authenticates",
+          "kind": "attaches"
+        },
+        {
+          "source": "backup",
+          "target": "database",
+          "label": "backs up",
+          "kind": "attaches"
+        }
+      ]
+    },
+    "drawn": {
+      "canvas": {
+        "width": 1644,
+        "height": 1182
+      },
+      "regions": 1,
+      "azs_per_region": 2,
+      "external": [],
+      "counts": {
+        "services": 15,
+        "edges": 9,
+        "groups": 4,
+        "priced": 15
+      },
+      "bands": [],
+      "components": [],
+      "cloud": {
+        "label": "AWS Cloud",
+        "x": 208,
+        "y": 56,
+        "w": 1380,
+        "h": 1070
+      },
+      "actor": {
+        "label": "Users",
+        "x": 56,
+        "y": 543,
+        "w": 96,
+        "h": 96
+      },
+      "groups": [
+        {
+          "id": "vpc-vpc",
+          "kind": "vpc",
+          "label": "VPC",
+          "depth": 0,
+          "x": 234,
+          "y": 276,
+          "w": 652,
+          "h": 664
+        },
+        {
+          "id": "az-availability-zone-2",
+          "kind": "az",
+          "label": "Availability Zone × 2",
+          "depth": 1,
+          "x": 252,
+          "y": 324,
+          "w": 616,
+          "h": 598
+        },
+        {
+          "id": "subnet-public-subnet-2",
+          "kind": "subnet",
+          "label": "Public subnet × 2",
+          "depth": 2,
+          "x": 270,
+          "y": 372,
+          "w": 384,
+          "h": 182
+        },
+        {
+          "id": "subnet-private-subnet-2",
+          "kind": "subnet",
+          "label": "Private subnet × 2",
+          "depth": 2,
+          "x": 270,
+          "y": 576,
+          "w": 580,
+          "h": 328
+        }
+      ],
+      "nodes": [
+        {
+          "id": "elastic-load-balancing",
+          "label": "Elastic Load Balancing",
+          "tier": "api",
+          "purpose": "Traffic distribution",
+          "priced": true,
+          "monthly_usd": 23.287,
+          "sku": "alb",
+          "x": 288,
+          "y": 420,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "nat-gateway",
+          "label": "NAT Gateway",
+          "tier": "api",
+          "purpose": "Outbound internet for private subnets",
+          "priced": true,
+          "monthly_usd": 109.76,
+          "sku": "nat:gateway-hour",
+          "x": 484,
+          "y": 420,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "amazon-ec2-auto-scaling",
+          "label": "Amazon EC2 Auto Scaling",
+          "tier": "compute",
+          "purpose": "Application servers, sized to the traffic described",
+          "priced": true,
+          "monthly_usd": 80.956,
+          "sku": "t4g.large:commit1yr",
+          "x": 288,
+          "y": 624,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "amazon-elasticache",
+          "label": "Amazon ElastiCache",
+          "tier": "data",
+          "purpose": "In-memory cache",
+          "priced": true,
+          "monthly_usd": 40.15,
+          "sku": "cache.t4g.medium:commit1yr",
+          "x": 484,
+          "y": 624,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "amazon-rd",
+          "label": "Amazon RDS",
+          "tier": "data",
+          "purpose": "Relational database",
+          "priced": true,
+          "monthly_usd": 219.066,
+          "sku": "db.t4g.large:multi-az:commit1yr",
+          "x": 680,
+          "y": 624,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "aws-km",
+          "label": "AWS KMS",
+          "tier": "security",
+          "purpose": "Encrypts data at rest",
+          "priced": true,
+          "monthly_usd": 1,
+          "sku": "kms:key",
+          "x": 288,
+          "y": 770,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "aws-backup",
+          "label": "AWS Backup",
+          "tier": "data",
+          "purpose": "Scheduled backups and retention",
+          "priced": true,
+          "monthly_usd": 11,
+          "sku": "backup:warm-storage",
+          "x": 484,
+          "y": 770,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "amazon-route-53",
+          "label": "Amazon Route 53",
+          "tier": "edge",
+          "purpose": "DNS resolution and health checks",
+          "priced": true,
+          "monthly_usd": 4.5,
+          "sku": "route53:hosted-zone",
+          "x": 234,
+          "y": 116,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "amazon-s3",
+          "label": "Amazon S3",
+          "tier": "data",
+          "purpose": "Object storage",
+          "priced": true,
+          "monthly_usd": 3.656,
+          "sku": "s3:general-purpose",
+          "x": 234,
+          "y": 984,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "amazon-cloudwatch",
+          "label": "Amazon CloudWatch",
+          "tier": "observability",
+          "purpose": "Metrics and logs",
+          "priced": true,
+          "monthly_usd": 9,
+          "sku": "cloudwatch:metrics",
+          "x": 430,
+          "y": 984,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "aws-cloudtrail",
+          "label": "AWS CloudTrail",
+          "tier": "observability",
+          "purpose": "Records who did what, for audit and compliance",
+          "priced": true,
+          "monthly_usd": 0,
+          "sku": "cloudtrail:management-events",
+          "x": 626,
+          "y": 984,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "aws-secrets-manager",
+          "label": "AWS Secrets Manager",
+          "tier": "security",
+          "purpose": "Stores database and API credentials",
+          "priced": true,
+          "monthly_usd": 0.4,
+          "sku": "secretsmanager:secret",
+          "x": 822,
+          "y": 984,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "aws-certificate-manager",
+          "label": "AWS Certificate Manager",
+          "tier": "security",
+          "purpose": "TLS certificates for the load balancer and CDN",
+          "priced": true,
+          "monthly_usd": 0,
+          "sku": "acm:public-certificate",
+          "x": 1018,
+          "y": 984,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "amazon-cognito",
+          "label": "Amazon Cognito",
+          "tier": "security",
+          "purpose": "Staff sign-in, MFA and tokens",
+          "priced": true,
+          "monthly_usd": 0,
+          "sku": "cognito:user-pool-mau",
+          "x": 1214,
+          "y": 984,
+          "w": 152,
+          "h": 116
+        },
+        {
+          "id": "aws-x-ray",
+          "label": "AWS X-Ray",
+          "tier": "observability",
+          "purpose": "Distributed tracing across the request path",
+          "priced": true,
+          "monthly_usd": 9.5,
+          "sku": "xray:traces-recorded",
+          "x": 1410,
+          "y": 984,
+          "w": 152,
+          "h": 116
+        }
+      ],
+      "edges": [
+        {
+          "source": "__users__",
+          "target": "amazon-route-53",
+          "flow": "sync",
+          "step": null,
+          "badge": null,
+          "points": [
+            {
+              "x": 152,
+              "y": 591
+            },
+            {
+              "x": 180,
+              "y": 591
+            },
+            {
+              "x": 180,
+              "y": 90
+            },
+            {
+              "x": 310,
+              "y": 90
+            },
+            {
+              "x": 310,
+              "y": 116
+            }
+          ]
+        },
+        {
+          "source": "elastic-load-balancing",
+          "target": "amazon-ec2-auto-scaling",
+          "flow": "sync",
+          "step": 2,
+          "badge": {
+            "x": 364,
+            "y": 558
+          },
+          "points": [
+            {
+              "x": 364,
+              "y": 536
+            },
+            {
+              "x": 364,
+              "y": 580
+            },
+            {
+              "x": 364,
+              "y": 580
+            },
+            {
+              "x": 364,
+              "y": 624
+            }
+          ]
+        },
+        {
+          "source": "amazon-ec2-auto-scaling",
+          "target": "amazon-elasticache",
+          "flow": "sync",
+          "step": 4,
+          "badge": {
+            "x": 462,
+            "y": 682
+          },
+          "points": [
+            {
+              "x": 440,
+              "y": 682
+            },
+            {
+              "x": 484,
+              "y": 682
+            }
+          ]
+        },
+        {
+          "source": "amazon-ec2-auto-scaling",
+          "target": "amazon-rd",
+          "flow": "sync",
+          "step": 6,
+          "badge": {
+            "x": 605,
+            "y": 762
+          },
+          "points": [
+            {
+              "x": 440,
+              "y": 682
+            },
+            {
+              "x": 454,
+              "y": 682
+            },
+            {
+              "x": 454,
+              "y": 762
+            },
+            {
+              "x": 756,
+              "y": 762
+            },
+            {
+              "x": 756,
+              "y": 740
+            }
+          ]
+        },
+        {
+          "source": "amazon-ec2-auto-scaling",
+          "target": "amazon-s3",
+          "flow": "sync",
+          "step": 3,
+          "badge": {
+            "x": 276,
+            "y": 856
+          },
+          "points": [
+            {
+              "x": 364,
+              "y": 740
+            },
+            {
+              "x": 364,
+              "y": 750
+            },
+            {
+              "x": 276,
+              "y": 750
+            },
+            {
+              "x": 276,
+              "y": 962
+            },
+            {
+              "x": 310,
+              "y": 962
+            },
+            {
+              "x": 310,
+              "y": 984
+            }
+          ]
+        },
+        {
+          "source": "amazon-ec2-auto-scaling",
+          "target": "nat-gateway",
+          "flow": "sync",
+          "step": 5,
+          "badge": {
+            "x": 462,
+            "y": 580
+          },
+          "points": [
+            {
+              "x": 364,
+              "y": 624
+            },
+            {
+              "x": 364,
+              "y": 580
+            },
+            {
+              "x": 560,
+              "y": 580
+            },
+            {
+              "x": 560,
+              "y": 536
+            }
+          ]
+        },
+        {
+          "source": "amazon-ec2-auto-scaling",
+          "target": "amazon-cognito",
+          "flow": "sync",
+          "step": 7,
+          "badge": {
+            "x": 783,
+            "y": 974
+          },
+          "points": [
+            {
+              "x": 364,
+              "y": 740
+            },
+            {
+              "x": 364,
+              "y": 762
+            },
+            {
+              "x": 276,
+              "y": 762
+            },
+            {
+              "x": 276,
+              "y": 974
+            },
+            {
+              "x": 1290,
+              "y": 974
+            },
+            {
+              "x": 1290,
+              "y": 984
+            }
+          ]
+        },
+        {
+          "source": "amazon-s3",
+          "target": "aws-backup",
+          "flow": "sync",
+          "step": 8,
+          "badge": {
+            "x": 435,
+            "y": 935
+          },
+          "points": [
+            {
+              "x": 310,
+              "y": 984
+            },
+            {
+              "x": 310,
+              "y": 935
+            },
+            {
+              "x": 560,
+              "y": 935
+            },
+            {
+              "x": 560,
+              "y": 886
+            }
+          ]
+        },
+        {
+          "source": "aws-km",
+          "target": "amazon-rd",
+          "flow": "sync",
+          "step": 9,
+          "badge": {
+            "x": 560,
+            "y": 755
+          },
+          "points": [
+            {
+              "x": 364,
+              "y": 770
+            },
+            {
+              "x": 364,
+              "y": 755
+            },
+            {
+              "x": 756,
+              "y": 755
+            },
+            {
+              "x": 756,
+              "y": 740
+            }
+          ]
+        },
+        {
+          "source": "amazon-route-53",
+          "target": "elastic-load-balancing",
+          "flow": "sync",
+          "step": 1,
+          "badge": {
+            "x": 310,
+            "y": 279
+          },
+          "points": [
+            {
+              "x": 310,
+              "y": 232
+            },
+            {
+              "x": 310,
+              "y": 326
+            },
+            {
+              "x": 364,
+              "y": 326
+            },
+            {
+              "x": 364,
+              "y": 420
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "azure": {
+    "label": "Most reliable",
+    "rationale": "Survives an availability-zone failure: extra capacity and a standby database.",
+    "provider": "azure",
+    "region": "centralindia",
+    "monthly_usd": 563.8727398,
+    "complete": true,
+    "within_budget": null,
+    "budget_saturated": false,
+    "ondemand_monthly_usd": 603.984736,
+    "shape_parts": [
+      {
+        "label": "tier",
+        "value": "Most reliable"
+      },
+      {
+        "label": "compute",
+        "value": "3 × 2 vCPU / 8 GB arm64"
+      },
+      {
+        "label": "database",
+        "value": "zone-redundant"
+      },
+      {
+        "label": "region",
+        "value": "centralindia"
+      }
+    ],
+    "commitment_covers": [
+      "Compute"
+    ],
+    "steady_monthly_usd": 544.5394052,
+    "shape": "3× 2 vCPU / 8 GB arm64 · zone-redundant db",
+    "items": [
+      {
+        "label": "Compute × 3 (1-yr commitment)",
+        "sku": "Standard_B2ps_v2:commit1yr",
+        "unit": "hour",
+        "unit_price": 0.02648402,
+        "quantity": 2190,
+        "monthly_usd": 58.0000038,
+        "group": "compute",
+        "group_label": "Compute",
+        "caveats": [
+          "Assumes a commitment you have not made. The on-demand price is what you pay today."
+        ]
+      },
+      {
+        "label": "Database (Multi-AZ)",
+        "sku": "B2ms:multi-az",
+        "unit": "hour",
+        "unit_price": 0.392,
+        "quantity": 730,
+        "monthly_usd": 286.16,
+        "group": "database",
+        "group_label": "Database",
+        "caveats": [
+          "Derived, not published by the provider: 2x primary; Azure bills the HA standby as a second instance and publishes no separate HA meter"
+        ]
+      },
+      {
+        "label": "Object storage (standard)",
+        "sku": "blob:hot-lrs",
+        "unit": "GB-month",
+        "unit_price": 0.03,
+        "quantity": 80,
+        "monthly_usd": 2.4,
+        "group": "storage",
+        "group_label": "Object storage",
+        "caveats": []
+      },
+      {
+        "label": "Object storage (infrequent access)",
+        "sku": "blob:cool-lrs",
+        "unit": "GB-month",
+        "unit_price": 0.011,
+        "quantity": 120,
+        "monthly_usd": 1.32,
+        "group": "storage",
+        "group_label": "Object storage",
+        "caveats": []
+      },
+      {
+        "label": "Cache",
+        "sku": "redis:b3",
+        "unit": "hour",
+        "unit_price": 0.068,
+        "quantity": 730,
+        "monthly_usd": 49.64,
+        "group": "cache",
+        "group_label": "Cache",
+        "caveats": []
+      },
+      {
+        "label": "Monitoring",
+        "sku": "monitor:metrics",
+        "unit": "metric-month",
+        "unit_price": 0.0006912,
+        "quantity": 30,
+        "monthly_usd": 0.020736,
+        "group": "monitoring",
+        "group_label": "Monitoring",
+        "caveats": []
+      },
+      {
+        "label": "Load balancer",
+        "sku": "lb:standard",
+        "unit": "hour",
+        "unit_price": 0.025,
+        "quantity": 730,
+        "monthly_usd": 18.25,
+        "group": "loadbalancer",
+        "group_label": "Load balancer",
+        "caveats": []
+      },
+      {
+        "label": "CDN data transfer",
+        "sku": "frontdoor:data-transfer-out",
+        "unit": "GB",
+        "unit_price": 0.109,
+        "quantity": 500,
+        "monthly_usd": 54.5,
+        "group": "cdn",
+        "group_label": "CDN data transfer",
+        "caveats": []
+      },
+      {
+        "label": "Audit logging",
+        "sku": "activitylog:events",
+        "unit": "month",
+        "unit_price": 0,
+        "quantity": 1,
+        "monthly_usd": 0,
+        "group": "audit",
+        "group_label": "Audit logging",
+        "caveats": []
+      },
+      {
+        "label": "NAT gateway × 1",
+        "sku": "nat:gateway-hour",
+        "unit": "hour",
+        "unit_price": 0.045,
+        "quantity": 730,
+        "monthly_usd": 32.85,
+        "group": "nat",
+        "group_label": "NAT gateway",
+        "caveats": []
+      },
+      {
+        "label": "NAT data processing",
+        "sku": "nat:gb-processed",
+        "unit": "GB",
+        "unit_price": 0.045,
+        "quantity": 500,
+        "monthly_usd": 22.5,
+        "group": "nat",
+        "group_label": "NAT gateway",
+        "caveats": []
+      },
+      {
+        "label": "TLS certificate",
+        "sku": "appservice:managed-certificate",
+        "unit": "month",
+        "unit_price": 0,
+        "quantity": 1,
+        "monthly_usd": 0,
+        "group": "tls",
+        "group_label": "TLS certificate",
+        "caveats": []
+      },
+      {
+        "label": "DNS hosted zone × 1",
+        "sku": "dns:hosted-zone",
+        "unit": "month",
+        "unit_price": 0.5,
+        "quantity": 1,
+        "monthly_usd": 0.5,
+        "group": "dns",
+        "group_label": "DNS hosted zone",
+        "caveats": []
+      },
+      {
+        "label": "DNS queries",
+        "sku": "dns:queries",
+        "unit": "query",
+        "unit_price": 4e-7,
+        "quantity": 10000000,
+        "monthly_usd": 4,
+        "group": "dns",
+        "group_label": "DNS hosted zone",
+        "caveats": []
+      },
+      {
+        "label": "Authentication (MAU)",
+        "sku": "entra:external-id-mau",
+        "unit": "MAU",
+        "unit_price": 0,
+        "quantity": 25000,
+        "monthly_usd": 0,
+        "group": "auth",
+        "group_label": "Authentication",
+        "caveats": []
+      },
+      {
+        "label": "Backup storage",
+        "sku": "backup:vault-lrs",
+        "unit": "GB-month",
+        "unit_price": 0.0246,
+        "quantity": 200,
+        "monthly_usd": 4.92,
+        "group": "backup",
+        "group_label": "Backup storage",
+        "caveats": []
+      },
+      {
+        "label": "Database storage",
+        "sku": "postgres-flex:storage",
+        "unit": "GB-month",
+        "unit_price": 0.131,
+        "quantity": 100,
+        "monthly_usd": 13.1,
+        "group": "database",
+        "group_label": "Database",
+        "caveats": []
+      },
+      {
+        "label": "Load balancer LCUs",
+        "sku": "appgw:capacity-unit-hour",
+        "unit": "LCU-hour",
+        "unit_price": 0.0144,
+        "quantity": 730,
+        "monthly_usd": 10.512,
+        "group": "loadbalancer",
+        "group_label": "Load balancer",
+        "caveats": []
+      },
+      {
+        "label": "Telemetry ingestion",
+        "sku": "appinsights:ingestion",
+        "unit": "GB",
+        "unit_price": 2.3,
+        "quantity": 2,
+        "monthly_usd": 4.6,
+        "group": "tracing",
+        "group_label": "Telemetry ingestion",
+        "caveats": []
+      },
+      {
+        "label": "Key management operations",
+        "sku": "keyvault:operations",
+        "unit": "operation",
+        "unit_price": 0.000003,
+        "quantity": 200000,
+        "monthly_usd": 0.6,
+        "group": "kms",
+        "group_label": "Key management operations",
+        "caveats": []
+      }
+    ],
+    "missing": [],
+    "measured_saving_usd": 50.9579841,
+    "saving_pct": 8.288132345885845,
+    "applied": [
+      {
+        "id": "burstable-instances-for-low-duty",
+        "name": "Burstable instances for workloads that idle",
+        "category": "compute",
+        "summary": "T-family instances cost less per hour than fixed-performance families of the same size, and bank CPU credits while idle. For a workload that is mostly idle with occasional peaks, that is the correct shape.",
+        "obviousness": "medium",
+        "confidence": "medium",
+        "tool": "EC2 burstable performance instances",
+        "tool_url": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances.html",
+        "tradeoffs": [
+          "Sustained load exhausts credits. The failure is either throttling or a surcharge, and both are worse than having paid for the right shape.",
+          "Credit balance is another thing to monitor.",
+          "Not suitable for latency-sensitive work where a throttle is visible to a user."
+        ],
+        "saved_monthly_usd": 3.066,
+        "versus_sku": "Standard_D2ps_v6",
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": true
+      },
+      {
+        "id": "committed-use-discount",
+        "name": "Commit to a year of usage (Savings Plan / Reserved / CUD)",
+        "category": "compute",
+        "summary": "Commit to a baseline level of compute for one year in exchange for a lower hourly rate. The largest single discount available on a steady workload, and the first thing any cost review applies.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "AWS Cost Explorer — Savings Plans recommendations",
+        "tool_url": "https://docs.aws.amazon.com/cost-management/latest/userguide/ce-sp-recommendations.html",
+        "tradeoffs": [
+          "Locks in twelve months of spend whether or not the workload survives",
+          "Commit to the steady floor, not the peak — over-committing wastes more than it saves, and the unused commitment is still billed",
+          "Savings Plans keep instance-family freedom; Standard RIs are cheaper still but pin you to a family",
+          "Does not apply to spot capacity, which is already discounted further"
+        ],
+        "saved_monthly_usd": 40.1119962,
+        "versus_sku": "Standard_B2ps_v2",
+        "reasons": [
+          "suits web workloads",
+          "steady baseline that will still be running in a year, so a one-year commitment is safe to take"
+        ],
+        "priced": true
+      },
+      {
+        "id": "graviton-arm-compute",
+        "name": "ARM-based compute (AWS Graviton / Azure Ampere / GCP Axion)",
+        "category": "compute",
+        "summary": "Run the same workload on ARM processors instead of x86. Comparable performance for most workloads, lower hourly price.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "docker buildx (multi-arch images)",
+        "tool_url": "https://github.com/docker/buildx",
+        "tradeoffs": [
+          "Container images must be built for arm64 (multi-arch build required)",
+          "Rare x86-only dependencies (some proprietary agents, older native libs) will not run",
+          "Smaller instance-type selection than x86 in some regions",
+          "Real benefit may exceed the list-price gap if the workload performs better per core, but that requires benchmarking the specific workload"
+        ],
+        "saved_monthly_usd": 5.4999879,
+        "versus_sku": "Standard_B2as_v2:commit1yr",
+        "reasons": [
+          "suits web workloads",
+          "no x86-only dependencies declared"
+        ],
+        "priced": true
+      },
+      {
+        "id": "storage-lifecycle-tiering",
+        "name": "Move cold objects to an infrequent-access class",
+        "category": "storage",
+        "summary": "Most of what a bucket holds is never read again after its first few weeks. A lifecycle policy moves those objects to an infrequent-access class at roughly half the price, automatically, with no application change.",
+        "obviousness": "medium",
+        "confidence": "medium",
+        "tool": "S3 Lifecycle configuration",
+        "tool_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html",
+        "tradeoffs": [
+          "Retrieval carries a per-GB fee, so data read often costs MORE on this class",
+          "Minimum storage duration (30 days IA / 90 days archive) — deleting early is billed as though the object had stayed",
+          "First-byte latency rises on archive classes, from milliseconds to minutes",
+          "Objects under 128 KB are not worth transitioning; the per-object overhead outweighs the per-GB saving"
+        ],
+        "saved_monthly_usd": 2.28,
+        "versus_sku": "blob:hot-lrs",
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": true
+      }
+    ],
+    "advisory": [
+      {
+        "id": "egress-free-object-storage",
+        "name": "Serve static assets from egress-free storage",
+        "category": "network",
+        "summary": "Hyperscalers charge for every gigabyte leaving their network. Cloudflare R2 and similar stores charge nothing for egress. Moving images, video and downloads there removes what is often the second-largest line on the bill.",
+        "obviousness": "low",
+        "confidence": "medium",
+        "tool": "Cloudflare R2",
+        "tool_url": "https://developers.cloudflare.com/r2/",
+        "tradeoffs": [
+          "A second vendor to operate, monitor and pay",
+          "Cross-provider latency if the origin and the store are far apart",
+          "Not suitable for dynamic responses, only cacheable static objects",
+          "Data residency and compliance need checking separately",
+          "Migration effort for existing buckets and rewritten asset URLs"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "egress-is-the-bill-nobody-forecasts",
+        "name": "Cut egress before cutting compute",
+        "category": "network",
+        "summary": "Data leaving a cloud is billed per GB at a rate that does not fall with volume the way compute does. On media and analytics workloads it routinely exceeds the compute it serves, and it is the line least often forecast.",
+        "obviousness": "low",
+        "confidence": "medium",
+        "tool": "CloudFront (edge offload)",
+        "tool_url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/",
+        "tradeoffs": [
+          "Compression costs CPU on both ends, and for small responses the overhead exceeds the saving.",
+          "Co-locating a consumer to avoid egress may conflict with a data residency requirement, which is a constraint and not a preference.",
+          "Egress is the charge most likely to be a surprise, so reducing it also reduces the value of the alarm it would otherwise raise."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "graviton-managed-cache",
+        "name": "ARM-based managed cache nodes",
+        "category": "memory",
+        "summary": "ElastiCache and its equivalents publish lower rates for Graviton node families than for the x86 ones at the same size, and a cache is a workload with no binary compatibility question at all.",
+        "obviousness": "low",
+        "confidence": "high",
+        "tool": "ElastiCache on Graviton",
+        "tool_url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/CacheNodes.SupportedTypes.html",
+        "tradeoffs": [
+          "Node family availability varies by region; some smaller ARM sizes are not offered everywhere.",
+          "Changing node family is a replacement, so it needs a maintenance window or a warm secondary."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "zram-memory-compression",
+        "name": "zram / zswap in-memory compression",
+        "category": "memory",
+        "summary": "Compress memory pages in RAM instead of paging to disk, so the same workload fits on a smaller instance tier. Trades a little CPU for a lot of effective RAM.",
+        "obviousness": "low",
+        "confidence": "low",
+        "tool": "zram (Linux kernel module)",
+        "tool_url": "https://docs.kernel.org/admin-guide/blockdev/zram.html",
+        "tradeoffs": [
+          "Costs CPU cycles; harmful if the workload is already CPU-bound",
+          "Benefit depends entirely on how compressible the workload's pages are",
+          "Not available on managed/serverless compute where you don't control the kernel",
+          "Must be load-tested before downsizing — do not downsize on theory"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "single-nat-when-availability-not-stated",
+        "name": "One NAT gateway unless a zone failure has to be survived",
+        "category": "network",
+        "summary": "A NAT gateway per availability zone is the right answer for a workload that stated it cannot go down. For one that did not, the second gateway is $41/month of standby nobody asked for.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "VPC NAT gateway placement",
+        "tool_url": "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html",
+        "tradeoffs": [
+          "Losing the AZ holding the gateway takes outbound connectivity with it. Inbound traffic and anything already established survives, but patching, agent check-in and third-party API calls stop.",
+          "Cross-AZ traffic to reach the single gateway is billed, which claws back a little of the saving on chatty workloads."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "vpc-endpoints-instead-of-nat",
+        "name": "VPC endpoints instead of NAT data processing",
+        "category": "network",
+        "summary": "Traffic from private subnets to S3, DynamoDB and the AWS APIs can take a private route instead of paying a NAT gateway to process every gigabyte.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "AWS PrivateLink / VPC endpoints",
+        "tool_url": "https://docs.aws.amazon.com/vpc/latest/privatelink/",
+        "tradeoffs": [
+          "Interface endpoints bill per AZ per hour whether used or not, so a low-traffic workload can pay more for the endpoint than the NAT data it diverts. The engine's `_endpoint_plan` only adds them where the diverted volume justifies the hourly cost.",
+          "Each endpoint is another resource to manage and to get the security group right on.",
+          "Gateway endpoints exist only for S3 and DynamoDB. Everything else needs the interface kind."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cache-in-front-of-read-load",
+        "name": "Cache reads instead of growing the database",
+        "category": "database",
+        "summary": "A cache node is materially cheaper per read served than the database instance it protects. Where the same rows are read repeatedly, caching them is cheaper than sizing the database for the traffic.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "Amazon ElastiCache",
+        "tool_url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/",
+        "tradeoffs": [
+          "Stale reads. Every cache is a decision about how wrong you are willing to be, and for how long.",
+          "Invalidation is application work, and getting it wrong is a correctness bug rather than a performance one.",
+          "Another component to run out of memory, fail over and monitor."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cache-to-shrink-database",
+        "name": "Cache reads so the database can be smaller",
+        "category": "database",
+        "summary": "Most read-heavy applications ask the database the same questions repeatedly. An in-memory cache in front absorbs those reads, which often means a database one or two sizes down carries the same traffic.",
+        "obviousness": "high",
+        "confidence": "low",
+        "tool": "Valkey (open-source Redis fork)",
+        "tool_url": "https://github.com/valkey-io/valkey",
+        "tradeoffs": [
+          "The cache itself costs money and can erase the saving",
+          "Stale reads unless invalidation is done carefully",
+          "Cache stampede on expiry can hit the database harder than no cache at all",
+          "Adds a failure mode and an operational component",
+          "Application changes required; not a configuration switch"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cdn-offload-origin-egress",
+        "name": "Serve repeat bytes from the edge, not the origin",
+        "category": "network",
+        "summary": "Origin egress is billed per GB at full rate. A CDN in front of it serves cache hits at a lower rate and stops the origin paying for the same object twice.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "Amazon CloudFront",
+        "tool_url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/",
+        "tradeoffs": [
+          "Personalised or per-user responses cache poorly; a CDN in front of them is pure added cost.",
+          "Invalidations cost money and take minutes, so deploys need a cache-busting strategy rather than a purge habit.",
+          "Another hop to debug when something is stale."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "multi-az-database-only-when-stated",
+        "name": "Multi-AZ database only where downtime was said to matter",
+        "category": "database",
+        "summary": "Multi-AZ is a published SKU at roughly double the single-AZ rate, not a multiplier. It is required by a stated availability need and is pure cost without one.",
+        "obviousness": "high",
+        "confidence": "high",
+        "tool": "Amazon RDS Multi-AZ deployments",
+        "tool_url": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html",
+        "tradeoffs": [
+          "Losing the zone holding the single instance is an outage lasting as long as a restore. That is the whole trade, and it is only acceptable where the workload said so.",
+          "Single-AZ patching windows are user-visible; Multi-AZ ones are not."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "read-replica-only-when-read-heavy",
+        "name": "A read replica only where reads actually dominate",
+        "category": "database",
+        "summary": "A replica doubles the database line. It earns that on a read-heavy workload and buys nothing on a write-heavy or low-traffic one, where it is a second instance kept warm to serve traffic that never arrives.",
+        "obviousness": "high",
+        "confidence": "high",
+        "tool": "Amazon RDS read replicas",
+        "tool_url": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.html",
+        "tradeoffs": [
+          "A workload that later becomes read-heavy will need one, and adding it under load is worse than having it.",
+          "Replicas also serve as a failover target on some engines, so removing one can lengthen recovery even when it was not needed for capacity."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "rightsize-from-measured-load",
+        "name": "Size the fleet from the rate, not from a round number",
+        "category": "compute",
+        "summary": "Instance counts chosen by habit -- three, or four, or \"one per environment\" -- are usually above what the stated rate needs. Sizing from the rate removes the difference.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "AWS Compute Optimizer",
+        "tool_url": "https://docs.aws.amazon.com/compute-optimizer/latest/ug/",
+        "tradeoffs": [
+          "Sizing to the stated peak leaves no headroom for a peak that was understated, and traffic figures given from memory usually are.",
+          "An availability floor of two instances applies regardless, so this cannot take a highly available workload below that."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "rightsize-idle-capacity",
+        "name": "Right-size over-provisioned instances",
+        "category": "compute",
+        "summary": "Most instances are picked once, generously, and never revisited. Matching the instance to observed utilisation is the least glamorous and most reliable saving available.",
+        "obviousness": "high",
+        "confidence": "low",
+        "tool": "AWS Compute Optimizer",
+        "tool_url": "https://aws.amazon.com/compute-optimizer/",
+        "tradeoffs": [
+          "Sizing to the average causes incidents at the peak",
+          "Needs real metrics; guessing smaller is not right-sizing",
+          "Requires a restart, so a maintenance window",
+          "Burstable instance families can mask sustained CPU need"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      }
+    ],
+    "tradeoffs": [
+      "The standby database roughly doubles the largest line on the bill",
+      "Still one region — a regional outage is not covered"
+    ],
+    "compliant": true,
+    "unmet": [],
+    "topology": {
+      "nodes": [
+        {
+          "id": "users",
+          "label": "Users",
+          "kind": "client",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "",
+          "detail": "",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "data"
+        },
+        {
+          "id": "cdn",
+          "label": "CDN data transfer",
+          "kind": "cdn",
+          "monthly_usd": 54.5,
+          "share": 0.09665301432967056,
+          "sku": "frontdoor:data-transfer-out",
+          "detail": "500.0 GB",
+          "priced": true,
+          "optimized_by": [],
+          "because": "public readers of the same content, cached at the edge rather than fetched from the origin each time",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "loadbalancer",
+          "label": "Load balancer",
+          "kind": "loadbalancer",
+          "monthly_usd": 28.762,
+          "share": 0.051007963268807056,
+          "sku": "lb:standard",
+          "detail": "lb:standard",
+          "priced": true,
+          "optimized_by": [],
+          "because": "more than one instance to distribute across, and a health check to fail out of",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "compute",
+          "label": "Compute",
+          "kind": "compute",
+          "monthly_usd": 58.0000038,
+          "share": 0.1028600953835293,
+          "sku": "Standard_B2ps_v2:commit1yr",
+          "detail": "Standard_B2ps_v2:commit1yr × 3",
+          "priced": true,
+          "optimized_by": [
+            "graviton-arm-compute"
+          ],
+          "because": "3 instance(s) sized to the stated load; something has to serve the requests",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "cache",
+          "label": "Cache",
+          "kind": "cache",
+          "monthly_usd": 49.64,
+          "share": 0.08803404828118985,
+          "sku": "redis:b3",
+          "detail": "redis:b3",
+          "priced": true,
+          "optimized_by": [],
+          "because": "repeated reads that would otherwise hit the primary every time",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "database",
+          "label": "Database",
+          "kind": "database",
+          "monthly_usd": 299.26,
+          "share": 0.5307225884091231,
+          "sku": "B2ms:multi-az",
+          "detail": "B2ms:multi-az",
+          "priced": true,
+          "optimized_by": [],
+          "because": "relational records the workload reads and writes transactionally",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "storage",
+          "label": "Object storage",
+          "kind": "storage",
+          "monthly_usd": 3.72,
+          "share": 0.006597233271676596,
+          "sku": "blob:hot-lrs",
+          "detail": "80.0 GB",
+          "priced": true,
+          "optimized_by": [],
+          "because": "200 GB of objects to keep",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "monitoring",
+          "label": "Monitoring",
+          "kind": "monitoring",
+          "monthly_usd": 0.020736,
+          "share": 0.00003677425514018438,
+          "sku": "monitor:metrics",
+          "detail": "monitor:metrics",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        },
+        {
+          "id": "audit",
+          "label": "Audit logging",
+          "kind": "audit",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "activitylog:events",
+          "detail": "activitylog:events",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        },
+        {
+          "id": "kms",
+          "label": "Key management operations",
+          "kind": "kms",
+          "monthly_usd": 0.6,
+          "share": 0.0010640698825284832,
+          "sku": "keyvault:operations",
+          "detail": "keyvault:operations",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "nat",
+          "label": "NAT gateway",
+          "kind": "nat",
+          "monthly_usd": 55.35,
+          "share": 0.09816044666325258,
+          "sku": "nat:gateway-hour",
+          "detail": "nat:gateway-hour",
+          "priced": true,
+          "optimized_by": [],
+          "because": "private instances that still need outbound access",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "tls",
+          "label": "TLS certificate",
+          "kind": "tls",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "appservice:managed-certificate",
+          "detail": "appservice:managed-certificate",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "dns",
+          "label": "DNS hosted zone",
+          "kind": "dns",
+          "monthly_usd": 4.5,
+          "share": 0.007980524118963625,
+          "sku": "dns:hosted-zone",
+          "detail": "dns:hosted-zone",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "data"
+        },
+        {
+          "id": "auth",
+          "label": "Authentication",
+          "kind": "auth",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "entra:external-id-mau",
+          "detail": "entra:external-id-mau",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "backup",
+          "label": "Backup storage",
+          "kind": "backup",
+          "monthly_usd": 4.92,
+          "share": 0.008725373036733562,
+          "sku": "backup:vault-lrs",
+          "detail": "backup:vault-lrs",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "tracing",
+          "label": "Telemetry ingestion",
+          "kind": "tracing",
+          "monthly_usd": 4.6,
+          "share": 0.008157869099385038,
+          "sku": "appinsights:ingestion",
+          "detail": "appinsights:ingestion",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        }
+      ],
+      "edges": [
+        {
+          "source": "users",
+          "target": "dns",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "cdn",
+          "target": "loadbalancer",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "cdn",
+          "target": "storage",
+          "label": "assets",
+          "kind": "flow"
+        },
+        {
+          "source": "loadbalancer",
+          "target": "compute",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "cache",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "database",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "kms",
+          "target": "database",
+          "label": "encrypts",
+          "kind": "flow"
+        },
+        {
+          "source": "dns",
+          "target": "loadbalancer",
+          "label": "resolves",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "auth",
+          "label": "sign-in",
+          "kind": "flow"
+        },
+        {
+          "source": "storage",
+          "target": "backup",
+          "label": "backs up",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "nat",
+          "label": "outbound",
+          "kind": "flow"
+        },
+        {
+          "source": "kms",
+          "target": "database",
+          "label": "encrypts",
+          "kind": "attaches"
+        },
+        {
+          "source": "tls",
+          "target": "cdn",
+          "label": "terminates TLS",
+          "kind": "attaches"
+        },
+        {
+          "source": "auth",
+          "target": "loadbalancer",
+          "label": "authenticates",
+          "kind": "attaches"
+        },
+        {
+          "source": "backup",
+          "target": "database",
+          "label": "backs up",
+          "kind": "attaches"
+        }
+      ]
+    },
+    "drawn": null
+  },
+  "gcp": {
+    "label": "Most reliable",
+    "rationale": "Survives an availability-zone failure: extra capacity and a standby database.",
+    "provider": "gcp",
+    "region": "asia-south1",
+    "monthly_usd": 493.3044854,
+    "complete": true,
+    "within_budget": null,
+    "budget_saturated": false,
+    "ondemand_monthly_usd": 514.0630574,
+    "shape_parts": [
+      {
+        "label": "tier",
+        "value": "Most reliable"
+      },
+      {
+        "label": "compute",
+        "value": "3 × 2 vCPU / 8 GB"
+      },
+      {
+        "label": "database",
+        "value": "regional (HA)"
+      },
+      {
+        "label": "region",
+        "value": "asia-south1"
+      }
+    ],
+    "commitment_covers": [
+      "Compute"
+    ],
+    "steady_monthly_usd": 466.6346654,
+    "shape": "3× 2 vCPU / 8 GB · regional (HA) db",
+    "items": [
+      {
+        "label": "Compute × 3 (1-yr commitment)",
+        "sku": "n2d-standard-2:commit1yr",
+        "unit": "hour",
+        "unit_price": 0.035134,
+        "quantity": 2190,
+        "monthly_usd": 76.94346,
+        "group": "compute",
+        "group_label": "Compute",
+        "caveats": [
+          "Assumes a commitment you have not made. The on-demand price is what you pay today.",
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Database (Multi-AZ)",
+        "sku": "db-custom-2-8192:multi-az",
+        "unit": "hour",
+        "unit_price": 0.3328,
+        "quantity": 730,
+        "monthly_usd": 242.944,
+        "group": "database",
+        "group_label": "Database",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Object storage (standard)",
+        "sku": "gcs:standard",
+        "unit": "GB-month",
+        "unit_price": 0.023,
+        "quantity": 80,
+        "monthly_usd": 1.84,
+        "group": "storage",
+        "group_label": "Object storage",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Object storage (infrequent access)",
+        "sku": "gcs:nearline",
+        "unit": "GB-month",
+        "unit_price": 0.016,
+        "quantity": 120,
+        "monthly_usd": 1.92,
+        "group": "storage",
+        "group_label": "Object storage",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Cache",
+        "sku": "memorystore-redis-2gb",
+        "unit": "hour",
+        "unit_price": 0.034,
+        "quantity": 730,
+        "monthly_usd": 24.82,
+        "group": "cache",
+        "group_label": "Cache",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Monitoring",
+        "sku": "monitoring:metrics",
+        "unit": "metric-month",
+        "unit_price": 0.08503418,
+        "quantity": 30,
+        "monthly_usd": 2.5510254,
+        "group": "monitoring",
+        "group_label": "Monitoring",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Load balancer",
+        "sku": "lb:forwarding-rule",
+        "unit": "hour",
+        "unit_price": 0.03,
+        "quantity": 730,
+        "monthly_usd": 21.9,
+        "group": "loadbalancer",
+        "group_label": "Load balancer",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "CDN data transfer",
+        "sku": "cloudcdn:cache-egress",
+        "unit": "GB",
+        "unit_price": 0.09,
+        "quantity": 500,
+        "monthly_usd": 45,
+        "group": "cdn",
+        "group_label": "CDN data transfer",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Audit logging",
+        "sku": "cloudlogging:storage",
+        "unit": "GB",
+        "unit_price": 0.5,
+        "quantity": 1,
+        "monthly_usd": 0.5,
+        "group": "audit",
+        "group_label": "Audit logging",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "NAT gateway × 1",
+        "sku": "cloudnat:gateway-hour",
+        "unit": "hour",
+        "unit_price": 0.0014,
+        "quantity": 2190,
+        "monthly_usd": 3.066,
+        "group": "nat",
+        "group_label": "NAT gateway",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928).",
+          "Billed per VM behind the gateway (3), not per gateway. Google's billing catalog describes this SKU only as hourly gateway uptime; the per-VM basis is from its published pricing, and is corroborated by the rate being 1/32nd of what AWS and Azure charge for one gateway."
+        ]
+      },
+      {
+        "label": "NAT data processing",
+        "sku": "cloudnat:gb-processed",
+        "unit": "GB",
+        "unit_price": 0.045,
+        "quantity": 500,
+        "monthly_usd": 22.5,
+        "group": "nat",
+        "group_label": "NAT gateway",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "TLS certificate",
+        "sku": "certmanager:certificate",
+        "unit": "month",
+        "unit_price": 0.2,
+        "quantity": 1,
+        "monthly_usd": 0.2,
+        "group": "tls",
+        "group_label": "TLS certificate",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "DNS hosted zone × 1",
+        "sku": "clouddns:managed-zone",
+        "unit": "month",
+        "unit_price": 0.2,
+        "quantity": 1,
+        "monthly_usd": 0.2,
+        "group": "dns",
+        "group_label": "DNS hosted zone",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "DNS queries",
+        "sku": "clouddns:queries",
+        "unit": "query",
+        "unit_price": 4e-7,
+        "quantity": 10000000,
+        "monthly_usd": 4,
+        "group": "dns",
+        "group_label": "DNS hosted zone",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Authentication (MAU)",
+        "sku": "identityplatform:mau",
+        "unit": "MAU",
+        "unit_price": 0,
+        "quantity": 25000,
+        "monthly_usd": 0,
+        "group": "auth",
+        "group_label": "Authentication",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Backup storage",
+        "sku": "backupdr:gce-vm",
+        "unit": "GB-month",
+        "unit_price": 0.02,
+        "quantity": 200,
+        "monthly_usd": 4,
+        "group": "backup",
+        "group_label": "Backup storage",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Database storage",
+        "sku": "cloudsql:ssd-storage:multi-az",
+        "unit": "GB-month",
+        "unit_price": 0.408,
+        "quantity": 100,
+        "monthly_usd": 40.8,
+        "group": "database",
+        "group_label": "Database",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Secrets × 1",
+        "sku": "secretmanager:version",
+        "unit": "month",
+        "unit_price": 0.06,
+        "quantity": 1,
+        "monthly_usd": 0.06,
+        "group": "secrets",
+        "group_label": "Secrets",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "Distributed tracing",
+        "sku": "cloudtrace:spans",
+        "unit": "span",
+        "unit_price": 0,
+        "quantity": 2000000,
+        "monthly_usd": 0,
+        "group": "tracing",
+        "group_label": "Distributed tracing",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      },
+      {
+        "label": "KMS keys × 1",
+        "sku": "cloudkms:key-version",
+        "unit": "month",
+        "unit_price": 0.06,
+        "quantity": 1,
+        "monthly_usd": 0.06,
+        "group": "kms",
+        "group_label": "KMS keys",
+        "caveats": [
+          "Single-sourced: no independent credential-free feed exists to cross-check GCP against, unlike AWS (100% agreement on 807 types) and Azure (99.5% on 928)."
+        ]
+      }
+    ],
+    "missing": [],
+    "measured_saving_usd": 21.598572,
+    "saving_pct": 4.19468707547822,
+    "applied": [
+      {
+        "id": "committed-use-discount",
+        "name": "Commit to a year of usage (Savings Plan / Reserved / CUD)",
+        "category": "compute",
+        "summary": "Commit to a baseline level of compute for one year in exchange for a lower hourly rate. The largest single discount available on a steady workload, and the first thing any cost review applies.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "AWS Cost Explorer — Savings Plans recommendations",
+        "tool_url": "https://docs.aws.amazon.com/cost-management/latest/userguide/ce-sp-recommendations.html",
+        "tradeoffs": [
+          "Locks in twelve months of spend whether or not the workload survives",
+          "Commit to the steady floor, not the peak — over-committing wastes more than it saves, and the unused commitment is still billed",
+          "Savings Plans keep instance-family freedom; Standard RIs are cheaper still but pin you to a family",
+          "Does not apply to spot capacity, which is already discounted further"
+        ],
+        "saved_monthly_usd": 20.758572,
+        "versus_sku": "n2d-standard-2",
+        "reasons": [
+          "suits web workloads",
+          "steady baseline that will still be running in a year, so a one-year commitment is safe to take"
+        ],
+        "priced": true
+      },
+      {
+        "id": "storage-lifecycle-tiering",
+        "name": "Move cold objects to an infrequent-access class",
+        "category": "storage",
+        "summary": "Most of what a bucket holds is never read again after its first few weeks. A lifecycle policy moves those objects to an infrequent-access class at roughly half the price, automatically, with no application change.",
+        "obviousness": "medium",
+        "confidence": "medium",
+        "tool": "S3 Lifecycle configuration",
+        "tool_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html",
+        "tradeoffs": [
+          "Retrieval carries a per-GB fee, so data read often costs MORE on this class",
+          "Minimum storage duration (30 days IA / 90 days archive) — deleting early is billed as though the object had stayed",
+          "First-byte latency rises on archive classes, from milliseconds to minutes",
+          "Objects under 128 KB are not worth transitioning; the per-object overhead outweighs the per-GB saving"
+        ],
+        "saved_monthly_usd": 0.84,
+        "versus_sku": "gcs:standard",
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": true
+      }
+    ],
+    "advisory": [
+      {
+        "id": "egress-free-object-storage",
+        "name": "Serve static assets from egress-free storage",
+        "category": "network",
+        "summary": "Hyperscalers charge for every gigabyte leaving their network. Cloudflare R2 and similar stores charge nothing for egress. Moving images, video and downloads there removes what is often the second-largest line on the bill.",
+        "obviousness": "low",
+        "confidence": "medium",
+        "tool": "Cloudflare R2",
+        "tool_url": "https://developers.cloudflare.com/r2/",
+        "tradeoffs": [
+          "A second vendor to operate, monitor and pay",
+          "Cross-provider latency if the origin and the store are far apart",
+          "Not suitable for dynamic responses, only cacheable static objects",
+          "Data residency and compliance need checking separately",
+          "Migration effort for existing buckets and rewritten asset URLs"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "egress-is-the-bill-nobody-forecasts",
+        "name": "Cut egress before cutting compute",
+        "category": "network",
+        "summary": "Data leaving a cloud is billed per GB at a rate that does not fall with volume the way compute does. On media and analytics workloads it routinely exceeds the compute it serves, and it is the line least often forecast.",
+        "obviousness": "low",
+        "confidence": "medium",
+        "tool": "CloudFront (edge offload)",
+        "tool_url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/",
+        "tradeoffs": [
+          "Compression costs CPU on both ends, and for small responses the overhead exceeds the saving.",
+          "Co-locating a consumer to avoid egress may conflict with a data residency requirement, which is a constraint and not a preference.",
+          "Egress is the charge most likely to be a surprise, so reducing it also reduces the value of the alarm it would otherwise raise."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "graviton-managed-cache",
+        "name": "ARM-based managed cache nodes",
+        "category": "memory",
+        "summary": "ElastiCache and its equivalents publish lower rates for Graviton node families than for the x86 ones at the same size, and a cache is a workload with no binary compatibility question at all.",
+        "obviousness": "low",
+        "confidence": "high",
+        "tool": "ElastiCache on Graviton",
+        "tool_url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/CacheNodes.SupportedTypes.html",
+        "tradeoffs": [
+          "Node family availability varies by region; some smaller ARM sizes are not offered everywhere.",
+          "Changing node family is a replacement, so it needs a maintenance window or a warm secondary."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "zram-memory-compression",
+        "name": "zram / zswap in-memory compression",
+        "category": "memory",
+        "summary": "Compress memory pages in RAM instead of paging to disk, so the same workload fits on a smaller instance tier. Trades a little CPU for a lot of effective RAM.",
+        "obviousness": "low",
+        "confidence": "low",
+        "tool": "zram (Linux kernel module)",
+        "tool_url": "https://docs.kernel.org/admin-guide/blockdev/zram.html",
+        "tradeoffs": [
+          "Costs CPU cycles; harmful if the workload is already CPU-bound",
+          "Benefit depends entirely on how compressible the workload's pages are",
+          "Not available on managed/serverless compute where you don't control the kernel",
+          "Must be load-tested before downsizing — do not downsize on theory"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "single-nat-when-availability-not-stated",
+        "name": "One NAT gateway unless a zone failure has to be survived",
+        "category": "network",
+        "summary": "A NAT gateway per availability zone is the right answer for a workload that stated it cannot go down. For one that did not, the second gateway is $41/month of standby nobody asked for.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "VPC NAT gateway placement",
+        "tool_url": "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html",
+        "tradeoffs": [
+          "Losing the AZ holding the gateway takes outbound connectivity with it. Inbound traffic and anything already established survives, but patching, agent check-in and third-party API calls stop.",
+          "Cross-AZ traffic to reach the single gateway is billed, which claws back a little of the saving on chatty workloads."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "vpc-endpoints-instead-of-nat",
+        "name": "VPC endpoints instead of NAT data processing",
+        "category": "network",
+        "summary": "Traffic from private subnets to S3, DynamoDB and the AWS APIs can take a private route instead of paying a NAT gateway to process every gigabyte.",
+        "obviousness": "medium",
+        "confidence": "high",
+        "tool": "AWS PrivateLink / VPC endpoints",
+        "tool_url": "https://docs.aws.amazon.com/vpc/latest/privatelink/",
+        "tradeoffs": [
+          "Interface endpoints bill per AZ per hour whether used or not, so a low-traffic workload can pay more for the endpoint than the NAT data it diverts. The engine's `_endpoint_plan` only adds them where the diverted volume justifies the hourly cost.",
+          "Each endpoint is another resource to manage and to get the security group right on.",
+          "Gateway endpoints exist only for S3 and DynamoDB. Everything else needs the interface kind."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cache-in-front-of-read-load",
+        "name": "Cache reads instead of growing the database",
+        "category": "database",
+        "summary": "A cache node is materially cheaper per read served than the database instance it protects. Where the same rows are read repeatedly, caching them is cheaper than sizing the database for the traffic.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "Amazon ElastiCache",
+        "tool_url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/",
+        "tradeoffs": [
+          "Stale reads. Every cache is a decision about how wrong you are willing to be, and for how long.",
+          "Invalidation is application work, and getting it wrong is a correctness bug rather than a performance one.",
+          "Another component to run out of memory, fail over and monitor."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cache-to-shrink-database",
+        "name": "Cache reads so the database can be smaller",
+        "category": "database",
+        "summary": "Most read-heavy applications ask the database the same questions repeatedly. An in-memory cache in front absorbs those reads, which often means a database one or two sizes down carries the same traffic.",
+        "obviousness": "high",
+        "confidence": "low",
+        "tool": "Valkey (open-source Redis fork)",
+        "tool_url": "https://github.com/valkey-io/valkey",
+        "tradeoffs": [
+          "The cache itself costs money and can erase the saving",
+          "Stale reads unless invalidation is done carefully",
+          "Cache stampede on expiry can hit the database harder than no cache at all",
+          "Adds a failure mode and an operational component",
+          "Application changes required; not a configuration switch"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "cdn-offload-origin-egress",
+        "name": "Serve repeat bytes from the edge, not the origin",
+        "category": "network",
+        "summary": "Origin egress is billed per GB at full rate. A CDN in front of it serves cache hits at a lower rate and stops the origin paying for the same object twice.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "Amazon CloudFront",
+        "tool_url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/",
+        "tradeoffs": [
+          "Personalised or per-user responses cache poorly; a CDN in front of them is pure added cost.",
+          "Invalidations cost money and take minutes, so deploys need a cache-busting strategy rather than a purge habit.",
+          "Another hop to debug when something is stale."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "multi-az-database-only-when-stated",
+        "name": "Multi-AZ database only where downtime was said to matter",
+        "category": "database",
+        "summary": "Multi-AZ is a published SKU at roughly double the single-AZ rate, not a multiplier. It is required by a stated availability need and is pure cost without one.",
+        "obviousness": "high",
+        "confidence": "high",
+        "tool": "Amazon RDS Multi-AZ deployments",
+        "tool_url": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html",
+        "tradeoffs": [
+          "Losing the zone holding the single instance is an outage lasting as long as a restore. That is the whole trade, and it is only acceptable where the workload said so.",
+          "Single-AZ patching windows are user-visible; Multi-AZ ones are not."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "read-replica-only-when-read-heavy",
+        "name": "A read replica only where reads actually dominate",
+        "category": "database",
+        "summary": "A replica doubles the database line. It earns that on a read-heavy workload and buys nothing on a write-heavy or low-traffic one, where it is a second instance kept warm to serve traffic that never arrives.",
+        "obviousness": "high",
+        "confidence": "high",
+        "tool": "Amazon RDS read replicas",
+        "tool_url": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.html",
+        "tradeoffs": [
+          "A workload that later becomes read-heavy will need one, and adding it under load is worse than having it.",
+          "Replicas also serve as a failover target on some engines, so removing one can lengthen recovery even when it was not needed for capacity."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "rightsize-from-measured-load",
+        "name": "Size the fleet from the rate, not from a round number",
+        "category": "compute",
+        "summary": "Instance counts chosen by habit -- three, or four, or \"one per environment\" -- are usually above what the stated rate needs. Sizing from the rate removes the difference.",
+        "obviousness": "high",
+        "confidence": "medium",
+        "tool": "AWS Compute Optimizer",
+        "tool_url": "https://docs.aws.amazon.com/compute-optimizer/latest/ug/",
+        "tradeoffs": [
+          "Sizing to the stated peak leaves no headroom for a peak that was understated, and traffic figures given from memory usually are.",
+          "An availability floor of two instances applies regardless, so this cannot take a highly available workload below that."
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      },
+      {
+        "id": "rightsize-idle-capacity",
+        "name": "Right-size over-provisioned instances",
+        "category": "compute",
+        "summary": "Most instances are picked once, generously, and never revisited. Matching the instance to observed utilisation is the least glamorous and most reliable saving available.",
+        "obviousness": "high",
+        "confidence": "low",
+        "tool": "AWS Compute Optimizer",
+        "tool_url": "https://aws.amazon.com/compute-optimizer/",
+        "tradeoffs": [
+          "Sizing to the average causes incidents at the peak",
+          "Needs real metrics; guessing smaller is not right-sizing",
+          "Requires a restart, so a maintenance window",
+          "Burstable instance families can mask sustained CPU need"
+        ],
+        "saved_monthly_usd": null,
+        "versus_sku": null,
+        "reasons": [
+          "suits web workloads"
+        ],
+        "priced": false
+      }
+    ],
+    "tradeoffs": [
+      "The standby database roughly doubles the largest line on the bill",
+      "Still one region — a regional outage is not covered"
+    ],
+    "compliant": true,
+    "unmet": [],
+    "topology": {
+      "nodes": [
+        {
+          "id": "users",
+          "label": "Users",
+          "kind": "client",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "",
+          "detail": "",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "data"
+        },
+        {
+          "id": "cdn",
+          "label": "CDN data transfer",
+          "kind": "cdn",
+          "monthly_usd": 45,
+          "share": 0.09122155044568747,
+          "sku": "cloudcdn:cache-egress",
+          "detail": "500.0 GB",
+          "priced": true,
+          "optimized_by": [],
+          "because": "public readers of the same content, cached at the edge rather than fetched from the origin each time",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "loadbalancer",
+          "label": "Load balancer",
+          "kind": "loadbalancer",
+          "monthly_usd": 21.9,
+          "share": 0.0443944878835679,
+          "sku": "lb:forwarding-rule",
+          "detail": "lb:forwarding-rule",
+          "priced": true,
+          "optimized_by": [],
+          "because": "more than one instance to distribute across, and a health check to fail out of",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "compute",
+          "label": "Compute",
+          "kind": "compute",
+          "monthly_usd": 76.94346,
+          "share": 0.15597559373012748,
+          "sku": "n2d-standard-2:commit1yr",
+          "detail": "n2d-standard-2:commit1yr × 3",
+          "priced": true,
+          "optimized_by": [],
+          "because": "3 instance(s) sized to the stated load; something has to serve the requests",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "cache",
+          "label": "Cache",
+          "kind": "cache",
+          "monthly_usd": 24.82,
+          "share": 0.05031375293471029,
+          "sku": "memorystore-redis-2gb",
+          "detail": "memorystore-redis-2gb",
+          "priced": true,
+          "optimized_by": [],
+          "because": "repeated reads that would otherwise hit the primary every time",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "database",
+          "label": "Database",
+          "kind": "database",
+          "monthly_usd": 283.744,
+          "share": 0.5751903913258033,
+          "sku": "db-custom-2-8192:multi-az",
+          "detail": "db-custom-2-8192:multi-az",
+          "priced": true,
+          "optimized_by": [],
+          "because": "relational records the workload reads and writes transactionally",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "storage",
+          "label": "Object storage",
+          "kind": "storage",
+          "monthly_usd": 3.76,
+          "share": 0.007622067326128554,
+          "sku": "gcs:standard",
+          "detail": "80.0 GB",
+          "priced": true,
+          "optimized_by": [],
+          "because": "200 GB of objects to keep",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "monitoring",
+          "label": "Monitoring",
+          "kind": "monitoring",
+          "monthly_usd": 2.5510254,
+          "share": 0.005171299826985112,
+          "sku": "monitoring:metrics",
+          "detail": "monitoring:metrics",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        },
+        {
+          "id": "audit",
+          "label": "Audit logging",
+          "kind": "audit",
+          "monthly_usd": 0.5,
+          "share": 0.0010135727827298609,
+          "sku": "cloudlogging:storage",
+          "detail": "cloudlogging:storage",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        },
+        {
+          "id": "kms",
+          "label": "KMS keys",
+          "kind": "kms",
+          "monthly_usd": 0.06,
+          "share": 0.0001216287339275833,
+          "sku": "cloudkms:key-version",
+          "detail": "cloudkms:key-version",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "secrets",
+          "label": "Secrets",
+          "kind": "secrets",
+          "monthly_usd": 0.06,
+          "share": 0.0001216287339275833,
+          "sku": "secretmanager:version",
+          "detail": "secretmanager:version",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "nat",
+          "label": "NAT gateway",
+          "kind": "nat",
+          "monthly_usd": 25.566,
+          "share": 0.05182600352654324,
+          "sku": "cloudnat:gateway-hour",
+          "detail": "cloudnat:gateway-hour",
+          "priced": true,
+          "optimized_by": [],
+          "because": "private instances that still need outbound access",
+          "baseline": false,
+          "plane": "data"
+        },
+        {
+          "id": "tls",
+          "label": "TLS certificate",
+          "kind": "tls",
+          "monthly_usd": 0.2,
+          "share": 0.00040542911309194435,
+          "sku": "certmanager:certificate",
+          "detail": "certmanager:certificate",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "dns",
+          "label": "DNS hosted zone",
+          "kind": "dns",
+          "monthly_usd": 4.2,
+          "share": 0.008514011374930831,
+          "sku": "clouddns:managed-zone",
+          "detail": "clouddns:managed-zone",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "data"
+        },
+        {
+          "id": "auth",
+          "label": "Authentication",
+          "kind": "auth",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "identityplatform:mau",
+          "detail": "identityplatform:mau",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "backup",
+          "label": "Backup storage",
+          "kind": "backup",
+          "monthly_usd": 4,
+          "share": 0.008108582261838887,
+          "sku": "backupdr:gce-vm",
+          "detail": "backupdr:gce-vm",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "control"
+        },
+        {
+          "id": "tracing",
+          "label": "Distributed tracing",
+          "kind": "tracing",
+          "monthly_usd": 0,
+          "share": 0,
+          "sku": "cloudtrace:spans",
+          "detail": "cloudtrace:spans",
+          "priced": true,
+          "optimized_by": [],
+          "because": "",
+          "baseline": true,
+          "plane": "account"
+        }
+      ],
+      "edges": [
+        {
+          "source": "users",
+          "target": "dns",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "cdn",
+          "target": "loadbalancer",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "cdn",
+          "target": "storage",
+          "label": "assets",
+          "kind": "flow"
+        },
+        {
+          "source": "loadbalancer",
+          "target": "compute",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "cache",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "database",
+          "label": "",
+          "kind": "flow"
+        },
+        {
+          "source": "kms",
+          "target": "database",
+          "label": "encrypts",
+          "kind": "flow"
+        },
+        {
+          "source": "dns",
+          "target": "loadbalancer",
+          "label": "resolves",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "auth",
+          "label": "sign-in",
+          "kind": "flow"
+        },
+        {
+          "source": "storage",
+          "target": "backup",
+          "label": "backs up",
+          "kind": "flow"
+        },
+        {
+          "source": "compute",
+          "target": "nat",
+          "label": "outbound",
+          "kind": "flow"
+        },
+        {
+          "source": "kms",
+          "target": "database",
+          "label": "encrypts",
+          "kind": "attaches"
+        },
+        {
+          "source": "secrets",
+          "target": "compute",
+          "label": "supplies credentials",
+          "kind": "attaches"
+        },
+        {
+          "source": "tls",
+          "target": "cdn",
+          "label": "terminates TLS",
+          "kind": "attaches"
+        },
+        {
+          "source": "auth",
+          "target": "loadbalancer",
+          "label": "authenticates",
+          "kind": "attaches"
+        },
+        {
+          "source": "backup",
+          "target": "database",
+          "label": "backs up",
+          "kind": "attaches"
+        }
+      ]
+    },
+    "drawn": null
+  }
+}

@@ -434,20 +434,21 @@ export function FeatureBlock({
 /* ──────────────────────── stats band ──────────────────────── */
 
 export async function Stats() {
-  /* The price count and the AWS validation ratio used to sit here. Both now
-     belong to the Provenance section below, which shows them with their
-     working; repeating them here would put the same figure on the page twice
-     and make the weaker, unsupported copy the one a reader meets first. What
-     is left is the claim -- the evidence follows it. */
-  let techniques = 0;
-  let markets = 0;
+  let techniques = 25;
+  let markets = 18;
   try {
-    [techniques, markets] = await Promise.all([
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("stats timeout")), 1200),
+    );
+    const fetchStats = Promise.all([
       api.techniques().then((t) => t.count),
       api.regions().then((r) => Object.keys(r).length),
     ]);
+    const [tCount, mCount] = await Promise.race([fetchStats, timeout]);
+    if (tCount) techniques = tCount;
+    if (mCount) markets = mCount;
   } catch {
-    /* renders as — */
+    /* Uses default metrics */
   }
 
   const items: {

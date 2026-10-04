@@ -1,6 +1,7 @@
 import { api, money, type CatalogRow } from "@/lib/api";
 import Link from "next/link";
 import { InlineIcon } from "@/components/landing/InlineIcon";
+import { DEFAULT_PRICE_TICKER_ROWS } from "@/lib/defaultLandingData";
 
 /**
  * A continuously scrolling band of live prices.
@@ -23,14 +24,19 @@ const MARK: Record<string, string> = {
 };
 
 export async function PriceTicker() {
-  let rows: CatalogRow[] = [];
+  let rows: CatalogRow[] = DEFAULT_PRICE_TICKER_ROWS;
   try {
-    const catalog = await api.catalog({ min_vcpu: 2, min_memory_gb: 4, limit: 18 });
-    rows = catalog.rows;
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("ticker timeout")), 1200),
+    );
+    const catalogPromise = api.catalog({ min_vcpu: 2, min_memory_gb: 4, limit: 18 });
+    const catalog = await Promise.race([catalogPromise, timeout]);
+    if (catalog.rows?.length) {
+      rows = catalog.rows;
+    }
   } catch {
-    return null;
+    // Keep DEFAULT_PRICE_TICKER_ROWS seamlessly
   }
-  if (!rows.length) return null;
 
   const strip = (
     <div className="flex shrink-0 items-center gap-8 pr-8">

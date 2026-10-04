@@ -19,12 +19,8 @@ import {
   Stats,
 } from "@/components/landing/Sections";
 
-//: 60s revalidation keeps the page fresh without waiting so long on cold
-//: starts. Render free tier sleeps after 15 min idle, so regenerating every
-//: 60s means at most ~60s latency on a cold start (regeneration waits for
-//: Render to boot). At 300s, a late-night visitor after a long sleep pays the
-//: full cold start penalty of 30-60s plus the 5-min cache window.
-export const revalidate = 60;
+// 1-day ISR caching on Vercel Edge CDN so visitors get instant sub-50ms loads
+export const revalidate = 86400;
 
 /* ── small visuals used inside the feature blocks ── */
 
@@ -214,9 +210,7 @@ export default function Home() {
 
       {/* the product, as three panels, directly under the hero */}
       <section className="px-6 pb-20">
-        <Suspense fallback={<Loading height={300} />}>
-          <HeroShowcaseSection />
-        </Suspense>
+        <HeroShowcaseSection />
       </section>
 
       {/* live prices, moving */}

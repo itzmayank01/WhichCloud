@@ -84,11 +84,7 @@ const money = (n: number, dp = 0) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 
 export function HeroShowcase({ data }: { data: ShowcaseData }) {
-  const [revealed, setRevealed] = useState(false);
-  /* With motion off the panels are shown outright rather than revealed
-     into, so this is read during render instead of written from an
-     effect -- which rendered them collapsed first and expanded a tick
-     later, the empty-boxes frame this panel cannot afford. */
+  const [revealed, setRevealed] = useState(true);
   const reduced = usePrefersReducedMotion();
   const shown = revealed || reduced;
   const host = useRef<HTMLDivElement>(null);
@@ -571,8 +567,8 @@ function EstimateRun({
     },
   ];
 
-  /* -1 before it starts, 0..n-1 while working, n once the result is up. */
-  const [step, setStep] = useState(-1);
+  /* Start at steps.length so the full breakdown is shown immediately on first paint */
+  const [step, setStep] = useState(steps.length);
   /* Finished immediately when motion is off, rather than set from an
      effect for the same reason as above. */
   const reduced = usePrefersReducedMotion();
@@ -605,7 +601,11 @@ function EstimateRun({
       );
     };
 
-    run();
+    // First cycle runs after RESULT_HOLD_MS since results are already shown on mount
+    timers.current.push(
+      window.setTimeout(() => !cancelled && run(), RESULT_HOLD_MS),
+    );
+
     return () => {
       cancelled = true;
       clear();
