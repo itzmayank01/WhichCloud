@@ -210,7 +210,7 @@ function FilterMenu({
                     <span
                       className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[9px] leading-none ${
                         filter.values.includes(option.value)
-                          ? "border-accent bg-accent text-white"
+                          ? "border-accent bg-accent text-canvas"
                           : "border-line-strong"
                       }`}
                     >
@@ -239,7 +239,7 @@ function FilterMenu({
         <button
           type="button"
           onClick={onClose}
-          className="rounded bg-accent px-2.5 py-1 text-[11px] font-semibold text-white"
+          className="rounded bg-accent px-2.5 py-1 text-[11px] font-semibold text-canvas"
         >
           Done
         </button>

@@ -404,7 +404,7 @@ export function FinOpsIssuesView({
               onClick={() => setFilterSeverity(tab.id)}
               className={`rounded-xl px-3 py-1.5 text-[12.5px] font-medium transition-all ${
                 filterSeverity === tab.id
-                  ? "bg-accent text-white shadow-2xs"
+                  ? "bg-accent text-canvas shadow-2xs"
                   : "bg-sunk text-ink-2 hover:text-ink"
               }`}
             >
@@ -540,7 +540,7 @@ export function FinOpsIssuesView({
                       <button
                         onClick={() => handleRemediate(issue.id)}
                         disabled={isRemediating}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 transition-all shadow-xs"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-canvas hover:opacity-90 transition-all shadow-xs"
                       >
                         {isRemediating ? (
                           <>
@@ -628,7 +628,7 @@ export function FinOpsIssuesView({
                     handleRemediate(activeTerraformModal.id);
                     setActiveTerraformModal(null);
                   }}
-                  className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90"
+                  className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-canvas hover:opacity-90"
                 >
                   Mark as Remediated
                 </button>

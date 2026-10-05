@@ -261,7 +261,7 @@ function FinOpsContent() {
           </p>
           <Link
             href={unsupported ? "/dashboard" : "/connect"}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition hover:opacity-90"
+            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-canvas transition hover:opacity-90"
           >
             <Icon icon={unsupported ? "mdi:calculator-variant-outline" : "mdi:link-variant"} className="h-4 w-4" />
             {unsupported ? "Price an architecture instead" : "Connect an account"}
@@ -430,7 +430,7 @@ function FinOpsContent() {
                   onClick={() => setCurrency(curr)}
                   className={`rounded-lg px-2.5 py-1 text-[11.5px] font-mono font-bold transition-all ${
                     currency === curr
-                      ? "bg-accent text-white shadow-xs"
+                      ? "bg-accent text-canvas shadow-xs"
                       : "text-ink-2 hover:bg-sunk hover:text-ink"
                   }`}
                 >
@@ -470,7 +470,7 @@ function FinOpsContent() {
             {/* Executive Memo Button */}
             <button
               onClick={() => setShowExportModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 shadow-2xs"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-canvas hover:opacity-90 shadow-2xs"
             >
               <Icon icon="mdi:file-document-outline" className="h-4 w-4" />
               Executive Memo
@@ -1141,7 +1141,7 @@ function FinOpsContent() {
                     toggleTechnique(activeDiffModal.id);
                     setActiveDiffModal(null);
                   }}
-                  className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90"
+                  className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-canvas hover:opacity-90"
                 >
                   {appliedTechniques[activeDiffModal.id] ? "Remove from Simulation" : "Apply to Simulation"}
                 </button>
@@ -1223,7 +1223,7 @@ function FinOpsContent() {
               </button>
               <button
                 onClick={() => setShowExportModal(false)}
-                className="rounded-lg bg-accent px-5 py-2 text-[13px] font-semibold text-white hover:opacity-90"
+                className="rounded-lg bg-accent px-5 py-2 text-[13px] font-semibold text-canvas hover:opacity-90"
               >
                 Done
               </button>

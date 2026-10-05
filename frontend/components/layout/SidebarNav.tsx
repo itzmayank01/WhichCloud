@@ -329,7 +329,7 @@ export function SidebarNav({
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setShowNotificationsModal(false)}
-                className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-white"
+                className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-canvas"
               >
                 Mark as Read
               </button>
@@ -374,7 +374,7 @@ export function SidebarNav({
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setShowHelpModal(false)}
-                className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-white"
+                className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-canvas"
               >
                 Close
               </button>

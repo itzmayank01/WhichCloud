@@ -179,7 +179,7 @@ export function AskPanel({
         type="button"
         disabled={busy || !question.trim()}
         onClick={() => void ask(question)}
-        className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+        className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-40"
       >
         {busy ? "Reading the bill…" : "Ask"}
       </button>

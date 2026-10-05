@@ -239,7 +239,7 @@ export function TierDiagram({
 
   if (!laid) {
     return (
-      <div className="flex h-48 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-sm text-neutral-500">
+      <div className="flex h-48 items-center justify-center rounded-xl border border-line bg-sunk text-sm text-ink-3">
         Laying out {tierName}…
       </div>
     );
@@ -251,18 +251,18 @@ export function TierDiagram({
         <div className="flex items-center gap-3">
           <button
             onClick={() => setPlaying((p) => !p)}
-            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+            className="rounded-lg border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-sunk"
           >
             {playing ? "Stop" : "Trace a request"}
           </button>
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-ink-3">
             Follows the data plane only — a request does not pass through a
             key or an audit trail.
           </span>
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white p-4">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface p-4">
         <svg
           ref={svgRef}
           width={Math.max(size.w, 320)}
@@ -339,10 +339,10 @@ export function TierDiagram({
                   strokeDasharray={control ? "5 3" : undefined}
                 />
                 <rect width={5} height={l.h} rx={2} fill={colour} />
-                <text x={16} y={24} className="fill-neutral-900 text-[12px] font-semibold">
+                <text x={16} y={24} className="fill-ink text-[12px] font-semibold">
                   {node.label.length > 22 ? `${node.label.slice(0, 21)}…` : node.label}
                 </text>
-                <text x={16} y={42} className="fill-neutral-500 text-[11px]">
+                <text x={16} y={42} className="fill-ink-3 text-[11px]">
                   {node.priced ? money(node.monthly_usd) : "not priced"}
                 </text>
               </g>
@@ -356,18 +356,18 @@ export function TierDiagram({
           arrow from GuardDuty to the database would be inventing a
           relationship; leaving them out entirely would hide real spend. */}
       {account.length > 0 && (
-        <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+        <div className="rounded-xl border border-line bg-sunk px-4 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
             Account-wide — watches everything, attaches to nothing
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {account.map((n) => (
               <span
                 key={n.id}
-                className="rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-700"
+                className="rounded-md border border-line-strong bg-surface px-2.5 py-1 text-xs text-ink-2"
               >
                 {n.label}
-                <span className="ml-1.5 font-mono text-neutral-500">
+                <span className="ml-1.5 font-mono text-ink-3">
                   {n.priced ? money(n.monthly_usd) : "—"}
                 </span>
               </span>
@@ -377,7 +377,7 @@ export function TierDiagram({
       )}
 
       {selected && byId.get(selected)?.because && (
-        <p className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs leading-relaxed text-neutral-700">
+        <p className="rounded-lg border border-line bg-surface px-3 py-2 text-xs leading-relaxed text-ink-2">
           <span className="font-semibold">{byId.get(selected)!.label}:</span>{" "}
           {byId.get(selected)!.because}
         </p>

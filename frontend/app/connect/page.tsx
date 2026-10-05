@@ -116,7 +116,7 @@ export default function ConnectAccountsPage() {
           </button>
           <Link
             href="/finops?provider=aws&account_id=demo"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[14px] font-medium text-white transition-opacity hover:opacity-95"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[14px] font-medium text-canvas transition-opacity hover:opacity-95"
           >
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             Explore Live Demo Account
@@ -256,7 +256,7 @@ export default function ConnectAccountsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:opacity-95"
+                    className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-canvas hover:opacity-95"
                   >
                     Send Invitation
                   </button>
@@ -271,7 +271,7 @@ export default function ConnectAccountsPage() {
                     setInvited(false);
                     setEmailInput("");
                   }}
-                  className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-medium text-white"
+                  className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-medium text-canvas"
                 >
                   Done
                 </button>

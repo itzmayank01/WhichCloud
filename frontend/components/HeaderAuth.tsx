@@ -51,7 +51,7 @@ export function HeaderAuth() {
       <>
         <Link
           href="/dashboard"
-          className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-white transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]"
+          className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-canvas transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]"
         >
           Workspace
         </Link>
@@ -63,12 +63,15 @@ export function HeaderAuth() {
   return (
     <>
       <SignInButton>
-        <button className="text-sm text-ink-2 transition-colors hover:text-ink">
+        <button className="whitespace-nowrap text-sm text-ink-2 transition-colors hover:text-ink">
           Sign in
         </button>
       </SignInButton>
+      {/* Below `sm` there is no room for both next to the logo, the menu and
+          the theme toggle: "Sign in" wrapped onto two lines and this button
+          ran off the right edge. Sign-in links to sign-up, so it alone stays. */}
       <SignUpButton>
-        <button className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-white transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]">
+        <button className="hidden shrink-0 whitespace-nowrap sm:inline-block rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-canvas transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]">
           Get started
         </button>
       </SignUpButton>

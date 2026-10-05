@@ -19,8 +19,8 @@ import { api, money } from "@/lib/api";
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-1">
-      <span className="text-xs uppercase tracking-wide text-neutral-500">{label}</span>
-      <span className="font-mono text-sm text-neutral-900">{value}</span>
+      <span className="text-xs uppercase tracking-wide text-ink-3">{label}</span>
+      <span className="font-mono text-sm text-ink">{value}</span>
     </div>
   );
 }
@@ -83,7 +83,7 @@ function DownloadTerraformButton({
         type="button"
         onClick={download}
         disabled={busy || !description}
-        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 transition hover:bg-neutral-50 disabled:opacity-60"
+        className="rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-sunk disabled:opacity-60"
       >
         {busy ? "Generating…" : "Download ZIP"}
       </button>
@@ -109,23 +109,23 @@ function TierCard({
       className={`flex flex-col gap-2 rounded-xl border p-4 text-left transition ${
         selected
           ? "border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-500"
-          : "border-neutral-200 bg-white hover:border-neutral-300"
+          : "border-line bg-surface hover:border-line-strong"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-neutral-900">{tier.label}</span>
+        <span className="text-sm font-semibold text-ink">{tier.label}</span>
         {selected && (
           <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
             Recommended
           </span>
         )}
       </div>
-      <div className="font-mono text-2xl font-semibold text-neutral-900">
+      <div className="font-mono text-2xl font-semibold text-ink">
         {money(tier.monthly_total)}
-        <span className="text-sm font-normal text-neutral-500">/mo</span>
+        <span className="text-sm font-normal text-ink-3">/mo</span>
       </div>
-      <p className="text-xs leading-relaxed text-neutral-600">{tier.philosophy}</p>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600">
+      <p className="text-xs leading-relaxed text-ink-2">{tier.philosophy}</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2">
         <span>RTO {tier.rto}</span>
         <span>RPO {tier.rpo}</span>
       </div>
@@ -164,11 +164,11 @@ function WithheldView({ plan }: { plan: Plan }) {
       {/* A recognised shape can be described even when it cannot be
           priced — that is the whole reason the two states are separate. */}
       {recognised && plan.archetype_requirements && (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-sm font-semibold text-ink">
             What this architecture needs
           </h3>
-          <p className="mt-2 text-sm leading-relaxed text-neutral-700">
+          <p className="mt-2 text-sm leading-relaxed text-ink-2">
             {plan.archetype_requirements}
           </p>
         </section>
@@ -192,8 +192,8 @@ function WithheldView({ plan }: { plan: Plan }) {
         </section>
       )}
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-neutral-900">
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h3 className="text-sm font-semibold text-ink">
           What we read from your description
         </h3>
         <div className="mt-2 flex flex-wrap gap-x-8 gap-y-1">
@@ -204,13 +204,13 @@ function WithheldView({ plan }: { plan: Plan }) {
       </section>
 
       {plan.clarifying_questions.length > 0 && (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-sm font-semibold text-ink">
             Answering any of these would let us classify it
           </h3>
           <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5">
             {plan.clarifying_questions.map((q) => (
-              <li key={q} className="text-sm leading-relaxed text-neutral-700">
+              <li key={q} className="text-sm leading-relaxed text-ink-2">
                 {q}
               </li>
             ))}
@@ -219,11 +219,11 @@ function WithheldView({ plan }: { plan: Plan }) {
       )}
 
       {plan.covered_archetypes.length > 0 && (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-sm font-semibold text-ink">
             What this engine can price today
             {plan.coverage_summary && (
-              <span className="ml-2 font-normal text-neutral-500">
+              <span className="ml-2 font-normal text-ink-3">
                 — {plan.coverage_summary.shapes_priced} priced of{" "}
                 {plan.coverage_summary.shapes_recognised} recognised
               </span>
@@ -231,20 +231,20 @@ function WithheldView({ plan }: { plan: Plan }) {
           </h3>
           <ul className="mt-2 flex flex-col gap-2">
             {plan.covered_archetypes.map((a) => (
-              <li key={a.archetype} className="text-sm text-neutral-700">
-                <span className="font-mono text-xs text-neutral-900">
+              <li key={a.archetype} className="text-sm text-ink-2">
+                <span className="font-mono text-xs text-ink">
                   {a.archetype}
                 </span>{" "}
                 <span
                   className={
                     a.status === "priced"
                       ? "text-emerald-700"
-                      : "text-neutral-500"
+                      : "text-ink-3"
                   }
                 >
                   ({a.status})
                 </span>
-                <div className="text-neutral-600">{a.description}</div>
+                <div className="text-ink-2">{a.description}</div>
               </li>
             ))}
           </ul>
@@ -307,13 +307,13 @@ export function PlanView({
 
       {/* ── which assumptions move the number, ranked ── */}
       {plan.cost_drivers.length > 0 && (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-sm font-semibold text-ink">
             What moves this estimate
           </h3>
           <table className="mt-2 w-full text-left text-sm">
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-neutral-500">
+              <tr className="text-xs uppercase tracking-wide text-ink-3">
                 <th className="py-1 font-medium">assumption</th>
                 <th className="py-1 text-right font-medium">at half</th>
                 <th className="py-1 text-right font-medium">at double</th>
@@ -322,15 +322,15 @@ export function PlanView({
             </thead>
             <tbody>
               {plan.cost_drivers.map((d) => (
-                <tr key={d.field} className="border-t border-neutral-100">
-                  <td className="py-1.5 text-neutral-800">{d.label}</td>
-                  <td className="py-1.5 text-right font-mono tabular-nums text-neutral-600">
+                <tr key={d.field} className="border-t border-line">
+                  <td className="py-1.5 text-ink">{d.label}</td>
+                  <td className="py-1.5 text-right font-mono tabular-nums text-ink-2">
                     {money(d.low_total)}
                   </td>
-                  <td className="py-1.5 text-right font-mono tabular-nums text-neutral-600">
+                  <td className="py-1.5 text-right font-mono tabular-nums text-ink-2">
                     {money(d.high_total)}
                   </td>
-                  <td className="py-1.5 text-right font-mono tabular-nums font-semibold text-neutral-900">
+                  <td className="py-1.5 text-right font-mono tabular-nums font-semibold text-ink">
                     {money(d.swing)}
                   </td>
                 </tr>
@@ -357,25 +357,25 @@ export function PlanView({
       )}
 
       {/* ── what it was sized from ── */}
-      <section className="rounded-xl border border-neutral-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-neutral-900">Sized from</h3>
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h3 className="text-sm font-semibold text-ink">Sized from</h3>
         <div className="mt-2 flex flex-wrap gap-x-8 gap-y-1">
           <Row label="average" value={`${plan.sizing_basis.avg_rps} req/sec`} />
           <Row label="peak" value={`${plan.sizing_basis.peak_rps} req/sec`} />
           <Row label="band" value={plan.sizing_basis.tier} />
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+        <p className="mt-2 text-sm leading-relaxed text-ink-2">
           {plan.sizing_basis.sized_from}
         </p>
       </section>
 
       {/* ── the network shape, and why ── */}
       {plan.network_topology_reason && (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-sm font-semibold text-ink">
             Network shape: {plan.network_topology}
           </h3>
-          <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+          <p className="mt-2 text-sm leading-relaxed text-ink-2">
             {plan.network_topology_reason}
           </p>
         </section>
@@ -383,11 +383,11 @@ export function PlanView({
 
       {/* ── whether this description matched a known service shape ── */}
       {plan.archetype_note && (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-sm font-semibold text-ink">
             Workload shape: {plan.archetype}
           </h3>
-          <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+          <p className="mt-2 text-sm leading-relaxed text-ink-2">
             {plan.archetype_note}
           </p>
         </section>
@@ -395,7 +395,7 @@ export function PlanView({
 
       {/* ── the three compliant options ── */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-sm font-semibold text-neutral-900">
+        <h3 className="text-sm font-semibold text-ink">
           Three options, all meeting your stated requirements
         </h3>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -413,7 +413,7 @@ export function PlanView({
       {/* ── the selected tier's bill ── */}
       {tier.topology && tier.topology.nodes.length > 0 && (
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-neutral-900">
+          <h3 className="text-sm font-semibold text-ink">
             {tier.label} — architecture
           </h3>
           <TierDiagram
@@ -424,22 +424,22 @@ export function PlanView({
         </section>
       )}
 
-      <section className="rounded-xl border border-neutral-200 bg-white">
-        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
-          <h3 className="text-sm font-semibold text-neutral-900">
+      <section className="rounded-xl border border-line bg-surface">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <h3 className="text-sm font-semibold text-ink">
             {tier.label} — line items
           </h3>
           <DownloadTerraformButton description={description} tier={tier.name} />
         </div>
-        <div className="divide-y divide-neutral-100">
+        <div className="divide-y divide-line">
           {tier.components.map((c) => (
             <div key={c.label + c.sku} className="px-4 py-2">
               <div className="flex items-baseline justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="truncate text-sm text-neutral-900">{c.label}</div>
-                  <div className="truncate font-mono text-xs text-neutral-500">{c.sku}</div>
+                  <div className="truncate text-sm text-ink">{c.label}</div>
+                  <div className="truncate font-mono text-xs text-ink-3">{c.sku}</div>
                 </div>
-                <div className="shrink-0 font-mono text-sm tabular-nums text-neutral-900">
+                <div className="shrink-0 font-mono text-sm tabular-nums text-ink">
                   {money(c.monthly_usd)}
                 </div>
               </div>
@@ -460,14 +460,14 @@ export function PlanView({
             </div>
           ))}
         </div>
-        <div className="flex items-baseline justify-between border-t border-neutral-200 px-4 py-3">
-          <span className="text-sm font-semibold text-neutral-900">Every month</span>
-          <span className="font-mono text-lg font-semibold tabular-nums text-neutral-900">
+        <div className="flex items-baseline justify-between border-t border-line px-4 py-3">
+          <span className="text-sm font-semibold text-ink">Every month</span>
+          <span className="font-mono text-lg font-semibold tabular-nums text-ink">
             {money(tier.monthly_total)}
           </span>
         </div>
         {tier.committed_use_note && (
-          <p className="border-t border-neutral-100 px-4 py-2 text-xs leading-relaxed text-neutral-500">
+          <p className="border-t border-line px-4 py-2 text-xs leading-relaxed text-ink-3">
             {tier.committed_use_note}
           </p>
         )}
@@ -490,15 +490,15 @@ export function PlanView({
       {/* ── what changed vs. the tier below, and the risk each change removes ── */}
       {(tier.pattern_diff_vs_previous_tier.length > 0 || tier.no_further_improvement) && (
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-neutral-900">
+          <h3 className="text-sm font-semibold text-ink">
             What changed from the tier below
           </h3>
           {tier.no_further_improvement ? (
-            <p className="text-sm text-neutral-600">{tier.no_further_improvement}</p>
+            <p className="text-sm text-ink-2">{tier.no_further_improvement}</p>
           ) : (
             <ul className="flex flex-col gap-1.5">
               {tier.pattern_diff_vs_previous_tier.map((d) => (
-                <li key={d} className="text-sm leading-relaxed text-neutral-700">
+                <li key={d} className="text-sm leading-relaxed text-ink-2">
                   {d}
                 </li>
               ))}
@@ -510,13 +510,13 @@ export function PlanView({
       {/* ── why each addition is there ── */}
       {Object.keys(tier.justifications).length > 0 && (
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-neutral-900">
+          <h3 className="text-sm font-semibold text-ink">
             Why these were added
           </h3>
           <ul className="flex flex-col gap-1.5">
             {Object.entries(tier.justifications).map(([component, why]) => (
-              <li key={component} className="text-sm text-neutral-700">
-                <span className="font-mono text-xs text-neutral-500">{component}</span>{" "}
+              <li key={component} className="text-sm text-ink-2">
+                <span className="font-mono text-xs text-ink-3">{component}</span>{" "}
                 — {why}
               </li>
             ))}
@@ -543,8 +543,8 @@ export function PlanView({
       )}
 
       {/* ── recovery objectives ── */}
-      <section className="rounded-xl border border-neutral-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-neutral-900">If something fails</h3>
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h3 className="text-sm font-semibold text-ink">If something fails</h3>
         <div className="mt-2 grid gap-x-8 sm:grid-cols-2">
           <Row label="zone loss — back in" value={tier.rto} />
           <Row label="zone loss — data lost" value={tier.rpo} />
@@ -552,9 +552,9 @@ export function PlanView({
           <Row label="region loss — data lost" value={tier.region_rpo} />
         </div>
         {tier.gives_up.length > 0 && (
-          <ul className="mt-3 flex flex-col gap-1.5 border-t border-neutral-100 pt-3">
+          <ul className="mt-3 flex flex-col gap-1.5 border-t border-line pt-3">
             {tier.gives_up.map((gap) => (
-              <li key={gap} className="text-sm text-neutral-600">{gap}</li>
+              <li key={gap} className="text-sm text-ink-2">{gap}</li>
             ))}
           </ul>
         )}
@@ -563,20 +563,20 @@ export function PlanView({
       {/* ── obligations, by lookup ── */}
       {plan.compliance_notes.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-neutral-900">
+          <h3 className="text-sm font-semibold text-ink">
             What applies to you
           </h3>
           {plan.compliance_notes.map((note) => (
             <div
               key={note.regulation}
-              className="rounded-xl border border-neutral-200 bg-white p-4"
+              className="rounded-xl border border-line bg-surface p-4"
             >
-              <div className="text-sm font-semibold text-neutral-900">
+              <div className="text-sm font-semibold text-ink">
                 {note.regulation}
               </div>
-              <p className="mt-1 text-sm text-neutral-600">{note.obligation}</p>
-              <p className="mt-2 text-sm text-neutral-900">
-                <span className="text-xs uppercase tracking-wide text-neutral-500">
+              <p className="mt-1 text-sm text-ink-2">{note.obligation}</p>
+              <p className="mt-2 text-sm text-ink">
+                <span className="text-xs uppercase tracking-wide text-ink-3">
                   satisfied by{" "}
                 </span>
                 {note.control}
@@ -607,11 +607,11 @@ export function PlanView({
 
       {/* ── budget ── */}
       {plan.unspent_budget && (
-        <section className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-neutral-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h3 className="text-sm font-semibold text-ink">
             {money(plan.unspent_budget.amount_usd)} unspent
           </h3>
-          <p className="mt-1 text-sm leading-relaxed text-neutral-600">
+          <p className="mt-1 text-sm leading-relaxed text-ink-2">
             {plan.unspent_budget.note}
           </p>
         </section>
@@ -624,30 +624,30 @@ export function PlanView({
 
       {/* ── the design that does not qualify ── */}
       {plan.below_requirements_panel && (
-        <section className="rounded-xl border border-neutral-200 bg-neutral-50">
+        <section className="rounded-xl border border-line bg-sunk">
           <button
             type="button"
             onClick={() => setShowBelow((v) => !v)}
             aria-expanded={showBelow}
             className="flex w-full items-center justify-between px-4 py-3 text-left"
           >
-            <span className="text-sm font-medium text-neutral-700">
+            <span className="text-sm font-medium text-ink-2">
               {plan.below_requirements_panel.label}
             </span>
-            <span className="font-mono text-xs text-neutral-500">
+            <span className="font-mono text-xs text-ink-3">
               {showBelow ? "hide" : "show"}
             </span>
           </button>
           {showBelow && (
-            <div className="border-t border-neutral-200 px-4 py-3">
+            <div className="border-t border-line px-4 py-3">
               <ul className="flex flex-col gap-1.5">
                 {plan.below_requirements_panel.violations.map((v) => (
-                  <li key={v} className="text-sm text-neutral-700">
+                  <li key={v} className="text-sm text-ink-2">
                     It {v}
                   </li>
                 ))}
               </ul>
-              <p className="mt-3 text-sm text-neutral-500">
+              <p className="mt-3 text-sm text-ink-3">
                 {plan.below_requirements_panel.note}
               </p>
             </div>

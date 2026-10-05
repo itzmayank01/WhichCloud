@@ -379,7 +379,7 @@ export function FinOpsPlanningView({
                   }
                   setShowEditBudgetModal(false);
                 }}
-                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90"
+                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-canvas hover:opacity-90"
               >
                 Save Target
               </button>

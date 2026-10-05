@@ -150,7 +150,7 @@ export function Pipeline({ stages }: { stages: Stage[] }) {
             <div className="flex items-center gap-2.5">
               <span
                 className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-all duration-500 ${
-                  lit ? "bg-accent text-white" : "bg-sunk text-ink-3"
+                  lit ? "bg-accent text-canvas" : "bg-sunk text-ink-3"
                 }`}
               >
                 {ICONS[s.icon] ?? ICONS.sentence}

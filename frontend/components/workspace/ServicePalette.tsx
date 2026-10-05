@@ -87,7 +87,7 @@ export function ServicePalette({
               onClick={() => setTab(entry.id)}
               className={`rounded-md px-2 py-1 text-[11.5px] font-medium transition-colors ${
                 tab === entry.id
-                  ? "bg-accent text-white"
+                  ? "bg-accent text-canvas"
                   : "text-ink-3 hover:bg-sunk hover:text-ink-2"
               }`}
             >

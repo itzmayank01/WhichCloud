@@ -298,7 +298,7 @@ export default function ConnectAzurePage() {
                 <button
                   type="submit"
                   disabled={verifying}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[13px] font-medium text-white hover:opacity-95 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[13px] font-medium text-canvas hover:opacity-95 disabled:opacity-50"
                 >
                   {verifying ? (
                     <>

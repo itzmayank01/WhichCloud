@@ -214,7 +214,7 @@ export function CostedAdvisor() {
         <button
           onClick={ask}
           disabled={busy || !description.trim()}
-          className="rounded-lg bg-accent px-5 py-2.5 text-[15.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="rounded-lg bg-accent px-5 py-2.5 text-[15.5px] font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy ? "Working…" : "Recommend an architecture"}
         </button>
@@ -281,7 +281,7 @@ export function CostedAdvisor() {
                   <span className="flex items-center gap-2">
                     <span className="text-[14.5px] font-semibold">{option.label}</span>
                     {recommended && (
-                      <span className="rounded-full bg-save px-2 py-0.5 font-mono text-[10.5px] font-medium text-white">
+                      <span className="rounded-full bg-save px-2 py-0.5 font-mono text-[10.5px] font-medium text-canvas">
                         recommended
                       </span>
                     )}

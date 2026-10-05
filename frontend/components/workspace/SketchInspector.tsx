@@ -78,7 +78,7 @@ export function SketchInspector({
             type="button"
             disabled={!changed}
             onClick={() => onRename(draft)}
-            className="flex-1 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-30"
+            className="flex-1 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-30"
           >
             Rename
           </button>

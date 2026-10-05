@@ -331,7 +331,7 @@ export function MultiCloudArchitecture({
                     {chrome?.label ?? p}
                   </span>
                   {wins && (
-                    <span className="ml-auto shrink-0 rounded-full bg-save px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-white">
+                    <span className="ml-auto shrink-0 rounded-full bg-save px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-canvas">
                       Cheapest
                     </span>
                   )}

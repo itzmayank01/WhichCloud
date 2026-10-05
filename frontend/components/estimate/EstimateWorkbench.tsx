@@ -74,7 +74,7 @@ function Segmented({
           className={`rounded-lg border px-3.5 py-2 text-[14px] font-medium transition-colors ${
             value === v
               ? "border-accent bg-accent-wash text-accent"
-              : "border-line bg-white text-ink-2 hover:border-line-strong hover:bg-sunk"
+              : "border-line bg-surface text-ink-2 hover:border-line-strong hover:bg-sunk"
           }`}
         >
           {label}
@@ -159,7 +159,7 @@ export function EstimateWorkbench() {
   return (
     <div className="flex flex-col gap-8">
       {/* ── input ── */}
-      <div className="rounded-xl border border-line bg-white p-6">
+      <div className="rounded-xl border border-line bg-surface p-6">
         <div className="mb-6 flex gap-1.5">
           {(["form", "describe"] as const).map((m) => (
             <button
@@ -167,7 +167,7 @@ export function EstimateWorkbench() {
               type="button"
               onClick={() => setMode(m)}
               className={`rounded-lg px-4 py-2 text-[14px] font-medium transition-colors ${
-                mode === m ? "bg-ink text-white" : "text-ink-2 hover:bg-sunk"
+                mode === m ? "bg-ink text-surface" : "text-ink-2 hover:bg-sunk"
               }`}
             >
               {m === "form" ? "Set the details" : "Describe it"}
@@ -260,7 +260,7 @@ export function EstimateWorkbench() {
             disabled={busy || (mode === "describe" && !description.trim())}
             /* shrink-0 and nowrap: a long error message beside it squeezed
                the button until "Price it" broke over two lines. */
-            className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-6 py-3 text-[15px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-6 py-3 text-[15px] font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {busy ? "Pricing…" : "Price it"}
           </button>
@@ -300,18 +300,18 @@ export function EstimateWorkbench() {
                 className={`rounded-xl border px-5 py-4 text-left transition-all ${
                   i === active
                     ? "border-accent bg-accent-wash"
-                    : "border-line bg-white hover:border-line-strong hover:bg-sunk"
+                    : "border-line bg-surface hover:border-line-strong hover:bg-sunk"
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <span className="text-[16px] font-semibold">{o.label}</span>
                   {o.within_budget === true && (
-                    <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold uppercase text-white">
+                    <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold uppercase text-canvas">
                       In budget
                     </span>
                   )}
                   {o.within_budget === false && (
-                    <span className="rounded-full bg-spend px-2 py-0.5 text-[11px] font-semibold uppercase text-white">
+                    <span className="rounded-full bg-spend px-2 py-0.5 text-[11px] font-semibold uppercase text-canvas">
                       Over
                     </span>
                   )}
@@ -341,7 +341,7 @@ export function EstimateWorkbench() {
           <PricedDiagram option={option} provider={option.provider} />
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-xl border border-line bg-white p-5">
+            <div className="rounded-xl border border-line bg-surface p-5">
               <h3 className="text-[16px] font-semibold">Cost breakdown</h3>
               <table className="mt-4 w-full">
                 <tbody className="font-mono text-[14px]">
@@ -374,7 +374,7 @@ export function EstimateWorkbench() {
             </div>
 
             <div className="flex flex-col gap-5">
-              <div className="rounded-xl border border-line bg-white p-5">
+              <div className="rounded-xl border border-line bg-surface p-5">
                 <h3 className="text-[16px] font-semibold">Optimizations applied</h3>
                 <div className="mt-4 space-y-3.5">
                   {option.applied.map((t) => (
@@ -423,7 +423,7 @@ export function EstimateWorkbench() {
           </div>
 
           {result.not_applied.length > 0 && (
-            <div className="rounded-xl border border-line bg-white p-5">
+            <div className="rounded-xl border border-line bg-surface p-5">
               <h3 className="text-[16px] font-semibold">Not applied, and why</h3>
               <div className="mt-3 space-y-2">
                 {result.not_applied.map((t) => (

@@ -128,7 +128,7 @@ function Tile({
       className={`relative flex w-[156px] flex-col items-center rounded-lg px-2 py-3 text-center outline-none transition-all duration-200 ${
         dimmed ? "opacity-35" : "opacity-100"
       } ${
-        active ? "-translate-y-1 bg-white shadow-[0_10px_28px_-10px_rgba(11,13,18,.32)]" : ""
+        active ? "-translate-y-1 bg-surface shadow-[0_10px_28px_-10px_rgba(11,13,18,.32)]" : ""
       }`}
     >
       <span
@@ -290,7 +290,7 @@ export function ArchitectureDiagram({
                 className="grid h-5 w-5 place-items-center rounded"
                 style={{ background: chrome.mark }}
               >
-                <span className="h-1.5 w-1.5 rounded-[1px] bg-white" />
+                <span className="h-1.5 w-1.5 rounded-[1px] bg-surface" />
               </span>
               <span className="text-[14px] font-medium text-ink-2">{chrome.label}</span>
             </span>

@@ -11,10 +11,10 @@ export default function AuditPage() {
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
       <header>
-        <h1 className="text-2xl font-semibold text-neutral-900">
+        <h1 className="text-2xl font-semibold text-ink">
           Audit a bill you already have
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-2">
           Upload a cost export — AWS Cost and Usage Report, GCP billing
           export or Azure cost export. Nothing leaves your browser except
           the file, nothing is stored, and no account access is asked for:

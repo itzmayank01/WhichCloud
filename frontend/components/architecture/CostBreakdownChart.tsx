@@ -100,7 +100,7 @@ export function CostBreakdownChart({ nodes }: { nodes: Node[] }) {
                 </span>
               )}
               {isActive && (
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2.5 py-1.5 text-[12px] font-medium text-white shadow-lg">
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2.5 py-1.5 text-[12px] font-medium text-surface shadow-lg">
                   {b.label} · {money(b.value, 2)}
                   <span className="ml-1 text-white/70">({Math.round(pct)}%)</span>
                 </div>

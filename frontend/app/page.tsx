@@ -183,7 +183,7 @@ export default function Home() {
         <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/estimate"
-            className="rounded-lg bg-accent px-6 py-3 text-[17px] font-medium text-white transition-all hover:opacity-90 active:scale-[.98]"
+            className="rounded-lg bg-accent px-6 py-3 text-[17px] font-medium text-canvas transition-all hover:opacity-90 active:scale-[.98]"
           >
             Price my app
           </Link>
@@ -415,7 +415,7 @@ export default function Home() {
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/estimate"
-            className="rounded-lg bg-accent px-7 py-3.5 text-[17px] font-medium text-white transition-all hover:opacity-90 active:scale-[.98]"
+            className="rounded-lg bg-accent px-7 py-3.5 text-[17px] font-medium text-canvas transition-all hover:opacity-90 active:scale-[.98]"
           >
             Price my app
           </Link>

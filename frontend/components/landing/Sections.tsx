@@ -12,7 +12,7 @@ import { shopRecommendation } from "@/lib/landingData";
 export function Pill({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto inline-flex items-center gap-2.5 rounded-full border border-line bg-surface py-1.5 pl-2 pr-4 elev-1">
-      <span className="rounded-full bg-accent px-2.5 py-0.5 text-[14px] font-medium text-white">
+      <span className="rounded-full bg-accent px-2.5 py-0.5 text-[14px] font-medium text-canvas">
         New
       </span>
       <span className="text-[15.5px] text-ink-2">{children}</span>
@@ -34,7 +34,7 @@ function Offline() {
 /* ═══════════════════ card shell ═══════════════════ */
 /*  Single design token for every card to guarantee consistency */
 
-const CARD = "flex h-full flex-col overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white";
+const CARD = "flex h-full flex-col overflow-hidden rounded-2xl border border-[#e5e7eb] bg-surface";
 
 /* ════════════ Left: Cost Report ════════════ */
 
@@ -51,8 +51,8 @@ async function ProviderCostCard() {
   } catch {
     return (
       <div className={CARD + " p-5"}>
-        <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">Cost Reports</p>
-        <p className="mt-1 text-[15px] font-semibold text-neutral-900">Costs by Provider</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Cost Reports</p>
+        <p className="mt-1 text-[15px] font-semibold text-ink">Costs by Provider</p>
         <div className="mt-4"><Offline /></div>
       </div>
     );
@@ -68,32 +68,32 @@ async function ProviderCostCard() {
     <div className={CARD}>
       {/* header */}
       <div className="px-5 pt-5 pb-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">Cost Reports</p>
-        <p className="mt-0.5 text-[15px] font-semibold text-neutral-900">Costs by Provider</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Cost Reports</p>
+        <p className="mt-0.5 text-[15px] font-semibold text-ink">Costs by Provider</p>
       </div>
 
       {/* tabs */}
-      <div className="mx-5 flex gap-5 border-b border-neutral-100">
-        <span className="border-b-2 border-neutral-900 pb-2 text-[13px] font-medium text-neutral-900">Overview</span>
-        <span className="pb-2 text-[13px] font-normal text-neutral-400 font-medium">Anomalies</span>
+      <div className="mx-5 flex gap-5 border-b border-line">
+        <span className="border-b-2 border-ink pb-2 text-[13px] font-medium text-ink">Overview</span>
+        <span className="pb-2 text-[13px] font-normal text-ink-3 font-medium">Anomalies</span>
       </div>
 
       <div className="flex flex-1 flex-col px-5 pb-5 pt-4">
         {/* big number */}
         <div className="flex items-baseline gap-2">
-          <span className="text-[26px] font-semibold tracking-tight text-neutral-900" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <span className="text-[26px] font-semibold tracking-tight text-ink" style={{ fontVariantNumeric: "tabular-nums" }}>
             {money(cheapest)}
           </span>
           <span className="rounded-[4px] bg-red-50 px-1.5 py-px text-[11px] font-semibold text-red-600">
             -{savePct}%
           </span>
         </div>
-        <p className="mt-0.5 text-[12px] font-normal text-neutral-400">Cheapest Monthly</p>
+        <p className="mt-0.5 text-[12px] font-normal text-ink-3">Cheapest Monthly</p>
 
         {/* legend */}
         <div className="mt-3 flex gap-4">
           {rows.map((r) => (
-            <span key={r.provider} className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-500">
+            <span key={r.provider} className="flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
               <span className="h-2 w-2 rounded-[2px]" style={{ background: colors[r.provider] ?? "#94a3b8" }} />
               {r.provider.toUpperCase()}
             </span>
@@ -132,14 +132,14 @@ async function ProviderCostCard() {
         </div>
 
         {/* table */}
-        <div className="mt-2 border-t border-neutral-100 pt-3">
-          <div className="flex justify-between text-[10px] font-medium uppercase tracking-wider text-neutral-400">
+        <div className="mt-2 border-t border-line pt-3">
+          <div className="flex justify-between text-[10px] font-medium uppercase tracking-wider text-ink-3">
             <span>Service</span><span>Monthly</span>
           </div>
           {rows.slice(0, 2).map((r) => (
             <div key={r.provider} className="mt-1.5 flex justify-between">
-              <span className="text-[12px] text-neutral-600">{r.name || r.sku}</span>
-              <span className="text-[12px] font-medium text-neutral-900" style={{ fontVariantNumeric: "tabular-nums" }}>{money(r.monthly_usd)}</span>
+              <span className="text-[12px] text-ink-2">{r.name || r.sku}</span>
+              <span className="text-[12px] font-medium text-ink" style={{ fontVariantNumeric: "tabular-nums" }}>{money(r.monthly_usd)}</span>
             </div>
           ))}
         </div>
@@ -168,16 +168,16 @@ async function EngineCard() {
   return (
     <div className={CARD}>
       {/* header bar */}
-      <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
+      <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
         <div className="flex items-center gap-2.5">
           <span className="grid h-7 w-7 place-items-center rounded-md bg-neutral-900">
             <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round">
               <path d="M4 9.5a2.5 2.5 0 01.6-4.9 3.3 3.3 0 016.3-.3A2.6 2.6 0 0112 9.5z" />
             </svg>
           </span>
-          <span className="text-[14px] font-semibold text-neutral-900">WhichCloud Engine</span>
+          <span className="text-[14px] font-semibold text-ink">WhichCloud Engine</span>
         </div>
-        <div className="flex items-center gap-1.5 text-neutral-300">
+        <div className="flex items-center gap-1.5 text-ink-3">
           <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor"><circle cx="4" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12" cy="8" r="1"/></svg>
           <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </div>
@@ -186,12 +186,12 @@ async function EngineCard() {
       <div className="flex flex-1 flex-col px-5 pb-5 pt-4">
         {opt ? (
           <>
-            <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">Monthly Cost</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Monthly Cost</p>
             <div className="mt-1 flex items-baseline gap-2.5">
-              <span className="text-[30px] font-semibold tracking-tight text-neutral-900" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <span className="text-[30px] font-semibold tracking-tight text-ink" style={{ fontVariantNumeric: "tabular-nums" }}>
                 {money(total, 0)}
               </span>
-              <span className="rounded-[4px] bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500">
+              <span className="rounded-[4px] bg-sunk px-2 py-0.5 text-[11px] font-medium text-ink-3">
                 {opt.region}
               </span>
             </div>
@@ -201,7 +201,7 @@ async function EngineCard() {
               {(["Compute", "Database", "Storage", "Network"] as const).map((l) => {
                 const c = l === "Compute" ? "#F59E0B" : l === "Database" ? "#3B82F6" : l === "Storage" ? "#22C55E" : "#8B5CF6";
                 return (
-                  <span key={l} className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-500">
+                  <span key={l} className="flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
                     <span className="h-2 w-2 rounded-[2px]" style={{ background: c }} />{l}
                   </span>
                 );
@@ -236,8 +236,8 @@ async function EngineCard() {
             </div>
 
             {/* input bar */}
-            <div className="mt-3 flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 py-2.5">
-              <span className="flex-1 text-[13px] text-neutral-400 font-medium">Describe your app…</span>
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-sunk px-3.5 py-2.5">
+              <span className="flex-1 text-[13px] text-ink-3 font-medium">Describe your app…</span>
               <span className="grid h-6 w-6 place-items-center rounded-md bg-neutral-900">
                 <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M8 12V4M5 7l3-3 3 3" /></svg>
               </span>
@@ -260,8 +260,8 @@ async function OptimizationsCard() {
   } catch {
     return (
       <div className={CARD + " p-5"}>
-        <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">Cost Recommendations</p>
-        <p className="mt-1 text-[15px] font-semibold text-neutral-900">Recommendations</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Cost Recommendations</p>
+        <p className="mt-1 text-[15px] font-semibold text-ink">Recommendations</p>
         <div className="mt-4"><Offline /></div>
       </div>
     );
@@ -276,10 +276,10 @@ async function OptimizationsCard() {
       {/* header */}
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">Cost Recommendations</p>
-          <p className="mt-0.5 text-[15px] font-semibold text-neutral-900">Recommendations</p>
+          <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Cost Recommendations</p>
+          <p className="mt-0.5 text-[15px] font-semibold text-ink">Recommendations</p>
         </div>
-        <span className="rounded-full border border-neutral-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+        <span className="rounded-full border border-line px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-3">
           Agent Enabled
         </span>
       </div>
@@ -287,41 +287,41 @@ async function OptimizationsCard() {
       <div className="flex flex-1 flex-col px-5 pb-5 pt-1">
         {/* stat boxes */}
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">Potential Savings</p>
-            <p className="mt-1 text-lg font-semibold text-neutral-900" style={{ fontVariantNumeric: "tabular-nums" }}>{money(potential)}</p>
+          <div className="rounded-lg border border-line bg-sunk px-3 py-2.5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-3">Potential Savings</p>
+            <p className="mt-1 text-lg font-semibold text-ink" style={{ fontVariantNumeric: "tabular-nums" }}>{money(potential)}</p>
           </div>
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">Saving Realized</p>
-            <p className="mt-1 text-lg font-semibold text-neutral-900" style={{ fontVariantNumeric: "tabular-nums" }}>{money(realized)}</p>
+          <div className="rounded-lg border border-line bg-sunk px-3 py-2.5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-ink-3">Saving Realized</p>
+            <p className="mt-1 text-lg font-semibold text-ink" style={{ fontVariantNumeric: "tabular-nums" }}>{money(realized)}</p>
           </div>
         </div>
 
         {/* column header */}
-        <div className="mt-4 border-b border-neutral-100 pb-2">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">Recommendation</span>
+        <div className="mt-4 border-b border-line pb-2">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-ink-3">Recommendation</span>
         </div>
 
         {/* rows */}
-        <div className="mt-1 flex-1 divide-y divide-neutral-100">
+        <div className="mt-1 flex-1 divide-y divide-line">
           {opt.applied.slice(0, 4).map((t) => (
             <div key={t.id} className="flex items-center justify-between gap-2 py-2.5">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded bg-neutral-100 text-[10px] font-semibold text-neutral-500">
+                  <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded bg-sunk text-[10px] font-semibold text-ink-3">
                     {t.category.slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="truncate text-[12px] font-medium text-neutral-900">{t.name}</span>
+                  <span className="truncate text-[12px] font-medium text-ink">{t.name}</span>
                 </div>
-                <p className="mt-0.5 truncate pl-[26px] text-[11px] text-neutral-400">
+                <p className="mt-0.5 truncate pl-[26px] text-[11px] text-ink-3">
                   {t.summary || `vs ${t.versus_sku}`}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[11px] font-semibold text-neutral-900" style={{ fontVariantNumeric: "tabular-nums" }}>
+                <span className="text-[11px] font-semibold text-ink" style={{ fontVariantNumeric: "tabular-nums" }}>
                   {money(t.saved_monthly_usd ?? 0)}
                 </span>
-                <button className="rounded-md border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-neutral-600 hover:bg-neutral-50 transition-colors">
+                <button className="rounded-md border border-line bg-surface px-2 py-0.5 text-[10px] font-semibold text-ink-2 hover:bg-sunk transition-colors">
                   Fix
                 </button>
               </div>

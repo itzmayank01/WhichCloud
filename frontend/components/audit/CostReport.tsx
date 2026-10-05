@@ -332,7 +332,7 @@ function Pill({
       onClick={onClick}
       className={`rounded-md px-2 py-1 text-xs transition-colors ${
         active
-          ? "bg-accent font-semibold text-white"
+          ? "bg-accent font-semibold text-canvas"
           : "text-ink-3 hover:bg-sunk hover:text-ink-2"
       }`}
     >

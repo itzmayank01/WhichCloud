@@ -296,7 +296,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
         onClick={() => setAsking((open) => !open)}
         title="Ask about this architecture"
         className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${asking
-            ? "border-accent bg-accent text-white"
+            ? "border-accent bg-accent text-canvas"
             : "border-line-strong bg-surface text-ink hover:bg-sunk"
           }`}
       >
@@ -391,7 +391,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     {money(option.ondemand_monthly_usd ?? option.monthly_usd)}
                   </span>
                   {recommended && (
-                    <span className="rounded-full bg-save px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-white">
+                    <span className="rounded-full bg-save px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-canvas">
                       pick
                     </span>
                   )}
@@ -403,7 +403,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       the requirement. */}
                   {!option.compliant && (
                     <span
-                      className="rounded-full bg-caution px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-white"
+                      className="rounded-full bg-caution px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wide text-canvas"
                       title={option.unmet.join("\n\n")}
                     >
                       ⚠ unmet

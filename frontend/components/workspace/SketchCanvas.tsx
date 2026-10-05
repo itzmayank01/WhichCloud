@@ -109,7 +109,7 @@ function SketchService({ id, data, selected }: NodeProps) {
 
   return (
     <div
-      className="flex h-full w-full items-center gap-2.5 border bg-white px-2.5 py-2"
+      className="flex h-full w-full items-center gap-2.5 border bg-surface px-2.5 py-2"
       style={{
         borderRadius: 2,
         // Selection has to be unmistakable on a canvas whose whole point is
@@ -613,7 +613,7 @@ function Inner({
       minZoom={0.1}
       maxZoom={2.5}
       proOptions={{ hideAttribution: true }}
-      className="bg-white"
+      className="bg-surface"
       style={{ cursor: tool === "box" || tool === "text" ? "crosshair" : undefined }}
     >
       <Background gap={20} size={1} color="#EDEFF2" />

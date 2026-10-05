@@ -13,7 +13,8 @@ type Service = { name: string; short: string };
 const SERVICES: Record<string, Record<string, Service>> = {
   aws: {
     client: { name: "Users", short: "Users" },
-    network: { name: "Amazon CloudFront", short: "CloudFront" },
+    cdn: { name: "Amazon CloudFront", short: "CloudFront" },
+    network: { name: "Data transfer out", short: "Egress" },
     loadbalancer: { name: "Elastic Load Balancing", short: "ALB" },
     compute: { name: "Amazon ECS on EC2", short: "ECS" },
     database: { name: "Amazon RDS for PostgreSQL", short: "RDS" },
@@ -23,7 +24,8 @@ const SERVICES: Record<string, Record<string, Service>> = {
   },
   azure: {
     client: { name: "Users", short: "Users" },
-    network: { name: "Azure Front Door", short: "Front Door" },
+    cdn: { name: "Azure Front Door", short: "Front Door" },
+    network: { name: "Data transfer out", short: "Egress" },
     loadbalancer: { name: "Azure Load Balancer", short: "Load Balancer" },
     compute: { name: "Azure Virtual Machines", short: "Virtual Machines" },
     database: { name: "Azure Database for PostgreSQL", short: "PostgreSQL" },
@@ -33,7 +35,8 @@ const SERVICES: Record<string, Record<string, Service>> = {
   },
   gcp: {
     client: { name: "Users", short: "Users" },
-    network: { name: "Cloud CDN", short: "Cloud CDN" },
+    cdn: { name: "Cloud CDN", short: "Cloud CDN" },
+    network: { name: "Data transfer out", short: "Egress" },
     loadbalancer: { name: "Cloud Load Balancing", short: "Load Balancing" },
     compute: { name: "Compute Engine", short: "Compute Engine" },
     database: { name: "Cloud SQL for PostgreSQL", short: "Cloud SQL" },

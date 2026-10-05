@@ -213,7 +213,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
       {/* ─── Presets Bar ─── */}
       <div>
         <div className="flex items-center justify-between">
-          <label className="text-[13px] font-bold uppercase tracking-wider text-neutral-500">
+          <label className="text-[13px] font-bold uppercase tracking-wider text-ink-3">
             Select Architecture Template or Describe Your Own
           </label>
           <span className="text-[12px] font-medium text-blue-600">
@@ -235,23 +235,23 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                 className={`flex flex-col rounded-xl border p-3.5 text-left transition-all ${
                   isSelected
                     ? "border-blue-600 bg-blue-50/60 shadow-sm ring-1 ring-blue-600"
-                    : "border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50"
+                    : "border-line bg-surface hover:border-line-strong hover:bg-sunk"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <span
                     className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                      isSelected ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600"
+                      isSelected ? "bg-blue-600 text-white" : "bg-sunk text-ink-2"
                     }`}
                   >
                     {p.badge}
                   </span>
                   {isSelected && <span className="h-2 w-2 rounded-full bg-blue-600" />}
                 </div>
-                <span className="mt-2 text-[13.5px] font-bold text-neutral-900 line-clamp-1">
+                <span className="mt-2 text-[13.5px] font-bold text-ink line-clamp-1">
                   {p.title}
                 </span>
-                <span className="mt-1 text-[11.5px] text-neutral-500 line-clamp-2">
+                <span className="mt-1 text-[11.5px] text-ink-3 line-clamp-2">
                   {p.description.slice(0, 90)}...
                 </span>
               </button>
@@ -261,12 +261,12 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
       </div>
 
       {/* ─── Custom Prompt Area ─── */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
+      <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
         <div className="flex items-center justify-between pb-2">
-          <span className="text-[13px] font-semibold text-neutral-700">
+          <span className="text-[13px] font-semibold text-ink-2">
             Architecture Specification Prompt
           </span>
-          <span className="text-[11.5px] text-neutral-400 font-mono">
+          <span className="text-[11.5px] text-ink-3 font-mono">
             Natural language to multi-tier diagram
           </span>
         </div>
@@ -278,11 +278,11 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
           }}
           rows={4}
           spellCheck={false}
-          className="w-full resize-y rounded-lg border border-neutral-200 bg-neutral-50/70 p-3 font-mono text-[13px] leading-relaxed text-neutral-900 outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500"
+          className="w-full resize-y rounded-lg border border-line bg-sunk/70 p-3 font-mono text-[13px] leading-relaxed text-ink outline-none focus:border-blue-500 focus:bg-surface focus:ring-1 focus:ring-blue-500"
           placeholder="Describe your multi-tier cloud system (services, VPCs, subnets, databases, connections)..."
         />
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-3">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => void draw()}
@@ -311,14 +311,14 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
               <>
                 <button
                   onClick={downloadSvg}
-                  className="rounded-lg border border-neutral-200 bg-white px-3.5 py-2 text-[13px] font-semibold text-neutral-700 hover:bg-neutral-50 active:scale-95"
+                  className="rounded-lg border border-line bg-surface px-3.5 py-2 text-[13px] font-semibold text-ink-2 hover:bg-sunk active:scale-95"
                 >
                   Export SVG
                 </button>
                 <button
                   onClick={save}
                   disabled={saving}
-                  className="rounded-lg border border-neutral-200 bg-white px-3.5 py-2 text-[13px] font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 active:scale-95"
+                  className="rounded-lg border border-line bg-surface px-3.5 py-2 text-[13px] font-semibold text-ink-2 hover:bg-sunk disabled:opacity-50 active:scale-95"
                 >
                   {saving ? "Saving..." : "Save Template"}
                 </button>
@@ -328,7 +328,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
 
           {/* Layer Filter Pills */}
           {view && !view.designed && (
-            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-sunk p-1">
               {(
                 [
                   ["all", "All Layers"],
@@ -344,8 +344,8 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                   onClick={() => setSelectedTier(t as Tier | "all")}
                   className={`rounded px-2.5 py-1 text-[11.5px] font-semibold transition-all ${
                     selectedTier === t
-                      ? "bg-white text-blue-600 shadow-sm"
-                      : "text-neutral-500 hover:text-neutral-900"
+                      ? "bg-surface text-blue-600 shadow-sm"
+                      : "text-ink-3 hover:text-ink"
                   }`}
                 >
                   {label}
@@ -385,24 +385,24 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
           </div>
 
           {view.archetype_requirements && (
-            <div className="rounded-lg border border-amber-200 bg-white p-4">
-              <h4 className="text-[13.5px] font-bold text-neutral-900">
+            <div className="rounded-lg border border-amber-200 bg-surface p-4">
+              <h4 className="text-[13.5px] font-bold text-ink">
                 What this shape actually needs
               </h4>
-              <p className="mt-1.5 text-[13.5px] leading-relaxed text-neutral-700">
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">
                 {view.archetype_requirements}
               </p>
             </div>
           )}
 
           {view.pricing_questions && view.pricing_questions.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-white p-4">
-              <h4 className="text-[13.5px] font-bold text-neutral-900">
+            <div className="rounded-lg border border-amber-200 bg-surface p-4">
+              <h4 className="text-[13.5px] font-bold text-ink">
                 What we would need to price it
               </h4>
               <ul className="mt-1.5 list-disc space-y-1 pl-5">
                 {view.pricing_questions.map((q) => (
-                  <li key={q} className="text-[13.5px] leading-relaxed text-neutral-700">
+                  <li key={q} className="text-[13.5px] leading-relaxed text-ink-2">
                     {q}
                   </li>
                 ))}
@@ -421,7 +421,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
       {/* ─── Interactive Playback Bar & Step Inspector ─── */}
       {view && !view.designed && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-white px-5 py-3.5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface px-5 py-3.5 shadow-sm">
             {/* Playback Controls */}
             <div className="flex items-center gap-3">
               <button
@@ -454,7 +454,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                     setActiveStep((s) => (s && s > 1 ? s - 1 : totalSteps))
                   }
                   title="Previous step"
-                  className="grid h-8 w-8 place-items-center rounded-lg border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 active:scale-95"
+                  className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface text-ink-2 hover:bg-sunk active:scale-95"
                 >
                   <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
                     <path d="M12.7 5.3a1 1 0 00-1.4 0L7 9.6a1 1 0 000 1.4l4.3 4.3a1 1 0 001.4-1.4L9.1 10.3l3.6-3.6a1 1 0 000-1.4z" />
@@ -465,7 +465,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                     setActiveStep((s) => (s && s < totalSteps ? s + 1 : 1))
                   }
                   title="Next step"
-                  className="grid h-8 w-8 place-items-center rounded-lg border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 active:scale-95"
+                  className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface text-ink-2 hover:bg-sunk active:scale-95"
                 >
                   <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
                     <path d="M7.3 14.7a1 1 0 001.4 0l4.3-4.3a1 1 0 000-1.4L8.7 4.7a1 1 0 00-1.4 1.4l3.6 3.6-3.6 3.6a1 1 0 000 1.4z" />
@@ -474,11 +474,11 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
               </div>
 
               {/* Speed toggle */}
-              <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+              <div className="flex items-center gap-1 rounded-lg border border-line bg-sunk p-1">
                 <button
                   onClick={() => setPlaybackSpeed(1)}
                   className={`rounded px-2 py-0.5 text-[11px] font-bold ${
-                    playbackSpeed === 1 ? "bg-white text-blue-600 shadow-xs" : "text-neutral-500"
+                    playbackSpeed === 1 ? "bg-surface text-blue-600 shadow-xs" : "text-ink-3"
                   }`}
                 >
                   1x
@@ -486,7 +486,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                 <button
                   onClick={() => setPlaybackSpeed(2)}
                   className={`rounded px-2 py-0.5 text-[11px] font-bold ${
-                    playbackSpeed === 2 ? "bg-white text-blue-600 shadow-xs" : "text-neutral-500"
+                    playbackSpeed === 2 ? "bg-surface text-blue-600 shadow-xs" : "text-ink-3"
                   }`}
                 >
                   2x
@@ -495,15 +495,15 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
             </div>
 
             {/* Architecture Metrics */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[12px] text-neutral-500">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[12px] text-ink-3">
               <span>
-                <strong className="text-neutral-900 font-bold">{view.counts.services}</strong> Services
+                <strong className="text-ink font-bold">{view.counts.services}</strong> Services
               </span>
               <span>
-                <strong className="text-neutral-900 font-bold">{view.counts.edges}</strong> Flows
+                <strong className="text-ink font-bold">{view.counts.edges}</strong> Flows
               </span>
               <span>
-                <strong className="text-neutral-900 font-bold">{totalSteps}</strong> Sequence Steps
+                <strong className="text-ink font-bold">{totalSteps}</strong> Sequence Steps
               </span>
               <span>
                 <strong className="text-emerald-700 font-bold">{view.counts.priced}</strong> Priced
@@ -520,15 +520,15 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                 </span>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[13.5px] font-bold text-neutral-900">
+                    <span className="text-[13.5px] font-bold text-ink">
                       {activeStepEdge.sourceNode?.label || "Source"}
                     </span>
                     <span className="text-blue-500 font-bold">→</span>
-                    <span className="text-[13.5px] font-bold text-neutral-900">
+                    <span className="text-[13.5px] font-bold text-ink">
                       {activeStepEdge.targetNode?.label || "Target"}
                     </span>
                   </div>
-                  <p className="text-[11.5px] text-neutral-600">
+                  <p className="text-[11.5px] text-ink-2">
                     {activeStepEdge.edge.flow.toUpperCase()} request flow: traffic routed through sequence step {activeStep}.
                   </p>
                 </div>
@@ -543,7 +543,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                     className={`h-5 w-5 rounded text-[10px] font-bold transition-all ${
                       s === activeStep
                         ? "bg-blue-600 text-white shadow-xs scale-110"
-                        : "bg-white text-neutral-600 hover:bg-blue-100"
+                        : "bg-surface text-ink-2 hover:bg-blue-100"
                     }`}
                   >
                     {s}
@@ -554,7 +554,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
           )}
 
           {/* ─── Main Canvas Rendering ─── */}
-          <div className="rounded-2xl border border-neutral-200 bg-white p-3 shadow-sm">
+          <div className="rounded-2xl border border-line bg-surface p-3 shadow-sm">
             <ArchitectureCanvas
               view={view}
               revealed={revealed}
@@ -567,7 +567,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
 
           {/* ─── Node Inspector Card (On Hover or Selection) ─── */}
           {selectedNode && (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-900 p-4 text-white shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-neutral-900 p-4 text-white shadow-lg">
               <div className="flex items-center gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-lg bg-white/10 text-white font-bold">
                   {selectedNode.tier.toUpperCase().slice(0, 3)}
@@ -579,7 +579,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                       {selectedNode.tier}
                     </span>
                   </div>
-                  <p className="text-[12px] text-neutral-300">
+                  <p className="text-[12px] text-ink-3">
                     {selectedNode.purpose || "Enterprise cloud resource component."}
                   </p>
                 </div>
@@ -588,7 +588,7 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
               <div className="flex items-center gap-5 text-right font-mono text-[13px]">
                 {selectedNode.priced && selectedNode.monthly_usd !== null ? (
                   <div>
-                    <span className="text-[10px] uppercase text-neutral-400 block">List Rate</span>
+                    <span className="text-[10px] uppercase text-ink-3 block">List Rate</span>
                     <span className="text-[16px] font-bold text-emerald-400">
                       ${selectedNode.monthly_usd.toFixed(2)}/mo
                     </span>
@@ -598,8 +598,8 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                 )}
                 {selectedNode.sku && (
                   <div>
-                    <span className="text-[10px] uppercase text-neutral-400 block">SKU</span>
-                    <span className="text-neutral-300">{selectedNode.sku}</span>
+                    <span className="text-[10px] uppercase text-ink-3 block">SKU</span>
+                    <span className="text-ink-3">{selectedNode.sku}</span>
                   </div>
                 )}
               </div>
@@ -610,13 +610,13 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
 
       {/* ─── Saved Architectures ─── */}
       {saved.length > 0 && (
-        <div className="border-t border-neutral-200 pt-6">
-          <h3 className="text-[15px] font-bold text-neutral-900">Saved System Architectures</h3>
+        <div className="border-t border-line pt-6">
+          <h3 className="text-[15px] font-bold text-ink">Saved System Architectures</h3>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {saved.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-3 shadow-2xs hover:border-neutral-300"
+                className="flex items-center justify-between rounded-xl border border-line bg-surface p-3 shadow-2xs hover:border-line-strong"
               >
                 <button
                   onClick={() => {
@@ -625,10 +625,10 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
                   }}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <span className="block truncate text-[13px] font-bold text-neutral-900">
+                  <span className="block truncate text-[13px] font-bold text-ink">
                     {item.title}
                   </span>
-                  <span className="block font-mono text-[11px] text-neutral-500">
+                  <span className="block font-mono text-[11px] text-ink-3">
                     {item.services} services · {new Date(item.created_at).toLocaleDateString()}
                   </span>
                 </button>

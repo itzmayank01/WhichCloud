@@ -47,7 +47,7 @@ export function ToolRail({ tools }: { tools: (Tool | "divider")[] }) {
             onClick={tool.onSelect}
             className={`grid h-8 w-8 place-items-center rounded-lg transition-colors disabled:opacity-30 ${
               tool.active
-                ? "bg-accent text-white"
+                ? "bg-accent text-canvas"
                 : "text-ink-2 hover:bg-sunk hover:text-ink"
             }`}
           >

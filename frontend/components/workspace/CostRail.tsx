@@ -292,7 +292,7 @@ export function CostRail({
                 onAsk();
               }}
               disabled={busy}
-              className="flex-1 rounded-lg bg-accent px-4 py-2 text-[13.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="flex-1 rounded-lg bg-accent px-4 py-2 text-[13.5px] font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {busy ? "Working…" : "Price it"}
             </button>

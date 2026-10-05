@@ -65,7 +65,7 @@ export default function DiagramLab() {
               data-testid={`tier-${i}`}
               onClick={() => setTierIdx(i)}
               className={`px-3 py-1 text-[12px] ${
-                i === tierIdx ? "bg-accent text-white" : "bg-surface text-ink-2 hover:bg-sunk"
+                i === tierIdx ? "bg-accent text-canvas" : "bg-surface text-ink-2 hover:bg-sunk"
               }`}
             >
               {t.label}

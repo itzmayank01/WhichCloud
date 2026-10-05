@@ -263,7 +263,7 @@ function GitHubAppContent() {
           <button
             onClick={handleConnect}
             disabled={connecting}
-            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-60"
+            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-canvas disabled:opacity-60"
           >
             Grant access to private repos
           </button>
@@ -294,7 +294,7 @@ function GitHubAppContent() {
           <button
             onClick={handleConnect}
             disabled={connecting}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-60"
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[13.5px] font-semibold text-canvas disabled:opacity-60"
           >
             <Icon icon="mdi:github" className="h-4 w-4" />
             {connecting ? "Redirecting to GitHub…" : "Connect GitHub"}

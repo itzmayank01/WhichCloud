@@ -305,7 +305,7 @@ function ServiceNode({ data }: NodeProps) {
   // so the icon and the name carry the meaning.
   return (
     <div
-      className={`group relative flex h-full w-full items-center gap-2.5 border bg-white px-2.5 py-2 ${
+      className={`group relative flex h-full w-full items-center gap-2.5 border bg-surface px-2.5 py-2 ${
         !d.priced ? "border-dashed opacity-70" : ""
       }`}
       style={{
@@ -343,7 +343,7 @@ function ServiceNode({ data }: NodeProps) {
           unreadable stack. */}
       {d.priced && (
         <div
-          className="absolute -top-2 right-1 rounded-[2px] border bg-white px-1 font-mono text-[10px] font-semibold tabular-nums text-ink-2"
+          className="absolute -top-2 right-1 rounded-[2px] border bg-surface px-1 font-mono text-[10px] font-semibold tabular-nums text-ink-2"
           style={{ borderColor: "#D5DBDB" }}
         >
           {money(d.monthly_usd)}
@@ -784,7 +784,7 @@ function Inner({
         onPaneClick?.();
       }}
       proOptions={{ hideAttribution: true }}
-      className="bg-white"
+      className="bg-surface"
       style={{ cursor: onPaneClick ? "zoom-in" : undefined }}
     >
       <Background gap={20} size={1} color="#F3F4F6" />
@@ -868,7 +868,7 @@ export function ArchitectureGraph(props: {
       )}
 
       {expanded && (
-        <div className="fixed inset-0 z-[100] bg-white" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[100] bg-surface" role="dialog" aria-modal="true">
           {props.overlayHeader && (
             <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
               <div className="pointer-events-auto">{props.overlayHeader}</div>

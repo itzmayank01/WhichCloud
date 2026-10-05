@@ -41,18 +41,18 @@ export default function PlanPage() {
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-8 px-6 py-12">
       <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">
+        <h1 className="text-3xl font-semibold tracking-tight text-ink">
           Plan an architecture
         </h1>
-        <p className="max-w-2xl leading-relaxed text-neutral-600">
+        <p className="max-w-2xl leading-relaxed text-ink-2">
           Describe what you need in plain words. Every option you get back meets
           the requirements you stated — a design that does not is shown
           separately, never priced beside them.
         </p>
       </header>
 
-      <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-        <label htmlFor="description" className="text-sm font-medium text-neutral-900">
+      <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+        <label htmlFor="description" className="text-sm font-medium text-ink">
           What are you building?
         </label>
         <textarea
@@ -61,7 +61,7 @@ export default function PlanPage() {
           onChange={(event) => setDescription(event.target.value)}
           placeholder={EXAMPLE}
           rows={6}
-          className="w-full resize-y rounded-lg border border-neutral-300 p-3 text-sm leading-relaxed text-neutral-900 placeholder:text-neutral-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="w-full resize-y rounded-lg border border-line-strong p-3 text-sm leading-relaxed text-ink placeholder:text-ink-3 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         <div className="flex items-center gap-3">
           <button
@@ -73,7 +73,7 @@ export default function PlanPage() {
             {busy ? "Planning…" : "Plan it"}
           </button>
           {!description.trim() && (
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-ink-3">
               Leave it blank to use the example.
             </span>
           )}

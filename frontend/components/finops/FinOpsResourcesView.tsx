@@ -603,7 +603,7 @@ export function FinOpsResourcesView({
               onClick={() => setSelectedCategory(cat.id)}
               className={`rounded-xl px-3 py-1.5 text-[12.5px] font-medium transition-all ${
                 selectedCategory === cat.id
-                  ? "bg-accent text-white shadow-2xs"
+                  ? "bg-accent text-canvas shadow-2xs"
                   : "bg-sunk text-ink-2 hover:text-ink"
               }`}
             >

@@ -237,7 +237,7 @@ export function ArchitectureCanvas({
       {/* What each line style means. Only the flow kinds actually present in
           this option get a row, so a simple two-tier shape does not carry a
           legend entry for streaming or replication it never uses. */}
-      <div className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+      <div className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-line bg-surface/95 px-3 py-2 shadow-sm backdrop-blur">
         {(Object.keys(FLOW_CONFIG) as Flow[])
           .filter((flow) => flowsPresent.has(flow))
           .map((flow) => {
@@ -252,7 +252,7 @@ export function ArchitectureCanvas({
                     strokeDasharray={cfg.dash}
                   />
                 </svg>
-                <span className="text-[10.5px] font-medium text-neutral-600">
+                <span className="text-[10.5px] font-medium text-ink-2">
                   {cfg.label}
                 </span>
               </span>
@@ -261,23 +261,23 @@ export function ArchitectureCanvas({
       </div>
 
       {/* Zoom controls */}
-      <div className="absolute right-4 top-4 z-20 flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-1.5 rounded-lg border border-line bg-surface/95 p-1 shadow-sm backdrop-blur">
         <button
           onClick={() => setZoomLevel((z) => Math.max(0.6, z - 0.15))}
           title="Zoom out"
-          className="grid h-7 w-7 place-items-center rounded text-neutral-600 hover:bg-neutral-100 active:scale-95"
+          className="grid h-7 w-7 place-items-center rounded text-ink-2 hover:bg-sunk active:scale-95"
         >
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="4" y1="10" x2="16" y2="10" />
           </svg>
         </button>
-        <span className="w-12 text-center font-mono text-[11px] font-semibold text-neutral-600">
+        <span className="w-12 text-center font-mono text-[11px] font-semibold text-ink-2">
           {Math.round(zoomLevel * 100)}%
         </span>
         <button
           onClick={() => setZoomLevel((z) => Math.min(1.8, z + 0.15))}
           title="Zoom in"
-          className="grid h-7 w-7 place-items-center rounded text-neutral-600 hover:bg-neutral-100 active:scale-95"
+          className="grid h-7 w-7 place-items-center rounded text-ink-2 hover:bg-sunk active:scale-95"
         >
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="10" y1="4" x2="10" y2="16" />
@@ -287,7 +287,7 @@ export function ArchitectureCanvas({
         <button
           onClick={() => setZoomLevel(1)}
           title="Reset zoom"
-          className="ml-0.5 rounded px-1.5 py-1 text-[10.5px] font-semibold text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+          className="ml-0.5 rounded px-1.5 py-1 text-[10.5px] font-semibold text-ink-3 hover:bg-sunk hover:text-ink"
         >
           Reset
         </button>
@@ -778,7 +778,7 @@ export function ArchitectureCanvas({
                   <div
                     className={`relative grid h-14 w-14 place-items-center rounded-xl p-1 transition-all ${
                       isHovered
-                        ? "ring-4 ring-blue-400/40 shadow-lg bg-white"
+                        ? "ring-4 ring-blue-400/40 shadow-lg bg-surface"
                         : "hover:shadow-md"
                     }`}
                   >
@@ -816,11 +816,11 @@ export function ArchitectureCanvas({
 
                   {/* Service 2-Line Typography */}
                   <div className="mt-1.5 w-full text-center">
-                    <span className="block line-clamp-2 px-1 text-[12px] font-bold leading-[1.25] text-neutral-900 group-hover:text-blue-600">
+                    <span className="block line-clamp-2 px-1 text-[12px] font-bold leading-[1.25] text-ink group-hover:text-blue-600">
                       {mainTitle}
                     </span>
                     {subDetail && (
-                      <span className="mt-0.5 block truncate px-1 text-[10.5px] font-medium leading-tight text-neutral-500">
+                      <span className="mt-0.5 block truncate px-1 text-[10.5px] font-medium leading-tight text-ink-3">
                         {subDetail}
                       </span>
                     )}

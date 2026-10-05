@@ -21,9 +21,22 @@ import { HoverBoard } from "@/components/HoverBoard";
 
 const W = 1180;
 const MIN_SCALE = 0.62;
-const H = 560;
+/** Height of the main flow (users -> edge -> app -> data -> ops). */
+const H_CORE = 560;
 const BOX_W = 168;
 const BOX_H = 104;
+
+/* Everything the bill carries that is not on the main request path -- NAT,
+   DNS, keys, secrets, backups, tracing, audit. These used to be filtered out
+   of the drawing entirely, so the boxes summed to roughly half the bill and
+   every percentage was a share of the wrong total. They sit in their own band
+   inside the cloud boundary, smaller, ordered by what they cost. */
+const BAND_X = 222;
+const BAND_W = W - BAND_X - 24;
+const CHIP_W = 178;
+const CHIP_H = 70;
+const CHIP_GAP = 10;
+const PER_ROW = Math.floor((BAND_W + CHIP_GAP) / (CHIP_W + CHIP_GAP));
 
 /** Where each service role sits. Fixed, so a cloud with fewer services
     produces a sparser diagram rather than a re-flowed one. */
@@ -147,9 +160,30 @@ export function PricedDiagram({
   // under the cursor stays lit for a service that is no longer on screen.
   useEffect(() => setHovered(null), [provider]);
 
-  const nodes = option.topology.nodes.filter((n) => SLOT[n.kind]);
-  const present = new Set(nodes.map((n) => n.kind));
-  const total = nodes.reduce((s, n) => s + n.monthly_usd, 0);
+  /* A CDN occupies the edge slot: it is what the users reach first. Plain
+     data transfer ("network") only takes that slot when there is no CDN. */
+  const roleOf = (kind: string) => (kind === "cdn" ? "network" : kind);
+  const all = option.topology.nodes;
+  const taken = new Set<string>();
+  const nodes: (ApiNode & { role: string })[] = [];
+  const extras: ApiNode[] = [];
+  for (const n of [...all].sort((a, b) => (a.kind === "cdn" ? -1 : b.kind === "cdn" ? 1 : 0))) {
+    const role = roleOf(n.kind);
+    if (SLOT[role] && !taken.has(role)) {
+      taken.add(role);
+      nodes.push({ ...n, role });
+    } else {
+      extras.push(n);
+    }
+  }
+  extras.sort((a, b) => b.monthly_usd - a.monthly_usd);
+  const present = taken;
+  /* Shares are of the whole bill, not of whatever happened to be drawn. */
+  const total = all.reduce((s, n) => s + n.monthly_usd, 0);
+
+  const bandRows = Math.ceil(extras.length / PER_ROW);
+  const bandTop = H_CORE + 6;
+  const H = extras.length ? bandTop + 34 + bandRows * (CHIP_H + CHIP_GAP) + 10 : H_CORE;
 
   const groups = GROUPS.filter((g) => g.kinds.some((k) => present.has(k)));
   const flows = FLOW.filter(([a, b]) => present.has(a) && present.has(b));
@@ -161,7 +195,7 @@ export function PricedDiagram({
      optimization touch it -- without navigating away from the shape being
      read. It occupies fixed space so the diagram never reflows underneath
      the cursor. */
-  const active = nodes.find((n) => n.id === hovered) ?? null;
+  const active = all.find((n) => n.id === hovered) ?? null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -234,8 +268,8 @@ export function PricedDiagram({
           </defs>
           {flows.map(([a, b]) => {
             const lit =
-              hovered === nodes.find((n) => n.kind === a)?.id ||
-              hovered === nodes.find((n) => n.kind === b)?.id;
+              hovered === nodes.find((n) => n.role === a)?.id ||
+              hovered === nodes.find((n) => n.role === b)?.id;
             return (
               <path
                 key={`${a}-${b}`}
@@ -249,8 +283,8 @@ export function PricedDiagram({
           })}
         </svg>
 
-        {nodes.map((n: ApiNode) => {
-          const slot = SLOT[n.kind];
+        {nodes.map((n) => {
+          const slot = SLOT[n.role];
           const active = hovered === n.id;
           return (
             <div
@@ -294,6 +328,62 @@ export function PricedDiagram({
             </div>
           );
         })}
+
+        {extras.length > 0 && (
+          <>
+            <div
+              className="absolute rounded-lg border border-dashed border-line-strong/60"
+              style={{ left: BAND_X - 14, top: bandTop + 10, width: BAND_W + 28, height: H - bandTop - 30 }}
+            />
+            <span
+              className="absolute whitespace-nowrap rounded bg-surface px-2 text-[13.5px] font-semibold text-ink-2"
+              style={{ left: BAND_X - 2, top: bandTop }}
+            >
+              Supporting services
+            </span>
+            {extras.map((n, i) => {
+              const lit = hovered === n.id;
+              return (
+                <div
+                  key={n.id}
+                  onMouseEnter={() => setHovered(n.id)}
+                  onMouseLeave={() => setHovered(null)}
+                  onFocus={() => setHovered(n.id)}
+                  onBlur={() => setHovered(null)}
+                  tabIndex={0}
+                  className={`absolute flex items-center gap-2 rounded-lg border bg-surface px-2 outline-none transition-all duration-200 ${
+                    lit ? "-translate-y-0.5 border-line-strong elev-3" : "border-line elev-1 hover:border-line-strong"
+                  }`}
+                  style={{
+                    left: BAND_X + (i % PER_ROW) * (CHIP_W + CHIP_GAP),
+                    top: bandTop + 30 + Math.floor(i / PER_ROW) * (CHIP_H + CHIP_GAP),
+                    width: CHIP_W,
+                    height: CHIP_H,
+                  }}
+                >
+                  <span className="shrink-0">
+                    <ServiceIcon provider={provider} kind={n.kind} size={24} faded={!n.priced} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[12px] font-semibold leading-tight text-ink" title={n.label}>
+                      {serviceName(provider, n.kind, n.label)}
+                    </span>
+                    {n.priced ? (
+                      <span className="mt-0.5 flex items-baseline gap-1">
+                        <span className="tnum font-mono text-[13px] font-semibold text-ink">{money(n.monthly_usd)}</span>
+                        <span className="tnum font-mono text-[11px] text-ink-3">
+                          {total > 0 ? Math.round((n.monthly_usd / total) * 100) : 0}%
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="mt-0.5 block font-mono text-[11px] text-caution">not priced</span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </>
+        )}
       </div>
       </div>
       </div>

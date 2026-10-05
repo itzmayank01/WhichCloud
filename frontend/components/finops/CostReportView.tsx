@@ -421,7 +421,7 @@ export function CostReportView({
                       }}
                       className={`flex-1 rounded-md py-1 text-[12px] font-semibold capitalize transition-all ${
                         metricAxis === m
-                          ? "bg-accent text-white shadow-xs"
+                          ? "bg-accent text-canvas shadow-xs"
                           : "text-ink-2 hover:text-ink"
                       }`}
                     >
@@ -435,7 +435,7 @@ export function CostReportView({
                   <button
                     onClick={() => setAdditionalYAxis(true)}
                     className={`flex-1 rounded-md py-1 text-[12px] font-medium ${
-                      additionalYAxis ? "bg-accent text-white" : "text-ink-2 hover:text-ink"
+                      additionalYAxis ? "bg-accent text-canvas" : "text-ink-2 hover:text-ink"
                     }`}
                   >
                     On
@@ -443,7 +443,7 @@ export function CostReportView({
                   <button
                     onClick={() => setAdditionalYAxis(false)}
                     className={`flex-1 rounded-md py-1 text-[12px] font-medium ${
-                      !additionalYAxis ? "bg-accent text-white" : "text-ink-2 hover:text-ink"
+                      !additionalYAxis ? "bg-accent text-canvas" : "text-ink-2 hover:text-ink"
                     }`}
                   >
                     Off
@@ -478,28 +478,28 @@ export function CostReportView({
             <button
               onClick={() => setChartMode("bar")}
               title="Bar Charts"
-              className={`rounded p-1.5 ${chartMode === "bar" ? "bg-accent text-white shadow-xs" : "text-ink-3 hover:text-ink"}`}
+              className={`rounded p-1.5 ${chartMode === "bar" ? "bg-accent text-canvas shadow-xs" : "text-ink-3 hover:text-ink"}`}
             >
               <Icon icon="mdi:chart-box" className="h-4 w-4" />
             </button>
             <button
               onClick={() => setChartMode("line")}
               title="Line Chart"
-              className={`rounded p-1.5 ${chartMode === "line" ? "bg-accent text-white shadow-xs" : "text-ink-3 hover:text-ink"}`}
+              className={`rounded p-1.5 ${chartMode === "line" ? "bg-accent text-canvas shadow-xs" : "text-ink-3 hover:text-ink"}`}
             >
               <Icon icon="mdi:chart-line" className="h-4 w-4" />
             </button>
             <button
               onClick={() => setChartMode("area")}
               title="Area Chart"
-              className={`rounded p-1.5 ${chartMode === "area" ? "bg-accent text-white shadow-xs" : "text-ink-3 hover:text-ink"}`}
+              className={`rounded p-1.5 ${chartMode === "area" ? "bg-accent text-canvas shadow-xs" : "text-ink-3 hover:text-ink"}`}
             >
               <Icon icon="mdi:chart-areaspline" className="h-4 w-4" />
             </button>
             <button
               onClick={() => setChartMode("pie")}
               title="Pie Chart"
-              className={`rounded p-1.5 ${chartMode === "pie" ? "bg-accent text-white shadow-xs" : "text-ink-3 hover:text-ink"}`}
+              className={`rounded p-1.5 ${chartMode === "pie" ? "bg-accent text-canvas shadow-xs" : "text-ink-3 hover:text-ink"}`}
             >
               <Icon icon="mdi:chart-pie" className="h-4 w-4" />
             </button>
@@ -1338,7 +1338,7 @@ where provider = "${provider}"
                 </button>
                 <button
                   onClick={() => setShowFilterModal(false)}
-                  className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-white hover:opacity-90"
+                  className="rounded-lg bg-accent px-4 py-1.5 text-[13px] font-semibold text-canvas hover:opacity-90"
                 >
                   Apply Filters
                 </button>
@@ -1401,7 +1401,7 @@ where provider = "${provider}"
             <div className="mt-6 flex justify-end gap-2">
               <button
                 onClick={() => setInspectNetworkResource(null)}
-                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-white hover:opacity-90"
+                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-canvas hover:opacity-90"
               >
                 Done
               </button>

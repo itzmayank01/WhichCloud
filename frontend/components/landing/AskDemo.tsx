@@ -350,7 +350,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
                     {row.monthly}
                   </span>
                   {row.cheapest && (
-                    <span className="rounded-full bg-save px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-white">
+                    <span className="rounded-full bg-save px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-canvas">
                       Cheapest
                     </span>
                   )}

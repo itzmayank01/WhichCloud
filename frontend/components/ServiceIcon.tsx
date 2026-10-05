@@ -2,6 +2,8 @@
 
 import { Icon } from "@iconify/react";
 import Image from "next/image";
+import { iconFor } from "@/lib/serviceIcon";
+import { KIND_ICON_LABEL } from "@/lib/serviceMeta";
 
 /**
  * Official provider service icons.
@@ -22,7 +24,7 @@ import Image from "next/image";
  */
 
 const AWS_ICON: Record<string, string> = {
-  network: "logos:aws-cloudfront",
+  cdn: "logos:aws-cloudfront",
   loadbalancer: "logos:aws-elb",
   compute: "logos:aws-ecs",
   database: "logos:aws-rds",
@@ -33,7 +35,7 @@ const AWS_ICON: Record<string, string> = {
 
 const FILE_ICON: Record<string, Record<string, string>> = {
   azure: {
-    network: "/icons/azure/front-door.svg",
+    cdn: "/icons/azure/front-door.svg",
     loadbalancer: "/icons/azure/load-balancer.svg",
     compute: "/icons/azure/virtual-machines.svg",
     database: "/icons/azure/postgresql.svg",
@@ -42,7 +44,7 @@ const FILE_ICON: Record<string, Record<string, string>> = {
     monitoring: "/icons/azure/monitor.svg",
   },
   gcp: {
-    network: "/icons/gcp/cloud-cdn.svg",
+    cdn: "/icons/gcp/cloud-cdn.svg",
     loadbalancer: "/icons/gcp/cloud-load-balancing.svg",
     compute: "/icons/gcp/compute-engine.svg",
     database: "/icons/gcp/cloud-sql.svg",
@@ -116,6 +118,15 @@ export function ServiceIcon({
   const iconify = provider === "aws" ? AWS_ICON[kind] : undefined;
   if (iconify) {
     return <Icon icon={iconify} width={size} height={size} style={style} aria-hidden />;
+  }
+
+  // The rest of AWS's kinds (NAT, KMS, Route 53, Backup...) through the same
+  // official PNG set the architecture graph draws with.
+  const png = provider === "aws" && KIND_ICON_LABEL[kind] ? iconFor(KIND_ICON_LABEL[kind]) : null;
+  if (png) {
+    return (
+      <Image src={png} alt="" width={size} height={size} style={style} loading="eager" aria-hidden />
+    );
   }
 
   // Nothing published for this service — a neutral square rather than a

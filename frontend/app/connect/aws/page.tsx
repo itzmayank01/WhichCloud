@@ -483,7 +483,7 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
                   type="button"
                   disabled={!accountIdValid || !roleCommand}
                   onClick={handleOpenCloudShell}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-white transition-all shadow-xs hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-canvas transition-all shadow-xs hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Icon icon="mdi:console" className="h-4 w-4" />
                   <span>Open AWS CloudShell</span>
@@ -615,7 +615,7 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
                       <button
                         type="submit"
                         disabled={connecting}
-                        className="inline-flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-[14px] font-semibold text-white shadow-xs transition-opacity hover:opacity-95 disabled:opacity-50"
+                        className="inline-flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-[14px] font-semibold text-canvas shadow-xs transition-opacity hover:opacity-95 disabled:opacity-50"
                       >
                         {connecting ? (
                           <>

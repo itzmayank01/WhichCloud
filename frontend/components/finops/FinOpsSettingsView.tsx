@@ -234,7 +234,7 @@ export function FinOpsSettingsView({
         <div className="mt-6 flex justify-end border-t border-line pt-4">
           <button
             onClick={handleSave}
-            className="rounded-xl bg-accent px-5 py-2 text-[13px] font-semibold text-white hover:opacity-90 shadow-2xs"
+            className="rounded-xl bg-accent px-5 py-2 text-[13px] font-semibold text-canvas hover:opacity-90 shadow-2xs"
           >
             Save Preferences
           </button>
