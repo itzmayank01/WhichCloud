@@ -268,41 +268,47 @@ WhichCloud and a general AI chatbot.
 ### 5.1 High-level flow
 
 ```
-                 ┌───────────────────────────────────────────────┐
- User (browser)  │  Next.js frontend (Vercel)                    │
- ───────────────▶│  Landing · Estimate · Plan · Workspace ·      │
-                 │  Terraform · Prices · Audit · Connect · FinOps │
-                 └───────────────┬───────────────────────────────┘
-                                 │ HTTPS / JSON (Clerk JWT on private routes)
-                 ┌───────────────▼───────────────────────────────┐
-                 │  FastAPI engine (Docker on Railway / Render)  │
-                 │                                               │
-                 │  1. Intake / extraction  (LLM reads English)  │
-                 │  2. Archetype classifier (7 workload shapes)  │
-                 │  3. Load model           (requests → rate)    │
-                 │  4. Constraint filter    (hard requirements)  │
-                 │  5. Objectives & compliance (lookup tables)   │
-                 │  6. Network topology decision                 │
-                 │  7. Planner / archetype graphs → spec         │
-                 │  8. Knowledge base techniques (effect+counter)│
-                 │  9. Estimator → itemised monthly bill         │
-                 │ 10. Topology / diagram / SVG                  │
-                 │ 11. Terraform generators (AWS / GCP / Azure)  │
-                 │ 12. Advisor, Bill audit, Connections, FinOps  │
-                 └──────┬────────────────────┬───────────────────┘
-                        │                    │
-           ┌────────────▼─────┐   ┌──────────▼─────────┐   ┌───────────────────────┐
-           │ PostgreSQL +     │   │ Redis              │   │ LLM providers          │
-           │ pgvector         │   │ read-through price │   │ Gemini → Groq →        │
-           │ price_points,    │   │ cache (fail-open)  │   │ Anthropic → OpenAI     │
-           │ saved designs,   │   └────────────────────┘   │ (failover chain)       │
-           │ connections      │                            └───────────────────────┘
-           └────────▲─────────┘
-                    │ ingest_prices.py (offline, idempotent, prunes stale rows)
-   ┌────────────────┴─────────────────────────────────────────────────────────┐
-   │ ec2instances.info (Vantage) · AWS Price List Bulk API · Azure Retail     │
-   │ Prices API · Vantage GCP catalog · Google Cloud Billing Catalog API      │
-   └──────────────────────────────────────────────────────────────────────────┘
+                 +------------------------------------------------+
+  User (browser) | Next.js frontend (Vercel)                      |
+  -------------->| Landing, Estimate, Plan, Workspace,            |
+                 | Terraform, Prices, Audit, Connect, FinOps      |
+                 +------------------------------------------------+
+                                         |
+                                         |  HTTPS / JSON (Clerk JWT on private routes)
+                                         v
+                 +------------------------------------------------+
+                 | FastAPI engine (Docker on Railway / Render)    |
+                 |                                                |
+                 | 1. Intake / extraction    (LLM reads English)  |
+                 | 2. Archetype classifier  (7 workload shapes)   |
+                 | 3. Load model            (requests -> rate)    |
+                 | 4. Constraint filter     (hard requirements)   |
+                 | 5. Objectives & compliance (lookup tables)     |
+                 | 6. Network topology decision                   |
+                 | 7. Planner / archetype graphs -> spec          |
+                 | 8. Knowledge base techniques                   |
+                 |    (effect vs counterfactual, both priced)     |
+                 | 9. Estimator -> itemised monthly bill          |
+                 | 10. Topology / diagram / SVG                   |
+                 | 11. Terraform generators (AWS / GCP / Azure)   |
+                 | 12. Advisor, Bill audit, Connections, FinOps   |
+                 +------------------------------------------------+
+                                         |
+                                         v  reads / writes
++------------------+   +-------------------+   +----------------------+
+| PostgreSQL       |   | Redis             |   | LLM providers        |
+| + pgvector       |   | read-through      |   | Gemini -> Groq ->    |
+| price_points,    |   | price cache       |   | Anthropic -> OpenAI  |
+| saved designs,   |   | (fail-open)       |   | (failover chain)     |
+| connections      |   +-------------------+   +----------------------+
++------------------+
+         ^
+         |  ingest_prices.py (offline, idempotent, prunes stale rows)
+         |
++------------------------------------------------------------------------+
+| ec2instances.info (Vantage), AWS Price List Bulk API, Azure Retail     |
+| Prices API, Vantage GCP catalog, Google Cloud Billing Catalog API      |
++------------------------------------------------------------------------+
 ```
 
 ### 5.2 Layered architecture
