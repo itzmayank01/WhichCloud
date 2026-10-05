@@ -1,4 +1,5 @@
-import { ClerkProvider, Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
+import { HeaderAuth } from "@/components/HeaderAuth";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MobileNav } from "@/components/MobileNav";
 import type { Metadata } from "next";
@@ -194,27 +195,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   and editor puts it: theme is a property of the reader, not
                   of the session, and it has to be reachable signed out. */}
               <ThemeToggle />
-              <Show when="signed-out">
-                <SignInButton>
-                  <button className="text-sm text-ink-2 transition-colors hover:text-ink">
-                    Sign in
-                  </button>
-                </SignInButton>
-                <SignUpButton>
-                  <button className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-white transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]">
-                    Get started
-                  </button>
-                </SignUpButton>
-              </Show>
-              <Show when="signed-in">
-                <Link
-                  href="/dashboard"
-                  className="shrink-0 whitespace-nowrap rounded-lg bg-accent px-3 py-1.5 text-[14px] font-medium text-white transition-opacity hover:opacity-90 md:px-4 md:py-2 md:text-[15.5px]"
-                >
-                  Workspace
-                </Link>
-                <UserButton />
-              </Show>
+              {/* Client-side: <Show> calls auth() on the server, which needs
+                  Clerk's middleware on every request -- and that middleware
+                  marks every response uncacheable. See components/HeaderAuth. */}
+              <HeaderAuth />
             </div>
           </header>
 
