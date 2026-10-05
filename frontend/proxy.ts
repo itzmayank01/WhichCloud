@@ -31,8 +31,34 @@ export default clerkMiddleware(async (auth, request) => {
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    "/(api|trpc)(.*)",
-    "/__clerk/:path*",
+    /*
+     * Only run Clerk on routes that actually need auth or are Clerk internals.
+     *
+     * Public pages (/, /prices, /architecture, /terraform, /plan, /audit,
+     * /estimate, /optimizations, /finops-live, /sign-in, /sign-up) are
+     * intentionally excluded from this matcher so Vercel can cache them on
+     * its CDN edge network.  Clerk's <Show> / useUser hooks still work on
+     * those pages because they read auth state from cookies client-side.
+     *
+     * Running Clerk on every request (the old pattern) caused Clerk to set
+     *   cache-control: private, no-cache, no-store, max-age=0
+     * which forced x-vercel-cache: MISS on every hit, meaning every visitor
+     * triggered a cold serverless invocation even on fully-static pages.
+     */
+
+    // Protected app routes — auth must run here
+    "/dashboard(.*)",
+    "/finops(.*)",
+    "/connect(.*)",
+
+    // Sign-in / sign-up flows
+    "/sign-in(.*)",
+    "/sign-up(.*)",
+
+    // Clerk's own internal endpoints
+    "/__clerk(.*)",
+
+    // Next.js API routes (may need auth state server-side)
+    "/api/(.*)",
   ],
 };
