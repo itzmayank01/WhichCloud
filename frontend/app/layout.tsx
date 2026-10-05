@@ -1,5 +1,6 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import { HeaderAuth } from "@/components/HeaderAuth";
+import { BackendWarmup } from "@/components/BackendWarmup";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MobileNav } from "@/components/MobileNav";
 import type { Metadata } from "next";
@@ -127,6 +128,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           signInFallbackRedirectUrl="/dashboard"
           signUpFallbackRedirectUrl="/dashboard"
         >
+          <BackendWarmup />
           {/* Gaps and padding tighten below md. At 390px the signed-in header
               (wordmark + menu + theme + Workspace + avatar) overflowed to
               454px, which scrolled the whole PAGE sideways -- every section
