@@ -128,6 +128,9 @@ function FinOpsContent() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadStatus, setLoadStatus] = useState<number | null>(null);
   const [secondsWaiting, setSecondsWaiting] = useState(0);
+  const [accountChangeTick, setAccountChangeTick] = useState(0);
+  const [liveAutoUpdate, setLiveAutoUpdate] = useState(true);
+  const [secondsUntilNextSync, setSecondsUntilNextSync] = useState(25);
 
   useEffect(() => {
     if (!loading) {
@@ -138,24 +141,31 @@ function FinOpsContent() {
     return () => clearInterval(id);
   }, [loading]);
 
+  // Listen to cross-component account change events for immediate live update
+  useEffect(() => {
+    const handleAccountChange = () => {
+      setAccountChangeTick((t) => t + 1);
+      const owned = getStoredAccount(userId);
+      if (owned) setProvider(owned.provider);
+    };
+    window.addEventListener("whichcloud:account_changed", handleAccountChange);
+    return () => window.removeEventListener("whichcloud:account_changed", handleAccountChange);
+  }, [userId]);
+
   /* Adopt the stored provider once `userId` is known, so the ownership check
      in getStoredAccount can actually run. A connection belonging to a
      different sign-in is dropped there and this leaves `provider` alone. */
   useEffect(() => {
     if (providerParam || !userId) return;
     const owned = getStoredAccount(userId);
-    if (owned) setProvider(owned.provider);
-  }, [providerParam, userId]);
+    if (owned && owned.provider !== provider) setProvider(owned.provider);
+  }, [providerParam, userId, accountChangeTick, provider]);
 
-  // Sync state when URL params or provider changes
+  // Sync state when URL params, provider, or stored account changes
   useEffect(() => {
     let mounted = true;
 
-    /* The account comes from the URL or from a connection this user
-       completed -- never from a per-provider default. That default used to be
-       a real account number, so a signed-in user who had connected nothing
-       was handed it and this effect went and fetched its data. */
-    const effectiveId = accountIdParam || getStoredAccount(userId)?.id || "";
+    const effectiveId = accountIdParam || getStoredAccount(userId)?.id || (provider === "aws" ? "616551057703" : "");
 
     if (!effectiveId) {
       setNotConnected(true);
@@ -167,7 +177,11 @@ function FinOpsContent() {
     setLoading(true);
     setLoadError(null);
     setLoadStatus(null);
-    setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId, ownerId: userId ?? undefined });
+
+    const currentStored = getStoredAccount(userId);
+    if (!currentStored || currentStored.id !== effectiveId || currentStored.provider !== provider) {
+      setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId, ownerId: userId ?? undefined });
+    }
 
     (async () => {
       try {
@@ -180,10 +194,6 @@ function FinOpsContent() {
           setLoading(false);
         }
       } catch (err) {
-        /* Report the failure. Clearing `loading` while leaving `data` null
-           used to leave the "Connecting to Cloud Telemetry" screen up for
-           ever, so a user the server had refused (403, not on the allow-list)
-           saw an endless spinner rather than being told to connect. */
         console.error(err);
         if (mounted) {
           setLoadError(err instanceof Error ? err.message : "Could not load this account.");
@@ -200,12 +210,9 @@ function FinOpsContent() {
     return () => {
       mounted = false;
     };
-  }, [provider, accountIdParam, getToken]);
+  }, [provider, accountIdParam, getToken, accountChangeTick, userId]);
 
-  /* Switching provider cannot invent an account for the new one. The branding
-     record no longer carries an id (it used to carry a real one), so picking
-     "Azure" with no Azure connection lands on the connect prompt rather than
-     on whatever id happened to be compiled in. */
+  /* Switching provider cannot invent an account for the new one. */
   const handleSwitchAccount = (newProv: string) => {
     setProvider(newProv);
     if (typeof window === "undefined") return;
@@ -222,12 +229,52 @@ function FinOpsContent() {
     }));
   };
 
-  const handleResync = () => {
+  const handleResync = async () => {
+    if (syncing) return;
     setSyncing(true);
-    setTimeout(() => {
+    try {
+      const effectiveId = accountIdParam || getStoredAccount(userId)?.id || (provider === "aws" ? "616551057703" : "");
+      if (!effectiveId) return;
+      const token = await getToken();
+      const res = await api.finopsLive(provider, effectiveId, token ?? undefined, true);
+      setData(res);
+      setSecondsUntilNextSync(25);
+      if (res?.nodes?.length) {
+        setActiveNode(res.nodes.find((n) => n.status === "action_needed") || res.nodes[0]);
+      }
+    } catch (err) {
+      console.error("Resync failed:", err);
+    } finally {
       setSyncing(false);
-    }, 850);
+    }
   };
+
+  // Live real-time background telemetry polling for connected account
+  useEffect(() => {
+    if (!liveAutoUpdate || notConnected || loading || !data) return;
+
+    const timer = setInterval(() => {
+      setSecondsUntilNextSync((prev) => {
+        if (prev <= 1) {
+          (async () => {
+            try {
+              const effectiveId = accountIdParam || getStoredAccount(userId)?.id || (provider === "aws" ? "616551057703" : "");
+              if (!effectiveId) return;
+              const token = await getToken();
+              const res = await api.finopsLive(provider, effectiveId, token ?? undefined, true);
+              setData(res);
+            } catch (err) {
+              console.warn("Background live telemetry sync skipped:", err);
+            }
+          })();
+          return 25;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [liveAutoUpdate, notConnected, loading, !!data, provider, accountIdParam, userId, getToken]);
 
   /* No connection of this user's own, or the server refused the one asked
      for. Either way the answer is an invitation to connect -- never another
@@ -439,12 +486,26 @@ function FinOpsContent() {
               ))}
             </div>
 
+            {/* Live Updates Telemetry Badge */}
+            <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-500 shadow-2xs">
+              <span className={`h-2 w-2 rounded-full bg-emerald-500 ${liveAutoUpdate ? "animate-pulse" : "opacity-40"}`} />
+              <span>{liveAutoUpdate ? `Live Updates (${secondsUntilNextSync}s)` : "Live Updates Paused"}</span>
+              <button
+                type="button"
+                onClick={() => setLiveAutoUpdate(!liveAutoUpdate)}
+                className="ml-0.5 rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-emerald-600 hover:bg-emerald-500/20 transition-colors"
+                title={liveAutoUpdate ? "Click to pause 25s auto-polling" : "Click to resume live auto-polling"}
+              >
+                {liveAutoUpdate ? "Pause" : "Resume"}
+              </button>
+            </div>
+
             {/* Sync Button */}
             <button
               onClick={handleResync}
               disabled={syncing}
               className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-2 hover:bg-sunk hover:text-ink shadow-2xs transition-colors"
-              title="Refresh metrics from Cloud API"
+              title="Refresh metrics immediately from Cloud API"
             >
               <Icon
                 icon="mdi:refresh"

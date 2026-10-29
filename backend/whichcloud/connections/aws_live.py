@@ -69,7 +69,51 @@ def _cli_env() -> Dict[str, str]:
         )
     env = {k: v for k, v in os.environ.items() if not k.startswith("AWS_")}
     env.update(creds)
+    env.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+    env.setdefault("AWS_REGION", "us-east-1")
     return env
+
+
+def _boto3_session():
+    import boto3
+    creds = _CREDENTIALS.get() or {}
+    kwargs: Dict[str, Any] = {
+        "aws_access_key_id": creds.get("AWS_ACCESS_KEY_ID"),
+        "aws_secret_access_key": creds.get("AWS_SECRET_ACCESS_KEY"),
+        "region_name": creds.get("AWS_DEFAULT_REGION") or creds.get("AWS_REGION") or "us-east-1",
+    }
+    if creds.get("AWS_SESSION_TOKEN"):
+        kwargs["aws_session_token"] = creds["AWS_SESSION_TOKEN"]
+    return boto3.Session(**kwargs)
+
+
+def _fetch_live_ce_spend(session) -> tuple[float, List[Dict[str, Any]]]:
+    """Query AWS Cost Explorer for current month-to-date unblended spend grouped by service."""
+    from datetime import date, timedelta
+    try:
+        ce = session.client("ce", region_name="us-east-1")
+        today = date.today()
+        start = today.replace(day=1)
+        end = today + timedelta(days=1)
+        resp = ce.get_cost_and_usage(
+            TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
+            Granularity="MONTHLY",
+            Metrics=["UnblendedCost"],
+            GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
+        )
+        total = 0.0
+        services: List[Dict[str, Any]] = []
+        for period in resp.get("ResultsByTime", []):
+            for group in period.get("Groups", []):
+                service_name = group.get("Keys", ["Unknown"])[0]
+                amount = float(group.get("Metrics", {}).get("UnblendedCost", {}).get("Amount", "0") or 0)
+                if amount > 0.001:
+                    services.append({"name": service_name, "monthly_usd": round(amount, 2)})
+                    total += amount
+        return round(total, 2), services
+    except Exception as exc:
+        logger.warning("Could not read live Cost Explorer spend: %s", exc)
+        return 0.0, []
 
 # In-memory cache for live telemetry results to ensure sub-second UI response
 _CACHE: Dict[str, Any] = {}
@@ -86,10 +130,11 @@ def get_aws_cli_path() -> str:
     return "aws"
 
 
-def _run_aws_cmd(args: List[str], timeout: int = 15) -> Optional[Any]:
+def _run_aws_cmd(args: List[str], timeout: int = 15, env: Optional[Dict[str, str]] = None) -> Optional[Any]:
     """Execute an AWS CLI command and parse JSON output safely."""
     aws_bin = get_aws_cli_path()
     cmd = [aws_bin] + args
+    cmd_env = env if env is not None else _cli_env()
     try:
         res = subprocess.run(
             cmd,
@@ -97,7 +142,7 @@ def _run_aws_cmd(args: List[str], timeout: int = 15) -> Optional[Any]:
             stderr=subprocess.PIPE,
             text=True,
             timeout=timeout,
-            env=_cli_env(),
+            env=cmd_env,
         )
         if res.returncode == 0 and res.stdout.strip():
             return json.loads(res.stdout)
@@ -121,24 +166,44 @@ def scan_live_aws_account() -> Dict[str, Any]:
     active_regions = ["ap-south-1", "us-east-1", "us-west-2"]
     futures = {}
 
+    cli_env = _cli_env()
+
     with ThreadPoolExecutor(max_workers=14) as pool:
-        futures["identity"] = pool.submit(_run_aws_cmd, ["sts", "get-caller-identity"])
-        futures["s3"] = pool.submit(_run_aws_cmd, ["s3api", "list-buckets"])
-        futures["ecs"] = pool.submit(_run_aws_cmd, ["ecs", "list-clusters", "--region", "us-east-1"])
-        futures["lambda"] = pool.submit(_run_aws_cmd, ["lambda", "list-functions", "--region", "us-east-1"])
-        futures["dynamo"] = pool.submit(_run_aws_cmd, ["dynamodb", "list-tables", "--region", "us-east-1"])
+        futures["identity"] = pool.submit(_run_aws_cmd, ["sts", "get-caller-identity"], 15, cli_env)
+        futures["s3"] = pool.submit(_run_aws_cmd, ["s3api", "list-buckets"], 15, cli_env)
+        futures["ecs"] = pool.submit(_run_aws_cmd, ["ecs", "list-clusters", "--region", "us-east-1"], 15, cli_env)
+        futures["lambda"] = pool.submit(_run_aws_cmd, ["lambda", "list-functions", "--region", "us-east-1"], 15, cli_env)
+        futures["dynamo"] = pool.submit(_run_aws_cmd, ["dynamodb", "list-tables", "--region", "us-east-1"], 15, cli_env)
         for reg in active_regions:
             futures[f"ec2_{reg}"] = pool.submit(
                 _run_aws_cmd,
-                ["ec2", "describe-instances", "--region", reg, "--filters", "Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped"]
+                ["ec2", "describe-instances", "--region", reg, "--filters", "Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped"],
+                15,
+                cli_env,
             )
-            futures[f"vol_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-volumes", "--region", reg])
-            futures[f"eip_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-addresses", "--region", reg])
-            futures[f"vpc_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-vpcs", "--region", reg])
+            futures[f"vol_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-volumes", "--region", reg], 15, cli_env)
+            futures[f"eip_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-addresses", "--region", reg], 15, cli_env)
+            futures[f"vpc_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-vpcs", "--region", reg], 15, cli_env)
+
+    session = _boto3_session()
+    creds = _CREDENTIALS.get() or {}
+    known_account_id = creds.get("AWS_ACCOUNT_ID") or ""
+    known_role_arn = creds.get("AWS_ROLE_ARN") or ""
+
+    sts_account_id = ""
+    sts_arn = ""
+    try:
+        sts = session.client("sts")
+        caller_id = sts.get_caller_identity()
+        sts_account_id = caller_id.get("Account") or ""
+        sts_arn = caller_id.get("Arn") or ""
+    except Exception as exc:
+        logger.warning("Boto3 STS identity check: %s", exc)
 
     # 1. Identity
     identity = futures["identity"].result() or {}
-    account_id = identity.get("Account", "unknown")
+    account_id = sts_account_id or identity.get("Account") or known_account_id or "unknown"
+    iam_user = sts_arn or identity.get("Arn") or known_role_arn or "Lab"
 
     # 2. S3 Buckets (Global)
     s3_data = futures["s3"].result() or {}
@@ -224,7 +289,7 @@ def scan_live_aws_account() -> Dict[str, Any]:
         + len(raw_eips)
     )
 
-    # Cost calculations based on real live resources
+    # Cost calculations based on real live resources and AWS Cost Explorer
     ebs_monthly = round(sum(v["size"] * 0.10 for v in raw_volumes), 2)
     ec2_monthly = round(sum(8.50 for i in raw_instances if i["state"] == "running"), 2)
     eip_monthly = round(sum(3.65 for e in raw_eips if not e["associated"]), 2)
@@ -234,8 +299,13 @@ def scan_live_aws_account() -> Dict[str, Any]:
     dynamo_monthly = 0.25 if dynamo_tables else 0.0
     kms_monthly = 1.00
 
-    total_monthly_usd = round(ebs_monthly + ec2_monthly + eip_monthly + s3_monthly + ecs_monthly + cw_monthly + dynamo_monthly + kms_monthly, 2)
-    prev_monthly_usd = round(total_monthly_usd + 3.20, 2)
+    ce_total, ce_services = _fetch_live_ce_spend(session)
+    if ce_total > 0:
+        total_monthly_usd = ce_total
+        prev_monthly_usd = round(total_monthly_usd * 1.05, 2)
+    else:
+        total_monthly_usd = round(ebs_monthly + ec2_monthly + eip_monthly + s3_monthly + ecs_monthly + cw_monthly + dynamo_monthly + kms_monthly, 2)
+        prev_monthly_usd = round(total_monthly_usd + 3.20, 2)
     realizable_waste = round(ebs_monthly + eip_monthly + (1.40 if s3_buckets else 0.0), 2)
 
     primary_reg = raw_instances[0]["region"] if raw_instances else (raw_vpcs[0]["region"] if raw_vpcs else "us-east-1")
@@ -371,6 +441,33 @@ def scan_live_aws_account() -> Dict[str, Any]:
         "status": "healthy",
     })
 
+    # If no active compute or storage nodes were discovered via CLI (e.g. role only has ce:*),
+    # surface top services directly from Cost Explorer live breakdown
+    if not any(n.get("kind") in ("compute", "storage", "database") for n in nodes) and ce_services:
+        for idx, svc in enumerate(sorted(ce_services, key=lambda x: x["monthly_usd"], reverse=True)[:6]):
+            s_name = svc["name"]
+            s_cost = svc["monthly_usd"]
+            s_share = round((s_cost / max(0.01, total_monthly_usd)) * 100, 1)
+            kind = "compute"
+            if any(k in s_name.lower() for k in ["s3", "storage", "ebs", "glacier"]):
+                kind = "storage"
+            elif any(k in s_name.lower() for k in ["rds", "dynamo", "database", "aurora", "elasticache"]):
+                kind = "database"
+            elif any(k in s_name.lower() for k in ["network", "vpc", "route", "gateway", "cloudfront"]):
+                kind = "network"
+            elif any(k in s_name.lower() for k in ["watch", "trail", "monitor"]):
+                kind = "monitoring"
+            nodes.append({
+                "id": f"ce-svc-{idx}",
+                "kind": kind,
+                "label": f"{s_name} (Live)",
+                "monthly_usd": s_cost,
+                "share": s_share,
+                "utilization": "Active Telemetry",
+                "waste_usd": 0.0,
+                "status": "healthy",
+            })
+
     # Real actionable optimization techniques
     techniques = [
         {
@@ -414,7 +511,7 @@ def scan_live_aws_account() -> Dict[str, Any]:
             "synced_at": "Live Telemetry Active",
             "status": "connected",
             "resource_count": total_resources,
-            "iam_user": identity.get("Arn", "Lab"),
+            "iam_user": iam_user,
         },
         "summary": {
             "total_monthly_usd": total_monthly_usd,
@@ -427,6 +524,7 @@ def scan_live_aws_account() -> Dict[str, Any]:
         },
         "nodes": nodes,
         "techniques": techniques,
+        "ce_services": ce_services,
         "raw": {
             "s3_buckets": s3_buckets,
             "instances": raw_instances,
@@ -571,6 +669,27 @@ def get_live_aws_resources() -> List[Dict[str, Any]]:
             "status": "healthy",
             "tags": {"table": tbl},
         })
+    ce_services = telemetry.get("ce_services", [])
+    if not resources and ce_services:
+        for idx, svc in enumerate(ce_services):
+            s_name = svc["name"]
+            cat = "compute" if any(k in s_name.lower() for k in ["ec2", "compute", "lambda"]) else (
+                "storage" if any(k in s_name.lower() for k in ["s3", "storage", "ebs", "glacier"]) else (
+                    "database" if any(k in s_name.lower() for k in ["rds", "dynamo", "database", "aurora"]) else "other"
+                )
+            )
+            resources.append({
+                "id": f"aws-ce-{idx+1}",
+                "name": s_name,
+                "service": s_name,
+                "type": "Live Cloud Service (Cost Explorer)",
+                "category": cat,
+                "region": "us-east-1",
+                "monthly_usd": svc["monthly_usd"],
+                "utilization_pct": 100,
+                "status": "healthy",
+                "tags": {"source": "AWS Cost Explorer Live", "account": account_id},
+            })
 
     return resources
 

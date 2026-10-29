@@ -123,6 +123,20 @@ export function setStoredAccount(
   if (!account.id.trim()) return;
 
   try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed?.provider === account.provider &&
+          parsed?.id === account.id &&
+          (parsed?.ownerId === account.ownerId || (!parsed?.ownerId && !account.ownerId))
+        ) {
+          return; // Already stored and unchanged, avoid loop
+        }
+      } catch {}
+    }
+
     const base = CLOUD_PROVIDERS[account.provider];
     const full: ConnectedAccountData = {
       ...base,

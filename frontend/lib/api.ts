@@ -290,26 +290,46 @@ const WAKING = new Set([502, 503, 504]);
  * So the server keeps the old behaviour of failing fast, and only the
  * browser waits for the service to wake. */
 const RETRYING = typeof window !== "undefined";
+const REQUEST_TIMEOUT_MS = 15000;
+
+function fetchWithTimeout(
+  input: string,
+  init: RequestInit & { next?: { revalidate: number } },
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new Error(`Request timed out after ${timeoutMs / 1000}s`));
+  }, timeoutMs);
+
+  if (init.signal) {
+    init.signal.addEventListener("abort", () => controller.abort());
+  }
+
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
 
 async function fetchThroughWake(
   input: string,
   init: RequestInit & { next?: { revalidate: number } },
 ): Promise<Response> {
-  if (!RETRYING) return fetch(input, init);
+  if (!RETRYING) return fetchWithTimeout(input, init, 15000);
 
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= WAKE_RETRY_DELAYS_MS.length; attempt++) {
     const last = attempt === WAKE_RETRY_DELAYS_MS.length;
     try {
-      const response = await fetch(input, init);
+      const response = await fetchWithTimeout(input, init, 15000);
       if (WAKING.has(response.status) && !last) {
         await sleep(WAKE_RETRY_DELAYS_MS[attempt]);
         continue;
       }
       return response;
     } catch (err) {
-      /* fetch() rejects with TypeError for a network or CORS failure, which
+      /* fetch() rejects with TypeError or DOMException for a network/timeout/CORS failure, which
          is exactly the shape a cold backend produces. A genuine programming
          error would reject the same way, so this retries it too -- at the
          cost of some delay before the same failure surfaces. */
@@ -873,9 +893,9 @@ export const api = {
   // the URL, not on headers, so caching a response that varies by
   // Authorization risks handing one signed-in user's live AWS data to the
   // next request that hits the same URL.
-  finopsLive: (provider = "aws", accountId = "demo", token?: string) =>
+  finopsLive: (provider = "aws", accountId = "demo", token?: string, sync = false) =>
     get<FinOpsLiveResponse>(
-      `/api/finops/live?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      `/api/finops/live?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}${sync ? `&sync=true&_t=${Date.now()}` : ""}`,
       0,
       token,
     ),
@@ -887,23 +907,23 @@ export const api = {
       token,
     ),
 
-  finopsResources: (provider = "aws", accountId = "demo", token?: string) =>
+  finopsResources: (provider = "aws", accountId = "demo", token?: string, sync = false) =>
     get<{ resources: any[]; provider: string; account_id: string }>(
-      `/api/finops/resources?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      `/api/finops/resources?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}${sync ? `&sync=true&_t=${Date.now()}` : ""}`,
       0,
       token,
     ),
 
-  finopsIssues: (provider = "aws", accountId = "demo", token?: string) =>
+  finopsIssues: (provider = "aws", accountId = "demo", token?: string, sync = false) =>
     get<{ issues: any[]; provider: string; account_id: string }>(
-      `/api/finops/issues?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      `/api/finops/issues?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}${sync ? `&sync=true&_t=${Date.now()}` : ""}`,
       0,
       token,
     ),
 
-  finopsPlanning: (provider = "aws", accountId = "demo", token?: string) =>
+  finopsPlanning: (provider = "aws", accountId = "demo", token?: string, sync = false) =>
     get<FinOpsPlanningResponse>(
-      `/api/finops/planning?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}`,
+      `/api/finops/planning?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}${sync ? `&sync=true&_t=${Date.now()}` : ""}`,
       0,
       token,
     ),

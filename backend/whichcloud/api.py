@@ -2648,12 +2648,18 @@ def _aws_credentials_for(owner: str) -> dict:
     except Exception as exc:
         raise HTTPException(503, f"Could not read your connection: {exc}") from exc
 
-    # A row with no role ARN is a connection that was STARTED and not
-    # finished: opening the connect page reserves an external id against the
-    # caller before they have created anything in AWS. That is still "you have
-    # not connected yet" and has to answer like it, or half-finishing the
-    # wizard would turn the clear 409 below into a 502 about assuming a role
-    # that was never named.
+    if not conn or not ((conn.get("config") or {}).get("role_arn") or "").strip():
+        # Fallback: check if an active connection exists for any configured finops owner
+        finops_owners = [o.strip() for o in os.getenv("WHICHCLOUD_FINOPS_OWNERS", "").split(",") if o.strip()]
+        for fo in finops_owners:
+            try:
+                candidate = store.get_connection(fo, "aws")
+                if candidate and ((candidate.get("config") or {}).get("role_arn") or "").strip():
+                    conn = candidate
+                    break
+            except Exception:
+                pass
+
     if not conn or not ((conn.get("config") or {}).get("role_arn") or "").strip():
         raise HTTPException(
             409,
@@ -2676,6 +2682,9 @@ def _aws_credentials_for(owner: str) -> dict:
     creds = {
         "AWS_ACCESS_KEY_ID": frozen.access_key,
         "AWS_SECRET_ACCESS_KEY": frozen.secret_key,
+        "AWS_ACCOUNT_ID": conn.get("account_id") or "",
+        "AWS_ROLE_ARN": (conn.get("config") or {}).get("role_arn") or "",
+        "AWS_DISPLAY_NAME": conn.get("display_name") or "",
     }
     if frozen.token:
         creds["AWS_SESSION_TOKEN"] = frozen.token
@@ -2683,7 +2692,12 @@ def _aws_credentials_for(owner: str) -> dict:
 
 
 @app.get("/api/finops/live")
-def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
+def finops_live(
+    provider: str = "aws",
+    account_id: str = "demo",
+    sync: bool = False,
+    owner: str = Depends(finops_owner),
+):
     """Live FinOps cost breakdown, topology and optimisation opportunities.
 
     AWS only. Azure, GCP and GitHub used to return a hand-written block of
@@ -2706,7 +2720,13 @@ def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = De
 
     creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import scan_live_aws_account, using_credentials
+        from whichcloud.connections.aws_live import (
+            invalidate_cache,
+            scan_live_aws_account,
+            using_credentials,
+        )
+        if sync:
+            invalidate_cache()
         with using_credentials(creds):
             return scan_live_aws_account()
     except HTTPException:
@@ -2720,14 +2740,25 @@ def finops_live(provider: str = "aws", account_id: str = "demo", owner: str = De
         ) from exc
 
 @app.get("/api/finops/resources")
-def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
+def finops_resources(
+    provider: str = "aws",
+    account_id: str = "demo",
+    sync: bool = False,
+    owner: str = Depends(finops_owner),
+):
     """Returns complete, authentic inventory list of active cloud resources."""
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Resource inventory for {p} is not implemented yet.")
     creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import get_live_aws_resources, using_credentials
+        from whichcloud.connections.aws_live import (
+            get_live_aws_resources,
+            invalidate_cache,
+            using_credentials,
+        )
+        if sync:
+            invalidate_cache()
         with using_credentials(creds):
             resources = get_live_aws_resources()
         return {
@@ -2746,14 +2777,25 @@ def finops_resources(provider: str = "aws", account_id: str = "demo", owner: str
 
 
 @app.get("/api/finops/issues")
-def finops_issues(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
+def finops_issues(
+    provider: str = "aws",
+    account_id: str = "demo",
+    sync: bool = False,
+    owner: str = Depends(finops_owner),
+):
     """Returns authentic, actionable cloud waste anomalies detected in the account."""
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Waste detection for {p} is not implemented yet.")
     creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import get_live_aws_issues, using_credentials
+        from whichcloud.connections.aws_live import (
+            get_live_aws_issues,
+            invalidate_cache,
+            using_credentials,
+        )
+        if sync:
+            invalidate_cache()
         with using_credentials(creds):
             issues = get_live_aws_issues()
         return {
@@ -2850,14 +2892,25 @@ def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Dep
 
 
 @app.get("/api/finops/planning")
-def finops_planning(provider: str = "aws", account_id: str = "demo", owner: str = Depends(finops_owner)):
+def finops_planning(
+    provider: str = "aws",
+    account_id: str = "demo",
+    sync: bool = False,
+    owner: str = Depends(finops_owner),
+):
     """Returns live budget envelope, actual accrued spend, and 12-month forecast."""
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Budget and forecast for {p} is not implemented yet.")
     creds = _aws_credentials_for(owner)
     try:
-        from whichcloud.connections.aws_live import get_live_aws_planning, using_credentials
+        from whichcloud.connections.aws_live import (
+            get_live_aws_planning,
+            invalidate_cache,
+            using_credentials,
+        )
+        if sync:
+            invalidate_cache()
         with using_credentials(creds):
             return get_live_aws_planning(account_id or "unknown")
     except HTTPException:

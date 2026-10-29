@@ -42,25 +42,29 @@ export default function ConnectAwsPage() {
   const pollStoppedRef = useRef(true);
   const pollDeadlineRef = useRef(0);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await getToken();
-        const data = await api.connectionSetup("aws", {}, token ?? undefined);
-        setSetupData(data);
-      } catch (err) {
-        // A setup call that fails must say so, not hand the page a fake
-        // external id and a broken link that looks the same as a working one.
-        setSetupError(
-          err instanceof Error
-            ? `Could not load connection setup: ${err.message}`
-            : "Could not load connection setup. Please refresh and try again.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const loadSetup = useCallback(async () => {
+    setLoading(true);
+    setSetupError("");
+    try {
+      const token = await getToken();
+      const data = await api.connectionSetup("aws", {}, token ?? undefined);
+      setSetupData(data);
+    } catch (err) {
+      // A setup call that fails must say so, not hand the page a fake
+      // external id and a broken link that looks the same as a working one.
+      setSetupError(
+        err instanceof Error
+          ? `Could not load connection setup: ${err.message}`
+          : "Could not load connection setup. Please refresh and try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }, [getToken]);
+
+  useEffect(() => {
+    loadSetup();
+  }, [loadSetup]);
 
   useEffect(() => {
     return () => {
@@ -367,7 +371,77 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
 
         {setupError && (
           <div className="mt-6 rounded-xl border border-caution/40 bg-caution-wash p-4 text-[13.5px] text-caution">
-            {setupError}
+            <p className="font-medium">{setupError}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={loadSetup}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-caution/60 bg-surface px-3 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-sunk"
+              >
+                <Icon icon="mdi:refresh" className="h-4 w-4" />
+                Retry Connection Setup
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((prev) => !prev)}
+                className="text-[12.5px] font-medium text-ink-2 underline hover:text-ink"
+              >
+                {showAdvanced ? "Hide Manual Entry" : "Enter Role ARN manually →"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {setupError && showAdvanced && (
+          <div className="mt-6 rounded-2xl border border-line bg-surface p-6 shadow-xs">
+            <h3 className="text-[15px] font-semibold text-ink">Connect Existing Role Directly</h3>
+            <p className="mt-1 text-[13px] text-ink-3">
+              If you have already created WhichCloudCostRole in your AWS account, enter your Role ARN and Region below to connect.
+            </p>
+            <form onSubmit={handleManualSubmit} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-[13px] font-medium text-ink-2">Role ARN</label>
+                <input
+                  type="text"
+                  placeholder="arn:aws:iam::123456789012:role/WhichCloudCostRole"
+                  value={customRoleArn}
+                  onChange={(e) => setCustomRoleArn(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-line bg-canvas px-3.5 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-[13px] font-medium text-ink-2">Primary Region</label>
+                <select
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-line bg-canvas px-3 py-2 text-[13.5px] text-ink outline-none"
+                >
+                  <option value="us-east-1">US East (N. Virginia) · us-east-1</option>
+                  <option value="ap-south-1">Asia Pacific (Mumbai) · ap-south-1</option>
+                  <option value="eu-west-1">Europe (Ireland) · eu-west-1</option>
+                  <option value="us-west-2">US West (Oregon) · us-west-2</option>
+                </select>
+              </div>
+              {errorMsg && (
+                <div className="rounded-lg border border-caution/40 bg-caution-wash p-3 text-[13px] text-caution">
+                  {errorMsg}
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={connecting}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-[14px] font-semibold text-canvas shadow-xs hover:opacity-95 disabled:opacity-50"
+              >
+                {connecting ? (
+                  <>
+                    <Icon icon="mdi:loading" className="h-4 w-4 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>Verify & Launch FinOps Dashboard &rarr;</>
+                )}
+              </button>
+            </form>
           </div>
         )}
 

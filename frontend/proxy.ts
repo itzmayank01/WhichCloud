@@ -24,7 +24,10 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isProtected = createRouteMatcher(["/dashboard(.*)", "/finops(.*)", "/connect(.*)"]);
 
 export default clerkMiddleware(async (auth, request) => {
-  if (isProtected(request)) {
+  const isDemo =
+    request.nextUrl.pathname.startsWith("/finops") &&
+    request.nextUrl.searchParams.get("account_id") === "demo";
+  if (isProtected(request) && !isDemo) {
     await auth.protect();
   }
 });

@@ -64,8 +64,8 @@ popd > /dev/null
 
 # 3️⃣ Frontend
 pushd frontend > /dev/null
-if port_is_listening 3000 || port_is_listening 3001; then
-  echo "Frontend already listening on :3000/:3001, leaving it running."
+if port_is_listening 3001 || (port_is_listening 3000 && curl -s http://localhost:3000 | grep -qi "whichcloud"); then
+  echo "Frontend already listening, leaving it running."
 else
   # package-lock.json newer than node_modules means a dependency changed
   # since the last install; otherwise `npm install` is a no-op that still
