@@ -17,3 +17,4 @@ output "redis_reader_endpoint" {
   description = "Reader endpoint address for Redis"
   value       = aws_elasticache_replication_group.redis.reader_endpoint_address
 }
+

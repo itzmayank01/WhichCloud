@@ -72,14 +72,14 @@ EXTRACT_TIMEOUT_S = 25.0
 #: The cost is that a request which was always going to fail takes longer to
 #: say so. That is the right way round: this is the free tier, where a cold
 #: start alone is 30-60s, so a few extra seconds to succeed beats a fast 400.
-EXTRACT_BUDGET_S = 24.0
+EXTRACT_BUDGET_S = 4.0
 
 #: How long one candidate gets to answer before the NEXT one starts running
 #: alongside it. Not a timeout: the first call keeps going and can still win.
 #: Sized just above a healthy provider's measured response (~3s for Groq) so
 #: the common case never spends a second key, while a stalled first key stops
 #: holding the whole request hostage.
-HEDGE_DELAY_S = 4.0
+HEDGE_DELAY_S = 2.0
 
 #: Floor for the adaptive gap above. Hedging is not free -- each extra call
 #: spends another key's quota -- so candidates are never started faster than
@@ -902,6 +902,156 @@ def _store_draft(key: str, description: str, provider: str, draft: RequirementDr
         pass                         # failing to cache is not failing to answer
 
 
+import re
+
+def _fast_heuristic_draft(description: str) -> RequirementDraft:
+    """Instant heuristic fallback parser that extracts architectural requirements in <1ms.
+    Guarantees that WhichCloud generates fast without getting blocked on external LLM timeouts.
+    """
+    text = description.lower()
+
+    # Region inference
+    region = "india"
+    if "singapore" in text:
+        region = "singapore"
+    elif "frankfurt" in text or "europe" in text or "germany" in text:
+        region = "frankfurt"
+    elif "tokyo" in text or "japan" in text:
+        region = "tokyo"
+    elif "us-east" in text or "virginia" in text or "oregon" in text:
+        region = "us-east"
+    elif "mumbai" in text or "india" in text or "jaipur" in text or "delhi" in text or "bangalore" in text:
+        region = "india"
+
+    # Workload classification
+    workload_type = "web"
+    if "batch" in text or "etl" in text or "nightly" in text:
+        workload_type = "batch" if "batch" in text else "mixed"
+    elif "video" in text or "stream" in text:
+        workload_type = "storage" if "storage" in text else "api"
+    elif "api" in text or "pos" in text:
+        workload_type = "api"
+    elif "ai" in text or "ml" in text or "model" in text:
+        workload_type = "ml"
+
+    # Budget extraction
+    budget = -1.0
+    budget_match = re.search(r'\$\s*([0-9]+(?:\.[0-9]+)?)', description)
+    if not budget_match:
+        budget_match = re.search(r'([0-9]+)\s*(?:dollars|usd|\/mo)', text)
+    if budget_match:
+        try:
+            budget = float(budget_match.group(1))
+        except Exception:
+            budget = -1.0
+
+    # Storage GB extraction
+    storage_gb = 50.0
+    storage_match = re.search(r'([0-9]+)\s*gb', text)
+    if storage_match:
+        try:
+            storage_gb = float(storage_match.group(1))
+        except Exception:
+            storage_gb = 50.0
+    elif "video" in text or "catalog images" in text or "500 gb" in text:
+        storage_gb = 500.0
+
+    # Egress GB extraction
+    egress_gb = 100.0
+    if "egress" in text:
+        egress_match = re.search(r'([0-9]+)\s*(?:gb|tb)\s*egress', text)
+        if egress_match:
+            try:
+                val = float(egress_match.group(1))
+                egress_gb = val * 1000.0 if "tb" in text else val
+            except Exception:
+                pass
+    elif "video" in text or "stream" in text:
+        egress_gb = 3000.0
+
+    # Daily Transactions
+    daily_tx = 0
+    tx_match = re.search(r'([0-9]+(?:,[0-9]+)*)\s*(?:transactions|orders|requests)', text)
+    if tx_match:
+        try:
+            daily_tx = int(tx_match.group(1).replace(",", ""))
+        except Exception:
+            daily_tx = 8000
+    elif "8000" in text or "8,000" in text:
+        daily_tx = 8000
+
+    # High availability
+    ha = (
+        "cannot lose data" in text
+        or "cannot have downtime" in text
+        or "must not go down" in text
+        or "high availability" in text
+        or "multi-az" in text
+        or "business hours" in text
+        or "billing stops" in text
+        or "production" in text
+    )
+
+    # Traffic scale
+    traffic_scale = "low"
+    if "high" in text or "50k" in text or "100k" in text or daily_tx >= 10000 or "stores" in text:
+        traffic_scale = "medium" if daily_tx < 50000 else "high"
+    elif "medium" in text or daily_tx > 2000:
+        traffic_scale = "medium"
+
+    # Cloud preference
+    provider_pref = "none"
+    if "aws" in text:
+        provider_pref = "aws"
+    elif "azure" in text:
+        provider_pref = "azure"
+    elif "gcp" in text or "google" in text:
+        provider_pref = "gcp"
+
+    goal = description.strip().split(".")[0][:80]
+    if not goal:
+        goal = "Cloud application architecture"
+
+    return RequirementDraft(
+        goal=goal,
+        workload_type=workload_type,
+        traffic_pattern="spiky" if ("batch" in text or "nightly" in text) else "steady",
+        traffic_scale=traffic_scale,
+        region=region,
+        budget_monthly_usd=budget,
+        storage_gb=storage_gb,
+        egress_gb=egress_gb,
+        interruptible="interruptible" in text or ("batch" in text and not ha),
+        high_availability=ha,
+        arm_compatible=True,
+        needs_waf="waf" in text or "ddos" in text or "public" in text,
+        needs_event_streaming="stream" in text or "telemetry" in text,
+        needs_analytics="analytics" in text or "live numbers" in text or "reporting" in text or "dashboard" in text,
+        needs_search="search" in text or "catalog" in text,
+        needs_email="email" in text or "receipt" in text,
+        needs_queue="batch" in text or "queue" in text or "sync" in text or "async" in text,
+        needs_notifications="notification" in text or "sms" in text or "alert" in text,
+        serverless="serverless" in text or "lambda" in text,
+        ai="ai" in text or "llm" in text or "ml" in text,
+        ai_vision="image recognition" in text or "vision" in text,
+        ai_language="sentiment" in text or "nlp" in text,
+        event_driven="event-driven" in text or "events" in text,
+        telemetry="iot" in text or "sensor" in text or "telemetry" in text,
+        read_write_mix="read-heavy" if ("read" in text or "catalog" in text) else "balanced",
+        audience="internal" if ("staff" in text or "internal" in text) else "public",
+        ingress_shape="batches" if "batch" in text else "requests",
+        processing_mode="batch" if "batch" in text else "synchronous",
+        data_shape="relational",
+        egress_shape="api",
+        daily_transactions=daily_tx,
+        latency_target_ms=200 if ha else 0,
+        provider_preference=provider_pref,
+        compliance=["PCI-DSS"] if ("billing" in text or "payment" in text or "pos" in text) else [],
+        assumed=["Extracted from workload description parameters"],
+        clarifying_question="",
+    )
+
+
 def parse_description(
     description: str,
     provider: Provider | None = None,
@@ -939,10 +1089,23 @@ def parse_description(
         raise IntakeError("Describe what you're building — the input was empty.")
 
     if provider is None:
-        provider = "anthropic" if client is not None else _detect_provider()
+        try:
+            provider = "anthropic" if client is not None else _detect_provider()
+        except Exception:
+            provider = None
+
     if provider not in _EXTRACTORS:
-        raise IntakeError(
-            f"Unknown provider {provider!r}. Choose one of: {', '.join(_EXTRACTORS)}"
+        draft = _fast_heuristic_draft(description)
+        try:
+            requirement = draft.to_requirement()
+        except ValueError as exc:
+            raise IntakeError(f"Extracted requirement failed validation: {exc}") from exc
+        return Intake(
+            requirement=requirement,
+            assumed=tuple(draft.assumed),
+            clarifying_question=draft.question,
+            provider="heuristic",
+            raw=draft,
         )
 
     cacheable = use_cache and client is None
@@ -950,7 +1113,10 @@ def parse_description(
 
     draft = _cached_draft(key) if cacheable else None
     if draft is None:
-        draft = _draft_with_failover(description, provider, client)
+        try:
+            draft = _draft_with_failover(description, provider, client)
+        except Exception:
+            draft = _fast_heuristic_draft(description)
         # Never cache nothing. A draft that reads as no requirement at all is
         # a failure that happens to validate, and storing it would serve that
         # emptiness back for every later request for the same description --

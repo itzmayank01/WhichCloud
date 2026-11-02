@@ -81,3 +81,4 @@ variable "cache_automatic_failover" {
 variable "s3_versioning_status" {
   type = string
 }
+

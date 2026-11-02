@@ -659,3 +659,4 @@ def compute_metrics() -> DevOpsMetrics:
             avg_plan_duration_seconds=3.8,
             avg_apply_duration_seconds=round(avg_apply, 1),
         )
+

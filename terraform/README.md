@@ -50,3 +50,4 @@ terraform plan -var-file="terraform.tfvars"
 # 3. Apply deployment
 terraform apply -var-file="terraform.tfvars" -auto-approve
 ```
+

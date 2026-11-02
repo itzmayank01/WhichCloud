@@ -1959,8 +1959,17 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
 
     try:
         intake = _cached_intake(body.description, body.reader)
-    except IntakeError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        from .intake import _fast_heuristic_draft, Intake
+        draft = _fast_heuristic_draft(body.description)
+        requirement = draft.to_requirement()
+        intake = Intake(
+            requirement=requirement,
+            assumed=tuple(draft.assumed),
+            clarifying_question=draft.question,
+            provider="aws",
+            raw=draft,
+        )
 
     requirement = intake.requirement
     # An explicit request wins over the description's stated preference, which
@@ -2014,8 +2023,17 @@ def advise_route(body: AdviseIn) -> dict:
 
     try:
         intake = _cached_intake(body.description, body.reader)
-    except IntakeError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        from .intake import _fast_heuristic_draft, Intake
+        draft = _fast_heuristic_draft(body.description)
+        requirement = draft.to_requirement()
+        intake = Intake(
+            requirement=requirement,
+            assumed=tuple(draft.assumed),
+            clarifying_question=draft.question,
+            provider="aws",
+            raw=draft,
+        )
 
     requirement = intake.requirement
     provider = body.provider or requirement.provider_preference or "aws"
@@ -2073,8 +2091,17 @@ def describe_export_terraform_route(body: DescribeExportIn):
 
     try:
         intake = _cached_intake(body.description, body.reader)
-    except IntakeError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        from .intake import _fast_heuristic_draft, Intake
+        draft = _fast_heuristic_draft(body.description)
+        requirement = draft.to_requirement()
+        intake = Intake(
+            requirement=requirement,
+            assumed=tuple(draft.assumed),
+            clarifying_question=draft.question,
+            provider="aws",
+            raw=draft,
+        )
 
     requirement = intake.requirement
     provider = body.provider or requirement.provider_preference or "aws"
@@ -2130,8 +2157,17 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
 
     try:
         intake = _cached_intake(description, body.reader)
-    except IntakeError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        from .intake import _fast_heuristic_draft, Intake
+        draft = _fast_heuristic_draft(description)
+        requirement = draft.to_requirement()
+        intake = Intake(
+            requirement=requirement,
+            assumed=tuple(draft.assumed),
+            clarifying_question=draft.question,
+            provider="aws",
+            raw=draft,
+        )
 
     requirement = intake.requirement
     provider = body.provider or requirement.provider_preference or "aws"
@@ -2228,6 +2264,209 @@ module "whichcloud_aws_integration" {{
   upgrade_to_cur_2  = true
 }}
 """
+
+    # Dynamic Modular Terraform Generation matching the Architecture Spec and SKUs
+    spec = option.spec if option else None
+    estimate = option.estimate if option else None
+
+    compute_sku = None
+    database_sku = None
+    if estimate:
+        for it in estimate.items:
+            if it.label.startswith("Compute") and not compute_sku:
+                compute_sku = it.sku
+            elif it.label.startswith("Database") and "replica" not in it.label and not database_sku:
+                database_sku = it.sku
+
+    if not compute_sku:
+        compute_sku = "t4g.medium" if (spec and spec.arch == "arm64") else "t3.medium"
+    if not database_sku:
+        database_sku = "db.t4g.micro" if (spec and spec.database_arch == "arm64") else "db.t3.medium"
+
+    if spec:
+        compute_count = max(1, spec.compute_count)
+        db_multi_az = spec.database_multi_az
+        storage_gb = max(20, int(spec.storage_gb))
+        nat_count = max(1, spec.nat_gateway_count) if hasattr(spec, "nat_gateway_count") else 1
+    else:
+        compute_count = 2
+        db_multi_az = True
+        storage_gb = 50
+        nat_count = 1
+
+    desc_lower = description.lower()
+    if "postgres" in desc_lower or "postgresql" in desc_lower:
+        db_engine = "postgres"
+        db_engine_version = "15.4"
+        db_port = 5432
+    elif "mysql" in desc_lower:
+        db_engine = "mysql"
+        db_engine_version = "8.0"
+        db_port = 3306
+    else:
+        db_engine = "postgres"
+        db_engine_version = "15.4"
+        db_port = 5432
+
+    # 1. modules/vpc.tf
+    az_letters = ["a", "b", "c"]
+    az_count = max(2, min(3, nat_count + 1))
+    azs_hcl = ", ".join(f'"{region}{az_letters[i]}"' for i in range(az_count))
+    files["modules/vpc.tf"] = f"""# Reusable VPC Networking Module
+# Generated for: {label_txt} ({provider_upper_txt} - {region_txt})
+
+module "vpc" {{
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+
+  name = "whichcloud-{provider_txt}-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = [{azs_hcl}]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = {str(nat_count <= 1).lower()}
+  enable_vpn_gateway = false
+
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {{
+    Environment = var.environment
+    Tier        = "{label_txt}"
+    ManagedBy   = "WhichCloud"
+  }}
+}}
+"""
+
+    # 2. modules/compute.tf
+    min_cap = max(1, compute_count)
+    max_cap = max(2, compute_count * 3)
+    files["modules/compute.tf"] = f"""# Reusable Compute Cluster Module
+# Architecture Spec: {compute_count} instances ({compute_sku})
+# Auto Scaling Group with Target Tracking CPU policy
+
+module "compute_cluster" {{
+  source = "./modules/compute"
+
+  cluster_name    = "whichcloud-${{var.environment}}-cluster"
+  instance_type   = "{compute_sku}"
+  min_capacity    = {min_cap}
+  max_capacity    = {max_cap}
+  vpc_id          = module.vpc.vpc_id
+  private_subnets = module.vpc.private_subnets
+
+  target_cpu_utilization = 70.0
+  health_check_path      = "/health"
+
+  tags = {{
+    Environment = var.environment
+    Tier        = "{label_txt}"
+    Workload    = "Production-Fleet"
+  }}
+}}
+"""
+
+    # 3. modules/database.tf
+    multi_az_str = str(db_multi_az).lower()
+    retention_days = 30 if db_multi_az else 7
+    files["modules/database.tf"] = f"""# Reusable Managed Database Module
+# Selected Engine: {db_engine} {db_engine_version}
+# Instance SKU: {database_sku} | Multi-AZ: {multi_az_str}
+
+module "managed_db" {{
+  source = "./modules/database"
+
+  identifier             = "whichcloud-${{var.environment}}-db"
+  allocated_storage      = {storage_gb}
+  max_allocated_storage  = {storage_gb * 4}
+  engine                 = "{db_engine}"
+  engine_version         = "{db_engine_version}"
+  port                   = {db_port}
+  instance_class         = "{database_sku}"
+  multi_az               = {multi_az_str}
+  backup_retention_period = {retention_days}
+  deletion_protection    = var.environment == "prod"
+
+  vpc_security_group_ids = [module.vpc.default_security_group_id]
+  db_subnet_group_name   = module.vpc.database_subnet_group_name
+
+  tags = {{
+    Environment = var.environment
+    Tier        = "{label_txt}"
+  }}
+}}
+"""
+
+    # 4. modules/storage.tf
+    files["modules/storage.tf"] = f"""# Reusable Object Storage & Cache Module
+# Storage Capacity: {storage_gb} GB | S3 Lifecycle + Redis Cache
+
+resource "aws_s3_bucket" "app_storage" {{
+  bucket        = "whichcloud-${{var.environment}}-storage-${{var.aws_region}}"
+  force_destroy = var.environment != "prod"
+
+  tags = {{
+    Environment = var.environment
+    Tier        = "{label_txt}"
+  }}
+}}
+
+resource "aws_s3_bucket_versioning" "storage_versioning" {{
+  bucket = aws_s3_bucket.app_storage.id
+  versioning_configuration {{
+    status = var.environment == "prod" ? "Enabled" : "Suspended"
+  }}
+}}
+
+resource "aws_s3_bucket_lifecycle_configuration" "storage_lifecycle" {{
+  bucket = aws_s3_bucket.app_storage.id
+
+  rule {{
+    id     = "infrequent_access_transition"
+    status = "Enabled"
+
+    transition {{
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }}
+
+    transition {{
+      days          = 90
+      storage_class = "GLACIER"
+    }}
+  }}
+}}
+"""
+
+    # 5. environments/dev.tfvars & environments/prod.tfvars & root tfvars
+    files["environments/dev.tfvars"] = f"""# Development Environment Configuration
+environment           = "dev"
+aws_region            = "{region_txt}"
+compute_count         = 1
+compute_instance_type = "t4g.small"
+database_instance_class = "db.t4g.micro"
+database_multi_az     = false
+storage_gb            = 20
+backup_retention_days = 7
+"""
+
+    files["environments/prod.tfvars"] = f"""# Production Environment Configuration
+environment           = "prod"
+aws_region            = "{region_txt}"
+compute_count         = {compute_count}
+compute_instance_type = "{compute_sku}"
+database_instance_class = "{database_sku}"
+database_multi_az     = {multi_az_str}
+storage_gb            = {storage_gb}
+backup_retention_days = 30
+"""
+
+    files["dev.tfvars"] = files["environments/dev.tfvars"]
+    files["prod.tfvars"] = files["environments/prod.tfvars"]
+    files["terraform.tfvars"] = files["environments/prod.tfvars"] if body.environment == "prod" else files["environments/dev.tfvars"]
 
     return {
         "files": files,

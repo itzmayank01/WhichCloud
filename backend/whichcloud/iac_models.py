@@ -173,3 +173,4 @@ class DriftScanRequest(BaseModel):
 class SimulateFailureRequest(BaseModel):
     environment_name: str = "prod"
     scenario_type: Literal["PRIMARY_DB_OUTAGE", "COMPUTE_NODE_CRASH", "SECURITY_GROUP_DRIFT", "AZ_NETWORK_SEVER"] = "PRIMARY_DB_OUTAGE"
+

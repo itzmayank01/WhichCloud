@@ -17,3 +17,4 @@ output "nat_gateway_ips" {
   description = "List of Elastic IPs assigned to NAT Gateways"
   value       = aws_eip.nat[*].public_ip
 }
+

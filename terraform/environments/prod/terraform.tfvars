@@ -18,3 +18,4 @@ cache_node_type            = "cache.m6g.large"
 num_cache_nodes            = 3
 cache_automatic_failover   = true
 s3_versioning_status       = "Enabled"
+

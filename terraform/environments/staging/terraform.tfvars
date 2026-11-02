@@ -18,3 +18,4 @@ cache_node_type            = "cache.t4g.small"
 num_cache_nodes            = 2
 cache_automatic_failover   = true
 s3_versioning_status       = "Enabled"
+

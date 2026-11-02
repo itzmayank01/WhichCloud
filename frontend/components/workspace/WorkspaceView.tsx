@@ -228,6 +228,15 @@ export function WorkspaceView({ name }: { name: string | null }) {
       setSelected(
         recommend(answer.options)?.pick.label ?? answer.options[0]?.label ?? null,
       );
+      if (typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(answer));
+          sessionStorage.setItem("whichcloud:active_description", text);
+          sessionStorage.setItem("whichcloud:active_cloud", answer.provider);
+        } catch {
+          // ignore session quota
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read that description");
     } finally {

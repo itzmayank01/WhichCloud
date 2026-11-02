@@ -22,3 +22,4 @@ output "security_group_id" {
   description = "Security Group ID of the compute nodes"
   value       = aws_security_group.app.id
 }
+

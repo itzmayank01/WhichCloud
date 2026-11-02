@@ -80,3 +80,4 @@ resource "aws_db_instance" "replica" {
     Environment = var.environment
   })
 }
+

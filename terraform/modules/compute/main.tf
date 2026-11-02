@@ -185,3 +185,4 @@ resource "aws_autoscaling_policy" "cpu_target" {
     target_value = var.target_cpu_utilization
   }
 }
+

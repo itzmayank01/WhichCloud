@@ -7,3 +7,4 @@ output "high_cpu_alarm_id" {
   description = "CloudWatch High CPU Alarm ID"
   value       = aws_cloudwatch_metric_alarm.high_cpu.id
 }
+

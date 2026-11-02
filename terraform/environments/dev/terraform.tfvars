@@ -18,3 +18,4 @@ cache_node_type            = "cache.t4g.micro"
 num_cache_nodes            = 1
 cache_automatic_failover   = false
 s3_versioning_status       = "Suspended"
+

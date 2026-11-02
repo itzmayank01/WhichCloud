@@ -36,6 +36,33 @@ interface OptionItem {
 const DEFAULT_WORKLOAD =
   "I run operations for a retail chain in India with 120 stores. Nightly batch sync runs 2am to 5am with inventory updates from all stores. In-store POS queries the catalog during store hours. Mobile app for customers with 50k daily active users. 500 GB catalog images with fast delivery to users across India.";
 
+const PRESET_WORKLOADS = [
+  {
+    id: "retail-40",
+    label: "Retail (40 Stores, Billing)",
+    badge: "HA Billing",
+    text: "I run operations for a retail chain in India with 40 stores. We want to move our stock and billing system online so staff can use it from any store and head office can see live numbers. Around 300 staff use it daily and we do about 8,000 transactions a day. It must not go down during business hours because billing stops. Budget is around $500 a month.",
+  },
+  {
+    id: "retail-120",
+    label: "Retail (120 Stores, Batch POS)",
+    badge: "Batch & POS",
+    text: DEFAULT_WORKLOAD,
+  },
+  {
+    id: "video-stream",
+    label: "Video Stream API (5TB)",
+    badge: "High Egress",
+    text: "High-throughput video streaming API with 5TB monthly egress across India and Singapore, Redis caching for hot video metadata, and auto-scaling compute cluster with S3 glacier lifecycle tiering.",
+  },
+  {
+    id: "fintech-payment",
+    label: "Fintech Gateway (PCI-DSS)",
+    badge: "Zero Downtime",
+    text: "High security fintech payment gateway in Mumbai, 50,000 daily transactions, PostgreSQL Multi-AZ with read replica, strict VPC isolation, and zero downtime requirement.",
+  },
+];
+
 
 /** Cumulative cost accrual across a billing month, with a cursor readout.
  *
@@ -196,6 +223,43 @@ function TerraformStudioContent() {
   // difference the download would not actually contain.
   const [environment, setEnvironment] = useState<"dev" | "prod">(environmentParam);
 
+  const [editingWorkload, setEditingWorkload] = useState(false);
+  const [customWorkloadDraft, setCustomWorkloadDraft] = useState(description);
+
+  // Instant 0ms cache read from sessionStorage on initial mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && !descriptionParam) {
+      try {
+        const cachedArchStr = sessionStorage.getItem("whichcloud:active_architecture");
+        const cachedDesc = sessionStorage.getItem("whichcloud:active_description");
+        const cachedCloud = sessionStorage.getItem("whichcloud:active_cloud") as CloudId | null;
+        if (cachedArchStr) {
+          const parsed = JSON.parse(cachedArchStr) as Recommendation;
+          if (parsed && parsed.options?.length) {
+            setRecommendation(parsed);
+            setLoadingRecommendation(false);
+            setAllOptions(
+              parsed.options.map((o) => ({
+                label: o.label,
+                monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
+                region: o.region,
+              }))
+            );
+          }
+        }
+        if (cachedDesc) {
+          setDescription(cachedDesc);
+          setCustomWorkloadDraft(cachedDesc);
+        }
+        if (cachedCloud) {
+          setCloud(cachedCloud);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [descriptionParam]);
+
   // Recommendation & Architecture Data
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loadingRecommendation, setLoadingRecommendation] = useState(true);
@@ -329,6 +393,13 @@ function TerraformStudioContent() {
 
         if (!cancelled) {
           const loadedFiles: Record<string, string> = { ...data.files };
+          const activeComputeSku =
+            data.items?.find((it) => it.label.toLowerCase().includes("compute"))?.sku || "t4g.medium";
+          const activeDbSku =
+            data.items?.find((it) => it.label.toLowerCase().includes("database") && !it.label.includes("replica"))?.sku || "db.t4g.micro";
+          const activeEngine = description.toLowerCase().includes("mysql") ? "mysql" : "postgres";
+          const activeStorageGb = description.toLowerCase().includes("500 gb") ? 500 : 50;
+
           if (!loadedFiles["modules/vpc.tf"]) {
             loadedFiles["modules/vpc.tf"] = `# Reusable VPC Networking Module
 module "vpc" {
@@ -343,10 +414,10 @@ module "vpc" {
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 
   enable_nat_gateway = true
-  single_nat_gateway = true
+  single_nat_gateway = ${selectedOption === "Cheapest"}
 
   tags = {
-    Environment = "production"
+    Environment = "${environment}"
     Tier        = "${selectedOption}"
   }
 }
@@ -357,12 +428,14 @@ module "vpc" {
 module "compute_cluster" {
   source = "./modules/compute"
 
-  cluster_name    = "whichcloud-prod-cluster"
-  instance_type   = "t3.medium"
-  min_capacity    = 2
-  max_capacity    = 6
+  cluster_name    = "whichcloud-${environment}-cluster"
+  instance_type   = "${activeComputeSku}"
+  min_capacity    = ${selectedOption === "Cheapest" ? 1 : 2}
+  max_capacity    = ${selectedOption === "Cheapest" ? 2 : 6}
   vpc_id          = module.vpc.vpc_id
   private_subnets = module.vpc.private_subnets
+
+  target_cpu_utilization = 70.0
 }
 `;
           }
@@ -371,13 +444,26 @@ module "compute_cluster" {
 module "managed_db" {
   source = "./modules/database"
 
-  identifier             = "whichcloud-prod-db"
-  allocated_storage      = 50
-  engine                 = "mysql"
-  engine_version         = "8.0"
-  instance_class         = "db.t3.medium"
-  multi_az               = true
+  identifier             = "whichcloud-${environment}-db"
+  allocated_storage      = ${activeStorageGb}
+  engine                 = "${activeEngine}"
+  engine_version         = "${activeEngine === "postgres" ? "15.4" : "8.0"}"
+  instance_class         = "${activeDbSku}"
+  multi_az               = ${selectedOption !== "Cheapest"}
   vpc_security_group_ids = [module.vpc.default_security_group_id]
+}
+`;
+          }
+          if (!loadedFiles["modules/storage.tf"]) {
+            loadedFiles["modules/storage.tf"] = `# Reusable Object Storage & Cache Module
+resource "aws_s3_bucket" "app_storage" {
+  bucket        = "whichcloud-${environment}-storage-${data.region}"
+  force_destroy = ${environment !== "prod"}
+
+  tags = {
+    Environment = "${environment}"
+    Tier        = "${selectedOption}"
+  }
 }
 `;
           }
@@ -396,7 +482,7 @@ module "managed_db" {
       } catch (err: unknown) {
         if (!cancelled) {
           console.error("Failed to load Terraform inspect:", err);
-          const fallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region);
+          const fallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region, description);
           setFiles(fallback);
           setEditedCode(fallback);
         }
@@ -697,18 +783,120 @@ resource "whichcloud_cost_report" "ai_curated_report" {
         </div>
       </header>
 
-      {/* Subheader: Workload context banner */}
-      <div className="flex items-center justify-between border-b border-line/60 bg-surface/50 px-5 py-1.5 text-[11.5px] text-ink-3">
-        <div className="flex items-center gap-2 overflow-hidden truncate">
-          <span className="font-semibold text-ink-2 uppercase tracking-wide">Workload:</span>
-          <span className="truncate italic font-mono text-ink-2">“{description}”</span>
+      {/* Subheader: Workload context banner with quick-switch chips and live editor */}
+      <div className="border-b border-line/60 bg-surface/50 px-5 py-2 text-[11.5px] text-ink-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+            <span className="font-semibold text-ink-2 uppercase tracking-wide shrink-0">Workload:</span>
+            <span className="truncate italic font-mono text-ink-2">“{description}”</span>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomWorkloadDraft(description);
+                setEditingWorkload(true);
+              }}
+              className="ml-1 shrink-0 rounded-md border border-line bg-canvas px-2 py-0.5 text-[10.5px] font-semibold text-brand hover:border-brand hover:bg-sunk transition shadow-2xs"
+            >
+              Edit Workload
+            </button>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 font-mono text-[11px]">
+            <span>Region: <strong className="text-ink">{region}</strong></span>
+            <span>•</span>
+            <span>Provider: <strong className="uppercase text-ink">{cloud}</strong></span>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-3 font-mono text-[11px]">
-          <span>Region: <strong className="text-ink">{region}</strong></span>
-          <span>•</span>
-          <span>Provider: <strong className="uppercase text-ink">{cloud}</strong></span>
+
+        {/* Quick-Switch Example Workload Chips */}
+        <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
+          <span className="text-[10px] font-medium text-ink-3 uppercase tracking-wider shrink-0 mr-1">Examples:</span>
+          {PRESET_WORKLOADS.map((preset) => {
+            const isSelected = description.trim() === preset.text.trim();
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => {
+                  setDescription(preset.text);
+                  setCustomWorkloadDraft(preset.text);
+                  if (typeof window !== "undefined") {
+                    try {
+                      sessionStorage.setItem("whichcloud:active_description", preset.text);
+                    } catch {}
+                  }
+                }}
+                className={`shrink-0 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium transition-all ${
+                  isSelected
+                    ? "bg-brand text-white shadow-2xs font-semibold"
+                    : "bg-surface hover:bg-sunk text-ink-2 border border-line/80 hover:border-brand/40"
+                }`}
+              >
+                <span>{preset.label}</span>
+                <span className={`text-[9.5px] rounded px-1 py-0.2 ${isSelected ? "bg-white/20 text-white" : "bg-canvas text-ink-3"}`}>
+                  {preset.badge}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* Edit Workload Modal Dialog */}
+      {editingWorkload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-xl rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-line">
+              <h3 className="text-[15px] font-bold text-ink">Describe or Modify Workload</h3>
+              <button
+                type="button"
+                onClick={() => setEditingWorkload(false)}
+                className="rounded-lg p-1 text-ink-3 hover:text-ink hover:bg-sunk"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="mt-3 text-[12.5px] text-ink-2">
+              Enter your architectural requirements (traffic, storage, database, budget, region, and availability constraints). Terraform files and architecture graph will update dynamically in &lt;300ms.
+            </p>
+
+            <textarea
+              rows={4}
+              value={customWorkloadDraft}
+              onChange={(e) => setCustomWorkloadDraft(e.target.value)}
+              className="mt-3 w-full rounded-xl border border-line bg-canvas p-3 font-mono text-[12.5px] text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+              placeholder="e.g. Online store with 40 branches, PostgreSQL Multi-AZ, 500GB storage, $500 budget..."
+            />
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingWorkload(false)}
+                className="rounded-xl border border-line px-4 py-2 text-[12.5px] font-medium text-ink-2 hover:bg-sunk transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (customWorkloadDraft.trim()) {
+                    setDescription(customWorkloadDraft.trim());
+                    if (typeof window !== "undefined") {
+                      try {
+                        sessionStorage.setItem("whichcloud:active_description", customWorkloadDraft.trim());
+                      } catch {}
+                    }
+                  }
+                  setEditingWorkload(false);
+                }}
+                className="rounded-xl bg-brand px-4 py-2 text-[12.5px] font-semibold text-white shadow-sm hover:bg-brand-strong transition active:scale-[0.98]"
+              >
+                Generate Architecture &amp; Terraform
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── SCREENSHOT 3: FLOATING PROGRESS MODAL ────────────────────────────── */}
       {isGeneratingReport && (
@@ -902,7 +1090,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
 
                   {modulesExpanded && (
                     <div className="ml-4 pl-2 border-l border-line/70 flex flex-col gap-0.5 animate-in fade-in-50 duration-150">
-                      {["modules/vpc.tf", "modules/compute.tf", "modules/database.tf"].map((modFile) => {
+                      {["modules/vpc.tf", "modules/compute.tf", "modules/database.tf", "modules/storage.tf"].map((modFile) => {
                         const isModActive = activeFile === modFile;
                         const shortName = modFile.replace("modules/", "");
                         return (
@@ -1677,7 +1865,27 @@ resource "whichcloud_cost_report" "service_summary" {
 }
 
 // Fallback generator if backend API is temporarily offline
-function getDefaultFallbackFiles(cloud: CloudId, option: string, cost: number, region: string) {
+function getDefaultFallbackFiles(
+  cloud: CloudId,
+  option: string,
+  cost: number,
+  region: string,
+  desc: string = ""
+) {
+  const d = desc.toLowerCase();
+  const computeSku = d.includes("video")
+    ? "c6g.xlarge"
+    : d.includes("batch")
+    ? "t3.medium"
+    : "t4g.large";
+  const computeCount = option === "Cheapest" ? 1 : option === "Most reliable" ? 2 : 3;
+  const engine = d.includes("mysql") ? "mysql" : "postgres";
+  const engineVer = engine === "postgres" ? "15.4" : "8.0";
+  const port = engine === "postgres" ? 5432 : 3306;
+  const dbSku = option === "Cheapest" ? "db.t4g.micro" : "db.t3.medium";
+  const multiAz = option !== "Cheapest";
+  const storageGb = d.includes("500 gb") ? 500 : 50;
+
   return {
     "main.tf": `# WhichCloud Automated Terraform Architecture
 # Target Cloud: ${cloud.toUpperCase()}
@@ -1739,7 +1947,7 @@ module "vpc" {
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 
   enable_nat_gateway = true
-  single_nat_gateway = true
+  single_nat_gateway = ${option === "Cheapest"}
 
   tags = {
     Environment = "production"
@@ -1752,11 +1960,13 @@ module "compute_cluster" {
   source = "./modules/compute"
 
   cluster_name    = "whichcloud-prod-cluster"
-  instance_type   = "t3.medium"
-  min_capacity    = 2
-  max_capacity    = 6
+  instance_type   = "${computeSku}"
+  min_capacity    = ${computeCount}
+  max_capacity    = ${computeCount * 3}
   vpc_id          = module.vpc.vpc_id
   private_subnets = module.vpc.private_subnets
+
+  target_cpu_utilization = 70.0
 }
 `,
     "modules/database.tf": `# Reusable Managed Database Module
@@ -1764,12 +1974,24 @@ module "managed_db" {
   source = "./modules/database"
 
   identifier             = "whichcloud-prod-db"
-  allocated_storage      = 50
-  engine                 = "mysql"
-  engine_version         = "8.0"
-  instance_class         = "db.t3.medium"
-  multi_az               = true
+  allocated_storage      = ${storageGb}
+  engine                 = "${engine}"
+  engine_version         = "${engineVer}"
+  port                   = ${port}
+  instance_class         = "${dbSku}"
+  multi_az               = ${multiAz}
   vpc_security_group_ids = [module.vpc.default_security_group_id]
+}
+`,
+    "modules/storage.tf": `# Reusable Object Storage & Cache Module
+resource "aws_s3_bucket" "app_storage" {
+  bucket        = "whichcloud-prod-storage-${region}"
+  force_destroy = false
+
+  tags = {
+    Environment = "production"
+    Tier        = "${option}"
+  }
 }
 `,
     "cost_reports.tf": `provider "whichcloud" {
@@ -1786,6 +2008,30 @@ resource "whichcloud_cost_report" "main_report" {
   title        = "${option} Cost Overview"
   groupings    = "region,service"
 }
+`,
+    "dev.tfvars": `environment = "dev"
+aws_region = "${region}"
+compute_instance_type = "t4g.small"
+compute_count = 1
+database_instance_class = "db.t4g.micro"
+database_multi_az = false
+storage_gb = 20
+`,
+    "prod.tfvars": `environment = "prod"
+aws_region = "${region}"
+compute_instance_type = "${computeSku}"
+compute_count = ${computeCount}
+database_instance_class = "${dbSku}"
+database_multi_az = ${multiAz}
+storage_gb = ${storageGb}
+`,
+    "terraform.tfvars": `environment = "prod"
+aws_region = "${region}"
+compute_instance_type = "${computeSku}"
+compute_count = ${computeCount}
+database_instance_class = "${dbSku}"
+database_multi_az = ${multiAz}
+storage_gb = ${storageGb}
 `,
     "terraform.tfvars.example": `aws_region = "${region}"
 project_name = "whichcloud-prod"

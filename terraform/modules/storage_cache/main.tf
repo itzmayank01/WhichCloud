@@ -91,3 +91,4 @@ resource "aws_elasticache_replication_group" "redis" {
     Environment = var.environment
   })
 }
+

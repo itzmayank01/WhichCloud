@@ -59,3 +59,4 @@ resource "aws_cloudwatch_metric_alarm" "db_cpu" {
 
   tags = var.tags
 }
+
