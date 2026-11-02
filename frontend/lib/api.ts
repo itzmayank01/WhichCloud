@@ -1196,3 +1196,215 @@ export function comparableTotals(
     }))
     .sort((a, b) => a.total - b.total);
 }
+
+// -------------------------------------------------------------
+// Project P74: IaC Multi-Environment Deployment Client Helpers
+// -------------------------------------------------------------
+
+export interface IacEnvironmentConfig {
+  name: string;
+  cloud_provider: "aws" | "gcp" | "azure";
+  region: string;
+  vpc_cidr: string;
+  availability_zones: string[];
+  enable_nat_gateway: boolean;
+  single_nat_gateway: boolean;
+  instance_type: string;
+  min_capacity: number;
+  max_capacity: number;
+  desired_capacity: number;
+  db_instance_class: string;
+  db_allocated_storage: number;
+  db_multi_az: boolean;
+  db_read_replica_count: number;
+  db_backup_retention_period: number;
+  db_deletion_protection: boolean;
+  cache_node_type: string;
+  num_cache_nodes: number;
+  cache_automatic_failover: boolean;
+  s3_versioning_status: "Suspended" | "Enabled";
+  monthly_estimated_cost: number;
+  cost_breakdown: Record<string, number>;
+}
+
+export interface IacEnvironmentRecord {
+  name: string;
+  status: "HEALTHY" | "DEGRADED" | "DEPLOYING" | "DRIFTED" | "ROLLING_BACK" | "FAILED";
+  active_version: string;
+  is_locked: boolean;
+  lock_reason?: string | null;
+  parameters: IacEnvironmentConfig;
+  live_resources: Record<string, any>;
+  last_deployed_at: string;
+  last_drift_check_at?: string | null;
+  last_drift_status?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IacDeploymentRecord {
+  id: string;
+  environment_name: string;
+  version: string;
+  triggered_by: string;
+  trigger_type: "MANUAL" | "CI_CD" | "AUTO_REMEDIATION" | "ROLLBACK";
+  status: "PLANNING" | "IN_PROGRESS" | "SUCCESS" | "FAILED" | "ROLLED_BACK";
+  plan_summary: Record<string, any>;
+  parameters_snapshot: Record<string, any>;
+  execution_logs: string[];
+  duration_ms: number;
+  rollback_from_id?: string | null;
+  created_at: string;
+}
+
+export interface IacDriftItem {
+  resource_id: string;
+  resource_type: string;
+  attribute: string;
+  expected_value: any;
+  actual_value: any;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+}
+
+export interface IacDriftAuditRecord {
+  id: string;
+  environment_name: string;
+  is_drifted: boolean;
+  drift_count: number;
+  detected_drifts: IacDriftItem[];
+  execution_time_ms: number;
+  detected_at: string;
+  remediation_plan: string[];
+}
+
+export interface IacMetricSnapshot {
+  timestamp: string;
+  request_rate_rps: number;
+  p50_latency_ms: number;
+  p95_latency_ms: number;
+  p99_latency_ms: number;
+  error_rate_pct: number;
+  cpu_utilization_pct: number;
+  healthy_host_count: number;
+}
+
+export interface IacFailureIncidentRecord {
+  id: string;
+  environment_name: string;
+  scenario_type: string;
+  status: string;
+  description: string;
+  recovery_action: string;
+  mttr_seconds: number;
+  pre_metrics: IacMetricSnapshot;
+  incident_metrics: IacMetricSnapshot;
+  recovery_metrics: IacMetricSnapshot;
+  created_at: string;
+  resolved_at: string;
+}
+
+export interface IacDevOpsMetrics {
+  deployment_frequency_per_day: number;
+  lead_time_for_changes_minutes: number;
+  mttr_seconds: number;
+  change_failure_rate_percent: number;
+  total_deployments: number;
+  successful_deployments: number;
+  rollback_count: number;
+  drift_incidence_rate_percent: number;
+  cost_differential_dev_vs_prod_ratio: number;
+  avg_plan_duration_seconds: number;
+  avg_apply_duration_seconds: number;
+}
+
+export const iacApi = {
+  getEnvironments: async (): Promise<IacEnvironmentRecord[]> => {
+    const res = await fetch(`${BASE}/api/iac/environments`);
+    if (!res.ok) throw new Error(`Failed to fetch environments: ${res.statusText}`);
+    return res.json();
+  },
+  getEnvironment: async (name: string): Promise<IacEnvironmentRecord> => {
+    const res = await fetch(`${BASE}/api/iac/environments/${name}`);
+    if (!res.ok) throw new Error(`Failed to fetch environment ${name}`);
+    return res.json();
+  },
+  deploy: async (body: {
+    environment_name: string;
+    parameter_overrides?: Record<string, any>;
+    dry_run_only?: boolean;
+    triggered_by?: string;
+  }): Promise<IacDeploymentRecord> => {
+    const res = await fetch(`${BASE}/api/iac/deploy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Deployment failed");
+    }
+    return res.json();
+  },
+  rollback: async (body: {
+    environment_name: string;
+    target_deployment_id?: string;
+    reason?: string;
+  }): Promise<IacDeploymentRecord> => {
+    const res = await fetch(`${BASE}/api/iac/rollback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Rollback failed");
+    }
+    return res.json();
+  },
+  detectDrift: async (body: {
+    environment_name: string;
+    auto_remediate?: boolean;
+  }): Promise<IacDriftAuditRecord> => {
+    const res = await fetch(`${BASE}/api/iac/drift-detection`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Drift detection failed");
+    return res.json();
+  },
+  simulateFailure: async (body: {
+    environment_name: string;
+    scenario_type: string;
+  }): Promise<IacFailureIncidentRecord> => {
+    const res = await fetch(`${BASE}/api/iac/simulate-failure`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Failure simulation failed");
+    return res.json();
+  },
+  getMetrics: async (): Promise<IacDevOpsMetrics> => {
+    const res = await fetch(`${BASE}/api/iac/metrics`);
+    if (!res.ok) throw new Error("Failed to fetch DevOps metrics");
+    return res.json();
+  },
+  getDeployments: async (environment_name?: string): Promise<IacDeploymentRecord[]> => {
+    const url = environment_name
+      ? `${BASE}/api/iac/deployments?environment_name=${environment_name}`
+      : `${BASE}/api/iac/deployments`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to fetch deployments");
+    return res.json();
+  },
+  getTerraformFiles: async (environment_name: string): Promise<{ environment: string; files: Record<string, string> }> => {
+    const res = await fetch(`${BASE}/api/iac/terraform/${environment_name}`);
+    if (!res.ok) throw new Error(`Failed to fetch terraform files for ${environment_name}`);
+    return res.json();
+  },
+  getDownloadUrl: (environment_name: string): string => {
+    return `${BASE}/api/iac/terraform/${environment_name}/download`;
+  },
+};
+

@@ -178,6 +178,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 Terraform IaC
               </Link>
               <Link
+                href="/environments"
+                className="flex items-center gap-1.5 rounded-sm font-medium text-ink-2 transition-colors hover:text-ink"
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                Multi-Env IaC
+              </Link>
+              <Link
                 href="/#architecture"
                 className="rounded-sm transition-colors hover:text-ink"
               >
