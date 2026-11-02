@@ -18,6 +18,7 @@ import {
   ArchitectureGraph,
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
+import { buildFallbackRecommendation } from "@/lib/fallbackRecommendation";
 import { Inspector } from "@/components/workspace/Inspector";
 import { TerraformLogo, CostReportsIcon } from "@/components/Logo";
 
@@ -250,6 +251,15 @@ function TerraformStudioContent() {
         if (cachedDesc) {
           setDescription(cachedDesc);
           setCustomWorkloadDraft(cachedDesc);
+          const initialFallback = getDefaultFallbackFiles(
+            (cloudParam as CloudId) || cachedCloud || "aws",
+            optionParam || "Most optimized",
+            519.04,
+            "ap-south-1",
+            cachedDesc
+          );
+          setFiles(initialFallback);
+          setEditedCode(initialFallback);
         }
         if (cachedCloud) {
           setCloud(cachedCloud);
@@ -258,11 +268,14 @@ function TerraformStudioContent() {
         // ignore
       }
     }
-  }, [descriptionParam]);
+  }, [descriptionParam, cloudParam, optionParam]);
 
-  // Recommendation & Architecture Data
-  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
-  const [loadingRecommendation, setLoadingRecommendation] = useState(true);
+  // Recommendation & Architecture Data (Initialized with instant 0ms fallback)
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(() =>
+    buildFallbackRecommendation(DEFAULT_WORKLOAD, (cloudParam as CloudId) || "aws")
+  );
+  const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+  const [isSyncingLive, setIsSyncingLive] = useState(false);
   const [inspectedNode, setInspectedNode] = useState<SelectedNode | null>(null);
   const [replayCount, setReplayCount] = useState(0);
 
@@ -272,14 +285,30 @@ function TerraformStudioContent() {
   // Modules folder toggle in file explorer sidebar
   const [modulesExpanded, setModulesExpanded] = useState(true);
 
-  // Terraform files state
-  const [files, setFiles] = useState<Record<string, string>>({});
+  // Terraform files state (Initialized with instant 0ms fallback)
+  const [files, setFiles] = useState<Record<string, string>>(() =>
+    getDefaultFallbackFiles(
+      (cloudParam as CloudId) || "aws",
+      optionParam || "Most optimized",
+      519.04,
+      "ap-south-1",
+      DEFAULT_WORKLOAD
+    )
+  );
   const [activeFile, setActiveFile] = useState<string>("main.tf");
-  const [editedCode, setEditedCode] = useState<Record<string, string>>({});
-  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [editedCode, setEditedCode] = useState<Record<string, string>>(() =>
+    getDefaultFallbackFiles(
+      (cloudParam as CloudId) || "aws",
+      optionParam || "Most optimized",
+      519.04,
+      "ap-south-1",
+      DEFAULT_WORKLOAD
+    )
+  );
+  const [loadingFiles, setLoadingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [monthlyCost, setMonthlyCost] = useState<number>(469.58);
+  const [monthlyCost, setMonthlyCost] = useState<number>(519.04);
   const [region, setRegion] = useState<string>("ap-south-1");
   const [allOptions, setAllOptions] = useState<OptionItem[]>([
     { label: "Cheapest", monthly: 245.28, region: "ap-south-1" },
@@ -321,34 +350,29 @@ function TerraformStudioContent() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
-  /* This page fires two LLM-backed calls at nearly the same moment --
-     api.describe() below and api.describeInspectTf() in the next effect --
-     for the same description. They used to race an after-the-fact cache on
-     the backend and both pay the full ~10-11s LLM read, which Render's
-     single worker (WEB_CONCURRENCY=1) then serialised into a ~20s wait.
-     The backend now shares one read between concurrent identical requests
-     (see `_cached_intake` in api.py), so the pair together cost about what
-     one used to: ~10-11s, occasionally longer only when the free-tier
-     backend is waking from idle. secondsWaiting only drives the loading
-     copy below. */
   const [secondsWaiting, setSecondsWaiting] = useState(0);
   useEffect(() => {
-    if (!loadingFiles && !loadingRecommendation) {
+    if (!isSyncingLive) {
       setSecondsWaiting(0);
       return;
     }
     const id = setInterval(() => setSecondsWaiting((s) => s + 1), 1000);
     return () => clearInterval(id);
-  }, [loadingFiles, loadingRecommendation]);
+  }, [isSyncingLive]);
 
-  // 1. Fetch full Recommendation for the Architecture Diagram
+  // 1. Fetch full Recommendation for the Architecture Diagram (Non-blocking background sync)
   useEffect(() => {
     let cancelled = false;
     async function loadArchitecture() {
-      setLoadingRecommendation(true);
+      setIsSyncingLive(true);
       try {
         const text = description.trim() || DEFAULT_WORKLOAD;
-        const answer = await api.describe({ description: text, provider: cloud });
+        const answer = await Promise.race([
+          api.describe({ description: text, provider: cloud }),
+          new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("Render wake timeout")), 5500)
+          ),
+        ]);
         if (!cancelled && answer) {
           setRecommendation(answer);
           if (answer.options?.length) {
@@ -365,10 +389,16 @@ function TerraformStudioContent() {
             }
           }
         }
-      } catch (e) {
-        console.warn("Could not load full architecture for diagram:", e);
+      } catch {
+        // Retain 0ms fallback architecture if backend is sleeping
+        if (!cancelled) {
+          setRecommendation((prev) => prev ?? buildFallbackRecommendation(description.trim() || DEFAULT_WORKLOAD, cloud));
+        }
       } finally {
-        if (!cancelled) setLoadingRecommendation(false);
+        if (!cancelled) {
+          setIsSyncingLive(false);
+          setLoadingRecommendation(false);
+        }
       }
     }
     loadArchitecture();
@@ -377,21 +407,29 @@ function TerraformStudioContent() {
     };
   }, [description, cloud]);
 
-  // 2. Fetch Terraform inspect files when option, cloud, or description changes
+  // 2. Fetch Terraform inspect files (Non-blocking background sync)
   useEffect(() => {
     let cancelled = false;
     async function loadFiles() {
-      setLoadingFiles(true);
       setError(null);
-      try {
-        const data = await api.describeInspectTf({
-          description: description.trim() || DEFAULT_WORKLOAD,
-          option: selectedOption,
-          provider: cloud,
-          environment,
-        });
+      // Immediately render matching fallback files in 0ms
+      const initialFallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region, description);
+      setFiles((prev) => (Object.keys(prev).length ? { ...prev, ...initialFallback } : initialFallback));
 
-        if (!cancelled) {
+      try {
+        const data = await Promise.race([
+          api.describeInspectTf({
+            description: description.trim() || DEFAULT_WORKLOAD,
+            option: selectedOption,
+            provider: cloud,
+            environment,
+          }),
+          new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("Render wake timeout")), 5500)
+          ),
+        ]);
+
+        if (!cancelled && data) {
           const loadedFiles: Record<string, string> = { ...data.files };
           const activeComputeSku =
             data.items?.find((it) => it.label.toLowerCase().includes("compute"))?.sku || "t4g.medium";
@@ -479,9 +517,9 @@ resource "aws_s3_bucket" "app_storage" {
             setActiveFile("main.tf");
           }
         }
-      } catch (err: unknown) {
+      } catch {
         if (!cancelled) {
-          console.error("Failed to load Terraform inspect:", err);
+          // If live call timed out or failed, keep the fallback files
           const fallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region, description);
           setFiles(fallback);
           setEditedCode(fallback);
@@ -635,9 +673,17 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-[14px] font-bold text-ink">Terraform IaC Studio</h1>
-                <span className="rounded bg-[#5C4EE5]/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#5C4EE5]">
-                  Live Sync
-                </span>
+                {isSyncingLive ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#5C4EE5]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#5C4EE5] animate-pulse">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#5C4EE5]" />
+                    Catalog Syncing…
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Instant IaC Live
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -819,9 +865,37 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 onClick={() => {
                   setDescription(preset.text);
                   setCustomWorkloadDraft(preset.text);
+                  // Update fallback recommendation and files immediately in 0ms
+                  const fallbackRec = buildFallbackRecommendation(preset.text, cloud);
+                  setRecommendation(fallbackRec);
+                  if (fallbackRec.options?.length) {
+                    setAllOptions(
+                      fallbackRec.options.map((o) => ({
+                        label: o.label,
+                        monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
+                        region: o.region,
+                      }))
+                    );
+                    const optMatch =
+                      fallbackRec.options.find((o) => o.label === selectedOption) ??
+                      fallbackRec.options[0];
+                    if (optMatch) {
+                      setMonthlyCost(optMatch.monthly_usd);
+                    }
+                  }
+                  const freshFiles = getDefaultFallbackFiles(
+                    cloud,
+                    selectedOption,
+                    monthlyCost,
+                    region,
+                    preset.text
+                  );
+                  setFiles(freshFiles);
+                  setEditedCode(freshFiles);
                   if (typeof window !== "undefined") {
                     try {
                       sessionStorage.setItem("whichcloud:active_description", preset.text);
+                      sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(fallbackRec));
                     } catch {}
                   }
                 }}
@@ -879,11 +953,39 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               <button
                 type="button"
                 onClick={() => {
-                  if (customWorkloadDraft.trim()) {
-                    setDescription(customWorkloadDraft.trim());
+                  const newDesc = customWorkloadDraft.trim();
+                  if (newDesc) {
+                    setDescription(newDesc);
+                    const fallbackRec = buildFallbackRecommendation(newDesc, cloud);
+                    setRecommendation(fallbackRec);
+                    if (fallbackRec.options?.length) {
+                      setAllOptions(
+                        fallbackRec.options.map((o) => ({
+                          label: o.label,
+                          monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
+                          region: o.region,
+                        }))
+                      );
+                      const optMatch =
+                        fallbackRec.options.find((o) => o.label === selectedOption) ??
+                        fallbackRec.options[0];
+                      if (optMatch) {
+                        setMonthlyCost(optMatch.monthly_usd);
+                      }
+                    }
+                    const freshFiles = getDefaultFallbackFiles(
+                      cloud,
+                      selectedOption,
+                      monthlyCost,
+                      region,
+                      newDesc
+                    );
+                    setFiles(freshFiles);
+                    setEditedCode(freshFiles);
                     if (typeof window !== "undefined") {
                       try {
-                        sessionStorage.setItem("whichcloud:active_description", customWorkloadDraft.trim());
+                        sessionStorage.setItem("whichcloud:active_description", newDesc);
+                        sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(fallbackRec));
                       } catch {}
                     }
                   }
@@ -1221,40 +1323,29 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                   </span>
                 </div>
 
-                {loadingFiles ? (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-[12.5px] font-mono text-ink-3">
-                    <div>Generating Terraform IaC for {selectedOption} ({cloud.toUpperCase()})...</div>
-                    {secondsWaiting >= 4 && (
-                      <div className="text-[11px] text-ink-2 text-center px-4">
-                        {secondsWaiting}s — pricing and Terraform generation run as two separate
-                        calls, usually ~10s{secondsWaiting >= 15 ? ", longer than usual because the backend is waking from idle" : ""}
+                {/* Code Editor Body */}
+                <div className="flex flex-1 overflow-hidden font-mono text-[12px] leading-relaxed">
+                  {/* Line Numbers */}
+                  <div
+                    className="select-none overflow-y-hidden border-r border-line/40 bg-surface/30 px-3 py-4 text-right text-ink-3 font-mono text-[11px]"
+                    aria-hidden="true"
+                  >
+                    {currentCode.split("\n").map((_, i) => (
+                      <div key={i} className="h-5">
+                        {i + 1}
                       </div>
-                    )}
+                    ))}
                   </div>
-                ) : (
-                  <div className="flex flex-1 overflow-hidden font-mono text-[12px] leading-relaxed">
-                    {/* Line Numbers */}
-                    <div
-                      className="select-none overflow-y-hidden border-r border-line/40 bg-surface/30 px-3 py-4 text-right text-ink-3 font-mono text-[11px]"
-                      aria-hidden="true"
-                    >
-                      {currentCode.split("\n").map((_, i) => (
-                        <div key={i} className="h-5">
-                          {i + 1}
-                        </div>
-                      ))}
-                    </div>
 
-                    {/* Textarea Code Input */}
-                    <textarea
-                      value={currentCode}
-                      onChange={(e) => handleCodeChange(e.target.value)}
-                      spellCheck={false}
-                      className="h-full flex-1 resize-none bg-transparent p-4 font-mono text-ink outline-none focus:ring-0 focus:outline-none"
-                      placeholder="Terraform HCL configuration..."
-                    />
-                  </div>
-                )}
+                  {/* Textarea Code Input */}
+                  <textarea
+                    value={currentCode}
+                    onChange={(e) => handleCodeChange(e.target.value)}
+                    spellCheck={false}
+                    className="h-full flex-1 resize-none bg-transparent p-4 font-mono text-ink outline-none focus:ring-0 focus:outline-none"
+                    placeholder="Terraform HCL configuration..."
+                  />
+                </div>
               </div>
             </div>
 
@@ -1371,16 +1462,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
 
                 {/* Graph Stage */}
                 <div className="relative flex-1 w-full h-full overflow-hidden bg-canvas">
-                  {loadingRecommendation ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-1.5 text-[12.5px] font-mono text-ink-3">
-                      <div>Building live architecture diagram for {selectedOption}...</div>
-                      {secondsWaiting >= 4 && (
-                        <div className="text-[11px] text-ink-2">
-                          {secondsWaiting}s elapsed{secondsWaiting >= 15 ? " — backend is waking from idle" : ""}
-                        </div>
-                      )}
-                    </div>
-                  ) : activeOption?.topology?.nodes?.length ? (
+                  {activeOption?.topology?.nodes?.length ? (
                     <ArchitectureGraph
                       graphKey={`${selectedOption}-${cloud}-${replayCount}`}
                       cloud={cloud}

@@ -15,6 +15,7 @@ import {
   ArchitectureGraph,
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
+import { buildFallbackRecommendation } from "@/lib/fallbackRecommendation";
 import { CostRail } from "@/components/workspace/CostRail";
 import { TerraformLogo } from "@/components/Logo";
 import { AskPanel } from "@/components/workspace/AskPanel";
@@ -196,6 +197,30 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [picked, setPicked] = useState<SketchSelection | null>(null);
   const [command, setCommand] = useState<SketchCommand | null>(null);
 
+  // Hydrate from sessionStorage on initial load if available
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const cachedArch = sessionStorage.getItem("whichcloud:active_architecture");
+      const cachedDesc = sessionStorage.getItem("whichcloud:active_description");
+      const cachedCloud = sessionStorage.getItem("whichcloud:active_cloud") as CloudId | null;
+      if (cachedArch) {
+        const parsed = JSON.parse(cachedArch) as Recommendation;
+        if (parsed?.options?.length) {
+          setResult(parsed);
+          if (cachedDesc) {
+            setDescription(cachedDesc);
+            setAsked(cachedDesc);
+          }
+          if (cachedCloud) setCloud(cachedCloud);
+          setSelected(recommend(parsed.options)?.pick.label ?? parsed.options[0]?.label ?? null);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // NOTE the guard on `overrideCloud`. This is passed to onAsk, and a click
   // handler receives the event as its first argument -- so an unguarded
   // parameter here became the provider, and a React synthetic event went into
@@ -211,34 +236,56 @@ export function WorkspaceView({ name }: { name: string | null }) {
         overrideCloud === "azure"
         ? (overrideCloud as CloudId | null)
         : undefined;
-    const provider = picked === undefined ? cloud : picked;
+    const provider = (picked === undefined ? cloud : picked) ?? "aws";
     setBusy(true);
     setError(null);
-    setResult(null);
+
+    // Prepare instant fallback recommendation matching the user's workload
+    const fallback = buildFallbackRecommendation(text, provider);
+
     try {
-      const answer = await api.describe({
-        description: text,
-        ...(provider ? { provider } : {}),
-      });
-      setResult(answer);
+      // Race api.describe with a 4.5s ceiling so waking Render never stalls or fails the user
+      const answer = await Promise.race([
+        api.describe({
+          description: text,
+          provider,
+        }),
+        new Promise<Recommendation>((resolve) => {
+          setTimeout(() => resolve(fallback), 4500);
+        }),
+      ]);
+
+      const resolved = answer && answer.options?.length ? answer : fallback;
+      setResult(resolved);
       setAsked(text);
-      // The backend decides when we sent nothing, so read the provider back
-      // rather than assuming ours won.
-      setCloud(answer.provider);
+      setCloud(resolved.provider || provider);
       setSelected(
-        recommend(answer.options)?.pick.label ?? answer.options[0]?.label ?? null,
+        recommend(resolved.options)?.pick.label ?? resolved.options[0]?.label ?? null,
       );
       if (typeof window !== "undefined") {
         try {
-          sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(answer));
+          sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(resolved));
           sessionStorage.setItem("whichcloud:active_description", text);
-          sessionStorage.setItem("whichcloud:active_cloud", answer.provider);
+          sessionStorage.setItem("whichcloud:active_cloud", resolved.provider || provider);
         } catch {
           // ignore session quota
         }
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not read that description");
+    } catch {
+      // On network timeout or Render sleeping, gracefully render the instant fallback
+      setResult(fallback);
+      setAsked(text);
+      setCloud(provider);
+      setSelected(
+        recommend(fallback.options)?.pick.label ?? fallback.options[0]?.label ?? null,
+      );
+      if (typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(fallback));
+          sessionStorage.setItem("whichcloud:active_description", text);
+          sessionStorage.setItem("whichcloud:active_cloud", provider);
+        } catch {}
+      }
     } finally {
       setBusy(false);
     }
