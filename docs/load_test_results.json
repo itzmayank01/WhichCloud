@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "project_id": "P74",
+    "project_title": "Infrastructure-as-Code Multi-Environment Deployment",
+    "student_name": "Mayank Thakur",
+    "sap_id": "500123412",
+    "timestamp": "2026-11-01T20:23:31.404429+00:00"
+  },
+  "tiers": {
+    "low": {
+      "concurrency": 10,
+      "total_requests": 150,
+      "elapsed_seconds": 0.289,
+      "throughput_rps": 519.2,
+      "latency_min_ms": 5.14,
+      "latency_avg_ms": 18.81,
+      "latency_p50_ms": 12.62,
+      "latency_p90_ms": 39.82,
+      "latency_p95_ms": 47.11,
+      "latency_p99_ms": 70.57,
+      "latency_max_ms": 74.53,
+      "error_rate_pct": 0.0,
+      "status_distribution": {
+        "200": 150
+      }
+    },
+    "medium": {
+      "concurrency": 50,
+      "total_requests": 500,
+      "elapsed_seconds": 0.944,
+      "throughput_rps": 529.8,
+      "latency_min_ms": 21.74,
+      "latency_avg_ms": 90.29,
+      "latency_p50_ms": 49.23,
+      "latency_p90_ms": 264.31,
+      "latency_p95_ms": 276.16,
+      "latency_p99_ms": 320.95,
+      "latency_max_ms": 326.45,
+      "error_rate_pct": 0.0,
+      "status_distribution": {
+        "200": 500
+      }
+    },
+    "high": {
+      "concurrency": 150,
+      "total_requests": 1500,
+      "elapsed_seconds": 2.93,
+      "throughput_rps": 512.0,
+      "latency_min_ms": 8.12,
+      "latency_avg_ms": 277.85,
+      "latency_p50_ms": 140.5,
+      "latency_p90_ms": 836.01,
+      "latency_p95_ms": 899.25,
+      "latency_p99_ms": 942.99,
+      "latency_max_ms": 955.48,
+      "error_rate_pct": 0.0,
+      "status_distribution": {
+        "200": 1500
+      }
+    }
+  }
+}
