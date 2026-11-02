@@ -60,7 +60,7 @@ else
     python3 -m venv .venv
   fi
   source .venv/bin/activate
-  pip install -e .
+  pip install --no-build-isolation --no-deps -e . 2>/dev/null || true
   nohup uvicorn whichcloud.api:app --reload --host 127.0.0.1 --port 8010 > backend.log 2>&1 &
   disown
 fi

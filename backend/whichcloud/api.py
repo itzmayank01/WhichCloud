@@ -1373,6 +1373,12 @@ def _start_cache_warmer() -> None:
 
     if "pytest" in sys.modules:
         return
+
+    # Skip cache warmer if database is not reachable locally
+    try:
+        store.stats()
+    except Exception:
+        return
     threading.Thread(target=_warm_landing_page_queries_forever, daemon=True).start()
 
 
