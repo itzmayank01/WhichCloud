@@ -2,7 +2,11 @@
 set -e
 
 # 1️⃣ Infra (Postgres + Redis)
-docker compose -f infra/docker-compose.yml up -d
+if docker info >/dev/null 2>&1; then
+  docker compose -f infra/docker-compose.yml up -d
+else
+  echo "⚠️  Docker daemon not detected. Using local SQLite persistence for IaC multi-environment state."
+fi
 
 # 2️⃣ Backend
 #
