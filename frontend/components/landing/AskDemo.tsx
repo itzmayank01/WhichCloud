@@ -98,7 +98,13 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
   const inputRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
-  const scenario = scenarios[index] ?? scenarios[0];
+  const scenario =
+    scenarios[index] ??
+    scenarios[0] ?? {
+      question: "",
+      chips: [],
+      rows: [],
+    };
 
   useEffect(() => {
     if (!scenarios.length) return;
@@ -125,7 +131,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
     at(T.toPrompt, () => setStage("picking"));
     at(T.press, () => setReader((r) => (r + 1) % CLOUDS_LIST.length));
 
-    const q = scenario.question;
+    const q = scenario?.question ?? "";
     at(T.typeStart, () => setStage("typing"));
     for (let i = 1; i <= q.length; i++) {
       at(T.typeStart + i * T.typeSpeed, () => setTyped(q.slice(0, i)));
@@ -143,7 +149,7 @@ export function AskDemo({ scenarios }: { scenarios: Scenario[] }) {
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
-  }, [index, scenarios, scenario.question, still]);
+  }, [index, scenarios, scenario?.question, still]);
 
   /* The cursor is placed from the real geometry of whatever it is pointing
      at, measured each time the target changes. Positioning it as a

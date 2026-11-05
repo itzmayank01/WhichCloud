@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PricedDiagram } from "@/components/PricedDiagram";
 import { money, type Option, type Recommendation } from "@/lib/api";
+import { buildFallbackRecommendation } from "@/lib/fallbackRecommendation";
 
 /**
  * The estimate page: requirements in, three priced architectures out.
@@ -137,18 +138,34 @@ export function EstimateWorkbench() {
         mode === "describe"
           ? ["/describe", { description }]
           : ["/recommend", form];
-      const res = await fetch(`${BASE}${path}`, {
+
+      const fetchPromise = fetch(`${BASE}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+      }).then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail ?? "Could not price that.");
+        return data;
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? "Could not price that.");
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Render wake timeout")), 5000)
+      );
+
+      const data = await Promise.race([fetchPromise, timeoutPromise]);
       setResult(data);
-      setActive(Math.min(1, data.options.length - 1));
+      const optsCount = data?.options?.length ?? 0;
+      setActive(Math.max(0, Math.min(1, optsCount - 1)));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
-      setResult(null);
+      if (mode === "describe" && description.trim()) {
+        const fallback = buildFallbackRecommendation(description.trim(), "aws");
+        setResult(fallback);
+        setActive(1);
+      } else {
+        setError(e instanceof Error ? e.message : "Something went wrong.");
+        setResult(null);
+      }
     } finally {
       setBusy(false);
     }

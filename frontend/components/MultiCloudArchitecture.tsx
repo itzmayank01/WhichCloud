@@ -457,12 +457,14 @@ export function MultiCloudArchitecture({
           again on every click, which throws away the measured scale and makes
           each switch flash at full size before settling. Switching provider
           is a prop change, so it is passed as one. */}
-      <PricedDiagram option={byProvider[active]} provider={active} />
+      {byProvider[active] ? (
+        <PricedDiagram option={byProvider[active]} provider={active} />
+      ) : null}
 
       {insight && (
         <p className="rounded-xl border border-line bg-sunk px-5 py-4 text-[15px] leading-relaxed text-ink-2">
           {insight}
-          {incomplete.length > 0 && (
+          {incomplete.length > 0 && byProvider[incomplete[0]]?.missing?.length > 0 && (
             <>
               {" "}
               <span className="text-caution">

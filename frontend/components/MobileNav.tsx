@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/connect", label: "Connect" },
   { href: "/finops", label: "FinOps Live", accent: true },
   { href: "/terraform", label: "Terraform IaC", terraform: true },
+  { href: "/environments", label: "Multi-Env IaC", envBadge: true },
   { href: "/#architecture", label: "Architecture" },
   { href: "/#optimizations", label: "Optimizations" },
 ];
@@ -61,6 +62,7 @@ export function MobileNav() {
               }`}
             >
               {l.accent && <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />}
+              {l.envBadge && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
               {l.terraform && <TerraformLogo className="h-4 w-4" />}
               {l.label}
             </Link>

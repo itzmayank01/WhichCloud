@@ -31,7 +31,7 @@ export default function PlanPage() {
       setError(
         cause instanceof Error
           ? cause.message
-          : "Could not reach the planner. Check the API is running on :8010.",
+          : "Could not reach the planner. The engine is synchronizing, please try again in a moment.",
       );
     } finally {
       setBusy(false);

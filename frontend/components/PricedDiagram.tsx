@@ -163,7 +163,7 @@ export function PricedDiagram({
   /* A CDN occupies the edge slot: it is what the users reach first. Plain
      data transfer ("network") only takes that slot when there is no CDN. */
   const roleOf = (kind: string) => (kind === "cdn" ? "network" : kind);
-  const all = option.topology.nodes;
+  const all = option?.topology?.nodes ?? [];
   const taken = new Set<string>();
   const nodes: (ApiNode & { role: string })[] = [];
   const extras: ApiNode[] = [];
@@ -179,7 +179,7 @@ export function PricedDiagram({
   extras.sort((a, b) => b.monthly_usd - a.monthly_usd);
   const present = taken;
   /* Shares are of the whole bill, not of whatever happened to be drawn. */
-  const total = all.reduce((s, n) => s + n.monthly_usd, 0);
+  const total = all.reduce((s, n) => s + (n.monthly_usd || 0), 0);
 
   const bandRows = Math.ceil(extras.length / PER_ROW);
   const bandTop = H_CORE + 6;

@@ -47,15 +47,15 @@ resource "aws_db_instance" "primary" {
   username                    = "whichcloud"
   manage_master_user_password = true
 
-  multi_az                    = var.multi_az
-  db_subnet_group_name        = aws_db_subnet_group.db.name
-  vpc_security_group_ids      = [aws_security_group.db.id]
-  backup_retention_period     = var.backup_retention_period
-  deletion_protection         = var.deletion_protection
-  skip_final_snapshot         = var.environment == "prod" ? false : true
-  final_snapshot_identifier   = var.environment == "prod" ? "${var.environment}-db-final-snapshot" : null
-  storage_encrypted           = true
-  auto_minor_version_upgrade  = true
+  multi_az                   = var.multi_az
+  db_subnet_group_name       = aws_db_subnet_group.db.name
+  vpc_security_group_ids     = [aws_security_group.db.id]
+  backup_retention_period    = var.backup_retention_period
+  deletion_protection        = var.deletion_protection
+  skip_final_snapshot        = var.environment == "prod" ? false : true
+  final_snapshot_identifier  = var.environment == "prod" ? "${var.environment}-db-final-snapshot" : null
+  storage_encrypted          = true
+  auto_minor_version_upgrade = true
 
   tags = merge(var.tags, {
     Name        = "${var.environment}-postgres-primary"
@@ -65,14 +65,14 @@ resource "aws_db_instance" "primary" {
 }
 
 resource "aws_db_instance" "replica" {
-  count                       = var.read_replica_count
-  identifier                  = "${var.environment}-postgres-replica-${count.index + 1}"
-  replicate_source_db         = aws_db_instance.primary.identifier
-  instance_class              = var.instance_class
-  auto_minor_version_upgrade  = true
-  vpc_security_group_ids      = [aws_security_group.db.id]
-  storage_encrypted           = true
-  skip_final_snapshot         = true
+  count                      = var.read_replica_count
+  identifier                 = "${var.environment}-postgres-replica-${count.index + 1}"
+  replicate_source_db        = aws_db_instance.primary.identifier
+  instance_class             = var.instance_class
+  auto_minor_version_upgrade = true
+  vpc_security_group_ids     = [aws_security_group.db.id]
+  storage_encrypted          = true
+  skip_final_snapshot        = true
 
   tags = merge(var.tags, {
     Name        = "${var.environment}-postgres-replica-${count.index + 1}"
