@@ -279,6 +279,33 @@ export function buildFallbackRecommendation(
       because: "Provides cryptographic isolation and compliance",
     });
 
+    if (isHighBudget && tier === "Most optimized") {
+      nodes.push({
+        id: "database@standby",
+        label: cloud === "aws" ? "Amazon RDS Standby (second region)" : "Cloud SQL Standby (second region)",
+        kind: "database@standby",
+        monthly_usd: 126.40,
+        share: 0.15,
+        sku: "rds:standby",
+        detail: "Warm standby database replica in ap-south-2 (Hyderabad)",
+        priced: true,
+        optimized_by: ["Cross-Region DR"],
+        because: "Provides business continuity if primary region ap-south-1 fails",
+      });
+      nodes.push({
+        id: "storage@standby",
+        label: cloud === "aws" ? "Amazon S3 DR Backup Vault (second region)" : "Cloud Storage DR Vault",
+        kind: "storage@standby",
+        monthly_usd: 18.20,
+        share: 0.03,
+        sku: "s3:dr-vault",
+        detail: "Cross-region backup replication in ap-south-2 (Hyderabad)",
+        priced: true,
+        optimized_by: ["Cross-Region Copy"],
+        because: "Encrypted off-site disaster recovery replica of catalog & orders",
+      });
+    }
+
     // Edges connecting nodes
     const edges: Edge[] = [
       { source: "users", target: "network", label: "HTTPS / TLS", kind: "flow" },
@@ -299,6 +326,11 @@ export function buildFallbackRecommendation(
 
     edges.push({ source: "compute", target: "storage", label: "REST S3 API", kind: "flow" });
     edges.push({ source: "database", target: "kms", label: "Envelope Encrypt", kind: "attaches" });
+
+    if (isHighBudget && tier === "Most optimized") {
+      edges.push({ source: "database", target: "database@standby", label: "Sync DR", kind: "flow" });
+      edges.push({ source: "storage", target: "storage@standby", label: "Cross-Region", kind: "flow" });
+    }
 
     return { nodes, edges };
   };

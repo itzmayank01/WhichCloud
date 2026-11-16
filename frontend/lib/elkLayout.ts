@@ -404,7 +404,7 @@ export async function layout(
           "elk.direction": "RIGHT",
         },
         labels: [{ text: CONTAINER_LABEL["vpc"] }],
-        children: [...azs, ...routeTables],
+        children: azs,
       });
     }
   }
@@ -616,6 +616,32 @@ export async function layout(
   };
   const [right, down] = await Promise.all([attempt("RIGHT"), attempt("DOWN")]);
   const res: any = (right.coverage >= down.coverage ? right : down).out;
+
+  // Post-process VPC: ensure Zone A is above Zone B, and align Zone B's
+  // App subnet horizontally directly below Zone A's App subnet.
+  const findVpc = (node: any): any => {
+    if (node.id === "vpc") return node;
+    for (const c of node.children ?? []) {
+      const v = findVpc(c);
+      if (v) return v;
+    }
+    return null;
+  };
+  const vpcNode = findVpc(res);
+  if (vpcNode && vpcNode.children) {
+    const aza = vpcNode.children.find((c: any) => c.id === "az-a");
+    const azb = vpcNode.children.find((c: any) => c.id === "az-b");
+    if (aza && azb && azb.y < aza.y) {
+      const topY = azb.y;
+      const h_a = aza.height ?? 0;
+      aza.y = topY;
+      azb.y = topY + h_a + 28;
+      const appA = (aza.children ?? []).find((c: any) => c.id.startsWith("subnet-app"));
+      if (appA) {
+        azb.x = aza.x + (appA.x ?? 0) - 16;
+      }
+    }
+  }
 
   routeStats.elkKept = 0;
   routeStats.replaced = 0;

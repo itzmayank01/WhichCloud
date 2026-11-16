@@ -33,9 +33,8 @@ const PLANE_BY_KIND: Record<string, Plane> = {
   threat: "account", // GuardDuty
   posture: "account", // Security Hub / Config
   flowlogs: "account", // VPC Flow Logs
+  monitoring: "account", // CloudWatch
   tracing: "account", // X-Ray
-  // ── control plane: acts on one data node, dotted attachment ──
-  monitoring: "control", // CloudWatch / alarms attach to resources
   kms: "control",
   secrets: "control",
   tls: "control", // ACM
@@ -525,15 +524,15 @@ export function buildGraphModel(
     }
   }
 
-  // Standby / DR cross-region replication edges
+  // Standby / DR cross-region replication edges (branch flow so ELK layers them to the right of primary region)
   if (dataIds.has("database") && dataIds.has("database@standby")) {
-    addEdge("database", "database@standby", "replicates", false, "replication");
+    addEdge("database", "database@standby", "replicates", false, "branch");
   }
   if (dataIds.has("storage") && dataIds.has("storage@standby")) {
-    addEdge("storage", "storage@standby", "replicates", false, "replication");
+    addEdge("storage", "storage@standby", "replicates", false, "branch");
   }
   if (dataIds.has("backup") && dataIds.has("storage@standby")) {
-    addEdge("backup", "storage@standby", "replicates", false, "replication");
+    addEdge("backup", "storage@standby", "replicates", false, "branch");
   }
 
   for (const e of edges) {
@@ -546,17 +545,6 @@ export function buildGraphModel(
   const attachments: Array<{ source: string; target: string }> = [];
   const keptControl: PlanedNode[] = [];
   for (const c of control) {
-    if (c.kind === "monitoring") {
-      const monTargets = (CONTROL_TARGETS.monitoring ?? []).filter((t) => dataIds.has(t));
-      if (monTargets.length > 0) {
-        c.attachedTo = monTargets[0];
-        for (const target of monTargets) {
-          attachments.push({ source: c.id, target });
-        }
-        keptControl.push(c);
-      }
-      continue;
-    }
     const targets = CONTROL_TARGETS[c.kind] ?? [];
     const target = targets.find((t) => dataIds.has(t));
     if (target && present.has(target)) {
