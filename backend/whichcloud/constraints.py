@@ -19,6 +19,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
+from whichcloud.availability import classify_availability, AvailabilityClass
+
 Source = Literal["stated", "assumed"]
 Sector = Literal[
     "healthcare", "fintech", "ecommerce", "education",
@@ -205,6 +207,7 @@ class Constraints:
     country: str = ""
     sector: Sector = "other"
     availability: str = "low"
+    availability_class: str = "standard"
     durability: str = "normal"
     users: int = 0
     requests_per_day: int = 0
@@ -458,12 +461,23 @@ def extract(description: str) -> Constraints:
             break
 
     # ── availability ──
+    cls, ev = classify_availability(text)
+    c.availability_class = cls
+    if c.availability_class in ("business_hours", "always_on", "regulated_dr"):
+        c.availability = "high"
+        c.stated.add("availability")
+        c.evidence["availability"] = ev or f"class:{c.availability_class}"
+    if c.availability_class == "regulated_dr":
+        c.durability = "high"
+        c.stated.add("durability")
+        c.evidence["durability"] = "regulated_dr"
+
     hit = _find(text, _AVAILABILITY_HIGH)
     if hit:
         c.availability = "high"
         c.stated.add("availability")
         c.evidence["availability"] = f"{hit!r}"
-    else:
+    elif c.availability_class == "standard":
         low_hit = _find(text, _AVAILABILITY_LOW)
         if low_hit:
             # Value stays "low" (the default) -- only its source changes,

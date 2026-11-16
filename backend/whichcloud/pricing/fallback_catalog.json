@@ -1,0 +1,1373 @@
+[
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.nano",
+    "name": "t4g.nano",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0042",
+    "vcpu": 2,
+    "memory_gb": 0.5,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.micro",
+    "name": "t4g.micro",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0084",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.small",
+    "name": "t4g.small",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0168",
+    "vcpu": 2,
+    "memory_gb": 2.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.medium",
+    "name": "t4g.medium",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0336",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.large",
+    "name": "t4g.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0672",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.xlarge",
+    "name": "t4g.xlarge",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.1344",
+    "vcpu": 4,
+    "memory_gb": 16.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t3.nano",
+    "name": "t3.nano",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0052",
+    "vcpu": 2,
+    "memory_gb": 0.5,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t3.micro",
+    "name": "t3.micro",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0104",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t3.small",
+    "name": "t3.small",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0208",
+    "vcpu": 2,
+    "memory_gb": 2.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t3.medium",
+    "name": "t3.medium",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0416",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t3.large",
+    "name": "t3.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0832",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "c6g.large",
+    "name": "c6g.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0680",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "c6g.xlarge",
+    "name": "c6g.xlarge",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.1360",
+    "vcpu": 4,
+    "memory_gb": 8.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "m6g.large",
+    "name": "m6g.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0770",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "m6g.xlarge",
+    "name": "m6g.xlarge",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.1540",
+    "vcpu": 4,
+    "memory_gb": 16.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "r6g.large",
+    "name": "r6g.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.1008",
+    "vcpu": 2,
+    "memory_gb": 16.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.micro",
+    "name": "db.t4g.micro",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.018",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.micro:multi-az",
+    "name": "db.t4g.micro:multi-az",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.036",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.small",
+    "name": "db.t4g.small",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.034",
+    "vcpu": 2,
+    "memory_gb": 2.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.small:multi-az",
+    "name": "db.t4g.small:multi-az",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.068",
+    "vcpu": 2,
+    "memory_gb": 2.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.medium",
+    "name": "db.t4g.medium",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.068",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.medium:multi-az",
+    "name": "db.t4g.medium:multi-az",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.136",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t3.medium",
+    "name": "db.t3.medium",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.068",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t3.medium:multi-az",
+    "name": "db.t3.medium:multi-az",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.136",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.m6g.large",
+    "name": "db.m6g.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.178",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.m6g.large:multi-az",
+    "name": "db.m6g.large:multi-az",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.356",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.r6g.large",
+    "name": "db.r6g.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.240",
+    "vcpu": 2,
+    "memory_gb": 16.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.r6g.large:multi-az",
+    "name": "db.r6g.large:multi-az",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.480",
+    "vcpu": 2,
+    "memory_gb": 16.0,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "storage",
+    "sku": "s3:general-purpose",
+    "name": "s3:general-purpose",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.023",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "storage",
+    "sku": "s3:ia",
+    "name": "s3:ia",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.0125",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "loadbalancer",
+    "sku": "alb",
+    "name": "alb",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.0225",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "network",
+    "sku": "vpc:nat-gateway",
+    "name": "vpc:nat-gateway",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.045",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "network",
+    "sku": "egress:internet",
+    "name": "egress:internet",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.09",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "cache",
+    "sku": "redis:cache.t4g.micro",
+    "name": "redis:cache.t4g.micro",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.016",
+    "vcpu": 2,
+    "memory_gb": 0.5,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "cache",
+    "sku": "redis:cache.t4g.small",
+    "name": "redis:cache.t4g.small",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.032",
+    "vcpu": 2,
+    "memory_gb": 1.37,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "cache",
+    "sku": "redis:cache.m6g.large",
+    "name": "redis:cache.m6g.large",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.155",
+    "vcpu": 2,
+    "memory_gb": 6.38,
+    "arch": "arm64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "monitoring",
+    "sku": "cloudwatch:logs",
+    "name": "cloudwatch:logs",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.50",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "kms",
+    "sku": "kms:cmk",
+    "name": "kms:cmk",
+    "region": "ap-south-1",
+    "unit": "month",
+    "price_usd": "1.00",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:vcpu-hour",
+    "name": "fargate:vcpu-hour",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.04048",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:gb-hour",
+    "name": "fargate:gb-hour",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.004445",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:arm-vcpu-hour",
+    "name": "fargate:arm-vcpu-hour",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.03238",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:arm-gb-hour",
+    "name": "fargate:arm-gb-hour",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.00356",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "gcp",
+    "category": "compute",
+    "sku": "e2-micro",
+    "name": "e2-micro",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.0084",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "gcp",
+    "category": "compute",
+    "sku": "e2-small",
+    "name": "e2-small",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.0168",
+    "vcpu": 2,
+    "memory_gb": 2.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "gcp",
+    "category": "compute",
+    "sku": "e2-medium",
+    "name": "e2-medium",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.0336",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "gcp",
+    "category": "compute",
+    "sku": "n2d-standard-2",
+    "name": "n2d-standard-2",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.0880",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "gcp",
+    "category": "compute",
+    "sku": "t2a-standard-2",
+    "name": "t2a-standard-2",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.0770",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "gcp",
+    "category": "database",
+    "sku": "db-custom-2-7680",
+    "name": "db-custom-2-7680",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.1340",
+    "vcpu": 2,
+    "memory_gb": 7.5,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "gcp",
+    "category": "database",
+    "sku": "db-custom-2-7680:multi-az",
+    "name": "db-custom-2-7680:multi-az",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.2680",
+    "vcpu": 2,
+    "memory_gb": 7.5,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "gcp",
+    "category": "storage",
+    "sku": "gcs:standard",
+    "name": "gcs:standard",
+    "region": "asia-south1",
+    "unit": "GB-month",
+    "price_usd": "0.020",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "gcp",
+    "category": "loadbalancer",
+    "sku": "google_compute_backend_service",
+    "name": "google_compute_backend_service",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.025",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "gcp",
+    "category": "network",
+    "sku": "cloud-nat",
+    "name": "cloud-nat",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.045",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "gcp",
+    "category": "network",
+    "sku": "egress:internet",
+    "name": "egress:internet",
+    "region": "asia-south1",
+    "unit": "GB-month",
+    "price_usd": "0.085",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "gcp",
+    "category": "cache",
+    "sku": "memorystore:redis-basic",
+    "name": "memorystore:redis-basic",
+    "region": "asia-south1",
+    "unit": "hour",
+    "price_usd": "0.035",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "azure",
+    "category": "compute",
+    "sku": "Standard_B1s",
+    "name": "Standard_B1s",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.0104",
+    "vcpu": 1,
+    "memory_gb": 1.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "azure",
+    "category": "compute",
+    "sku": "Standard_B2s",
+    "name": "Standard_B2s",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.0416",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "azure",
+    "category": "compute",
+    "sku": "Standard_D2s_v5",
+    "name": "Standard_D2s_v5",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.0960",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "x86_64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "azure",
+    "category": "compute",
+    "sku": "Standard_D2ps_v5",
+    "name": "Standard_D2ps_v5",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.0770",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "azure",
+    "category": "database",
+    "sku": "Standard_B2s:multi-az",
+    "name": "Standard_B2s:multi-az",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.1360",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "azure",
+    "category": "database",
+    "sku": "Standard_B2s",
+    "name": "Standard_B2s",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.0680",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "azure",
+    "category": "storage",
+    "sku": "blob:hot-lrs",
+    "name": "blob:hot-lrs",
+    "region": "centralindia",
+    "unit": "GB-month",
+    "price_usd": "0.0208",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "azure",
+    "category": "loadbalancer",
+    "sku": "lb:standard",
+    "name": "lb:standard",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.025",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "azure",
+    "category": "network",
+    "sku": "nat-gateway",
+    "name": "nat-gateway",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.045",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "azure",
+    "category": "network",
+    "sku": "egress:internet",
+    "name": "egress:internet",
+    "region": "centralindia",
+    "unit": "GB-month",
+    "price_usd": "0.087",
+    "vcpu": null,
+    "memory_gb": null,
+    "arch": null,
+    "attributes": {}
+  },
+  {
+    "provider": "azure",
+    "category": "cache",
+    "sku": "redis:basic-c1",
+    "name": "redis:basic-c1",
+    "region": "centralindia",
+    "unit": "hour",
+    "price_usd": "0.032",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "x86_64",
+    "attributes": {}
+  },
+  {
+    "provider": "aws",
+    "category": "nat",
+    "sku": "nat:gateway-hour",
+    "name": "NAT Gateway",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.045"
+  },
+  {
+    "provider": "aws",
+    "category": "nat",
+    "sku": "nat:gb-processed",
+    "name": "NAT Data Processed",
+    "region": "ap-south-1",
+    "unit": "GB",
+    "price_usd": "0.045"
+  },
+  {
+    "provider": "aws",
+    "category": "network",
+    "sku": "transfer:inter-region",
+    "name": "Inter-Region Data Transfer",
+    "region": "ap-south-1",
+    "unit": "GB",
+    "price_usd": "0.02"
+  },
+  {
+    "provider": "aws",
+    "category": "endpoint",
+    "sku": "vpce:gateway",
+    "name": "VPC Gateway Endpoint",
+    "region": "ap-south-1",
+    "unit": "endpoint-month",
+    "price_usd": "0.00"
+  },
+  {
+    "provider": "aws",
+    "category": "endpoint",
+    "sku": "vpce:interface-hour",
+    "name": "VPC Interface Endpoint",
+    "region": "ap-south-1",
+    "unit": "hour",
+    "price_usd": "0.01"
+  },
+  {
+    "provider": "aws",
+    "category": "endpoint",
+    "sku": "vpce:gb-processed",
+    "name": "VPC Endpoint Data Processed",
+    "region": "ap-south-1",
+    "unit": "GB",
+    "price_usd": "0.01"
+  },
+  {
+    "provider": "aws",
+    "category": "kms",
+    "sku": "kms:key",
+    "name": "AWS KMS Customer Managed Key",
+    "region": "ap-south-1",
+    "unit": "month",
+    "price_usd": "1.00"
+  },
+  {
+    "provider": "aws",
+    "category": "tls",
+    "sku": "acm:public-certificate",
+    "name": "ACM Public SSL/TLS Certificate",
+    "region": "ap-south-1",
+    "unit": "cert-month",
+    "price_usd": "0.00"
+  },
+  {
+    "provider": "aws",
+    "category": "audit",
+    "sku": "cloudtrail:management-events",
+    "name": "AWS CloudTrail Management Events",
+    "region": "ap-south-1",
+    "unit": "event",
+    "price_usd": "0.00"
+  },
+  {
+    "provider": "aws",
+    "category": "governance",
+    "sku": "s3:object-lock",
+    "name": "S3 Object Lock (WORM Immutability)",
+    "region": "ap-south-1",
+    "unit": "bucket-month",
+    "price_usd": "0.00"
+  },
+  {
+    "provider": "aws",
+    "category": "governance",
+    "sku": "organizations:scp",
+    "name": "AWS Organizations Region-Deny Guardrail",
+    "region": "ap-south-1",
+    "unit": "policy-month",
+    "price_usd": "0.00"
+  },
+  {
+    "provider": "aws",
+    "category": "secrets",
+    "sku": "secretsmanager:secret",
+    "name": "AWS Secrets Manager Secret",
+    "region": "ap-south-1",
+    "unit": "month",
+    "price_usd": "0.40"
+  },
+  {
+    "provider": "aws",
+    "category": "waf",
+    "sku": "waf:webacl",
+    "name": "AWS WAF Web ACL",
+    "region": "ap-south-1",
+    "unit": "month",
+    "price_usd": "5.00"
+  },
+  {
+    "provider": "aws",
+    "category": "waf",
+    "sku": "waf:rule",
+    "name": "AWS WAF Managed Rule Group",
+    "region": "ap-south-1",
+    "unit": "rule-month",
+    "price_usd": "1.00"
+  },
+  {
+    "provider": "aws",
+    "category": "waf",
+    "sku": "waf:request",
+    "name": "AWS WAF Requests",
+    "region": "ap-south-1",
+    "unit": "million-requests",
+    "price_usd": "0.60"
+  },
+  {
+    "provider": "aws",
+    "category": "threat",
+    "sku": "guardduty:ec2-vcpu",
+    "name": "Amazon GuardDuty EC2 Protection",
+    "region": "ap-south-1",
+    "unit": "core-hour",
+    "price_usd": "0.0013"
+  },
+  {
+    "provider": "aws",
+    "category": "threat",
+    "sku": "guardduty:fargate-vcpu",
+    "name": "Amazon GuardDuty Fargate Protection",
+    "region": "ap-south-1",
+    "unit": "core-hour",
+    "price_usd": "0.0013"
+  },
+  {
+    "provider": "aws",
+    "category": "threat",
+    "sku": "guardduty:rds-vcpu",
+    "name": "Amazon GuardDuty RDS Protection",
+    "region": "ap-south-1",
+    "unit": "core-hour",
+    "price_usd": "0.0020"
+  },
+  {
+    "provider": "aws",
+    "category": "auth",
+    "sku": "cognito:user-pool-mau",
+    "name": "Amazon Cognito User Pool",
+    "region": "ap-south-1",
+    "unit": "MAU",
+    "price_usd": "0.0055"
+  },
+  {
+    "provider": "aws",
+    "category": "dns",
+    "sku": "route53:hosted-zone",
+    "name": "Route 53 Hosted Zone",
+    "region": "ap-south-1",
+    "unit": "month",
+    "price_usd": "0.50"
+  },
+  {
+    "provider": "aws",
+    "category": "dns",
+    "sku": "route53:dns-queries",
+    "name": "Route 53 DNS Queries",
+    "region": "ap-south-1",
+    "unit": "million-queries",
+    "price_usd": "0.40"
+  },
+  {
+    "provider": "aws",
+    "category": "backup",
+    "sku": "backup:warm-storage",
+    "name": "AWS Backup Vault Storage",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.05"
+  },
+  {
+    "provider": "aws",
+    "category": "backup_copy",
+    "sku": "backup:cross-region-warm",
+    "name": "AWS Backup Cross-Region Copy",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.02"
+  },
+  {
+    "provider": "aws",
+    "category": "storage_lifecycle",
+    "sku": "s3:glacier-instant",
+    "name": "S3 Glacier Instant Retrieval",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.004"
+  },
+  {
+    "provider": "aws",
+    "category": "storage_lifecycle",
+    "sku": "s3:standard-ia",
+    "name": "S3 Standard-IA",
+    "region": "ap-south-1",
+    "unit": "GB-month",
+    "price_usd": "0.0125"
+  },
+  {
+    "provider": "aws",
+    "category": "notification",
+    "sku": "sns:requests",
+    "name": "Amazon SNS Requests",
+    "region": "ap-south-1",
+    "unit": "Requests",
+    "price_usd": "0.0000005",
+    "tiers": [
+      {"begin": "0", "end": "1000000", "price_usd": "0.000000"},
+      {"begin": "1000000", "end": null, "price_usd": "0.0000005"}
+    ]
+  },
+  {
+    "provider": "aws",
+    "category": "queue",
+    "sku": "sqs:requests",
+    "name": "Amazon SQS Standard Requests",
+    "region": "ap-south-1",
+    "unit": "Requests",
+    "price_usd": "0.0000004",
+    "tiers": [
+      {"begin": "0", "end": "1000000", "price_usd": "0.000000"},
+      {"begin": "1000000", "end": null, "price_usd": "0.0000004"}
+    ]
+  },
+  {
+    "provider": "aws",
+    "category": "monitoring",
+    "sku": "cloudwatch:metric",
+    "name": "Amazon CloudWatch Custom Metrics",
+    "region": "ap-south-1",
+    "unit": "metric-month",
+    "price_usd": "0.30"
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.nano",
+    "name": "t4g.nano",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.0042",
+    "vcpu": 2,
+    "memory_gb": 0.5,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.micro",
+    "name": "t4g.micro",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.0084",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.small",
+    "name": "t4g.small",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.0168",
+    "vcpu": 2,
+    "memory_gb": 2.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "compute",
+    "sku": "t4g.medium",
+    "name": "t4g.medium",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.0336",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "arm64",
+    "attributes": {
+      "purchase": "ondemand"
+    }
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.micro",
+    "name": "db.t4g.micro",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.018",
+    "vcpu": 2,
+    "memory_gb": 1.0,
+    "arch": "arm64"
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.small",
+    "name": "db.t4g.small",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.034",
+    "vcpu": 2,
+    "memory_gb": 2.0,
+    "arch": "arm64"
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.t4g.medium",
+    "name": "db.t4g.medium",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.068",
+    "vcpu": 2,
+    "memory_gb": 4.0,
+    "arch": "arm64"
+  },
+  {
+    "provider": "aws",
+    "category": "database",
+    "sku": "db.m6g.large",
+    "name": "db.m6g.large",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.178",
+    "vcpu": 2,
+    "memory_gb": 8.0,
+    "arch": "arm64"
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:arm-vcpu-hour",
+    "name": "AWS Fargate ARM vCPU",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.03238"
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:arm-gb-hour",
+    "name": "AWS Fargate ARM Memory",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.00356"
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:vcpu-hour",
+    "name": "AWS Fargate x86 vCPU",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.04048"
+  },
+  {
+    "provider": "aws",
+    "category": "fargate",
+    "sku": "fargate:gb-hour",
+    "name": "AWS Fargate x86 Memory",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.004445"
+  },
+  {
+    "provider": "aws",
+    "category": "kms",
+    "sku": "kms:key",
+    "name": "AWS KMS Key",
+    "region": "ap-south-2",
+    "unit": "month",
+    "price_usd": "1.00"
+  },
+  {
+    "provider": "aws",
+    "category": "tls",
+    "sku": "acm:public-certificate",
+    "name": "ACM Public Certificate",
+    "region": "ap-south-2",
+    "unit": "cert-month",
+    "price_usd": "0.00"
+  },
+  {
+    "provider": "aws",
+    "category": "audit",
+    "sku": "cloudtrail:management-events",
+    "name": "AWS CloudTrail Management Events",
+    "region": "ap-south-2",
+    "unit": "event",
+    "price_usd": "0.00"
+  },
+  {
+    "provider": "aws",
+    "category": "storage",
+    "sku": "s3:general-purpose",
+    "name": "Amazon S3 Standard Storage",
+    "region": "ap-south-2",
+    "unit": "GB-month",
+    "price_usd": "0.023"
+  },
+  {
+    "provider": "aws",
+    "category": "loadbalancer",
+    "sku": "alb",
+    "name": "Application Load Balancer",
+    "region": "ap-south-2",
+    "unit": "hour",
+    "price_usd": "0.0225"
+  },
+  {
+    "provider": "aws",
+    "category": "tracing",
+    "sku": "xray:traces-recorded",
+    "name": "AWS X-Ray Traces",
+    "region": "ap-south-1",
+    "unit": "trace",
+    "price_usd": "0.000005"
+  },
+  {
+    "provider": "aws",
+    "category": "flowlogs",
+    "sku": "vpc:flow-logs",
+    "name": "VPC Flow Logs Ingestion",
+    "region": "ap-south-1",
+    "unit": "GB",
+    "price_usd": "0.50"
+  },
+  {
+    "provider": "aws",
+    "category": "flowlogs",
+    "sku": "vpc:flow-logs",
+    "name": "VPC Flow Logs Ingestion",
+    "region": "ap-south-2",
+    "unit": "GB",
+    "price_usd": "0.50"
+  }
+]

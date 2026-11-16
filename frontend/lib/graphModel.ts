@@ -33,9 +33,9 @@ const PLANE_BY_KIND: Record<string, Plane> = {
   threat: "account", // GuardDuty
   posture: "account", // Security Hub / Config
   flowlogs: "account", // VPC Flow Logs
-  monitoring: "account", // CloudWatch
   tracing: "account", // X-Ray
   // ── control plane: acts on one data node, dotted attachment ──
+  monitoring: "control", // CloudWatch / alarms attach to resources
   kms: "control",
   secrets: "control",
   tls: "control", // ACM
@@ -147,6 +147,7 @@ const CONTROL_TARGETS: Record<string, string[]> = {
   auth: ["apigateway", "loadbalancer", "compute", "compute_fargate", "lambda"],
   dns: ["network", "waf", "apigateway", "loadbalancer", "compute"],
   backup: ["storage", "database", "dynamodb"],
+  monitoring: ["compute", "compute_fargate", "loadbalancer", "database"],
 };
 
 export type PlanedNode = TopoNode & {
@@ -170,6 +171,7 @@ export type ContainerId =
   | "outside"
   | "edge"
   | "region"
+  | "region-dr"
   | "regional"
   | "vpc"
   | "az"
@@ -298,6 +300,7 @@ export const STANDBY_LABEL: Record<string, string> = {
 };
 
 function containerFor(kind: string, hasVpc: boolean, cloud: CloudId): ContainerId {
+  if (kind.includes("@standby") || kind.includes("backup_dr")) return "region-dr";
   if (OUTSIDE_CLOUD.has(kind)) return "outside";
   if (EDGE_SERVICE.has(kind)) return "edge";
   // Google's external Application Load Balancer is ANYCAST: one global
@@ -351,14 +354,20 @@ export function buildGraphModel(
   const control: PlanedNode[] = [];
   const account: PlanedNode[] = [];
   for (const n of nodes) {
-    const plane = planeOf(n.kind);
+    const isStandby =
+      n.id.includes("@standby") ||
+      n.kind.includes("@standby") ||
+      n.id.includes("backup_dr") ||
+      n.kind.includes("backup_dr") ||
+      (n.label && /standby|second region/i.test(n.label));
+    const plane = isStandby ? "data" : planeOf(n.kind);
     const pn: PlanedNode = { ...n, plane, seq: null };
     if (plane === "account") {
       account.push(pn);
     } else if (plane === "control") {
       control.push(pn);
     } else {
-      pn.container = containerFor(n.kind, hasVpc, cloud);
+      pn.container = isStandby ? "region-dr" : containerFor(n.kind, hasVpc, cloud);
       data.push(pn);
     }
   }
@@ -367,12 +376,15 @@ export function buildGraphModel(
   // The bill says Multi-AZ; the picture used to say one zone. Detected from the
   // database line the estimator labels "(Multi-AZ)" -- the same string the bill
   // shows -- so the two can never disagree about whether a standby was paid for.
-  // Detected from the SKU, not the label. The estimator names the line
-  // "Database (Multi-AZ)" on the bill, but topology.py shortens the node label
-  // to "Database" -- so matching on the label found nothing and the second zone
-  // never appeared. The sku keeps the ":multi-az" suffix the catalog priced.
+  // Detected from the SKU, label, or detail.
   const mirrorOf = new Map<string, string>(); // zone-b id -> its primary
-  const multiAz = nodes.some((n) => /:multi-az/i.test(n.sku ?? ""));
+  const multiAz = nodes.some(
+    (n) =>
+      /multi[-_:]?az/i.test(n.sku ?? "") ||
+      n.label.includes("Multi-AZ") ||
+      (n.detail && n.detail.includes("Multi-AZ")) ||
+      (n.kind === "compute" && n.monthly_usd > 0 && n.detail && /Auto-scaling|Cluster|min 2/i.test(n.detail))
+  );
   if (multiAz && hasVpc) {
     for (const n of [...data]) {
       if (!(ZONE_REDUNDANT_BY_CLOUD[cloud] ?? ZONE_REDUNDANT_BY_CLOUD.aws).has(n.kind))
@@ -512,6 +524,18 @@ export function buildGraphModel(
       addEdge(primary, mirror, ZONE_EDGE_LABEL[kind] ?? "replica", false, "replication");
     }
   }
+
+  // Standby / DR cross-region replication edges
+  if (dataIds.has("database") && dataIds.has("database@standby")) {
+    addEdge("database", "database@standby", "replicates", false, "replication");
+  }
+  if (dataIds.has("storage") && dataIds.has("storage@standby")) {
+    addEdge("storage", "storage@standby", "replicates", false, "replication");
+  }
+  if (dataIds.has("backup") && dataIds.has("storage@standby")) {
+    addEdge("backup", "storage@standby", "replicates", false, "replication");
+  }
+
   for (const e of edges) {
     if (dataIds.has(e.source) && dataIds.has(e.target)) {
       addEdge(e.source, e.target, e.label, false);
@@ -522,6 +546,17 @@ export function buildGraphModel(
   const attachments: Array<{ source: string; target: string }> = [];
   const keptControl: PlanedNode[] = [];
   for (const c of control) {
+    if (c.kind === "monitoring") {
+      const monTargets = (CONTROL_TARGETS.monitoring ?? []).filter((t) => dataIds.has(t));
+      if (monTargets.length > 0) {
+        c.attachedTo = monTargets[0];
+        for (const target of monTargets) {
+          attachments.push({ source: c.id, target });
+        }
+        keptControl.push(c);
+      }
+      continue;
+    }
     const targets = CONTROL_TARGETS[c.kind] ?? [];
     const target = targets.find((t) => dataIds.has(t));
     if (target && present.has(target)) {

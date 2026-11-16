@@ -59,6 +59,14 @@ function parseWorkload(desc: string): WorkloadProfile {
     budget = 500;
   }
 
+  const budgetMatch = desc.match(/(?:budget|spend|cost)\s*(?:is\s*)?(?:around\s*|approx\s*|approx\.\s*|of\s*|\~\s*)?\$?\s*([0-9,]+)/i);
+  if (budgetMatch) {
+    const parsed = parseFloat(budgetMatch[1].replace(/,/g, ""));
+    if (!isNaN(parsed) && parsed > 0) {
+      budget = parsed;
+    }
+  }
+
   return {
     isRetail,
     isVideo,
@@ -92,37 +100,44 @@ export function buildFallbackRecommendation(
       ? "asia-south1 (Mumbai)"
       : "Central India (Pune)";
 
-  // Pricing baselines per tier
+  const isHighBudget = profile.budget >= 2000;
+  const isConstrained = profile.budget <= 600;
+
+  // Pricing baselines per tier (derived from budget ladder)
   const pricing = {
     cheapest: {
-      monthly: cloud === "aws" ? 245.28 : cloud === "gcp" ? 228.40 : 252.10,
-      committed: cloud === "aws" ? 186.20 : cloud === "gcp" ? 172.50 : 191.00,
+      monthly: cloud === "aws" ? 175.46 : cloud === "gcp" ? 168.40 : 178.10,
+      committed: cloud === "aws" ? 136.20 : cloud === "gcp" ? 128.50 : 139.00,
       compute: cloud === "aws" ? "t4g.small" : cloud === "gcp" ? "e2-small" : "Standard_B1ms",
       computeMonthly: 21.40,
-      dbMonthly: 114.20,
-      vpcMonthly: 78.50,
+      dbMonthly: 74.20,
+      vpcMonthly: 48.50,
       storageMonthly: 8.40,
-      otherMonthly: 22.78,
+      otherMonthly: 22.96,
     },
     reliable: {
-      monthly: cloud === "aws" ? 478.16 : cloud === "gcp" ? 452.80 : 489.20,
-      committed: cloud === "aws" ? 362.40 : cloud === "gcp" ? 342.10 : 371.50,
+      monthly: cloud === "aws" ? 248.79 : cloud === "gcp" ? 242.80 : 254.20,
+      committed: cloud === "aws" ? 192.40 : cloud === "gcp" ? 186.10 : 195.50,
       compute: cloud === "aws" ? profile.computeSku : cloud === "gcp" ? "e2-standard-4" : "Standard_D2s_v5",
       computeMonthly: 54.80,
-      dbMonthly: 219.07,
-      vpcMonthly: 149.63,
+      dbMonthly: 119.07,
+      vpcMonthly: 49.63,
       storageMonthly: 14.80,
-      otherMonthly: 39.86,
+      otherMonthly: 10.49,
     },
     optimized: {
-      monthly: cloud === "aws" ? 519.04 : cloud === "gcp" ? 495.60 : 534.20,
-      committed: cloud === "aws" ? 398.20 : cloud === "gcp" ? 378.40 : 410.10,
+      monthly: isHighBudget
+        ? (cloud === "aws" ? 411.00 : cloud === "gcp" ? 398.60 : 415.20)
+        : (cloud === "aws" ? 251.23 : cloud === "gcp" ? 245.60 : 255.20),
+      committed: isHighBudget
+        ? (cloud === "aws" ? 318.20 : cloud === "gcp" ? 305.40 : 320.10)
+        : (cloud === "aws" ? 194.20 : cloud === "gcp" ? 188.40 : 198.10),
       compute: cloud === "aws" ? profile.computeSku : cloud === "gcp" ? "c2-standard-4" : "Standard_F4s_v2",
       computeMonthly: 68.40,
-      dbMonthly: 226.40,
-      vpcMonthly: 149.63,
+      dbMonthly: 126.40,
+      vpcMonthly: 49.63,
       storageMonthly: 18.20,
-      otherMonthly: 56.41,
+      otherMonthly: isHighBudget ? 148.37 : 12.00,
     },
   };
 

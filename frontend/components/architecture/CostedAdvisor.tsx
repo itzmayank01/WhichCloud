@@ -35,7 +35,10 @@ const EXAMPLE =
   "business hours because billing stops. Budget is around $500 a month.";
 
 /** Which option to put forward, and why. */
-function recommend(options: Option[]): { pick: Option; because: string } | null {
+function recommend(
+  options: Option[],
+  budgetMonthlyUsd?: number | null,
+): { pick: Option; because: string } | null {
   if (options.length === 0) return null;
 
   /* An incomplete estimate is missing a component, so its total is not a
@@ -82,12 +85,29 @@ function recommend(options: Option[]): { pick: Option; because: string } | null 
      willing to spend; handing back the minimum spends their allowance on
      nothing. */
   const pick = affordable.reduce((a, b) => (a.monthly_usd >= b.monthly_usd ? a : b));
-  return {
-    pick,
-    because:
+
+  let because = "";
+  if (budgetMonthlyUsd && budgetMonthlyUsd > 0) {
+    const usedPct = (pick.monthly_usd / budgetMonthlyUsd) * 100;
+    const leftUsd = Math.max(0, budgetMonthlyUsd - pick.monthly_usd);
+    const leftFormatted = "$" + Math.round(leftUsd).toLocaleString();
+    if (usedPct < 50) {
+      because = `Well within budget (${leftFormatted}/mo unallocated). You can add resilience or reserve this for growth.`;
+    } else if (usedPct > 90) {
+      because = `Uses most of your budget (${leftFormatted}/mo left). Designed for your stated uptime needs.`;
+    } else {
+      because = `Fits the budget with room to spare (${leftFormatted}/mo left), and handles the expected peak.`;
+    }
+  } else {
+    because =
       pick.label === "Most reliable"
         ? "It fits the budget and survives an availability-zone failure."
-        : "It fits the budget with room to spare, and handles the expected peak.",
+        : "Fits the budget with room to spare, and handles the expected peak.";
+  }
+
+  return {
+    pick,
+    because,
   };
 }
 
@@ -186,7 +206,7 @@ export function CostedAdvisor() {
     }
   }
 
-  const advice = result ? recommend(result.options) : null;
+  const advice = result ? recommend(result.options, result.budget_monthly_usd) : null;
   const budget = result?.budget_monthly_usd ?? null;
   const unspent = advice && budget ? budget - advice.pick.monthly_usd : null;
   const shown = result?.options.find((o) => o.label === selected) ?? null;

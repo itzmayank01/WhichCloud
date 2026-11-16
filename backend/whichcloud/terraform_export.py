@@ -106,6 +106,11 @@ def generate(
     az_count = max(spec.nat_gateway_count, 2) if spec.nat_gateway_count else 2
     single_nat = spec.nat_gateway_count <= 1
 
+    has_standby = any("standby" in item.label.lower() or "ap-south-2" in item.label.lower() for item in estimate.items)
+    dr_region = "ap-south-2" if "ap-south" in estimate.region else ("us-west-2" if "us-east" in estimate.region else "ap-south-2")
+    has_kms = any("kms" in item.label.lower() for item in estimate.items)
+    has_backup_vault = any("backup" in item.label.lower() or "vault" in item.label.lower() for item in estimate.items)
+
     compute_sku = _sku_for(estimate, prefix="Compute")
     database_sku = _sku_for(estimate, prefix="Database", exclude="replica")
     region = estimate.region
@@ -117,6 +122,8 @@ def generate(
         has_fargate=has_fargate,
         has_db=has_db,
         has_storage=has_alb or has_storage,
+        has_standby=has_standby,
+        dr_region=dr_region,
         region=region,
         az_count=az_count,
         environment=environment,
@@ -139,6 +146,10 @@ def generate(
         has_db=has_db,
         has_storage=has_storage,
         has_alb=has_alb,
+        has_standby=has_standby,
+        dr_region=dr_region,
+        has_kms=has_kms,
+        has_backup_vault=has_backup_vault,
         az_count=az_count,
         single_nat=single_nat,
     )
@@ -207,6 +218,8 @@ def _variables_tf(
     has_fargate: bool,
     has_db: bool,
     has_storage: bool,
+    has_standby: bool = False,
+    dr_region: str = "ap-south-2",
     region: str,
     az_count: int,
     environment: str,
@@ -225,6 +238,17 @@ def _variables_tf(
         "  type    = string",
         f'  default = "{region}"',
         "}",
+    ]
+    if has_standby:
+        lines += [
+            "",
+            "variable \"dr_region\" {",
+            "  type    = string",
+            f'  default = "{dr_region}"',
+            "  description = \"Disaster Recovery secondary region\"",
+            "}",
+        ]
+    lines += [
         "",
         "variable \"az_count\" {",
         "  type    = number",
@@ -333,6 +357,10 @@ def _main_tf(
     has_alb: bool,
     az_count: int,
     single_nat: bool,
+    has_standby: bool = False,
+    dr_region: str = "ap-south-2",
+    has_kms: bool = False,
+    has_backup_vault: bool = False,
 ) -> str:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     header = (
@@ -362,6 +390,18 @@ def _main_tf(
             "provider \"aws\" {\n"
             "  region = var.aws_region\n"
             "}\n"
+        ),
+        *(
+            [
+                (
+                    "provider \"aws\" {\n"
+                    "  alias  = \"secondary\"\n"
+                    "  region = var.dr_region\n"
+                    "}\n"
+                )
+            ]
+            if has_standby
+            else []
         ),
         (
             "# The ONLY place dev and prod differ. Every resource below reads\n"
@@ -695,6 +735,45 @@ def _main_tf(
             )
             + "}\n"
         )
+
+    if has_kms:
+        blocks.append(
+            "resource \"aws_kms_key\" \"app\" {\n"
+            "  description             = \"${var.project_name}-${var.environment} encryption key\"\n"
+            "  deletion_window_in_days = 7\n"
+            "  enable_key_rotation     = true\n"
+            "  tags                    = local.common_tags\n"
+            "}\n"
+        )
+
+    if has_backup_vault:
+        blocks.append(
+            "resource \"aws_backup_vault\" \"main\" {\n"
+            "  name        = \"${var.project_name}-${var.environment}-vault\"\n"
+            "  tags        = local.common_tags\n"
+            "}\n"
+        )
+
+    if has_standby:
+        blocks.append(
+            "# ── Disaster Recovery (DR) Standby in ap-south-2 (Hyderabad) ─────────\n"
+            "resource \"aws_s3_bucket\" \"dr_backup_vault\" {\n"
+            "  provider = aws.secondary\n"
+            "  bucket   = \"${var.project_name}-${var.environment}-dr-vault-${var.dr_region}\"\n"
+            "  tags     = local.common_tags\n"
+            "}\n"
+        )
+        if has_db:
+            blocks.append(
+                "resource \"aws_db_instance\" \"dr_standby_db\" {\n"
+                "  provider            = aws.secondary\n"
+                "  identifier          = \"${var.project_name}-${var.environment}-dr-db\"\n"
+                "  replicate_source_db = module.database.db_instance_arn\n"
+                "  instance_class      = var.database_instance_class\n"
+                "  skip_final_snapshot = true\n"
+                "  tags                = local.common_tags\n"
+                "}\n"
+            )
 
     return "\n".join(blocks)
 

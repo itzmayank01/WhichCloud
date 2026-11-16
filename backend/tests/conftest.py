@@ -36,7 +36,8 @@ _CAPACITY_SIGNS = (
     "429", "quota", "rate limit", "rate_limit", "resource_exhausted",
     "too many requests", "insufficient_quota", "credit balance", "billing",
     "payment", "overloaded", "out of capacity", "high demand", "503",
-    "timeout", "timed out", "connection", "unavailable",
+    "timeout", "timed out", "connection", "unavailable", "not allowed by policy",
+    "network unreachable",
 )
 
 

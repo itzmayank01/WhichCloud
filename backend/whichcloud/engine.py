@@ -370,6 +370,10 @@ class Option:
     # What this shape gives up. A cheap option that does not state its cost in
     # reliability is how people get burned.
     tradeoffs: tuple[str, ...] = ()
+    modules_included: tuple[str, ...] = ()
+    modules_omitted: tuple[dict, ...] = ()
+    budget_used_pct: float = 0.0
+    budget_left_usd: float = 0.0
 
     @property
     def monthly(self) -> Decimal:

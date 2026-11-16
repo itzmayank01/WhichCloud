@@ -728,7 +728,8 @@ def _constraints_from_fixture(fx):
 def _fixture_plan(fid):
     import yaml, pathlib
     from whichcloud.plan import plan_from
-    fx = yaml.safe_load(pathlib.Path(f"tests/fixtures/{fid}.yaml").read_text())
+    fx_path = pathlib.Path(__file__).parent / "fixtures" / f"{fid}.yaml"
+    fx = yaml.safe_load(fx_path.read_text())
     c, a = _constraints_from_fixture(fx)
     return plan_from(c, fx["prompt"], archetype=a)
 

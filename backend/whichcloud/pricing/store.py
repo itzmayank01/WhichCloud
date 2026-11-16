@@ -12,6 +12,7 @@ import os
 import threading
 from contextlib import contextmanager
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
@@ -28,82 +29,42 @@ _IN_MEMORY_CONSTRAINTS_CACHE: dict[str, str] = {}
 
 #: Built-in catalog fallback when PostgreSQL is offline or unreachable in local/sandbox mode.
 #: Guarantees zero latency (<1ms) and 100% availability for recommendations and Terraform generation.
-_FALLBACK_POINTS: list[PricePoint] = [
-    # AWS Compute
-    PricePoint("aws", "compute", "t4g.nano", "t4g.nano", "ap-south-1", "hour", Decimal("0.0042"), 2, 0.5, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t4g.micro", "t4g.micro", "ap-south-1", "hour", Decimal("0.0084"), 2, 1.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t4g.small", "t4g.small", "ap-south-1", "hour", Decimal("0.0168"), 2, 2.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t4g.medium", "t4g.medium", "ap-south-1", "hour", Decimal("0.0336"), 2, 4.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t4g.large", "t4g.large", "ap-south-1", "hour", Decimal("0.0672"), 2, 8.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t4g.xlarge", "t4g.xlarge", "ap-south-1", "hour", Decimal("0.1344"), 4, 16.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t3.nano", "t3.nano", "ap-south-1", "hour", Decimal("0.0052"), 2, 0.5, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t3.micro", "t3.micro", "ap-south-1", "hour", Decimal("0.0104"), 2, 1.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t3.small", "t3.small", "ap-south-1", "hour", Decimal("0.0208"), 2, 2.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t3.medium", "t3.medium", "ap-south-1", "hour", Decimal("0.0416"), 2, 4.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "t3.large", "t3.large", "ap-south-1", "hour", Decimal("0.0832"), 2, 8.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "c6g.large", "c6g.large", "ap-south-1", "hour", Decimal("0.0680"), 2, 4.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "c6g.xlarge", "c6g.xlarge", "ap-south-1", "hour", Decimal("0.1360"), 4, 8.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "m6g.large", "m6g.large", "ap-south-1", "hour", Decimal("0.0770"), 2, 8.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "m6g.xlarge", "m6g.xlarge", "ap-south-1", "hour", Decimal("0.1540"), 4, 16.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("aws", "compute", "r6g.large", "r6g.large", "ap-south-1", "hour", Decimal("0.1008"), 2, 16.0, "arm64", {"purchase": "ondemand"}),
+def _load_fallback_points() -> list[PricePoint]:
+    catalog_path = Path(__file__).parent / "fallback_catalog.json"
+    if not catalog_path.exists():
+        return []
+    with catalog_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    points: list[PricePoint] = []
+    for d in data:
+        tiers = tuple(
+            PriceTier(
+                begin=Decimal(str(t["begin"])),
+                end=Decimal(str(t["end"])) if t.get("end") is not None else None,
+                price_usd=Decimal(str(t["price_usd"])),
+            )
+            for t in d.get("tiers", ())
+        )
+        points.append(
+            PricePoint(
+                provider=d["provider"],
+                category=d["category"],
+                sku=d["sku"],
+                name=d["name"],
+                region=d["region"],
+                unit=d["unit"],
+                price_usd=Decimal(str(d["price_usd"])),
+                vcpu=d.get("vcpu"),
+                memory_gb=float(d["memory_gb"]) if d.get("memory_gb") is not None else None,
+                arch=d.get("arch"),
+                attributes=d.get("attributes", {}),
+                tiers=tiers,
+            )
+        )
+    return points
 
-    # AWS Database
-    PricePoint("aws", "database", "db.t4g.micro", "db.t4g.micro", "ap-south-1", "hour", Decimal("0.018"), 2, 1.0, "arm64", {}),
-    PricePoint("aws", "database", "db.t4g.micro:multi-az", "db.t4g.micro:multi-az", "ap-south-1", "hour", Decimal("0.036"), 2, 1.0, "arm64", {}),
-    PricePoint("aws", "database", "db.t4g.small", "db.t4g.small", "ap-south-1", "hour", Decimal("0.034"), 2, 2.0, "arm64", {}),
-    PricePoint("aws", "database", "db.t4g.small:multi-az", "db.t4g.small:multi-az", "ap-south-1", "hour", Decimal("0.068"), 2, 2.0, "arm64", {}),
-    PricePoint("aws", "database", "db.t4g.medium", "db.t4g.medium", "ap-south-1", "hour", Decimal("0.068"), 2, 4.0, "arm64", {}),
-    PricePoint("aws", "database", "db.t4g.medium:multi-az", "db.t4g.medium:multi-az", "ap-south-1", "hour", Decimal("0.136"), 2, 4.0, "arm64", {}),
-    PricePoint("aws", "database", "db.t3.medium", "db.t3.medium", "ap-south-1", "hour", Decimal("0.068"), 2, 4.0, "x86_64", {}),
-    PricePoint("aws", "database", "db.t3.medium:multi-az", "db.t3.medium:multi-az", "ap-south-1", "hour", Decimal("0.136"), 2, 4.0, "x86_64", {}),
-    PricePoint("aws", "database", "db.m6g.large", "db.m6g.large", "ap-south-1", "hour", Decimal("0.178"), 2, 8.0, "arm64", {}),
-    PricePoint("aws", "database", "db.m6g.large:multi-az", "db.m6g.large:multi-az", "ap-south-1", "hour", Decimal("0.356"), 2, 8.0, "arm64", {}),
-    PricePoint("aws", "database", "db.r6g.large", "db.r6g.large", "ap-south-1", "hour", Decimal("0.240"), 2, 16.0, "arm64", {}),
-    PricePoint("aws", "database", "db.r6g.large:multi-az", "db.r6g.large:multi-az", "ap-south-1", "hour", Decimal("0.480"), 2, 16.0, "arm64", {}),
 
-    # AWS Infrastructure
-    PricePoint("aws", "storage", "s3:general-purpose", "s3:general-purpose", "ap-south-1", "GB-month", Decimal("0.023")),
-    PricePoint("aws", "storage", "s3:ia", "s3:ia", "ap-south-1", "GB-month", Decimal("0.0125")),
-    PricePoint("aws", "loadbalancer", "alb", "alb", "ap-south-1", "hour", Decimal("0.0225")),
-    PricePoint("aws", "network", "vpc:nat-gateway", "vpc:nat-gateway", "ap-south-1", "hour", Decimal("0.045")),
-    PricePoint("aws", "network", "egress:internet", "egress:internet", "ap-south-1", "GB-month", Decimal("0.09")),
-    PricePoint("aws", "cache", "redis:cache.t4g.micro", "redis:cache.t4g.micro", "ap-south-1", "hour", Decimal("0.016"), 2, 0.5, "arm64"),
-    PricePoint("aws", "cache", "redis:cache.t4g.small", "redis:cache.t4g.small", "ap-south-1", "hour", Decimal("0.032"), 2, 1.37, "arm64"),
-    PricePoint("aws", "cache", "redis:cache.m6g.large", "redis:cache.m6g.large", "ap-south-1", "hour", Decimal("0.155"), 2, 6.38, "arm64"),
-    PricePoint("aws", "monitoring", "cloudwatch:logs", "cloudwatch:logs", "ap-south-1", "GB-month", Decimal("0.50")),
-    PricePoint("aws", "kms", "kms:cmk", "kms:cmk", "ap-south-1", "month", Decimal("1.00")),
-    PricePoint("aws", "fargate", "fargate:vcpu-hour", "fargate:vcpu-hour", "ap-south-1", "hour", Decimal("0.04048")),
-    PricePoint("aws", "fargate", "fargate:gb-hour", "fargate:gb-hour", "ap-south-1", "hour", Decimal("0.004445")),
-    PricePoint("aws", "fargate", "fargate:arm-vcpu-hour", "fargate:arm-vcpu-hour", "ap-south-1", "hour", Decimal("0.03238")),
-    PricePoint("aws", "fargate", "fargate:arm-gb-hour", "fargate:arm-gb-hour", "ap-south-1", "hour", Decimal("0.00356")),
-
-    # GCP
-    PricePoint("gcp", "compute", "e2-micro", "e2-micro", "asia-south1", "hour", Decimal("0.0084"), 2, 1.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("gcp", "compute", "e2-small", "e2-small", "asia-south1", "hour", Decimal("0.0168"), 2, 2.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("gcp", "compute", "e2-medium", "e2-medium", "asia-south1", "hour", Decimal("0.0336"), 2, 4.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("gcp", "compute", "n2d-standard-2", "n2d-standard-2", "asia-south1", "hour", Decimal("0.0880"), 2, 8.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("gcp", "compute", "t2a-standard-2", "t2a-standard-2", "asia-south1", "hour", Decimal("0.0770"), 2, 8.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("gcp", "database", "db-custom-2-7680", "db-custom-2-7680", "asia-south1", "hour", Decimal("0.1340"), 2, 7.5, "x86_64", {}),
-    PricePoint("gcp", "database", "db-custom-2-7680:multi-az", "db-custom-2-7680:multi-az", "asia-south1", "hour", Decimal("0.2680"), 2, 7.5, "x86_64", {}),
-    PricePoint("gcp", "storage", "gcs:standard", "gcs:standard", "asia-south1", "GB-month", Decimal("0.020")),
-    PricePoint("gcp", "loadbalancer", "google_compute_backend_service", "google_compute_backend_service", "asia-south1", "hour", Decimal("0.025")),
-    PricePoint("gcp", "network", "cloud-nat", "cloud-nat", "asia-south1", "hour", Decimal("0.045")),
-    PricePoint("gcp", "network", "egress:internet", "egress:internet", "asia-south1", "GB-month", Decimal("0.085")),
-    PricePoint("gcp", "cache", "memorystore:redis-basic", "memorystore:redis-basic", "asia-south1", "hour", Decimal("0.035"), 2, 1.0, "x86_64"),
-
-    # Azure
-    PricePoint("azure", "compute", "Standard_B1s", "Standard_B1s", "centralindia", "hour", Decimal("0.0104"), 1, 1.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("azure", "compute", "Standard_B2s", "Standard_B2s", "centralindia", "hour", Decimal("0.0416"), 2, 4.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("azure", "compute", "Standard_D2s_v5", "Standard_D2s_v5", "centralindia", "hour", Decimal("0.0960"), 2, 8.0, "x86_64", {"purchase": "ondemand"}),
-    PricePoint("azure", "compute", "Standard_D2ps_v5", "Standard_D2ps_v5", "centralindia", "hour", Decimal("0.0770"), 2, 8.0, "arm64", {"purchase": "ondemand"}),
-    PricePoint("azure", "database", "Standard_B2s:multi-az", "Standard_B2s:multi-az", "centralindia", "hour", Decimal("0.1360"), 2, 4.0, "x86_64", {}),
-    PricePoint("azure", "database", "Standard_B2s", "Standard_B2s", "centralindia", "hour", Decimal("0.0680"), 2, 4.0, "x86_64", {}),
-    PricePoint("azure", "storage", "blob:hot-lrs", "blob:hot-lrs", "centralindia", "GB-month", Decimal("0.0208")),
-    PricePoint("azure", "loadbalancer", "lb:standard", "lb:standard", "centralindia", "hour", Decimal("0.025")),
-    PricePoint("azure", "network", "nat-gateway", "nat-gateway", "centralindia", "hour", Decimal("0.045")),
-    PricePoint("azure", "network", "egress:internet", "egress:internet", "centralindia", "GB-month", Decimal("0.087")),
-    PricePoint("azure", "cache", "redis:basic-c1", "redis:basic-c1", "centralindia", "hour", Decimal("0.032"), 2, 1.0, "x86_64"),
-]
+_FALLBACK_POINTS: list[PricePoint] = _load_fallback_points()
 
 
 def _find_fallback_compute(query: ComputeQuery, provider: str | None = None, purchase: str = "ondemand") -> PricePoint | None:
@@ -163,7 +124,7 @@ def _find_fallback_price(provider: str, region: str, category: str, sku: str) ->
     for p in _FALLBACK_POINTS:
         if p.sku == sku:
             return p
-    return _find_fallback_category(provider, region, category)
+    return None
 
 
 #: One live connection per thread, per DSN.
@@ -558,7 +519,7 @@ def cheapest_compute_like(
             pt = _find_fallback_category(provider, region, category)
         return pt
     except Exception:
-        return _find_fallback_category(provider, region, category)
+        return None
 
 
 def cheapest_in_category(

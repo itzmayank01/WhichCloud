@@ -33,7 +33,7 @@ from whichcloud import archetypes as archetype_graphs
 from whichcloud import llm_extract, quantity_audit
 from whichcloud.constraint_filter import Architecture, check
 from whichcloud.constraints import QUESTIONS as _QUESTIONS, Constraints
-from whichcloud.estimator import ArchitectureSpec, Estimate, estimate
+from whichcloud.estimator import ArchitectureSpec, Estimate, LineItem, estimate
 from whichcloud.load_model import Load, build_load
 from whichcloud.network_topology import (
     NO_VPC, PRIVATE_STANDARD, PUBLIC_SIMPLE, TopologyDecision,
@@ -271,6 +271,10 @@ class Tier:
     #: catalog figure, exactly like the advisory techniques in the
     #: knowledge base that are surfaced without being priced.
     committed_use_note: str = ""
+    modules_included: list[str] = field(default_factory=list)
+    modules_omitted: list[dict] = field(default_factory=list)
+    budget_used_pct: float = 0.0
+    budget_left_usd: float = 0.0
 
     @property
     def monthly_total(self) -> float:
@@ -656,6 +660,164 @@ def _fargate_sizing(vcpu: int, instances: int) -> tuple[float, float]:
     not a resize. Splitting the same vCPU envelope across the same instance
     count keeps the two tiers comparable on everything except the platform."""
     return float(vcpu), float(vcpu) * 2
+
+
+def _tag_items(
+    items: list[LineItem],
+    spec: ArchitectureSpec,
+    constraints: Constraints,
+    tier_level: int,
+) -> list[LineItem]:
+    tagged: list[LineItem] = []
+    avail_reason = "2-AZ high availability"
+    if constraints.availability_class == "business_hours":
+        avail_reason = "must not go down during business hours"
+    elif constraints.availability_class == "always_on":
+        avail_reason = "always-on 24/7 zero-downtime"
+    elif constraints.availability_class == "regulated_dr":
+        avail_reason = "regulatory compliance & disaster recovery"
+
+    for i in items:
+        why = getattr(i, "why", "") or ""
+        label = i.label.lower()
+        if not why:
+            if "standby — second region" in label or "standby" in label:
+                why = "Added because: disaster recovery warm standby in Hyderabad (ap-south-2)"
+            elif "load balancer" in label or "alb" in label:
+                why = f"Added because: {avail_reason} across multiple availability zones"
+            elif "multi-az" in label:
+                why = f"Added because: automatic database failover for {avail_reason}"
+            elif "database" in label:
+                why = "Added because: relational transactional data store"
+            elif "fargate" in label or "compute" in label:
+                why = f"Added because: application compute in 2 AZs for {avail_reason}"
+            elif "nat" in label:
+                why = "Added because: outbound secure egress for private subnets across 2 AZs"
+            elif "monitoring" in label or "cloudwatch" in label:
+                why = "Added because: operational metric observability and alarm monitoring"
+            elif "threat detection" in label or "guardduty" in label:
+                why = "Added because: automated threat detection and anomaly monitoring"
+            elif "secrets" in label:
+                why = "Added because: secure credentials and API keys in memory"
+            elif "kms" in label:
+                why = "Added because: customer-managed cryptographic encryption keys"
+            elif "cross-region" in label:
+                why = "Added because: disaster recovery cross-region copy to secondary region"
+            elif "backup" in label or "vault" in label or "archived" in label:
+                why = "Added because: automated point-in-time recovery and immutable backup retention"
+            elif "object lock" in label:
+                why = "Added because: WORM immutability protecting backups from deletion"
+            elif "waf" in label:
+                why = "Added because: protect application against web exploits and bot traffic"
+            elif "authentication" in label or "cognito" in label:
+                why = "Added because: user identity and access control"
+            elif "dns" in label:
+                why = "Added because: high-availability DNS routing and health checks"
+            elif "tls" in label:
+                why = "Added because: TLS encrypted traffic in transit"
+            elif "redis" in label or "cache" in label:
+                why = "Added because: in-memory cache to decouple read queries and accelerate response time"
+            elif "replica" in label:
+                why = "Added because: read replica to offload reporting queries from primary transactional database"
+            elif "endpoint" in label:
+                why = "Added because: keep private traffic off public NAT and eliminate data transfer costs"
+            else:
+                why = f"Added because: {avail_reason} baseline infrastructure"
+
+        tagged.append(
+            LineItem(
+                label=i.label,
+                sku=i.sku,
+                unit=i.unit,
+                unit_price=i.unit_price,
+                quantity=i.quantity,
+                monthly_usd=i.monthly_usd,
+                caveats=i.caveats,
+                why=why,
+            )
+        )
+    return tagged
+
+
+def _compute_tier_modules(
+    spec: ArchitectureSpec,
+    constraints: Constraints,
+    level: int,
+    standby_added: bool,
+    budget: float,
+) -> tuple[list[str], list[dict]]:
+    included: list[str] = []
+    omitted: list[dict] = []
+    avail_cls = constraints.availability_class
+
+    # Step 1: MOD-AVAIL-BH / MOD-AVAIL-AO
+    if spec.load_balancer and spec.database_multi_az and (spec.compute_count >= 2 or spec.fargate_task_count >= 2):
+        included.append("MOD-AVAIL-BH")
+        if spec.nat_gateway_count >= 3 or spec.fargate_task_count >= 3:
+            included.append("MOD-AVAIL-AO")
+    else:
+        if avail_cls in ("business_hours", "always_on", "regulated_dr"):
+            omitted.append({
+                "module": "MOD-AVAIL-BH",
+                "name": "Business Hours Multi-AZ (2 AZs)",
+                "reason": f"Omitted to fit budget of ${budget:,.0f}" if budget else "Omitted",
+            })
+
+    # Step 2: MOD-SEC-BASE (WAF, KMS, Secrets, GuardDuty)
+    if spec.kms_key_count > 0 and (spec.secret_count > 0 or spec.threat_detection or spec.waf_rule_count):
+        included.append("MOD-SEC-BASE")
+    else:
+        if level >= 2 or avail_cls in ("always_on", "regulated_dr"):
+            omitted.append({
+                "module": "MOD-SEC-BASE",
+                "name": "Security Baseline (WAF, KMS, Secrets, GuardDuty)",
+                "reason": f"Omitted to fit budget of ${budget:,.0f}" if budget and level >= 2 else "Omitted in Tier 1 entry baseline",
+            })
+
+    # Step 3: MOD-BCK-REC (Backup Vault & Cross-Region Copy)
+    if bool(spec.backup_gb) and (bool(spec.backup_copy_gb) or spec.object_lock):
+        included.append("MOD-BCK-REC")
+    elif bool(spec.backup_gb):
+        included.append("MOD-BCK-BASE")
+        if level >= 3:
+            omitted.append({
+                "module": "MOD-BCK-REC",
+                "name": "Cross-Region Backup Copy & WORM Vault",
+                "reason": f"Omitted to fit budget of ${budget:,.0f}" if budget else "Single-region backup retained",
+            })
+
+    # Step 4: MOD-OBS-ALERT (CloudWatch Observability & Alerting)
+    if spec.monitored_metrics > 0:
+        included.append("MOD-OBS-ALERT")
+    else:
+        omitted.append({
+            "module": "MOD-OBS-ALERT",
+            "name": "Observability & Alerting (CloudWatch)",
+            "reason": f"Omitted to fit budget of ${budget:,.0f}" if budget else "Optional",
+        })
+
+    # Step 5: MOD-DR-STANDBY (Disaster Recovery Warm Standby in ap-south-2)
+    if standby_added:
+        included.append("MOD-DR-STANDBY")
+    else:
+        if avail_cls in ("business_hours", "always_on", "regulated_dr"):
+            omitted.append({
+                "module": "MOD-DR-STANDBY",
+                "name": "Disaster Recovery Warm Standby (ap-south-2)",
+                "reason": f"Omitted to fit budget of ${budget:,.0f}" if budget else "Single-region deployment; secondary region standby reserved for enterprise disaster recovery",
+            })
+
+    # Step 6: MOD-GROWTH-HEAD (Performance & Growth Headroom)
+    if spec.cache_vcpu is not None or spec.database_read_replicas > 0:
+        included.append("MOD-GROWTH-HEAD")
+    elif level == 3:
+        omitted.append({
+            "module": "MOD-GROWTH-HEAD",
+            "name": "Performance & Growth Headroom (Redis Cache & Read Replicas)",
+            "reason": f"Omitted to fit budget of ${budget:,.0f}" if budget else "Sized for current measured transaction rate",
+        })
+
+    return included, omitted
 
 
 def _spec_for(
@@ -1575,8 +1737,24 @@ def plan_from(
 
         est = estimate(spec, provider, dsn=dsn)
 
+        budget = constraints.budget_monthly_usd
+        avail_cls = constraints.availability_class
+        dr_justified = (
+            avail_cls in ("business_hours", "always_on", "regulated_dr")
+            or durable
+            or high_availability
+        )
+        if budget == 0:
+            can_afford_standby = dr_justified
+        elif avail_cls in ("always_on", "regulated_dr") or durable:
+            can_afford_standby = budget >= 2000
+        elif avail_cls == "business_hours":
+            can_afford_standby = budget >= 3000
+        else:
+            can_afford_standby = False
+
         standby_added = False
-        if level == 3 and durable and len(regions) > 1:
+        if level == 3 and dr_justified and len(regions) > 1 and can_afford_standby:
             standby_region = regions[1]
             standby_spec = _standby_spec(
                 region=standby_region, constraints=constraints,
@@ -1587,17 +1765,28 @@ def plan_from(
                 est = _merge_standby(est, standby_est)
                 standby_added = True
 
+        est.items = _tag_items(est.items, spec, constraints, level)
+
+        included_modules, omitted_modules = _compute_tier_modules(
+            spec, constraints, level, standby_added, budget
+        )
+
         obj = objectives(
             multi_instance=spec.compute_count >= 2 or spec.fargate_task_count >= 2,
             multi_az_database=spec.database_multi_az,
             cross_region_copy=bool(spec.backup_copy_gb),
             warm_standby=standby_added,
         )
+        total_monthly_flt = float(est.total_monthly)
         tier = Tier(
             name=name, label=label, philosophy=PHILOSOPHY[level],
             spec=spec, estimate=est,
             rto=obj["rto"], rpo=obj["rpo"],
             region_rto=obj["region_rto"], region_rpo=obj["region_rpo"],
+            modules_included=included_modules,
+            modules_omitted=omitted_modules,
+            budget_used_pct=round((total_monthly_flt / budget) * 100, 1) if budget > 0 else 0.0,
+            budget_left_usd=round(max(0.0, budget - total_monthly_flt), 2) if budget > 0 else 0.0,
         )
         tier.gives_up = _gives_up(spec, load, tier_level=level, topology=topology)
         tier.committed_use_note = _committed_use_note(spec)
@@ -1634,16 +1823,19 @@ def plan_from(
     elif budget:
         reference = plan.tiers[-1]  # Tier 3 may spend up to 100% of budget
         spare = budget - reference.monthly_total
+        used_pct = (reference.monthly_total / budget) * 100
+        if used_pct < 50:
+            note = f"Well within budget (${spare:,.2f}/mo unallocated). You can add resilience or reserve this for growth. That is a correct result, not an error: sized for {load.peak_rps:.2f} req/sec peak."
+        elif used_pct > 90:
+            note = f"Uses most of your budget (${spare:,.2f}/mo left). Designed for your stated uptime needs. That is a correct result, not an error."
+        else:
+            note = f"Fits the budget with room to spare (${spare:,.2f}/mo left), and handles the expected peak. That is a correct result, not an error."
+
         if spare > 0:
             plan.unspent_budget = {
                 "amount_usd": round(spare, 2),
-                "note": (
-                    f"${spare:,.2f} of your ${budget:,.0f} is unspent even "
-                    "by the top tier. That is a correct result, not an "
-                    f"error: every tier is sized from {load.peak_rps:.2f} "
-                    "req/sec peak, and spending the remainder would buy "
-                    "capacity this workload would not use."
-                ),
+                "used_pct": round(used_pct, 1),
+                "note": note,
             }
         else:
             plan.over_budget_note = (

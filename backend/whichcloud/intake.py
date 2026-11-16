@@ -1088,35 +1088,24 @@ def parse_description(
     if not description or not description.strip():
         raise IntakeError("Describe what you're building — the input was empty.")
 
-    if provider is None:
-        try:
-            provider = "anthropic" if client is not None else _detect_provider()
-        except Exception:
-            provider = None
+    if provider is not None and provider not in _EXTRACTORS:
+        raise IntakeError(f"Unknown provider: {provider!r}. Expected one of {sorted(_EXTRACTORS)}")
 
-    if provider not in _EXTRACTORS:
-        draft = _fast_heuristic_draft(description)
-        try:
-            requirement = draft.to_requirement()
-        except ValueError as exc:
-            raise IntakeError(f"Extracted requirement failed validation: {exc}") from exc
-        return Intake(
-            requirement=requirement,
-            assumed=tuple(draft.assumed),
-            clarifying_question=draft.question,
-            provider="heuristic",
-            raw=draft,
-        )
+    if provider is None:
+        provider = "anthropic" if client is not None else _detect_provider()
 
     cacheable = use_cache and client is None
     key = _draft_cache_key(description, provider) if cacheable else ""
 
     draft = _cached_draft(key) if cacheable else None
     if draft is None:
-        try:
+        if client is not None:
             draft = _draft_with_failover(description, provider, client)
-        except Exception:
-            draft = _fast_heuristic_draft(description)
+        else:
+            try:
+                draft = _draft_with_failover(description, provider, client)
+            except Exception:
+                draft = _fast_heuristic_draft(description)
         # Never cache nothing. A draft that reads as no requirement at all is
         # a failure that happens to validate, and storing it would serve that
         # emptiness back for every later request for the same description --

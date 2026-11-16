@@ -415,7 +415,7 @@ function AccountNode({ data }: NodeProps) {
    already a small share of the workspace and margin is the one thing it cannot
    afford. No duration: an animated fit that gets superseded reads as the
    diagram lurching about. */
-const FIT_OPTS = { padding: 0.06, maxZoom: 1.4, minZoom: 0.04 } as const;
+const FIT_OPTS = { padding: 0.08, maxZoom: 1.4, minZoom: 0.04 } as const;
 
 /* Edge ink, by what the edge means. Four weights, straight off the AWS
    reference diagrams: the live request path is the darkest and heaviest

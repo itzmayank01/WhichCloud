@@ -424,6 +424,7 @@ class LineItemOut(BaseModel):
     #: number, so that is where a derived, single-sourced or
     #: ranking-only rate has to say so.
     caveats: list[str] = Field(default_factory=list)
+    why: str = ""
 
 
 class TechniqueOut(BaseModel):
@@ -545,6 +546,10 @@ class OptionOut(BaseModel):
     #: terms. Empty when `compliant`.
     unmet: list[str] = Field(default_factory=list)
     topology: TopologyOut
+    modules_included: list[str] = Field(default_factory=list)
+    modules_omitted: list[dict] = Field(default_factory=list)
+    budget_used_pct: float = 0.0
+    budget_left_usd: float = 0.0
     #: The option as a laid-out AWS architecture, priced. None on the other
     #: clouds until a service-equivalence table exists -- drawing a GCP option
     #: with an ECS box in it would be worse than not drawing it.
@@ -857,6 +862,7 @@ def _option_out(option: Option, provider: str) -> OptionOut:
                 group=_topo._kind_for(i),
                 group_label=node_label.get(_topo._kind_for(i), i.label),
                 caveats=list(i.caveats),
+                why=getattr(i, "why", ""),
             )
             for i in option.estimate.items
         ],
@@ -872,6 +878,10 @@ def _option_out(option: Option, provider: str) -> OptionOut:
         compliant=option.compliant,
         unmet=list(option.unmet),
         topology=_topology_out(option),
+        modules_included=getattr(option, "modules_included", []),
+        modules_omitted=getattr(option, "modules_omitted", []),
+        budget_used_pct=getattr(option, "budget_used_pct", 0.0),
+        budget_left_usd=getattr(option, "budget_left_usd", 0.0),
     )
 
 
@@ -1823,6 +1833,10 @@ def plan_endpoint(body: DescribeIn) -> dict:
                 "no_further_improvement": tier.no_further_improvement,
                 "warnings": tier.warnings,
                 "committed_use_note": tier.committed_use_note,
+                "modules_included": getattr(tier, "modules_included", []),
+                "modules_omitted": getattr(tier, "modules_omitted", []),
+                "budget_used_pct": getattr(tier, "budget_used_pct", 0.0),
+                "budget_left_usd": getattr(tier, "budget_left_usd", 0.0),
                 "components": [
                     {
                         "label": item.label,
@@ -1831,6 +1845,7 @@ def plan_endpoint(body: DescribeIn) -> dict:
                         "monthly_usd": float(item.monthly_usd),
                         # Where an approximation actually reaches a reader.
                         "caveats": list(item.caveats),
+                        "why": getattr(item, "why", ""),
                     }
                     for item in tier.estimate.items
                 ],
@@ -1958,53 +1973,62 @@ def plan_export_terraform_route(body: PlanExportIn):
 def describe_route(body: DescribeIn) -> RecommendationOut:
     """Plain English straight through to three priced architectures.
 
-    The only route that needs a model API key. It reports what the model
-    assumed and what it would ask next, so the interface can surface guesses
-    as guesses.
+    Routes through the archetype planner (plan.py) with budget ladder,
+    so no user page reaches the old workload_type sizing.
     """
-    from .intake import IntakeError
+    from whichcloud import plan as planning
+    from whichcloud.engine import Option
 
-    try:
-        intake = _cached_intake(body.description, body.reader)
-    except Exception:
-        from .intake import _fast_heuristic_draft, Intake
-        draft = _fast_heuristic_draft(body.description)
-        requirement = draft.to_requirement()
-        intake = Intake(
-            requirement=requirement,
-            assumed=tuple(draft.assumed),
-            clarifying_question=draft.question,
-            provider="aws",
-            raw=draft,
+    provider = body.provider or "aws"
+
+    plan = planning.build(body.description, provider=provider)
+    if not plan.priced:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Workload not supported yet: {plan.archetype_note} ({plan.withheld_reason})",
         )
 
-    requirement = intake.requirement
-    # An explicit request wins over the description's stated preference, which
-    # in turn wins over the default. Comparing providers is the product's whole
-    # job, so the caller has to be able to ask for one.
-    provider = body.provider or requirement.provider_preference or "aws"
-    options = recommend(requirement, provider)
+    labels = ["Cheapest", "Most reliable", "Most optimized"]
+    options: list[Option] = []
+    budget = plan.constraints.budget_monthly_usd
+    for i, tier in enumerate(plan.tiers[:3]):
+        lbl = labels[i] if i < len(labels) else tier.name
+        opt = Option(
+            label=lbl,
+            rationale=tier.philosophy,
+            spec=tier.spec,
+            estimate=tier.estimate,
+            applied=(),
+            advisory=(),
+            baseline_monthly=Decimal(str(tier.monthly_total)),
+            tradeoffs=tuple(tier.gives_up),
+            modules_included=tuple(getattr(tier, "modules_included", [])),
+            modules_omitted=tuple(getattr(tier, "modules_omitted", [])),
+            budget_used_pct=getattr(tier, "budget_used_pct", 0.0),
+            budget_left_usd=getattr(tier, "budget_left_usd", 0.0),
+        )
+        options.append(opt)
+
+    region = plan.tiers[0].estimate.region if plan.tiers else "ap-south-1"
+    criticality = "HIGH" if plan.constraints.availability_class in ("business_hours", "always_on", "regulated_dr") else "MEDIUM"
+    cheapest_compliant = options[0].label if plan.tiers[0].within_budget(budget) else (options[1].label if len(options) > 1 else options[0].label)
 
     return RecommendationOut(
-        goal=requirement.goal,
-        region=requirement.region,
+        goal=plan.constraints.evidence.get("goal") or f"{plan.archetype} architecture",
+        region=region,
         options=[_option_out(o, provider) for o in options],
-        criticality=options[0].criticality if options else "MEDIUM",
-        cheapest_compliant=_cheapest_compliant(options),
+        criticality=criticality,
+        cheapest_compliant=cheapest_compliant,
         diffs=[_diff_out(a, b) for a, b in zip(options, options[1:])],
         not_applied=[
-            {"id": t.id, "name": t.name, "reason": why}
-            for t, why in why_not(requirement, provider)
+            {"id": m["module"], "name": m["name"], "reason": m["reason"]}
+            for m in getattr(plan.tiers[-1], "modules_omitted", [])
         ],
         sizing_basis=SIZING_BASIS,
-        budget_monthly_usd=(
-            float(intake.requirement.budget_monthly_usd)
-            if intake.requirement.budget_monthly_usd
-            else None
-        ),
-        assumed=list(intake.assumed),
-        clarifying_question=intake.clarifying_question,
-        read_by=intake.provider,
+        budget_monthly_usd=float(budget) if budget else None,
+        assumed=[str(a.get("field", "")) for a in plan.constraints.assumed_fields()],
+        clarifying_question=None,
+        read_by=plan.extraction_reader or "planner",
         provider=provider,
     )
 
@@ -2128,6 +2152,30 @@ def describe_export_terraform_route(body: DescribeExportIn):
             f"cloud's resources for it would produce a plan that applies "
             f"cleanly and builds the wrong thing.",
         )
+
+    # Route through archetype planner first
+    try:
+        from whichcloud import plan as planning
+        plan = planning.build(body.description, provider=provider)
+        if plan.priced:
+            idx = 0
+            if body.option == "Most reliable":
+                idx = 1
+            elif body.option == "Most optimized":
+                idx = 2
+            tier = plan.tiers[idx] if idx < len(plan.tiers) else plan.tiers[0]
+            files = generator.generate(tier.spec, tier.estimate, environment=body.environment)
+            archive = terraform_export.zip_bytes(files)
+            return Response(
+                content=archive,
+                media_type="application/zip",
+                headers={
+                    "Content-Disposition": 'attachment; filename="whichcloud-terraform.zip"'
+                },
+            )
+    except Exception:
+        pass
+
     options = recommend(requirement, provider)
 
     option = next((o for o in options if o.label == body.option), None)
@@ -2184,17 +2232,40 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
         "azure": terraform_export_azure,
     }
     generator = generators.get(provider, terraform_export)
-    options = recommend(requirement, provider)
-    option = next((o for o in options if o.label == body.option), None)
-    if option is None:
-        option = options[0] if options else None
+
+    spec = None
+    estimate = None
+    option_label = body.option
+    try:
+        from whichcloud import plan as planning
+        plan = planning.build(description, provider=provider)
+        if plan.priced:
+            idx = 0
+            if body.option == "Most reliable":
+                idx = 1
+            elif body.option == "Most optimized":
+                idx = 2
+            tier = plan.tiers[idx] if idx < len(plan.tiers) else plan.tiers[0]
+            spec = tier.spec
+            estimate = tier.estimate
+    except Exception:
+        pass
+
+    if spec is None or estimate is None:
+        options = recommend(requirement, provider)
+        option = next((o for o in options if o.label == body.option), None)
+        if option is None:
+            option = options[0] if options else None
+        if option:
+            spec = option.spec
+            estimate = option.estimate
 
     files: dict[str, str] = {}
-    if option:
-        files = generator.generate(option.spec, option.estimate, environment=body.environment)
+    if spec and estimate:
+        files = generator.generate(spec, estimate, environment=body.environment)
 
-    region = option.estimate.region if option else ("ap-south-1" if provider == "aws" else "asia-south1")
-    total_cost = float(option.estimate.total_monthly) if option else 469.58
+    region = estimate.region if estimate else ("ap-south-1" if provider == "aws" else "asia-south1")
+    total_cost = float(estimate.total_monthly) if estimate else 469.58
 
     def _hcl_str(value: str) -> str:
         """Escape a value for embedding inside an HCL double-quoted string.
@@ -2206,7 +2277,7 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
         """
         return value.replace("\\", "\\\\").replace('"', '\\"').replace("${", "$${")
 
-    label_txt = _hcl_str(option.label if option else "Production")
+    label_txt = _hcl_str(body.option or "Production")
     provider_txt = _hcl_str(provider)
     region_txt = _hcl_str(region)
     provider_upper_txt = _hcl_str(provider.upper())
@@ -2273,8 +2344,6 @@ module "whichcloud_aws_integration" {{
 """
 
     # Dynamic Modular Terraform Generation matching the Architecture Spec and SKUs
-    spec = option.spec if option else None
-    estimate = option.estimate if option else None
 
     compute_sku = None
     database_sku = None
@@ -2475,27 +2544,37 @@ backup_retention_days = 30
     files["prod.tfvars"] = files["environments/prod.tfvars"]
     files["terraform.tfvars"] = files["environments/prod.tfvars"] if body.environment == "prod" else files["environments/dev.tfvars"]
 
+    labels = ["Cheapest", "Most reliable", "Most optimized"]
+    all_options_list = [
+        {
+            "label": labels[i] if i < len(labels) else t.name,
+            "monthly": float(t.estimate.total_monthly),
+            "region": t.estimate.region,
+        }
+        for i, t in enumerate(plan.tiers[:3])
+    ] if (plan and plan.priced) else [
+        {
+            "label": o.label,
+            "monthly": float(o.estimate.total_monthly),
+            "region": o.estimate.region,
+        }
+        for o in (options if "options" in locals() else [])
+    ]
+
     return {
         "files": files,
-        "option": option.label if option else "Most optimized",
+        "option": body.option or "Most optimized",
         "provider": provider,
         "monthly_cost": total_cost,
         "region": region,
-        "all_options": [
-            {
-                "label": o.label,
-                "monthly": float(o.estimate.total_monthly),
-                "region": o.estimate.region,
-            }
-            for o in options
-        ],
+        "all_options": all_options_list,
         "items": [
             {
                 "label": item.label,
                 "monthly": float(item.monthly_usd),
                 "sku": item.sku,
             }
-            for item in (option.estimate.items if option else [])
+            for item in (estimate.items if estimate else [])
         ],
     }
 

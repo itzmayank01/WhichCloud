@@ -320,6 +320,7 @@ class LineItem:
     #: carries no timestamp, and GCP has no second credential-free source
     #: to validate against.
     caveats: tuple[str, ...] = ()
+    why: str = ""
 
     @property
     def detail(self) -> str:

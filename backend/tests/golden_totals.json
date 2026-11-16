@@ -7,12 +7,12 @@
   "budget-floor-conflict": {
     "tier_1": 263.89,
     "tier_2": 330.62,
-    "tier_3": 474.74
+    "tier_3": 330.62
   },
   "coaching-platform": {
     "tier_1": 1202.31,
     "tier_2": 1269.04,
-    "tier_3": 1413.16
+    "tier_3": 1269.04
   },
   "ecommerce-scale": {
     "tier_1": 1547.27,
@@ -32,12 +32,12 @@
   "hospital-pune": {
     "tier_1": 281.01,
     "tier_2": 347.74,
-    "tier_3": 491.86
+    "tier_3": 347.74
   },
   "hospital-pune-public": {
     "tier_1": 289.01,
     "tier_2": 346.29,
-    "tier_3": 490.41
+    "tier_3": 346.29
   },
   "internal-low-stakes": {
     "tier_1": 43.79,

@@ -116,6 +116,7 @@ const CONTAINER_LABELS: Record<CloudId, Record<string, string>> = {
     cloud: "AWS Cloud",
     edge: "Edge / Global services",
     region: "Region: ap-south-1 (Mumbai)",
+    "region-dr": "DR Region: ap-south-2 (Hyderabad)",
     regional: "Regional services",
     vpc: "VPC 10.0.0.0/16",
     "routetable-public": "Public route table",
@@ -131,6 +132,7 @@ const CONTAINER_LABELS: Record<CloudId, Record<string, string>> = {
     cloud: "Google Cloud project",
     edge: "Edge / Global services",
     region: "Region: asia-south1 (Mumbai)",
+    "region-dr": "DR Region: asia-south2 (Delhi)",
     regional: "Regional services",
     // A GCP VPC is global, not regional -- it spans every region in the
     // project -- so it carries no CIDR of its own the way an AWS VPC does.
@@ -150,6 +152,7 @@ const CONTAINER_LABELS: Record<CloudId, Record<string, string>> = {
     cloud: "Azure subscription",
     edge: "Edge / Global services",
     region: "Region: Central India (Pune)",
+    "region-dr": "DR Region: South India (Chennai)",
     regional: "Resource group services",
     vpc: "Virtual network 10.0.0.0/16",
     "routetable-public": "Route table: internet",
@@ -189,6 +192,7 @@ function subnetsAreZonal(cloud: CloudId): boolean {
 }
 
 function parentOf(node: PlanedNode, hasVpc: boolean, cloud: CloudId): string {
+  if (node.container === "region-dr") return "region-dr";
   if (node.container === "outside") return "outside";
   if (node.container === "edge") return "edge";
   // Managed services outside the VPC get their own strip rather than floating
@@ -270,6 +274,7 @@ export async function layout(
   const outsideNodes = byParent.get("outside") ?? [];
   const edgeNodes = byParent.get("edge") ?? [];
   const regionalNodes = byParent.get("regional") ?? [];
+  const drNodes = byParent.get("region-dr") ?? [];
   if (regionalNodes.length) {
     regionChildren.push({
       id: "regional",
@@ -421,6 +426,7 @@ export async function layout(
   collectPlaced(regionChildren);
   collectPlaced(edgeNodes.map(serviceChild));
   collectPlaced(outsideNodes.map(serviceChild));
+  collectPlaced(drNodes.map(serviceChild));
   for (const n of [...model.data, ...model.control]) {
     if (!placedIds.has(n.id)) regionChildren.push(serviceChild(n));
   }
@@ -529,6 +535,20 @@ export async function layout(
               children: regionChildren,
             },
           ]),
+      ...(drNodes.length
+        ? [
+            {
+              id: "region-dr",
+              layoutOptions: {
+                "elk.padding": "[top=34,left=18,bottom=18,right=18]",
+                "elk.direction": "RIGHT",
+                "elk.spacing.nodeNode": "28",
+              },
+              labels: [{ text: CONTAINER_LABEL["region-dr"] ?? "DR Region" }],
+              children: drNodes.map(serviceChild),
+            },
+          ]
+        : []),
     ],
     edges: [
       // TIER ORDER. ELK ranks a container's children by the edges between them,

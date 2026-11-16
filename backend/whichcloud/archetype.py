@@ -162,6 +162,7 @@ _SIGNALS: dict[str, tuple[str, ...]] = {
         "records system", "records online", "records and lab reports",
         "lending platform", "track equipment", "page views",
         "log in", "customer accounts", "saas", "crm",
+        "billing system", "billing", "retail chain", "stock and billing",
     ),
     "static_site": (
         "no database", "no login", "marketing site", "brochure site",
