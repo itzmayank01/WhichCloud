@@ -1058,6 +1058,24 @@
   },
   {
     "provider": "aws",
+    "category": "posture",
+    "sku": "securityhub:compliance-check",
+    "name": "Security Hub compliance checks",
+    "region": "ap-south-1",
+    "unit": "check",
+    "price_usd": "0.001"
+  },
+  {
+    "provider": "aws",
+    "category": "posture",
+    "sku": "securityhub:compliance-check",
+    "name": "Security Hub compliance checks",
+    "region": "ap-south-2",
+    "unit": "check",
+    "price_usd": "0.001"
+  },
+  {
+    "provider": "aws",
     "category": "auth",
     "sku": "cognito:user-pool-mau",
     "name": "Amazon Cognito User Pool",

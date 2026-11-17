@@ -158,6 +158,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 Price your app
               </Link>
               <Link
+                href="/audit"
+                className="rounded-sm transition-colors hover:text-ink"
+              >
+                Audit bill
+              </Link>
+              <Link
                 href="/connect"
                 className="rounded-sm transition-colors hover:text-ink"
               >

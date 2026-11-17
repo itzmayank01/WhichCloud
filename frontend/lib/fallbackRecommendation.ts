@@ -116,28 +116,32 @@ export function buildFallbackRecommendation(
       otherMonthly: 22.96,
     },
     reliable: {
-      monthly: cloud === "aws" ? 248.79 : cloud === "gcp" ? 242.80 : 254.20,
-      committed: cloud === "aws" ? 192.40 : cloud === "gcp" ? 186.10 : 195.50,
+      monthly: isHighBudget
+        ? (cloud === "aws" ? 478.16 : cloud === "gcp" ? 462.80 : 484.20)
+        : (cloud === "aws" ? 248.79 : cloud === "gcp" ? 242.80 : 254.20),
+      committed: isHighBudget
+        ? (cloud === "aws" ? 368.40 : cloud === "gcp" ? 355.10 : 372.50)
+        : (cloud === "aws" ? 192.40 : cloud === "gcp" ? 186.10 : 195.50),
       compute: cloud === "aws" ? profile.computeSku : cloud === "gcp" ? "e2-standard-4" : "Standard_D2s_v5",
-      computeMonthly: 54.80,
-      dbMonthly: 119.07,
+      computeMonthly: isHighBudget ? 95.20 : 54.80,
+      dbMonthly: isHighBudget ? 214.90 : 119.07,
       vpcMonthly: 49.63,
-      storageMonthly: 14.80,
-      otherMonthly: 10.49,
+      storageMonthly: isHighBudget ? 18.20 : 14.80,
+      otherMonthly: isHighBudget ? 100.23 : 10.49,
     },
     optimized: {
       monthly: isHighBudget
-        ? (cloud === "aws" ? 411.00 : cloud === "gcp" ? 398.60 : 415.20)
+        ? (cloud === "aws" ? 764.43 : cloud === "gcp" ? 742.60 : 772.20)
         : (cloud === "aws" ? 251.23 : cloud === "gcp" ? 245.60 : 255.20),
       committed: isHighBudget
-        ? (cloud === "aws" ? 318.20 : cloud === "gcp" ? 305.40 : 320.10)
+        ? (cloud === "aws" ? 588.20 : cloud === "gcp" ? 570.40 : 594.10)
         : (cloud === "aws" ? 194.20 : cloud === "gcp" ? 188.40 : 198.10),
       compute: cloud === "aws" ? profile.computeSku : cloud === "gcp" ? "c2-standard-4" : "Standard_F4s_v2",
-      computeMonthly: 68.40,
-      dbMonthly: 126.40,
+      computeMonthly: isHighBudget ? 142.40 : 68.40,
+      dbMonthly: isHighBudget ? 214.90 : 126.40,
       vpcMonthly: 49.63,
-      storageMonthly: 18.20,
-      otherMonthly: isHighBudget ? 148.37 : 12.00,
+      storageMonthly: isHighBudget ? 18.20 : 18.20,
+      otherMonthly: isHighBudget ? 339.30 : 12.00,
     },
   };
 
@@ -279,6 +283,62 @@ export function buildFallbackRecommendation(
       because: "Provides cryptographic isolation and compliance",
     });
 
+    if (tier !== "Cheapest") {
+      nodes.push({
+        id: "secrets",
+        label: cloud === "aws" ? "AWS Secrets Manager" : cloud === "gcp" ? "Secret Manager" : "Azure Key Vault Secrets",
+        kind: "secrets",
+        monthly_usd: 4.00,
+        share: 0.01,
+        sku: "secrets:rotation",
+        detail: "Automated credential rotation for RDS and API credentials",
+        priced: true,
+        optimized_by: ["Secrets Stash"],
+        because: "Prevents hardcoded credentials and enables zero-downtime rotation",
+      });
+    }
+
+    if (isHighBudget && tier !== "Cheapest") {
+      nodes.push({
+        id: "threat",
+        label: cloud === "aws" ? "Amazon GuardDuty" : cloud === "gcp" ? "Security Command Center" : "Microsoft Defender",
+        kind: "threat",
+        monthly_usd: 12.00,
+        share: 0.02,
+        sku: "guardduty:fargate-vcpu",
+        detail: "Continuous intelligent threat detection and anomaly scanning",
+        priced: true,
+        optimized_by: ["VPC Flow Analysis"],
+        because: "Detects unauthorized access attempts and compromised container tasks",
+      });
+      nodes.push({
+        id: "backup",
+        label: cloud === "aws" ? "AWS Backup Vault" : cloud === "gcp" ? "Cloud Backup & DR" : "Azure Backup Vault",
+        kind: "backup",
+        monthly_usd: 14.50,
+        share: 0.02,
+        sku: "backup:vault-lock",
+        detail: "Centralized policy-driven automated snapshots and vault lock",
+        priced: true,
+        optimized_by: ["Tiered Retention"],
+        because: "Protects database and storage against ransomware and accidental deletion",
+      });
+      if (profile.isRetail) {
+        nodes.push({
+          id: "queue",
+          label: cloud === "aws" ? "Amazon SQS FIFO Queue" : cloud === "gcp" ? "Cloud Pub/Sub" : "Azure Service Bus",
+          kind: "queue",
+          monthly_usd: 8.50,
+          share: 0.02,
+          sku: "sqs:fifo-messages",
+          detail: "POS offline store transaction buffering and asynchronous sync",
+          priced: true,
+          optimized_by: ["Batch Ingestion"],
+          because: "Ensures store billing never stops even during brief API or network blips",
+        });
+      }
+    }
+
     if (isHighBudget && tier === "Most optimized") {
       nodes.push({
         id: "database@standby",
@@ -326,6 +386,13 @@ export function buildFallbackRecommendation(
 
     edges.push({ source: "compute", target: "storage", label: "REST S3 API", kind: "flow" });
     edges.push({ source: "database", target: "kms", label: "Envelope Encrypt", kind: "attaches" });
+
+    if (tier !== "Cheapest") {
+      edges.push({ source: "compute", target: "secrets", label: "Rotate Auth", kind: "attaches" });
+    }
+    if (isHighBudget && tier !== "Cheapest" && profile.isRetail) {
+      edges.push({ source: "compute", target: "queue", label: "Buffer Orders", kind: "flow" });
+    }
 
     if (isHighBudget && tier === "Most optimized") {
       edges.push({ source: "database", target: "database@standby", label: "Sync DR", kind: "flow" });

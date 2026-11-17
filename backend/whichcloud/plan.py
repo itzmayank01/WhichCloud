@@ -1584,6 +1584,19 @@ def plan_from(
     )
     if archetype is not None:
         meta.archetype = archetype
+    if constraints.availability_class == "standard" and description:
+        from whichcloud.availability import classify_availability
+        cls, ev = classify_availability(description)
+        if cls != "standard":
+            constraints.availability_class = cls
+            if cls in ("business_hours", "always_on", "regulated_dr"):
+                constraints.availability = "high"
+                constraints.stated.add("availability")
+                constraints.evidence["availability"] = ev or f"class:{cls}"
+            if cls == "regulated_dr":
+                constraints.durability = "high"
+                constraints.stated.add("durability")
+                constraints.evidence["durability"] = "regulated_dr"
     load = build_load(constraints, description)
 
     # CLASSIFY BEFORE PRICING, AND REFUSE TO PRICE WHAT IS NOT COVERED.
@@ -1744,17 +1757,8 @@ def plan_from(
             or durable
             or high_availability
         )
-        if budget == 0:
-            can_afford_standby = dr_justified
-        elif avail_cls in ("always_on", "regulated_dr") or durable:
-            can_afford_standby = budget >= 2000
-        elif avail_cls == "business_hours":
-            can_afford_standby = budget >= 3000
-        else:
-            can_afford_standby = False
-
         standby_added = False
-        if level == 3 and dr_justified and len(regions) > 1 and can_afford_standby:
+        if level == 3 and dr_justified and len(regions) > 1:
             standby_region = regions[1]
             standby_spec = _standby_spec(
                 region=standby_region, constraints=constraints,
@@ -1762,8 +1766,15 @@ def plan_from(
             )
             standby_est = estimate(standby_spec, provider, dsn=dsn)
             if standby_est.is_complete:
-                est = _merge_standby(est, standby_est)
-                standby_added = True
+                candidate_total = float(est.total_monthly + standby_est.total_monthly)
+                can_afford_standby = (
+                    (candidate_total <= budget or budget == 0)
+                    if (avail_cls == "regulated_dr" or (durable and constraints.sector in ("healthcare", "fintech", "banking")))
+                    else (budget == 0 or (budget >= 1500 and candidate_total <= budget))
+                )
+                if can_afford_standby:
+                    est = _merge_standby(est, standby_est)
+                    standby_added = True
 
         est.items = _tag_items(est.items, spec, constraints, level)
 

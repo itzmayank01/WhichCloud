@@ -2107,42 +2107,35 @@ def estimate(spec: ArchitectureSpec, provider: str, dsn: str | None = None) -> E
         ec2 = _by_role(provider, region, "threat", "compute", dsn)
         rds = _by_role(provider, region, "threat", "database", dsn)
         fargate = _by_role(provider, region, "threat", "fargate", dsn)
-        if ec2 and ec2.unit == "core-hour":
-            # Billed per protected core, so the quantity is vCPUs and the
-            # rate is hourly -- neither a node count nor a vCPU-month.
-            cores = spec.compute_count * spec.compute_vcpu
-            result.items.append(
-                _hourly_line("Threat detection", ec2, cores)
-            )
-        elif ec2 and ec2.unit == "node-hour":
+        if ec2 and ec2.unit == "node-hour":
             # Per-node providers charge by the machine, not by its vCPUs,
             # so converting a vCPU count into node-hours would invent load
             # the provider never bills for.
             result.items.append(
                 _hourly_line("Threat detection", ec2, _monitored_nodes(spec))
             )
-        elif ec2:
+        elif ec2 or fargate or rds:
             # Whichever compute tier is actually running. A Fargate task's
             # vCPUs are monitored on their own meter -- counting them at
             # zero because no EC2 instance exists would put a $0.00 line on
             # the bill, which asserts "free" rather than "not applicable".
             ec2_vcpus = spec.compute_count * spec.compute_vcpu
             fargate_vcpus = spec.fargate_task_count * spec.fargate_task_vcpu
-            if ec2_vcpus:
+            if ec2 and ec2_vcpus:
+                fn = _hourly_line if ec2.unit == "core-hour" else _tiered_line
                 result.items.append(
-                    _tiered_line("Threat detection: compute", ec2, ec2_vcpus)
+                    fn("Threat detection: compute", ec2, ec2_vcpus)
                 )
-            if fargate_vcpus and fargate:
-                # A distinct label: two lines reading "Threat detection:
-                # compute" collapse to one key when options are diffed, and
-                # one silently overwrites the other.
+            if fargate and fargate_vcpus:
+                fn = _hourly_line if fargate.unit == "core-hour" else _tiered_line
                 result.items.append(
-                    _tiered_line("Threat detection: Fargate", fargate, fargate_vcpus)
+                    fn("Threat detection: Fargate", fargate, fargate_vcpus)
                 )
             if rds and spec.database_vcpu:
                 db_vcpus = spec.database_vcpu * (1 + spec.database_read_replicas)
+                fn = _hourly_line if rds.unit == "core-hour" else _tiered_line
                 result.items.append(
-                    _tiered_line("Threat detection: database", rds, db_vcpus)
+                    fn("Threat detection: database", rds, db_vcpus)
                 )
         else:
             result.missing.append("threat detection")

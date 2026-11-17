@@ -820,6 +820,19 @@ def extract(
                 constraints.unparsed_quantities = quantity_audit.audit(
                     description, constraints,
                 )
+                if description:
+                    from whichcloud.availability import classify_availability
+                    cls, ev = classify_availability(description)
+                    if cls != "standard" or constraints.availability_class == "standard":
+                        constraints.availability_class = cls
+                        if cls in ("business_hours", "always_on", "regulated_dr"):
+                            constraints.availability = "high"
+                            constraints.stated.add("availability")
+                            constraints.evidence["availability"] = ev or f"class:{cls}"
+                        if cls == "regulated_dr":
+                            constraints.durability = "high"
+                            constraints.stated.add("durability")
+                            constraints.evidence["durability"] = "regulated_dr"
                 meta.cached = True
                 meta.model = _MODEL
                 meta.reader = f"{PRIMARY_PROVIDER} (cached)"
@@ -845,6 +858,19 @@ def extract(
 
     constraints, meta = _to_constraints(payload)
     constraints.unparsed_quantities = quantity_audit.audit(description, constraints)
+    if description:
+        from whichcloud.availability import classify_availability
+        cls, ev = classify_availability(description)
+        if cls != "standard" or constraints.availability_class == "standard":
+            constraints.availability_class = cls
+            if cls in ("business_hours", "always_on", "regulated_dr"):
+                constraints.availability = "high"
+                constraints.stated.add("availability")
+                constraints.evidence["availability"] = ev or f"class:{cls}"
+            if cls == "regulated_dr":
+                constraints.durability = "high"
+                constraints.stated.add("durability")
+                constraints.evidence["durability"] = "regulated_dr"
     meta.reader, meta.model = label, _MODEL
     # `label` is "groq", "groq#2", "gemini"... -- the provider is the part
     # before the '#', since a second key for the primary is still primary.

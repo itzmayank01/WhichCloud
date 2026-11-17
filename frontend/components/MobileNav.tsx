@@ -11,6 +11,7 @@ import { TerraformLogo } from "@/components/Logo";
 const LINKS = [
   { href: "/prices", label: "Price index" },
   { href: "/estimate", label: "Price your app" },
+  { href: "/audit", label: "Audit bill" },
   { href: "/connect", label: "Connect" },
   { href: "/finops", label: "FinOps Live", accent: true },
   { href: "/terraform", label: "Terraform IaC", terraform: true },

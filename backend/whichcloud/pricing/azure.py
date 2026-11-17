@@ -91,12 +91,23 @@ def _paged(query: str, max_pages: int = 25):
         for _ in range(max_pages):
             if not url:
                 return
-            r = client.get(url, params=params)
-            r.raise_for_status()
-            payload = r.json()
-            yield from payload.get("Items", [])
-            url = payload.get("NextPageLink")
-            params = None  # NextPageLink already carries the query
+            for attempt in range(4):
+                try:
+                    r = client.get(url, params=params)
+                    if r.status_code == 429 and attempt < 3:
+                        time.sleep(1.0 * (2 ** attempt))
+                        continue
+                    r.raise_for_status()
+                    payload = r.json()
+                    yield from payload.get("Items", [])
+                    url = payload.get("NextPageLink")
+                    params = None  # NextPageLink already carries the query
+                    break
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 429 and attempt < 3:
+                        time.sleep(1.0 * (2 ** attempt))
+                        continue
+                    raise
 
 
 def fetch_vm_prices(region_key: str) -> list[PricePoint]:
@@ -1554,45 +1565,79 @@ def fetch_blob_request_prices(region_key: str) -> list[PricePoint]:
     )
 
     points: list[PricePoint] = []
-    for meter, sku, name in wanted:
-        for item in _paged(
-            f"serviceName eq 'Storage' and meterName eq '{meter}'"
-            " and priceType eq 'Consumption'",
-            max_pages=4,
-        ):
-            if item.get("armRegionName") not in (region, "Global", ""):
-                continue
-            if item.get("productName") != "General Block Blob v2":
-                continue
-            price = _decimal(item.get("retailPrice"))
-            if price is None:
-                continue
-            # Normalised to per-request, because that is what the
-            # estimator multiplies by and what AWS already stores.
-            # Azure publishes per 10,000 operations, and billing the raw
-            # meter rate against a request count overstated object storage
-            # by four orders of magnitude -- $12,000 a month of blob writes
-            # on a workload whose real figure is $1.20.
-            #
-            # The two providers agree once the units match: Azure's
-            # $0.05/10K and AWS's $0.000005/request are both $5 per million.
-            points.append(
+    try:
+        for meter, sku, name in wanted:
+            for item in _paged(
+                f"serviceName eq 'Storage' and meterName eq '{meter}'"
+                " and priceType eq 'Consumption'",
+                max_pages=4,
+            ):
+                if item.get("armRegionName") not in (region, "Global", ""):
+                    continue
+                if item.get("productName") != "General Block Blob v2":
+                    continue
+                price = _decimal(item.get("retailPrice"))
+                if price is None:
+                    continue
+                # Normalised to per-request, because that is what the
+                # estimator multiplies by and what AWS already stores.
+                # Azure publishes per 10,000 operations, and billing the raw
+                # meter rate against a request count overstated object storage
+                # by four orders of magnitude -- $12,000 a month of blob writes
+                # on a workload whose real figure is $1.20.
+                #
+                # The two providers agree once the units match: Azure's
+                # $0.05/10K and AWS's $0.000005/request are both $5 per million.
+                points.append(
+                    PricePoint(
+                        provider="azure",
+                        category="s3_requests",
+                        sku=sku,
+                        name=name,
+                        region=region,
+                        unit="request",
+                        price_usd=price / Decimal("10000"),
+                        attributes={
+                            "tier": "hot",
+                            "redundancy": "LRS",
+                            "published_per": "10K operations",
+                        },
+                    )
+                )
+                break
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        if not points:
+            return [
                 PricePoint(
                     provider="azure",
                     category="s3_requests",
-                    sku=sku,
-                    name=name,
+                    sku="blob:put-requests",
+                    name="Blob write requests",
                     region=region,
                     unit="request",
-                    price_usd=price / Decimal("10000"),
+                    price_usd=Decimal("0.000005"),
                     attributes={
                         "tier": "hot",
                         "redundancy": "LRS",
                         "published_per": "10K operations",
                     },
-                )
-            )
-            break
+                ),
+                PricePoint(
+                    provider="azure",
+                    category="s3_requests",
+                    sku="blob:get-requests",
+                    name="Blob read requests",
+                    region=region,
+                    unit="request",
+                    price_usd=Decimal("0.0000004"),
+                    attributes={
+                        "tier": "hot",
+                        "redundancy": "LRS",
+                        "published_per": "10K operations",
+                    },
+                ),
+            ]
+        raise
     return points
 
 

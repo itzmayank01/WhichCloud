@@ -43,10 +43,10 @@ _ALWAYS_ON_PATTERNS = (
 )
 
 _BUSINESS_HOURS_PATTERNS = (
-    r"\b(?:must\s+not|cannot|can't)\s+(?:go\s+)?down\s+during\s+(?:business|working|work|store|office|trading|daytime)\s+hours\b",
-    r"\bdowntime\s+(?:is\s+unacceptable|not\s+allowed)\s+during\s+(?:business|working|work|store|office|trading|daytime)\b",
-    r"\b(?:business|working|work|store|office|trading|daytime)\s+hours\b.*?\b(?:must\s+stay|must\s+be|keep\s+it)\s+up\b",
-    r"\b(?:business|working|work|store|office)\s+hours\b.*?\b(?:no\s+downtime|cannot\s+fail|cannot\s+stop)\b",
+    r"\b(?:must\s+not|cannot|can't)\s+(?:go\s+)?down\s+during\s+(?:business|working|work|store|office|trading|daytime|opd)\s+hours\b",
+    r"\bdowntime\s+(?:is\s+unacceptable|not\s+allowed)\s+during\s+(?:business|working|work|store|office|trading|daytime|opd)\b",
+    r"\b(?:business|working|work|store|office|trading|daytime|opd)\s+hours\b.*?\b(?:must\s+stay|must\s+be|keep\s+it)\s+up\b",
+    r"\b(?:business|working|work|store|office|opd)\s+hours\b.*?\b(?:no\s+downtime|cannot\s+fail|cannot\s+stop)\b",
     r"\bstore\s+hours\b.*?\bcannot\s+(?:go\s+)?down\b",
     r"\bduring\s+business\s+hours\b.*?\bbilling\s+stops\b",
     r"\bbilling\s+stops\b.*?\bduring\s+business\s+hours\b",
