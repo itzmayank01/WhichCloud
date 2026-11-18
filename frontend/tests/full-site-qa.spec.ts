@@ -12,6 +12,37 @@ const PUNE_WORKLOAD =
 
 const ALERT_SELECTOR = '[role="alert"]:not(#__next-route-announcer__)';
 
+/**
+ * The landing page's two priced sections are the only 5xx this suite accepts,
+ * and only as 503.
+ *
+ * /api/landing/showcase needs at least one COMPLETE option from /compare --
+ * every line item priced from a real SKU. A checkout seeded only with
+ * backend/whichcloud/pricing/fallback_catalog.json (115 points, which is what
+ * CI and any clone without an ingested catalog have) has no rows for CDN,
+ * KMS, DNS, TLS certificates, audit logging or backup storage, so no option
+ * can be complete and the route returns its documented 503 with a 10-second
+ * cache. Verified directly: /compare answers 200 with complete=false and
+ * missing: ['CDN', 'database storage', ...] on all three clouds. That is the
+ * engine correctly refusing to show a total it cannot stand behind, and the
+ * fix is a real price catalog -- never invented rows in the fallback file,
+ * which this same suite checks the site makes no false claims about.
+ *
+ * The distinction matters: these routes are also matched by proxy.ts's
+ * "/api/(.*)" entry, and while clerkMiddleware threw on them they answered
+ * 500. Tolerating 503 while still failing on 500 is what separates "this
+ * catalog cannot price it" from "the route crashed" -- the blanket 5xx check
+ * could not tell them apart, which is exactly where that 500 hid.
+ */
+const TOLERATED_5XX: ReadonlyArray<{ match: string; status: number }> = [
+  { match: "/api/landing/showcase", status: 503 },
+  { match: "/api/landing/demos", status: 503 },
+];
+
+function isToleratedFailure(url: string, status: number): boolean {
+  return TOLERATED_5XX.some((t) => url.includes(t.match) && status === t.status);
+}
+
 function trackPageHealth(page: import("@playwright/test").Page) {
   const consoleErrors: string[] = [];
   const failedRequests: string[] = [];
@@ -30,7 +61,7 @@ function trackPageHealth(page: import("@playwright/test").Page) {
   page.on("response", (res) => {
     const status = res.status();
     const url = res.url();
-    if (status >= 500 && !url.includes("clerk")) {
+    if (status >= 500 && !url.includes("clerk") && !isToleratedFailure(url, status)) {
       failedRequests.push(`${status} ${url}`);
     }
   });
@@ -77,6 +108,21 @@ test.describe("Phase 5: Whole-site UI QA", () => {
     expect(overflow).toBeLessThanOrEqual(4);
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
+
+    /* The landing page's priced sections may answer 503 when the catalog
+       cannot price them (see TOLERATED_5XX), but they must never throw. Both
+       are matched by proxy.ts's "/api/(.*)" entry, and while clerkMiddleware
+       ran without keys it threw before either handler was reached, so both
+       returned 500 -- on every page view, because the header nav prefetches
+       them. Asserting the exact statuses keeps that regression caught rather
+       than absorbed by the 5xx tolerance above. */
+    for (const route of ["/api/landing/showcase", "/api/landing/demos"]) {
+      const res = await page.request.get(route);
+      expect(
+        [200, 503],
+        `${route} answered ${res.status()}; 500 means the handler threw`,
+      ).toContain(res.status());
+    }
   });
 
   test("Price index (/prices) shows last-updated timestamp & filters", async ({ page }) => {
@@ -297,10 +343,23 @@ test.describe("Phase 5: Whole-site UI QA", () => {
   }) => {
     const { consoleErrors, failedRequests } = trackPageHealth(page);
 
-    // /connect is Clerk-protected: unauthenticated visitor should cleanly land on sign-in or /connect without 500
+    /* /connect is Clerk-protected. An unauthenticated visitor must be sent to
+       sign-in -- not shown the page, and not handed a 500.
+
+       Asserting "no 5xx" alone was not enough. proxy.ts guards against
+       clerkMiddleware throwing when the Clerk keys are absent, and that guard
+       used to call NextResponse.next(), which let the request THROUGH: a
+       deployment missing its keys served /dashboard, /finops and this
+       cloud-account wizard to anyone, and this test still passed because 200
+       is under 500. The gate has to be closed, so check where we actually
+       landed rather than only what the status was. */
     const connectRes = await page.goto("/connect", { waitUntil: "load" });
     expect(connectRes?.status() ?? 200).toBeLessThan(500);
     await expect(page.locator("body")).not.toContainText("Internal Server Error");
+    expect(
+      new URL(page.url()).pathname,
+      "an unauthenticated visitor must not be left on /connect",
+    ).not.toBe("/connect");
     await page.waitForTimeout(400);
     await page.screenshot({ path: path.join(QA_DIR, "connect-desktop.png"), fullPage: false });
 
