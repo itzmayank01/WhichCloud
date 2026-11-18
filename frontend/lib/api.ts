@@ -16,7 +16,22 @@
    first took the port and the other silently failed to bind -- which is why
    the API was intermittently unreachable rather than consistently broken.
    Moving ours removes the race without touching the other project. */
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8010";
+const DEFAULT_PROD_API = "https://whichcloud-backend.onrender.com";
+
+function resolveApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
+    return DEFAULT_PROD_API;
+  }
+  if (process.env.VERCEL === "1") {
+    return DEFAULT_PROD_API;
+  }
+  return "http://127.0.0.1:8010";
+}
+
+const BASE = resolveApiBase();
 
 export type Health = {
   status: string;

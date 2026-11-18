@@ -119,6 +119,8 @@ jobs:
       WHICHCLOUD_REDIS_URL: redis://127.0.0.1:6379/0
       WHICHCLOUD_DISABLE_LLM: "1"
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8010
+      # Synthetic placeholder key (base64 of example.clerk.accounts.dev$) so ClerkProvider mounts in headless CI without real credentials
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
       QA_BASE_URL: http://localhost:3001
     steps:
       - uses: actions/checkout@v4
