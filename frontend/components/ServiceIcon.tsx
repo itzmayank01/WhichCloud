@@ -165,15 +165,47 @@ export function ServiceIcon({
     );
   }
 
-  // Nothing published for this service — a neutral square rather than a
-  // wrong logo.
+  // Nothing published for this service in the provider's own pack — a
+  // neutral mark rather than a wrong logo, per the note at the top.
+  //
+  // The intent was right and the execution was invisible. This was a
+  // `bg-sunk` tile with an 8px dot inside it, and `--surface-sunk`
+  // resolves to `--paper` in light mode: pure white, the exact colour of
+  // the card behind it. So the tile disappeared and all that reached the
+  // page was the dot, which reads as an image that failed to load rather
+  // than as a service the provider publishes no icon for. It is not rare
+  // either -- four of Azure's eight supporting services land here (backup,
+  // telemetry, audit, auth), because neither Microsoft's nor Google's
+  // vendored pack ships a mark for them.
+  //
+  // A bordered tile with a generic resource glyph reads as deliberate at
+  // 24px, and the grey is a literal rather than a token so it cannot be
+  // flattened into the background by either theme.
   return (
     <span
-      className="grid place-items-center rounded-md bg-sunk"
-      style={{ width: size, height: size, ...style }}
+      className="grid place-items-center rounded-md border border-line"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: "rgba(127, 134, 148, 0.16)",
+        ...style,
+      }}
       aria-hidden
     >
-      <span className="h-2 w-2 rounded-sm bg-ink-3" />
+      <svg
+        viewBox="0 0 24 24"
+        width={Math.round(size * 0.62)}
+        height={Math.round(size * 0.62)}
+        fill="none"
+        stroke="currentColor"
+        className="text-ink-3"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 2.8 20.5 7v10L12 21.2 3.5 17V7z" />
+        <path d="M3.5 7 12 11.2 20.5 7M12 11.2v10" />
+      </svg>
     </span>
   );
 }
