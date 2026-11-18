@@ -227,10 +227,6 @@ export function TierDiagram({
     () => new Map(nodes.map((n) => [n.id, n] as const)),
     [nodes],
   );
-  const position = useMemo(
-    () => new Map((laid ?? []).map((l) => [l.id, l] as const)),
-    [laid],
-  );
 
   /** THE REQUEST PATH ONLY. A request does not travel through a key, so
    *  attachment edges are never animated — animating them would assert a

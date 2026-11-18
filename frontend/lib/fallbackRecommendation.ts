@@ -101,7 +101,6 @@ export function buildFallbackRecommendation(
       : "Central India (Pune)";
 
   const isHighBudget = profile.budget >= 2000;
-  const isConstrained = profile.budget <= 600;
 
   // Pricing baselines per tier (derived from budget ladder)
   const pricing = {

@@ -80,7 +80,7 @@ export function CostReportView({
   const [isVqlMode, setIsVqlMode] = useState(false);
 
   // Date controls
-  const [interval, setInterval] = useState("Last Month");
+  const [interval] = useState("Last Month");
   const [dateBin, setDateBin] = useState("Cumulative");
 
   // Import Budget Modal matching Image 5
@@ -181,23 +181,6 @@ export function CostReportView({
     }, 1000);
   };
 
-  // Mock instance counts over time for Count Y-Axis mode (matching Image 3)
-  const countSeries = [
-    { date: "Mar 30", count: 125 },
-    { date: "Apr 06", count: 132 },
-    { date: "Apr 13", count: 140 },
-    { date: "Apr 20", count: 147 },
-    { date: "Apr 27", count: 154 },
-    { date: "May 04", count: 161 },
-    { date: "May 11", count: 169 },
-    { date: "May 18", count: 176 },
-    { date: "May 25", count: 183 },
-    { date: "Jun 01", count: 190 },
-    { date: "Jun 08", count: 198 },
-    { date: "Jun 15", count: 205 },
-    { date: "Jun 22", count: 212 },
-    { date: "Jun 29", count: 219 },
-  ];
 
   return (
     <div className="mt-4 flex flex-col space-y-6">

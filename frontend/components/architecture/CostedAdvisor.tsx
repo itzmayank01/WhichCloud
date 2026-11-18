@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   api,
   money,
@@ -118,7 +117,6 @@ function DownloadTerraformButton({
   description: string;
   option: string;
 }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 

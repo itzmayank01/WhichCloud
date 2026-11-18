@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   api,
   money,
@@ -146,7 +145,7 @@ function DownloadTerraformButton({
   return (
     <Link
       href={targetUrl}
-      onClick={(e) => {
+      onClick={() => {
         // Guarantee hard navigation even if client-side SPA router is cached
         if (typeof window !== "undefined") {
           window.location.href = targetUrl;

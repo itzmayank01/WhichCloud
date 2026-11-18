@@ -678,15 +678,6 @@ function Inner({
     // chasing which producer emits them, refuse to draw an edge that cannot
     // point at two real nodes.
     const drawable = new Set(laid.nodes.map((n) => n.id));
-    const boxOf = new Map(laid.nodes.map((n) => [n.id, n]));
-    /** Does this endpoint actually sit on the box it claims to come from? */
-    const touches = (pt: { x: number; y: number } | undefined, id: string) => {
-      const b = boxOf.get(id);
-      if (!pt || !b) return false;
-      const dx = Math.max(b.x - pt.x, 0, pt.x - (b.x + b.w));
-      const dy = Math.max(b.y - pt.y, 0, pt.y - (b.y + b.h));
-      return Math.hypot(dx, dy) <= 64;
-    };
     const rfEdges: RFEdge[] = laid.edges
       .filter((e) => drawable.has(e.source) && drawable.has(e.target))
       .map((e) => ({

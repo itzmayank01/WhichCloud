@@ -22,7 +22,7 @@ export default function ConnectGitHubPage() {
   const [token, setToken] = useState("");
   const [iacPath, setIacPath] = useState("terraform/");
   const [verifying, setVerifying] = useState(false);
-  const [connectedOrgs, setConnectedOrgs] = useState<string[]>([]);
+  const [, setConnectedOrgs] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
   /* The scanned result, shown on THIS page rather than by navigating to
      /finops. /api/finops/live 501s every non-AWS provider on purpose --

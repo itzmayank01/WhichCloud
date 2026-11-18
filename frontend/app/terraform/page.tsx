@@ -2,23 +2,19 @@
 
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Icon } from "@iconify/react";
 import {
   api,
-  money,
   CLOUDS,
   type CloudId,
   type Option,
   type Recommendation,
-  type Node as TopoNode,
-  type Edge as TopoEdge,
 } from "@/lib/api";
 import {
   ArchitectureGraph,
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
-import { buildFallbackRecommendation } from "@/lib/fallbackRecommendation";
 import { Inspector } from "@/components/workspace/Inspector";
 import { TerraformLogo, CostReportsIcon } from "@/components/Logo";
 
@@ -217,7 +213,6 @@ function CostAccrualChart({
 }
 
 function TerraformStudioContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const descriptionParam = searchParams.get("description") || "";
@@ -325,7 +320,7 @@ function TerraformStudioContent() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
-  const [secondsWaiting, setSecondsWaiting] = useState(0);
+  const [, setSecondsWaiting] = useState(0);
   useEffect(() => {
     if (!isSyncingLive) {
       setSecondsWaiting(0);
@@ -1905,193 +1900,6 @@ resource "whichcloud_cost_report" "service_summary" {
       </div>
     </div>
   );
-}
-
-// Fallback generator if backend API is temporarily offline
-function getDefaultFallbackFiles(
-  cloud: CloudId,
-  option: string,
-  cost: number,
-  region: string,
-  desc: string = ""
-) {
-  const d = desc.toLowerCase();
-  const computeSku = d.includes("video")
-    ? "c6g.xlarge"
-    : d.includes("batch")
-    ? "t3.medium"
-    : "t4g.large";
-  const computeCount = option === "Cheapest" ? 1 : option === "Most reliable" ? 2 : 3;
-  const engine = d.includes("mysql") ? "mysql" : "postgres";
-  const engineVer = engine === "postgres" ? "15.4" : "8.0";
-  const port = engine === "postgres" ? 5432 : 3306;
-  const dbSku = option === "Cheapest" ? "db.t4g.micro" : "db.t3.medium";
-  const multiAz = option !== "Cheapest";
-  const storageGb = d.includes("500 gb") ? 500 : 50;
-
-  return {
-    "main.tf": `# WhichCloud Automated Terraform Architecture
-# Target Cloud: ${cloud.toUpperCase()}
-# Tier: ${option} ($${cost.toFixed(2)}/mo)
-# Region: ${region}
-
-terraform {
-  required_version = ">= 1.0.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.48.0"
-    }
-    whichcloud = {
-      source  = "whichcloud-sh/whichcloud"
-      version = "~> 1.2.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-}
-
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  tags = {
-    Name        = "whichcloud-vpc"
-    Environment = "production"
-  }
-}
-`,
-    "variables.tf": `variable "aws_region" {
-  type    = string
-  default = "${region}"
-}
-
-variable "project_name" {
-  type    = string
-  default = "whichcloud-app"
-}
-`,
-    "outputs.tf": `output "vpc_id" {
-  value       = aws_vpc.main.id
-  description = "The VPC ID"
-}
-`,
-    "modules/vpc.tf": `# Reusable VPC Networking Module
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
-
-  name = "whichcloud-${cloud}-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["${region}a", "${region}b", "${region}c"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = ${option === "Cheapest"}
-
-  tags = {
-    Environment = "production"
-    Tier        = "${option}"
-  }
-}
-`,
-    "modules/compute.tf": `# Reusable Compute Cluster Module
-module "compute_cluster" {
-  source = "./modules/compute"
-
-  cluster_name    = "whichcloud-prod-cluster"
-  instance_type   = "${computeSku}"
-  min_capacity    = ${computeCount}
-  max_capacity    = ${computeCount * 3}
-  vpc_id          = module.vpc.vpc_id
-  private_subnets = module.vpc.private_subnets
-
-  target_cpu_utilization = 70.0
-}
-`,
-    "modules/database.tf": `# Reusable Managed Database Module
-module "managed_db" {
-  source = "./modules/database"
-
-  identifier             = "whichcloud-prod-db"
-  allocated_storage      = ${storageGb}
-  engine                 = "${engine}"
-  engine_version         = "${engineVer}"
-  port                   = ${port}
-  instance_class         = "${dbSku}"
-  multi_az               = ${multiAz}
-  vpc_security_group_ids = [module.vpc.default_security_group_id]
-}
-`,
-    "modules/storage.tf": `# Reusable Object Storage & Cache Module
-resource "aws_s3_bucket" "app_storage" {
-  bucket        = "whichcloud-prod-storage-${region}"
-  force_destroy = false
-
-  tags = {
-    Environment = "production"
-    Tier        = "${option}"
-  }
-}
-`,
-    "cost_reports.tf": `provider "whichcloud" {
-  api_token = var.whichcloud_api_token
-}
-
-resource "whichcloud_folder" "tier_folder" {
-  title = "Architecture - ${option}"
-}
-
-resource "whichcloud_cost_report" "main_report" {
-  folder_token = whichcloud_folder.tier_folder.token
-  filter       = "costs.provider = '${cloud}'"
-  title        = "${option} Cost Overview"
-  groupings    = "region,service"
-}
-`,
-    "dev.tfvars": `environment = "dev"
-aws_region = "${region}"
-compute_instance_type = "t4g.small"
-compute_count = 1
-database_instance_class = "db.t4g.micro"
-database_multi_az = false
-storage_gb = 20
-`,
-    "prod.tfvars": `environment = "prod"
-aws_region = "${region}"
-compute_instance_type = "${computeSku}"
-compute_count = ${computeCount}
-database_instance_class = "${dbSku}"
-database_multi_az = ${multiAz}
-storage_gb = ${storageGb}
-`,
-    "terraform.tfvars": `environment = "prod"
-aws_region = "${region}"
-compute_instance_type = "${computeSku}"
-compute_count = ${computeCount}
-database_instance_class = "${dbSku}"
-database_multi_az = ${multiAz}
-storage_gb = ${storageGb}
-`,
-    "terraform.tfvars.example": `aws_region = "${region}"
-project_name = "whichcloud-prod"
-whichcloud_api_token = "YOUR_WHICHCLOUD_API_TOKEN"
-`,
-    "README.md": `# WhichCloud Terraform Architecture
-Generated automatically for: ${option} ($${cost.toFixed(2)}/mo)
-Region: ${region}
-
-### Quickstart
-\`\`\`bash
-terraform init
-terraform plan
-terraform apply
-\`\`\`
-`,
-  };
 }
 
 export default function TerraformPage() {

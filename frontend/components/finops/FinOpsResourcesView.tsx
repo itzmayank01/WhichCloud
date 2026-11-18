@@ -302,7 +302,7 @@ export function FinOpsResourcesView({
 
   const [resources, setResources] = useState<CloudResource[]>(rawList);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 

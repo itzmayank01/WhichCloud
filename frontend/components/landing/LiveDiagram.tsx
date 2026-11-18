@@ -1,5 +1,5 @@
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
-import { api, type Recommendation } from "@/lib/api";
+import { type Recommendation } from "@/lib/api";
 import { shopRecommendation } from "@/lib/landingData";
 
 /**

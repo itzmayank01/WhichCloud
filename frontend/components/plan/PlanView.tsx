@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { TierDiagram } from "@/components/plan/TierDiagram";
 import { TerraformLogo } from "@/components/Logo";
 import type { Plan, PlanTier } from "@/lib/api";
@@ -32,7 +31,6 @@ function DownloadTerraformButton({
   description: string;
   tier: string;
 }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 

@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { HeroShowcase, type ShowcaseData } from "@/components/landing/HeroShowcase";
 import { DEFAULT_SHOWCASE_DATA } from "@/lib/defaultLandingData";
 
 export function HeroShowcaseSection() {
   const [data, setData] = useState<ShowcaseData>(DEFAULT_SHOWCASE_DATA);
-  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -28,7 +27,7 @@ export function HeroShowcaseSection() {
     return () => {
       live = false;
     };
-  }, [attempt]);
+  }, []);
 
   return <HeroShowcase data={data} />;
 }

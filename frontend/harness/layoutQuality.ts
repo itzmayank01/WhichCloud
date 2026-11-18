@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { buildGraphModel } from "../lib/graphModel.ts";
-import { layout, routeStats, type LaidNode, type LaidEdge } from "../lib/elkLayout.ts";
+import { layout, routeStats, type LaidEdge } from "../lib/elkLayout.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = JSON.parse(

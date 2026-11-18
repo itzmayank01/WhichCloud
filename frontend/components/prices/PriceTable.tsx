@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "@iconify/react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { money, type CatalogRow } from "@/lib/api";
 
 /**

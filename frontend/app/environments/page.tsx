@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { Icon } from "@iconify/react";
 import {
   iacApi,
@@ -164,10 +163,10 @@ export default function EnvironmentsPage() {
   const [tfFiles, setTfFiles] = useState<Record<string, string>>({});
   const [selectedTfFile, setSelectedTfFile] = useState<string>("terraform.tfvars");
 
-  const [loading, setLoading] = useState<boolean>(false);
+  const [, setLoading] = useState<boolean>(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
-  const [driftReport, setDriftReport] = useState<IacDriftAuditRecord | null>(null);
+  const [, setDriftReport] = useState<IacDriftAuditRecord | null>(null);
   const [failureReport, setFailureReport] = useState<IacFailureIncidentRecord | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "matrix" | "terraform" | "deployments" | "failure-lab">("overview");
 
@@ -411,8 +410,6 @@ export default function EnvironmentsPage() {
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
         {environments.map((env) => {
           const isSelected = env.name === selectedEnvName;
-          const isProd = env.name === "prod";
-          const isStaging = env.name === "staging";
 
           return (
             <div

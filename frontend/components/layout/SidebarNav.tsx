@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 
@@ -43,8 +42,6 @@ export function SidebarNav({
   mobileOpen = false,
   onCloseMobile,
 }: SidebarNavProps) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);

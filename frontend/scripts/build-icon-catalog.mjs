@@ -12,7 +12,7 @@
  * Re-run after scripts/fetch_aws_icons.py or any hand-added icon.
  */
 
-import { readdirSync, writeFileSync, readFileSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import { join, dirname, basename, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 

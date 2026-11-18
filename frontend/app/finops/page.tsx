@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { Icon } from "@iconify/react";
-import { api, FinOpsLiveResponse, FinOpsNode, FinOpsTechnique, money } from "@/lib/api";
+import { api, FinOpsLiveResponse, FinOpsNode, FinOpsTechnique } from "@/lib/api";
 import { CostReportView } from "@/components/finops/CostReportView";
 import { SidebarNav, NavItemKey } from "@/components/layout/SidebarNav";
 import { FinOpsIssuesView } from "@/components/finops/FinOpsIssuesView";

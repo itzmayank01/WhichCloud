@@ -19,8 +19,6 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { GraphModel, PlanedNode, ContainerId } from "@/lib/graphModel";
 
-const elk = new ELK();
-
 // AWS reference service-box proportions. Was 200x92, which at 21 services
 // made the canvas wide enough that the fitted view shrank every label below
 // reading size. The reference boxes are smaller because they carry an icon

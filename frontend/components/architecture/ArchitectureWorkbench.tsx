@@ -60,10 +60,11 @@ Business intelligence dashboards are served via Amazon QuickSight, with access c
   },
 ];
 
-/* `owner` is no longer sent anywhere -- the API derives it from the verified
-   session -- but it stays in the props because the component displays it. The
-   session token is what identifies the caller now. */
-export function ArchitectureWorkbench({ owner }: { owner: string }) {
+/* `owner` is no longer sent anywhere and is not displayed either -- the API
+   derives the caller from the verified session token now. The prop is gone
+   rather than kept as an unread placeholder, because nothing passes it:
+   this component currently has no call sites at all. */
+export function ArchitectureWorkbench() {
   const { getToken } = useAuth();
   const [selectedPreset, setSelectedPreset] = useState<string>(PRESETS[0].id);
   const [description, setDescription] = useState(PRESETS[0].description);
@@ -81,7 +82,6 @@ export function ArchitectureWorkbench({ owner }: { owner: string }) {
   const [selectedTier, setSelectedTier] = useState<Tier | "all">("all");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-  const timer = useRef<number | null>(null);
   const animTimer = useRef<number | null>(null);
 
   // Fetch saved architectures
