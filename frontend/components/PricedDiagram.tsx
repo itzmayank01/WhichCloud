@@ -7,6 +7,9 @@ import { money, type Node as ApiNode, type Option } from "@/lib/api";
 import { serviceName } from "@/lib/services";
 import { HoverBoard } from "@/components/HoverBoard";
 
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 /**
  * The priced architecture, drawn on the same fixed canvas as the showcase.
  *
@@ -108,10 +111,7 @@ export function PricedDiagram({
      frame of any mount shows the canvas at its authored size before it snaps
      down — a visible jolt, and a layout jump too, since the sizer's height
      follows the scale. useLayoutEffect measures before that paint. It has no
-     server equivalent, hence the guard. */
-  const useIsomorphicLayoutEffect =
-    typeof window !== "undefined" ? useLayoutEffect : useEffect;
-
+     server equivalent, hence the module-level guard above. */
   useIsomorphicLayoutEffect(() => {
     const el = shell.current;
     if (!el) return;

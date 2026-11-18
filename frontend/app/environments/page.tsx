@@ -634,7 +634,7 @@ export default function EnvironmentsPage() {
               </div>
               <div className="max-h-60 overflow-y-auto space-y-1">
                 {consoleLogs.length === 0 ? (
-                  <div className="text-[#8b949e] italic">No recent execution logs. Click 'Terraform Plan', 'Terraform Apply', or 'Detect Drift' to inspect live execution.</div>
+                  <div className="text-[#8b949e] italic">No recent execution logs. Click &apos;Terraform Plan&apos;, &apos;Terraform Apply&apos;, or &apos;Detect Drift&apos; to inspect live execution.</div>
                 ) : (
                   consoleLogs.map((line, idx) => (
                     <div
