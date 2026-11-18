@@ -117,10 +117,10 @@ Started: 2026-11-17
 
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
-| 5.1 Playwright end-to-end test suite covering all pages, buttons, toggles, forms | done | `frontend/tests/full-site-qa.spec.ts` + `stale-result.spec.ts`: **9/9 passed (10.0s)** covering `/`, `/prices`, `/estimate`, `/plan`, `/terraform`, `/audit`, `/environments`, `/connect` (auth gate), `/finops?provider=aws&account_id=demo` with 0 console errors & 0 5xx responses | pending |
-| 5.2 Download ZIP + Terraform validation verification | done | Playwright downloads ZIP on `/terraform`, unzips all `.tf` files, verifies `main.tf` contains `ap-south-1`, validates EVERY `.tf` file via `/describe/terraform/validate` (HCL2 parser) + `terraform fmt` when CLI present | pending |
-| 5.3 Mobile (390px) & Desktop (1440px) layout + accessibility checks | done | Verified `<= 4px` horizontal overflow on `/` & `/terraform` at `390x844`; keyboard `Tab` focus check; fixed nested `<main>` landmark and mobile overflow | pending |
-| 5.4 Capture screenshots to `docs/qa/` | done | Saved & visually verified 12 screenshots: `home-desktop.png`, `home-mobile.png`, `prices-desktop.png`, `estimate-desktop.png`, `plan-desktop.png`, `terraform-desktop.png`, `terraform-mobile.png`, `diagram-fullpage.png`, `audit-desktop.png`, `environments-desktop.png`, `connect-desktop.png`, `finops-desktop.png` | pending |
+| 5.1 Playwright end-to-end test suite covering all pages, buttons, toggles, forms | done | `frontend/tests/full-site-qa.spec.ts` + `stale-result.spec.ts`: **9/9 passed (11.0s)** covering `/`, `/prices`, `/estimate`, `/plan`, `/terraform`, `/audit`, `/environments`, `/connect` (auth gate), `/finops?provider=aws&account_id=demo` with 0 console errors & 0 5xx responses | `788bf45` |
+| 5.2 Download ZIP + Terraform validation verification | done | Playwright downloads ZIP on `/terraform`, unzips all `.tf` files, verifies `main.tf` contains `ap-south-1`, validates EVERY `.tf` file via `/describe/terraform/validate` (HCL2 parser) + `terraform fmt` when CLI present | `788bf45` |
+| 5.3 Mobile (390px) & Desktop (1440px) layout + accessibility checks | done | Verified `<= 4px` horizontal overflow on `/` & `/terraform` at `390x844`; keyboard `Tab` focus check; fixed nested `<main>` landmark and mobile overflow | `788bf45` |
+| 5.4 Capture screenshots to `docs/qa/` | done | Saved & visually verified 12 screenshots: `home-desktop.png`, `home-mobile.png`, `prices-desktop.png`, `estimate-desktop.png`, `plan-desktop.png`, `terraform-desktop.png`, `terraform-mobile.png`, `diagram-fullpage.png`, `audit-desktop.png`, `environments-desktop.png`, `connect-desktop.png`, `finops-desktop.png` | `788bf45` |
 
 ---
 
@@ -128,10 +128,10 @@ Started: 2026-11-17
 
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
-| 6.1 Add GitHub Actions CI workflow | todo | - | - |
-| 6.2 Push `fix/full-qa` & verify Vercel preview deployment | todo | - | - |
-| 6.3 Run key Playwright tests against Vercel preview URL | todo | - | - |
-| 6.4 Merge `fix/full-qa` into `main` only if all checks green | todo | - | - |
+| 6.1 Add GitHub Actions CI workflow | done | Added `.github/workflows/ci.yml` (`backend-tests`, `frontend-checks`, `playwright-e2e`); fixed ESLint errors in `environments/page.tsx` & `PricedDiagram.tsx` (`npm run lint` 0 errors, `tsc --noEmit` 0 errors, `diagram:check` 63/63, `report:check` 282 cells, `next build` 21/21 routes); guarded `proxy.ts` when Clerk env vars unset | `af4cfb5`, `e53b64b`, `336ad0a`, `890431e` |
+| 6.2 Push `fix/full-qa` & verify Vercel preview deployment | done | Pushed `fix/full-qa`; unified `API_BASE` across `lib/api.ts`, `BackendWarmup.tsx`, `EstimateWorkbench.tsx` so `*.vercel.app` previews talk to `https://whichcloud-backend.onrender.com` instead of `127.0.0.1:8010`; preview deployed cleanly at `https://whichcloud-m1ua7hkd2-team-which-cloud.vercel.app` (HTTP 200) | `d0b2f00`, `c7f5d7f`, `890431e` |
+| 6.3 Run key Playwright tests against Vercel preview URL | done | Ran Playwright directly against live Vercel preview `https://whichcloud-m1ua7hkd2-team-which-cloud.vercel.app`: **7/7 passed** (`/` Home desktop+mobile, `/prices`, `/estimate` form+describe, `/plan`, `/audit` valid+invalid CSV, `/environments`, `/connect` & `/finops?provider=aws&account_id=demo`) with 0 console errors & 0 5xx responses | `890431e` |
+| 6.4 Merge `fix/full-qa` into `main` only if all checks green | done | Final verification before merge: Pytest **844 passed, 0 failed, 2 skipped**; Harness **15/15 fixtures, 1,917 assertions passed, 0 failed**; Diagram harness **63/63 passed, 0 orphans**; Report harness **282 cells passed**; Playwright **9/9 local + 7/7 live Vercel preview passed**; `next build` 21/21 passed. Merged `fix/full-qa` into `main` and pushed `origin/main` | merged |
 
 ---
 
@@ -139,4 +139,4 @@ Started: 2026-11-17
 
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
-| 7.1 Write `FINAL_REPORT.md` in plain text | todo | - | - |
+| 7.1 Write `FINAL_REPORT.md` in plain text | done | Created `FINAL_REPORT.md` covering fixes, before/after test counts, coming-soon features, manual deploy steps, and top 10 next improvements | final |
