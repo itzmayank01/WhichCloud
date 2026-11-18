@@ -24,17 +24,68 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  */
 const isProtected = createRouteMatcher(["/dashboard(.*)", "/finops(.*)", "/connect(.*)"]);
 
-const clerkHandler = clerkMiddleware(async (auth, request) => {
-  const isDemo =
+/** FinOps Live has a credential-free demo account so the page can be shown
+ *  without an account. It is the one protected path that stays open, and it
+ *  is keyed on an exact account_id rather than a prefix so that a real
+ *  account id can never be mistaken for it. */
+function isDemoRequest(request: NextRequest): boolean {
+  return (
     request.nextUrl.pathname.startsWith("/finops") &&
-    request.nextUrl.searchParams.get("account_id") === "demo";
-  if (isProtected(request) && !isDemo) {
+    request.nextUrl.searchParams.get("account_id") === "demo"
+  );
+}
+
+const clerkHandler = clerkMiddleware(async (auth, request) => {
+  if (isProtected(request) && !isDemoRequest(request)) {
     await auth.protect();
   }
 });
 
+/**
+ * Both keys are required: the publishable key names the Clerk instance and
+ * the secret key authenticates this server to it. One without the other is a
+ * half-configured deployment, which fails in more confusing ways than no
+ * configuration at all, so it counts as unconfigured.
+ */
+function clerkConfigured(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
+  );
+}
+
+/**
+ * Why this is guarded at all: clerkMiddleware() throws "Missing
+ * publishableKey" the moment it runs without credentials, and because it runs
+ * here -- before any route renders -- the throw became a 500 on every path in
+ * the matcher. That included /api/(.*), so the two landing API routes 500'd
+ * too, and the header nav prefetches /connect and /finops on every page, so
+ * four 500s were recorded per page view. It failed all nine Playwright specs,
+ * not just the two that visit those pages.
+ *
+ * Why the guard redirects rather than calling NextResponse.next(): next()
+ * lets the request THROUGH, so a deployment missing its Clerk keys served
+ * /dashboard, /finops and the /connect cloud-account wizard to anyone who
+ * asked. Without credentials nobody can sign in, so there is no version of
+ * this state in which those pages should answer 200 -- the gate has to close,
+ * not open. Sending them to /sign-in keeps them shut, and /sign-in renders an
+ * "authentication is not configured" notice (components/AuthNotConfigured)
+ * rather than a Clerk component that cannot mount without a key.
+ *
+ * A well-formed fake key is not a way around this either: the middleware then
+ * initialises and redirects every browser navigation to that key's Clerk FAPI
+ * host for the session handshake. For an invented key that host does not
+ * resolve, so /connect, /sign-in and even the demo FinOps page fail at the
+ * network layer instead of rendering.
+ *
+ * When both keys are present nothing here changes.
+ */
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) {
+  if (!clerkConfigured()) {
+    if (isProtected(request) && !isDemoRequest(request)) {
+      const signIn = new URL("/sign-in", request.url);
+      signIn.searchParams.set("redirect_url", request.url);
+      return NextResponse.redirect(signIn);
+    }
     return NextResponse.next();
   }
   return clerkHandler(request, event);
