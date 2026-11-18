@@ -99,11 +99,11 @@ Started: 2026-11-17
 
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
-| 4.1 Full canvas & fit-to-view on load | todo | - | - |
-| 4.2 Click diagram opens full-page view | todo | - | - |
-| 4.3 Official AWS-style visual styling (white bg, light borders, clean right-angle arrows) | todo | - | - |
-| 4.4 Properly group governance & observability (no disconnected bottom row) | todo | - | - |
-| 4.5 Distinct diagram per tier | todo | - | - |
+| 4.1 Full canvas & fit-to-view on load | done | Single `ResizeObserver` + `rf.fitView(FIT_OPTS)` in `ArchitectureGraph.tsx:704-750` | pending |
+| 4.2 Click diagram opens full-page view | done | Pane click & always-visible "Click to expand" button open full-page modal with Escape close and tier switcher | pending |
+| 4.3 Official AWS-style visual styling (white bg, light borders, clean right-angle arrows) | done | Removed tinted subnet fills (`#F5FBF5`/`#F6FAFD`/`#F7F8FD` -> `#FFFFFF`) and `AccountNode` tint (`bg-sunk/60` -> `bg-white`); styled `region-dr` & `governance` with crisp borders + badges | pending |
+| 4.4 Properly group governance & observability (no disconnected bottom row) | done | Wrapped account-plane services inside labelled `"Security, Governance & Observability"` container inside the Cloud boundary (`elkLayout.ts`); `npm run diagram:check` dropped containerless `orphan` count from 3–6 to **0 across all 63/63 fixtures** (AWS, GCP, Azure) with 0 overlaps & 0 edge-node collisions | pending |
+| 4.5 Distinct diagram per tier | done | `graphKey` includes `selectedOption`, `cloud`, and `replayCount`; `diagram:check` asserts distinct tier fingerprints | pending |
 
 ---
 

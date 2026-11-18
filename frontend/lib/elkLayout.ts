@@ -1260,22 +1260,46 @@ export async function layout(
   // Control nodes were laid out inside ELK above, beside the resource each
   // serves — no hand-placement, no overlaps.
 
-  // ── account plane: a band below everything, evenly spaced, no edges ──
-  const bandY = height + 40;
-  const bandPad = 24;
-  const gap = 16;
-  let ax = bandPad;
-  for (const a of model.account) {
-    nodes.push({
-      id: a.id, kind: a.kind, plane: "account", label: a.label, detail: a.detail,
-      sku: a.sku, monthly_usd: a.monthly_usd, share: a.share, priced: a.priced,
-      seq: null, x: ax, y: bandY, w: CONTROL_W, h: ACCOUNT_H,
-    });
-    ax += CONTROL_W + gap;
-  }
+  // ── account plane: grouped inside a labelled Governance & Observability container ──
   if (model.account.length) {
-    width = Math.max(width, ax);
-    height = bandY + ACCOUNT_H + bandPad;
+    const bandPad = 20;
+    const headerH = 34;
+    const gap = 16;
+    const cloudBox = containers.find((c) => c.id === "cloud");
+    const boxX = cloudBox ? cloudBox.x + 18 : 24;
+    const boxY = (cloudBox ? cloudBox.y + cloudBox.h : height) + 20;
+    let ax = boxX + 16;
+    const nodeY = boxY + headerH;
+    for (const a of model.account) {
+      nodes.push({
+        id: a.id, kind: a.kind, plane: "account", label: a.label, detail: a.detail,
+        sku: a.sku, monthly_usd: a.monthly_usd, share: a.share, priced: a.priced,
+        seq: null, x: ax, y: nodeY, w: CONTROL_W, h: ACCOUNT_H,
+        parentId: "governance",
+      });
+      ax += CONTROL_W + gap;
+    }
+    const govW = Math.max(
+      ax - boxX - gap + 16,
+      cloudBox ? cloudBox.w - 36 : ax - boxX + 16
+    );
+    const govH = headerH + ACCOUNT_H + 16;
+    containers.push({
+      id: "governance",
+      kind: "governance",
+      label: "Security, Governance & Observability",
+      x: boxX,
+      y: boxY,
+      w: govW,
+      h: govH,
+      parentId: cloudBox ? "cloud" : undefined,
+    });
+    if (cloudBox) {
+      cloudBox.w = Math.max(cloudBox.w, govW + 36);
+      cloudBox.h = boxY + govH + 18 - cloudBox.y;
+    }
+    width = Math.max(width, boxX + govW + bandPad);
+    height = Math.max(height, boxY + govH + bandPad);
   }
 
   separateLabels(edges);
