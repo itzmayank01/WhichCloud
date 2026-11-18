@@ -139,23 +139,26 @@ jobs:
           psql "$WHICHCLOUD_DSN" -f infra/init/01_schema.sql
           PYTHONPATH=backend python -c "from whichcloud.pricing import store; store.upsert_prices(store._load_fallback_points())"
           cd frontend && npm ci && npx playwright install --with-deps chromium
-      - name: Build frontend
-        run: cd frontend && npm run build
-      - name: Start backend & frontend servers and run Playwright tests
+      - name: Start backend, build & start frontend, and run Playwright tests
         run: |
           PYTHONPATH=backend uvicorn whichcloud.api:app --host 127.0.0.1 --port 8010 > /tmp/backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8010/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8010/health || (cat /tmp/backend.log && exit 1)
+          (cd frontend && npm run build)
           (cd frontend && npm run start -- --port 3001) > /tmp/frontend.log 2>&1 &
           ready=0
           for i in $(seq 1 45); do
-            if curl -sf http://127.0.0.1:8010/health > /dev/null && curl -sf http://localhost:3001/ > /dev/null; then
+            if curl -sf http://localhost:3001/ > /dev/null; then
               ready=1
               break
             fi
             sleep 2
           done
           if [ "$ready" -ne 1 ]; then
-            echo "Servers did not become ready"
-            cat /tmp/backend.log || true
+            echo "Frontend server did not become ready"
             cat /tmp/frontend.log || true
             exit 1
           fi

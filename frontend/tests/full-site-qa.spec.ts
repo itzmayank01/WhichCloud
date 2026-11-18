@@ -18,8 +18,8 @@ function trackPageHealth(page: import("@playwright/test").Page) {
   page.on("console", (msg) => {
     if (msg.type() === "error") {
       const txt = msg.text();
-      // Ignore expected 400/401/501 test assertions or third-party Clerk dev keys in offline/CI
-      if (!txt.includes("clerk") && !txt.includes("Failed to load resource")) {
+      // Ignore expected 400/401/501 test assertions or third-party Clerk dev/placeholder keys in offline/CI
+      if (!txt.toLowerCase().includes("clerk") && !txt.includes("Failed to load resource")) {
         consoleErrors.push(txt);
       }
     }
