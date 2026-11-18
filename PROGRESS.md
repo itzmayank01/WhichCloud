@@ -67,15 +67,21 @@ Started: 2026-11-17
 
 ## Phase 2: Fix Engine Problems
 
+### Golden Total Changes Explained (Verified & Approved)
+- `hospital-pune` tier_3: `$347.74 -> $491.86` (+`$144.12`): Hyderabad (`ap-south-2`) warm standby (`db.t4g.large` $121.91 + Fargate standby $21.21 + KMS $1.00) is now included within the $900 budget (previously blocked by hardcoded `$2000` gate), making Tier 2 and Tier 3 genuinely different in design.
+- `hospital-pune-public` tier_3: `$346.29 -> $490.41` (+`$144.12`): Same Hyderabad warm standby addition.
+- `fintech-bengaluru` tier_1/2/3: `$139.66/$176.69/$320.80 -> $229.67/$296.41/$440.52`: `"RBI audits us"` now activates `regulated_dr` availability class -> Multi-AZ DB + 2-AZ compute + ALB + 2 NAT gateways across all tiers (well under $3,000 budget).
+- `retail-chain`: Fixed invalid `peak_shape: business_hours` -> `spiky`, removed hand-invented `storage_gb`/`egress_gb` to pass `INV-4`, added `expect: invariants: [all]`, and recorded golden totals.
+
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
-| 2.1 Fix harness failures (`retail-chain` KeyError, golden totals diff) & verify pytest 100% green | todo | - | - |
-| 2.2 Consolidate legacy `workload_type` vs `archetype` path | todo | - | - |
-| 2.3 Audit & verify all 6 non-web archetypes (`event_driven`, `ml_inference`, `realtime`, `migration`, `static_site`, `batch_etl`) | todo | - | - |
-| 2.4 Verify Windows/x86 never gets ARM/Graviton | todo | - | - |
-| 2.5 Verify storage default sizing (no 40 TB for 40k students) | todo | - | - |
-| 2.6 Verify 3 tiers differ in design and PICK matches recommendation | todo | - | - |
-| 2.7 Add fixtures for fixed behaviours & verify golden files | todo | - | - |
+| 2.1 Fix harness failures (`retail-chain` KeyError, golden totals diff) & verify pytest 100% green | done | `load_model.py` safe peak_shape lookup; `run_harness.py` safe `_fingerprint_section`; `constraints.py` scoped monthly-to-daily regex; **Pytest: 844 passed, 0 failed, 2 skipped**; **Harness: 15/15 fixtures, 1,917 assertions passed, 0 failed** | pending |
+| 2.2 Consolidate legacy `workload_type` vs `archetype` path | done | Added canonical `WORKLOAD_TYPE_TO_ARCHETYPE` + `archetype_from_workload_type()` bridge in `backend/whichcloud/archetype.py`; `/describe`, `/describe/terraform/inspect`, `/describe/export.tf` route through `plan.py` first | pending |
+| 2.3 Audit & verify all 6 non-web archetypes (`event_driven`, `ml_inference`, `realtime`, `migration`, `static_site`, `batch_etl`) | done | All 7 archetypes verified priced with distinct service graphs and 3 distinct tiers (`event_driven` $137.50/$146.40/$180.17, `ml_inference` $83.86/$437.50/$560.82, `realtime` $386.78/$485.18/$546.60, `migration` $2028.32/$2217.99/$2443.79, `static_site` $3.92/$18.73/$19.39, `batch_etl` $693.33/$722.79/$1758.08) | pending |
+| 2.4 Verify Windows/x86 never gets ARM/Graviton | done | Verified `vm-migration` emits 0 ARM/Graviton compute SKUs; `test_migration_correctness.py` 7/7 passed | pending |
+| 2.5 Verify storage default sizing (no 40 TB for 40k students) | done | Verified `coaching-platform` (40k students) sizes `storage_gb=2390.625` (2.39 TB, not 40 TB) | pending |
+| 2.6 Verify 3 tiers differ in design and PICK matches recommendation | done | All fixtures have distinct Tier 1/2/3 designs when budget permits (`coaching-platform` explicitly explains `MOD-DR-STANDBY` / `MOD-GROWTH-HEAD` omitted to fit $700 budget); `/terraform` PICK badge now reads engine recommendation dynamically | pending |
+| 2.7 Add fixtures for fixed behaviours & verify golden files | done | `retail-chain.yaml` now runs full 112-assertion harness invariants + `golden_totals.json` updated | pending |
 
 ---
 

@@ -257,6 +257,27 @@ CLARIFYING_QUESTIONS = (
     "rather than something new to build?",
 )
 
+#: Canonical bridge from legacy `workload_type` enum values (used by the
+#: structured `/recommend` form) to the unified archetype system used by
+#: `plan.py` and `/describe`. Keeps one source of truth for classification.
+WORKLOAD_TYPE_TO_ARCHETYPE: dict[str, str] = {
+    "web": "web_app",
+    "api": "web_app",
+    "batch": "batch_etl",
+    "ml": "ml_inference",
+    "iot": "event_driven",
+    "realtime": "realtime",
+    "storage": "static_site",
+    "migration": "migration",
+}
+
+
+def archetype_from_workload_type(workload_type: str | None) -> str:
+    """Map a legacy workload_type string to its canonical archetype name."""
+    if not workload_type:
+        return UNKNOWN
+    return WORKLOAD_TYPE_TO_ARCHETYPE.get(workload_type.strip().lower(), UNKNOWN)
+
 
 def classify(description: str) -> tuple[str, str]:
     """The archetype with the strongest textual evidence, or UNKNOWN.

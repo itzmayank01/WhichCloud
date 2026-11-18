@@ -520,7 +520,14 @@ def extract(description: str) -> Constraints:
                "page views", "views a day")
     )
     if reqs:
-        if re.search(r"\b(?:a|per|/)\s*month\b", text.lower()):
+        # Only convert monthly -> daily when the monthly cadence modifies THIS
+        # request figure (e.g. "30,000 visitors a month"), never when "a month"
+        # belongs to another clause like "Budget is $900 a month".
+        if re.search(
+            rf"{re.escape(ev)}\s*(?:a|per|/)\s*month\b",
+            text,
+            re.IGNORECASE,
+        ):
             reqs = max(1, reqs // 30)
         c.requests_per_day = reqs
         c.stated.add("requests_per_day")

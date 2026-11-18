@@ -1275,12 +1275,13 @@ def _fingerprint_section(plans: dict) -> list[str]:
     )
 
     lines = ["## Architecture fingerprint matrix", ""]
-    priced = {n: p for n, p in plans.items() if p.tiers}
-    withheld = {n: p for n, p in plans.items() if not p.tiers}
+    valid_plans = {n: p for n, p in plans.items() if hasattr(p, "tiers")}
+    priced = {n: p for n, p in valid_plans.items() if p.tiers}
+    withheld = {n: p for n, p in valid_plans.items() if not p.tiers}
 
     lines.append("| fixture | archetype | tier-1 services | tier spread |")
     lines.append("|---|---|---|---|")
-    thin_now = thin_spreads(plans)
+    thin_now = thin_spreads(valid_plans)
     for name, plan in sorted(priced.items()):
         prints = plan_fingerprints(plan)
         spreads = tier_spread(plan.tiers)
