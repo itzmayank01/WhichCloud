@@ -1,0 +1,127 @@
+# Weekly price catalog refresh.
+#
+# The whole premise of the product is that prices are ingested from the
+# provider APIs rather than guessed, and `/prices` shows a "Last updated"
+# badge to prove it. Without a schedule that badge just ages: the catalog
+# stays at whenever someone last ran the script by hand, and the engine
+# quotes last quarter's rates with full confidence.
+#
+# scripts/ingest_prices.py is written for exactly this and is idempotent, so
+# a re-run is safe and a missed week self-heals on the next one.
+#
+# REQUIRED SECRET: WHICHCLOUD_DSN, the connection string for the catalog
+# database the deployed backend reads (the Neon instance, not a local one).
+# Without it this workflow stops at the first step and explains itself
+# rather than failing a run every week in a fork or an unconfigured clone.
+#
+# OPTIONAL SECRET: GOOGLE_CLOUD_API_KEY. AWS and Azure publish their price
+# lists without credentials and GCP compute is read via Vantage, but GCP
+# Cloud SQL, Storage and Egress stay dormant without a key -- see
+# backend/whichcloud/pricing/gcp.py.
+name: Ingest prices
+
+on:
+  schedule:
+    # Mondays at 03:17 UTC. Off the hour on purpose: scheduled jobs that ask
+    # for :00 queue behind everyone else's and get delayed.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "Catalog region to refresh"
+        default: india
+        type: string
+      provider:
+        description: "Which provider to refresh"
+        default: all
+        type: choice
+        options: [all, aws, azure, gcp]
+      force:
+        description: "Re-download cached catalogs instead of reusing them"
+        default: false
+        type: boolean
+
+# Ingest writes to a shared database, so two runs must never overlap.
+concurrency:
+  group: ingest-prices
+  cancel-in-progress: false
+
+# Only needs to read the repository to check it out; it writes to the
+# catalog database, never back to git.
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    name: Refresh the price catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      WHICHCLOUD_DSN: ${{ secrets.WHICHCLOUD_DSN }}
+      GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLOUD_API_KEY }}
+      REGION: ${{ inputs.region || 'india' }}
+      PROVIDER: ${{ inputs.provider || 'all' }}
+    steps:
+      - name: Check the catalog database is configured
+        run: |
+          if [ -z "$WHICHCLOUD_DSN" ]; then
+            echo "::warning::WHICHCLOUD_DSN is not set, so there is no catalog to write to."
+            echo "Add it under Settings → Secrets and variables → Actions to enable the weekly refresh."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        id: guard
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.configured == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.configured == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install the backend
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./backend
+
+      - name: Row count before
+        if: steps.guard.outputs.configured == 'true'
+        id: before
+        run: |
+          n=$(PYTHONPATH=backend python -c "from whichcloud.pricing.store import stats; print(sum(r['n'] for r in stats()))")
+          echo "Catalog holds $n rows before the refresh."
+          echo "n=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Ingest
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          PYTHONPATH=backend python backend/scripts/ingest_prices.py \
+            --region "$REGION" \
+            --provider "$PROVIDER" \
+            ${{ inputs.force && '--force' || '' }}
+
+      - name: Row count after, and write the run summary
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          after=$(PYTHONPATH=backend python -c "from whichcloud.pricing.store import stats; print(sum(r['n'] for r in stats()))")
+          before=${{ steps.before.outputs.n }}
+          {
+            echo "### Price catalog refreshed"
+            echo
+            echo "| | rows |"
+            echo "|---|---|"
+            echo "| before | $before |"
+            echo "| after | $after |"
+            echo
+            echo "Region \`$REGION\`, provider \`$PROVIDER\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          # An ingest that empties the catalog is worse than one that does
+          # nothing: the engine would fall back to the 115-point bundled
+          # table and quote from it without saying so.
+          if [ "$after" -eq 0 ]; then
+            echo "::error::The catalog is empty after ingest."
+            exit 1
+          fi
