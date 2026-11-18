@@ -15,6 +15,8 @@ from whichcloud import engine, terraform_export_azure
 from whichcloud.requirements import Requirement
 from whichcloud.terraform_export_azure import _flexible_server_sku
 
+from tests.tf_validate import needs_terraform, validate_project
+
 
 def db_available() -> bool:
     try:
@@ -273,3 +275,24 @@ def test_priced_choices_do_not_vary_by_environment():
     assert dev["main.tf"] == prod["main.tf"]
     assert "sku_name                      = var.db_sku" in dev["main.tf"]
     assert "storage_mb                    = var.db_storage_mb" in dev["main.tf"]
+
+
+# ── real terraform validate (provider schema, not just grammar) ─────────
+
+
+@needs_db
+@needs_terraform
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_generated_project_passes_real_terraform_validate(tmp_path, environment):
+    """hcl2 proves the grammar; only Terraform proves the schema.
+
+    `blob_properties { delete_retention_policy { ... } }` on
+    `azurerm_storage_account` and `geo_redundant_backup_enabled` on the
+    Flexible Server are both things the azurerm provider either accepts or
+    does not, and a parse cannot tell the difference.
+    """
+    option = _options()[1]
+    files = terraform_export_azure.generate(
+        option.spec, option.estimate, environment=environment
+    )
+    validate_project(tmp_path, files)

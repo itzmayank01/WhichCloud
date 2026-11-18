@@ -163,3 +163,75 @@ jobs:
             exit 1
           fi
           cd frontend && npx playwright test --reporter=list
+
+  terraform-validate:
+    name: Terraform Validate (real provider schemas)
+    runs-on: ubuntu-latest
+    # Its own job rather than steps inside backend-tests: it is the only one
+    # that needs the terraform binary and a provider download, and keeping
+    # it separate means a registry outage cannot fail the unit tests.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: whichcloud
+          POSTGRES_PASSWORD: whichcloud_dev
+          POSTGRES_DB: whichcloud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      WHICHCLOUD_DSN: postgresql://whichcloud:whichcloud_dev@127.0.0.1:5432/whichcloud
+      WHICHCLOUD_DISABLE_LLM: "1"
+      # Shared provider cache. Without it every `terraform init` in the suite
+      # re-downloads the aws/google/azurerm providers, which are hundreds of
+      # MB each and dominate the job's runtime.
+      TF_PLUGIN_CACHE_DIR: /home/runner/.terraform.d/plugin-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          # The default wrapper replaces `terraform` with a script that adds
+          # its own output. These tests shell out and assert on the real
+          # return code, so they need the genuine binary on PATH.
+          terraform_wrapper: false
+      - name: Create the provider plugin cache directory
+        # terraform fails rather than creating TF_PLUGIN_CACHE_DIR itself.
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - name: Restore provider plugin cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.terraform.d/plugin-cache
+          # The generators pin the provider versions, so their contents are
+          # the right cache key: a version bump there invalidates the cache.
+          key: tf-providers-${{ runner.os }}-${{ hashFiles('backend/whichcloud/terraform_export*.py') }}
+          restore-keys: |
+            tf-providers-${{ runner.os }}-
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./backend pytest httpx
+      - name: Initialize Postgres schema & seed fallback catalog
+        # The export tests skip themselves without a catalog, because they
+        # price a real ArchitectureSpec rather than using a fixture.
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql "$WHICHCLOUD_DSN" -f infra/init/01_schema.sql
+          PYTHONPATH=backend python -c "from whichcloud.pricing import store; print('Seeded rows:', store.upsert_prices(store._load_fallback_points()))"
+      - name: terraform validate the generated AWS, GCP and Azure projects
+        # Grammar is already covered by hcl2 parsing elsewhere. This is the
+        # provider SCHEMA check: whether blob_properties is a real block on
+        # azurerm_storage_account, whether backup_retention_settings nests
+        # where the Google provider expects it, and so on.
+        run: |
+          pytest backend/tests/test_terraform_export.py \
+                 backend/tests/test_terraform_gcp.py \
+                 backend/tests/test_terraform_azure.py -q

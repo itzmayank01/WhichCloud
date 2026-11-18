@@ -17,6 +17,8 @@ import pytest
 from whichcloud import engine, terraform_export_gcp
 from whichcloud.requirements import Requirement
 
+from tests.tf_validate import needs_terraform, validate_project
+
 
 def db_available() -> bool:
     try:
@@ -172,3 +174,21 @@ def test_priced_choices_do_not_vary_by_environment():
         else 'availability_type = "ZONAL"'
     )
     assert availability in dev["main.tf"]
+
+
+# ── real terraform validate (provider schema, not just grammar) ─────────
+
+
+@needs_db
+@needs_terraform
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_generated_project_passes_real_terraform_validate(tmp_path, environment):
+    """hcl2 proves the grammar; only Terraform proves the schema.
+
+    `backup_retention_settings` nesting inside `backup_configuration` and
+    `user_labels` on `settings` are both things the Google provider either
+    accepts or does not, and a parse cannot tell the difference.
+    """
+    opt = _option()
+    files = terraform_export_gcp.generate(opt.spec, opt.estimate, environment=environment)
+    validate_project(tmp_path, files)
