@@ -6,7 +6,6 @@ import {
   iacApi,
   type IacEnvironmentRecord,
   type IacDeploymentRecord,
-  type IacDriftAuditRecord,
   type IacFailureIncidentRecord,
   type IacDevOpsMetrics,
 } from "@/lib/api";
@@ -163,17 +162,14 @@ export default function EnvironmentsPage() {
   const [tfFiles, setTfFiles] = useState<Record<string, string>>({});
   const [selectedTfFile, setSelectedTfFile] = useState<string>("terraform.tfvars");
 
-  const [, setLoading] = useState<boolean>(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
-  const [, setDriftReport] = useState<IacDriftAuditRecord | null>(null);
   const [failureReport, setFailureReport] = useState<IacFailureIncidentRecord | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "matrix" | "terraform" | "deployments" | "failure-lab">("overview");
 
   // Load data
   const loadData = async () => {
     try {
-      setLoading(true);
       const [envs, mets, deps] = await Promise.race([
         Promise.all([
           iacApi.getEnvironments(),
@@ -200,8 +196,6 @@ export default function EnvironmentsPage() {
     } catch (err) {
       // Retain optimistic default environments
       console.warn("Retaining baseline IaC data while backend is waking:", err);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -214,7 +208,6 @@ export default function EnvironmentsPage() {
     if (!selectedEnvName) return;
     const controller = new AbortController();
     setTfFiles({});
-    setDriftReport(null);
     setFailureReport(null);
     iacApi
       .getTerraformFiles(selectedEnvName, controller.signal)
@@ -292,7 +285,6 @@ export default function EnvironmentsPage() {
         environment_name: selectedEnvName,
         auto_remediate: autoRemediate,
       });
-      setDriftReport(audit);
       setConsoleLogs([
         `[DRIFT-SCAN] Checked ${selectedEnvName} infrastructure state.`,
         `[DRIFT-SCAN] Detected Drifts: ${audit.drift_count}`,

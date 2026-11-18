@@ -320,16 +320,6 @@ function TerraformStudioContent() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
 
-  const [, setSecondsWaiting] = useState(0);
-  useEffect(() => {
-    if (!isSyncingLive) {
-      setSecondsWaiting(0);
-      return;
-    }
-    const id = setInterval(() => setSecondsWaiting((s) => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [isSyncingLive]);
-
   // 1. Fetch full Recommendation for the Architecture Diagram
   useEffect(() => {
     archAbortRef.current?.abort();

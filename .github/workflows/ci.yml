@@ -218,7 +218,10 @@ jobs:
         run: |
           set -euo pipefail
           zip="terraform_${TF_VERSION}_linux_amd64.zip"
-          curl -fsSL -o "$zip" "https://releases.hashicorp.com/terraform/${TF_VERSION}/${zip}"
+          # --proto =https --tlsv1.2 so -L cannot be redirected onto
+          # plaintext http on the way to the checksum check.
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$zip" \
+            "https://releases.hashicorp.com/terraform/${TF_VERSION}/${zip}"
           echo "${TF_SHA256}  ${zip}" | sha256sum -c -
           sudo unzip -o -q "$zip" -d /usr/local/bin
           rm -f "$zip"
