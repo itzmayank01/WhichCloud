@@ -927,7 +927,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
                         thing a new user met was a blank box and no idea what
                         to put in it. One click now fills the description with
                         a real workload they can edit into their own. */}
-                    <div className="mx-auto mt-8 max-w-xl text-left">
+                    {/* 2xl rather than xl: at xl the second line truncated on
+                        a canvas with room to spare, which is the detail that
+                        makes a panel look unfinished. */}
+                    <div className="mx-auto mt-8 w-full max-w-2xl text-left">
                       <p className="mb-2.5 text-center font-mono text-[11.5px] uppercase tracking-[0.12em] text-ink-3">
                         Or start from one of these
                       </p>
