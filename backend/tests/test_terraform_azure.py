@@ -198,3 +198,78 @@ def test_plan_export_generates_for_the_provider_it_priced():
                 assert other_marker not in main, (
                     f"{provider} export contains {other} resources"
                 )
+
+
+# ── environment parameterization ────────────────────────────────────────
+#
+# Azure got dev/prod after AWS, so these mirror the AWS cases in
+# test_terraform_export.py rather than inventing a second shape for it.
+
+
+@needs_db
+def test_dev_and_prod_tfvars_both_generated_and_differ():
+    option = _options()[1]
+    files = terraform_export_azure.generate(option.spec, option.estimate)
+    dev_vars = files["environments/dev.tfvars"]
+    prod_vars = files["environments/prod.tfvars"]
+    assert 'environment = "dev"' in dev_vars
+    assert 'environment = "prod"' in prod_vars
+    # The one deliberately environment-scaled number: dev runs a single
+    # instance regardless of how large the priced scale set is.
+    assert "compute_count = 1" in dev_vars
+    assert f"compute_count = {option.spec.compute_count}" in prod_vars
+
+
+@needs_db
+def test_environment_variable_has_a_closed_validation():
+    option = _options()[1]
+    variables = terraform_export_azure.generate(option.spec, option.estimate)[
+        "variables.tf"
+    ]
+    assert 'variable "environment"' in variables
+    assert 'contains(["dev", "prod"], var.environment)' in variables
+
+
+@needs_db
+def test_unknown_environment_falls_back_to_dev():
+    option = _options()[1]
+    files = terraform_export_azure.generate(
+        option.spec, option.estimate, environment="staging"
+    )
+    assert 'default = "dev"' in files["variables.tf"]
+
+
+@needs_db
+def test_the_env_map_is_the_only_place_dev_and_prod_differ():
+    """Flexible Server backup settings read from local.env, never a literal.
+
+    `backup_retention_days = 7` used to be hardcoded, which made prod's
+    retention the same as dev's and left no way to raise it without editing
+    the generated file by hand.
+    """
+    option = _options()[1]
+    main = _main(option)
+    assert "local.env_defaults" in main
+    assert "backup_retention_days         = local.env.backup_retention_days" in main
+    assert "geo_redundant_backup_enabled  = local.env.geo_redundant_backup" in main
+    assert "backup_retention_days         = 7\n" not in main
+
+
+@needs_db
+def test_priced_choices_do_not_vary_by_environment():
+    """The invariant the whole design protects: an environment switch must
+    never change what gets built relative to what was estimated. VM size,
+    server SKU, storage size and zone redundancy are line items on the
+    bill, so they must read identically in both."""
+    option = _options()[1]
+    dev = terraform_export_azure.generate(
+        option.spec, option.estimate, environment="dev"
+    )
+    prod = terraform_export_azure.generate(
+        option.spec, option.estimate, environment="prod"
+    )
+    # main.tf is where the resources are; it must be byte-identical, because
+    # everything environment-shaped lives in locals + tfvars, not here.
+    assert dev["main.tf"] == prod["main.tf"]
+    assert "sku_name                      = var.db_sku" in dev["main.tf"]
+    assert "storage_mb                    = var.db_storage_mb" in dev["main.tf"]

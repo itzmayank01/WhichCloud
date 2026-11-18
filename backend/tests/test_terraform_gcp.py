@@ -99,3 +99,76 @@ def test_high_availability_is_expressed_as_cloud_sql_regional():
         assert 'availability_type = "REGIONAL"' in main
     else:
         assert 'availability_type = "ZONAL"' in main
+
+
+# ── environment parameterization ────────────────────────────────────────
+#
+# GCP got dev/prod after AWS, so these mirror the AWS cases in
+# test_terraform_export.py rather than inventing a second shape for it.
+
+
+@needs_db
+def test_dev_and_prod_tfvars_both_generated_and_differ():
+    opt = _option()
+    files = terraform_export_gcp.generate(opt.spec, opt.estimate)
+    dev_vars = files["environments/dev.tfvars"]
+    prod_vars = files["environments/prod.tfvars"]
+    assert 'environment = "dev"' in dev_vars
+    assert 'environment = "prod"' in prod_vars
+    # The one deliberately environment-scaled number: dev runs a single
+    # instance regardless of how large the priced fleet is.
+    assert "compute_count = 1" in dev_vars
+    assert f"compute_count = {opt.spec.compute_count}" in prod_vars
+
+
+@needs_db
+def test_environment_variable_has_a_closed_validation():
+    variables = terraform_export_gcp.generate(_option().spec, _option().estimate)[
+        "variables.tf"
+    ]
+    assert 'variable "environment"' in variables
+    assert 'contains(["dev", "prod"], var.environment)' in variables
+
+
+@needs_db
+def test_unknown_environment_falls_back_to_dev():
+    files = terraform_export_gcp.generate(
+        _option().spec, _option().estimate, environment="staging"
+    )
+    assert 'default = "dev"' in files["variables.tf"]
+
+
+@needs_db
+def test_the_env_map_is_the_only_place_dev_and_prod_differ():
+    """Cloud SQL safety settings read from local.env, never from a literal.
+
+    A hardcoded `deletion_protection = true` is what this replaced: it made
+    a dev teardown need a console visit, and it meant the two environments
+    were the same file with a different label rather than one module.
+    """
+    opt = _option()
+    main = terraform_export_gcp.generate(opt.spec, opt.estimate)["main.tf"]
+    assert "local.env_defaults" in main
+    assert "deletion_protection = local.env.deletion_protection" in main
+    assert "point_in_time_recovery_enabled = local.env.point_in_time_recovery" in main
+    assert "deletion_protection = true" not in main
+
+
+@needs_db
+def test_priced_choices_do_not_vary_by_environment():
+    """The invariant the whole design protects: an environment switch must
+    never change what gets built relative to what was estimated. Machine
+    type, Cloud SQL tier and REGIONAL/ZONAL availability are line items on
+    the bill, so they must read identically in both."""
+    opt = _option()
+    dev = terraform_export_gcp.generate(opt.spec, opt.estimate, environment="dev")
+    prod = terraform_export_gcp.generate(opt.spec, opt.estimate, environment="prod")
+    # main.tf is where the resources are; it must be byte-identical, because
+    # everything environment-shaped lives in locals + tfvars, not here.
+    assert dev["main.tf"] == prod["main.tf"]
+    availability = (
+        'availability_type = "REGIONAL"'
+        if opt.spec.database_multi_az
+        else 'availability_type = "ZONAL"'
+    )
+    assert availability in dev["main.tf"]

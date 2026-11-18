@@ -60,17 +60,32 @@ def _not_generated(spec: ArchitectureSpec, estimate: Estimate) -> list[str]:
     return missing
 
 
+#: Mirrors `terraform_export._VALID_ENVIRONMENTS`. The per-environment VALUES
+#: live once, in the generated `locals.env_defaults` map in main.tf, so there
+#: is exactly one place that says what "prod" means rather than a Python dict
+#: here and an HCL map there that can drift apart.
+#:
+#: As on AWS, anything the estimate priced is deliberately NOT
+#: environment-driven: machine types, Cloud SQL tiers, REGIONAL vs ZONAL
+#: availability and Cloud NAT stay identical across environments. Letting
+#: those vary would allow a "dev" export to quietly build something other
+#: than what the bill was calculated for, which is the exact drift the
+#: estimate-matching tests exist to prevent.
+_VALID_ENVIRONMENTS = {"dev", "prod"}
+
+
 def generate(
     spec: ArchitectureSpec, estimate: Estimate, environment: str = "dev"
 ) -> dict[str, str]:
     """Google Cloud. Returns {filename: contents} for a downloadable project.
 
-    `environment` is accepted for interface parity with `terraform_export`
-    (AWS), which is first to get real dev/prod parameterization -- it is not
-    yet used here, so every export from this generator is environment-neutral
-    rather than silently mislabelled as one or the other.
+    `environment` selects which entry of the generated `locals.env` map the
+    run defaults to, and which of the two `environments/*.tfvars` files the
+    README tells you to pass. The export always carries both dev and prod,
+    which is what makes it one reusable module rather than two.
     """
-    del environment
+    if environment not in _VALID_ENVIRONMENTS:
+        environment = "dev"
     has_compute = spec.compute_count > 0
     has_db = bool(spec.database_vcpu)
     has_storage = spec.storage_gb > 0
@@ -90,6 +105,7 @@ def generate(
             has_compute=has_compute,
             has_db=has_db,
             has_storage=has_storage,
+            environment=environment,
         ),
         "main.tf": _main_tf(
             spec=spec,
@@ -99,6 +115,8 @@ def generate(
             has_storage=has_storage,
             has_lb=has_lb,
         ),
+        "environments/dev.tfvars": _env_tfvars("dev", spec),
+        "environments/prod.tfvars": _env_tfvars("prod", spec),
         "outputs.tf": _outputs_tf(
             has_network=has_network, has_db=has_db, has_storage=has_storage, has_lb=has_lb
         ),
@@ -110,13 +128,53 @@ def generate(
             has_compute=has_compute,
             has_db=has_db,
         ),
-        "README.md": _readme(spec=spec, estimate=estimate, has_db=has_db, has_lb=has_lb),
+        "README.md": _readme(
+            spec=spec,
+            estimate=estimate,
+            has_db=has_db,
+            has_lb=has_lb,
+            environment=environment,
+        ),
     }
 
 
+def _env_tfvars(environment: str, spec: ArchitectureSpec) -> str:
+    """The one value a caller must set to choose an environment.
+
+    Everything that differs between dev and prod is derived in
+    `locals.env_defaults` inside main.tf from this single value, so there is
+    one file per environment and one line in it that matters. The exception
+    is the same as on AWS: prod runs the fleet size that was actually priced,
+    dev runs a single instance, because a dev-shaped clone of a 3-instance
+    production fleet is not what "dev environment" means to anyone paying
+    for it.
+    """
+    compute_count = spec.compute_count if environment == "prod" else min(1, spec.compute_count)
+    lines = [
+        f'environment = "{environment}"',
+    ]
+    if spec.compute_count > 0:
+        lines.append(f"compute_count = {compute_count}")
+    return "\n".join(lines) + "\n"
+
+
 def _variables_tf(*, region, machine_type, db_tier, compute_count, storage_gb,
-                  has_compute, has_db, has_storage) -> str:
+                  has_compute, has_db, has_storage, environment="dev") -> str:
     out = [
+        '# Selects the entry of locals.env (main.tf) that deletion protection,\n'
+        '# backup retention and point-in-time recovery are drawn from. Pass it\n'
+        '# with -var-file=environments/dev.tfvars or environments/prod.tfvars --\n'
+        '# never edit this default in place, or dev and prod stop being two runs\n'
+        '# of the same module and become two different modules.\n'
+        'variable "environment" {\n'
+        "  type    = string\n"
+        f'  default = "{environment}"\n'
+        "\n"
+        "  validation {\n"
+        '    condition     = contains(["dev", "prod"], var.environment)\n'
+        '    error_message = "environment must be \\"dev\\" or \\"prod\\"."\n'
+        "  }\n"
+        "}\n",
         'variable "project_id" {\n'
         '  description = "Google Cloud project to deploy into. A project is a\\n'
         'hard boundary on Google Cloud -- quotas, IAM and billing all attach to\\n'
@@ -184,6 +242,40 @@ def _main_tf(*, spec, has_network, has_compute, has_db, has_storage, has_lb) -> 
         'provider "google" {\n'
         "  project = var.project_id\n"
         "  region  = var.region\n"
+        "}\n",
+        "# The ONLY place dev and prod differ. Every resource below reads\n"
+        "# deletion protection, backup retention and point-in-time recovery\n"
+        "# from local.env rather than from a hardcoded value or a second copy\n"
+        "# of this file -- that is what makes this one reusable module instead\n"
+        "# of two maintained ones. Machine types, Cloud SQL tiers and REGIONAL\n"
+        "# vs ZONAL availability are deliberately absent here: those come from\n"
+        "# what WhichCloud priced, in variables.tf, and stay identical across\n"
+        "# environments so the Terraform never builds something other than\n"
+        "# what the estimate charged for.\n"
+        "locals {\n"
+        "  env_defaults = {\n"
+        "    dev = {\n"
+        "      deletion_protection     = false\n"
+        "      backup_retained_days    = 1\n"
+        "      point_in_time_recovery  = false\n"
+        "      bucket_force_destroy    = true\n"
+        "    }\n"
+        "    prod = {\n"
+        "      deletion_protection     = true\n"
+        "      backup_retained_days    = 7\n"
+        "      point_in_time_recovery  = true\n"
+        "      bucket_force_destroy    = false\n"
+        "    }\n"
+        "  }\n"
+        "  env = local.env_defaults[var.environment]\n"
+        "\n"
+        "  # Google calls them labels rather than tags, and they must be\n"
+        "  # lowercase, so this is not simply AWS's common_tags renamed.\n"
+        "  common_labels = {\n"
+        "    environment = var.environment\n"
+        "    project     = var.name\n"
+        "    managed_by  = \"terraform\"\n"
+        "  }\n"
         "}\n",
     ]
 
@@ -339,32 +431,40 @@ def _main_tf(*, spec, has_network, has_compute, has_db, has_storage, has_lb) -> 
         blocks.append(
             note
             + 'resource "google_sql_database_instance" "main" {\n'
-            "  name             = \"${var.name}-db\"\n"
+            "  name             = \"${var.name}-${var.environment}-db\"\n"
             '  database_version = "POSTGRES_15"\n'
             "  region           = var.region\n"
             "  settings {\n"
             "    tier              = var.db_tier\n"
             f'    availability_type = "{availability}"\n'
+            "    user_labels       = local.common_labels\n"
             "    ip_configuration {\n"
             "      ipv4_enabled    = false\n"
             "      private_network = google_compute_network.main.id\n"
             "    }\n"
             "    backup_configuration {\n"
             "      enabled                        = true\n"
-            "      point_in_time_recovery_enabled = true\n"
+            "      point_in_time_recovery_enabled = local.env.point_in_time_recovery\n"
+            "      backup_retention_settings {\n"
+            "        retained_backups = local.env.backup_retained_days\n"
+            "      }\n"
             "    }\n"
             "  }\n"
-            "  deletion_protection = true\n"
+            "  deletion_protection = local.env.deletion_protection\n"
             "}\n"
         )
 
     if has_storage:
         blocks.append(
             'resource "google_storage_bucket" "main" {\n'
-            "  name                        = \"${var.name}-${var.project_id}\"\n"
+            "  name                        = \"${var.name}-${var.environment}-${var.project_id}\"\n"
             "  location                    = var.region\n"
             "  storage_class               = var.storage_class\n"
             "  uniform_bucket_level_access = true\n"
+            "  # A dev bucket should not need emptying by hand before a\n"
+            "  # destroy; a prod one should refuse to be destroyed full.\n"
+            "  force_destroy               = local.env.bucket_force_destroy\n"
+            "  labels                      = local.common_labels\n"
             "  versioning {\n"
             "    enabled = true\n"
             "  }\n"
@@ -420,7 +520,7 @@ def _tfvars(*, region, machine_type, db_tier, compute_count, has_compute, has_db
     return "\n".join(lines) + "\n"
 
 
-def _readme(*, spec, estimate, has_db, has_lb) -> str:
+def _readme(*, spec, estimate, has_db, has_lb, environment="dev") -> str:
     missing = _not_generated(spec, estimate)
     lines = [
         "# WhichCloud — Google Cloud Terraform",
@@ -459,7 +559,36 @@ def _readme(*, spec, estimate, has_db, has_lb) -> str:
         "   `sqladmin.googleapis.com`, `servicenetworking.googleapis.com`.",
         "3. Cloud SQL with a private IP needs a private services access",
         "   connection on the network first. Terraform will fail without it.",
-        "4. The database has `deletion_protection = true`. That is deliberate.",
+        "4. In `prod` the database has `deletion_protection = true`. That is",
+        "   deliberate — see the environments section below.",
+        "",
+        "## Environments",
+        "",
+        "One module, two environments. Pick one with a var-file:",
+        "",
+        "```sh",
+        "terraform apply -var-file=environments/dev.tfvars",
+        "terraform apply -var-file=environments/prod.tfvars",
+        "```",
+        "",
+        f"This export defaults to `{environment}`.",
+        "",
+        "| | dev | prod |",
+        "|---|---|---|",
+        "| Cloud SQL deletion protection | off | **on** |",
+        "| Retained backups | 1 | 7 |",
+        "| Point-in-time recovery | off | **on** |",
+        "| Bucket `force_destroy` | on | off |",
+        (
+            f"| Instance group size | 1 | {spec.compute_count} |"
+            if spec.compute_count > 0
+            else "| Instance group size | — | — |"
+        ),
+        "",
+        "Machine types, Cloud SQL tiers and `REGIONAL`/`ZONAL` availability are",
+        "the same in both. They are what the estimate priced, so letting them",
+        "vary per environment would mean the Terraform could build something",
+        "other than what the bill was calculated for.",
         "",
         "## Priced but not generated",
         "",

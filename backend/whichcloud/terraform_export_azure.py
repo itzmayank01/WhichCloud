@@ -111,17 +111,31 @@ def _zones(spec: ArchitectureSpec) -> list[str]:
     return ["1", "2", "3"] if spec.compute_count >= 3 else ["1", "2"]
 
 
+#: Mirrors `terraform_export._VALID_ENVIRONMENTS`. The per-environment VALUES
+#: live once, in the generated `locals.env_defaults` map in main.tf, so there
+#: is exactly one place that says what "prod" means rather than a Python dict
+#: here and an HCL map there that can drift apart.
+#:
+#: As on AWS and GCP, anything the estimate priced is deliberately NOT
+#: environment-driven: VM sizes, Flexible Server SKUs, storage size, zone
+#: redundancy and the HA block stay identical across environments. Letting
+#: those vary would allow a "dev" export to quietly build something other
+#: than what the bill was calculated for.
+_VALID_ENVIRONMENTS = {"dev", "prod"}
+
+
 def generate(
     spec: ArchitectureSpec, estimate: Estimate, environment: str = "dev"
 ) -> dict[str, str]:
     """Azure. Returns {filename: contents} for a downloadable project.
 
-    `environment` is accepted for interface parity with `terraform_export`
-    (AWS), which is first to get real dev/prod parameterization -- it is not
-    yet used here, so every export from this generator is environment-neutral
-    rather than silently mislabelled as one or the other.
+    `environment` selects which entry of the generated `locals.env` map the
+    run defaults to, and which of the two `environments/*.tfvars` files the
+    README tells you to pass. The export always carries both dev and prod,
+    which is what makes it one reusable module rather than two.
     """
-    del environment
+    if environment not in _VALID_ENVIRONMENTS:
+        environment = "dev"
     has_compute = spec.compute_count > 0
     has_db = bool(spec.database_vcpu)
     has_storage = spec.storage_gb > 0
@@ -145,6 +159,7 @@ def generate(
             compute_count=spec.compute_count,
             has_compute=has_compute,
             has_db=has_db,
+            environment=environment,
         ),
         "main.tf": _main_tf(
             spec=spec,
@@ -154,6 +169,8 @@ def generate(
             has_storage=has_storage,
             has_gateway=has_gateway,
         ),
+        "environments/dev.tfvars": _env_tfvars("dev", spec),
+        "environments/prod.tfvars": _env_tfvars("prod", spec),
         "outputs.tf": _outputs_tf(
             has_network=has_network,
             has_db=has_db,
@@ -174,13 +191,45 @@ def generate(
             has_db=has_db,
             has_gateway=has_gateway,
             db_sku=db_sku,
+            environment=environment,
         ),
     }
 
 
+def _env_tfvars(environment: str, spec: ArchitectureSpec) -> str:
+    """The one value a caller must set to choose an environment.
+
+    Everything that differs between dev and prod is derived in
+    `locals.env_defaults` inside main.tf from this single value. The
+    exception is the same as on AWS and GCP: prod runs the fleet size that
+    was actually priced, dev runs a single instance, because a dev-shaped
+    clone of a multi-instance production scale set is not what "dev
+    environment" means to anyone paying for it.
+    """
+    compute_count = spec.compute_count if environment == "prod" else min(1, spec.compute_count)
+    lines = [f'environment = "{environment}"']
+    if spec.compute_count > 0:
+        lines.append(f"compute_count = {compute_count}")
+    return "\n".join(lines) + "\n"
+
+
 def _variables_tf(*, region, vm_size, db_sku, db_storage_mb, compute_count,
-                  has_compute, has_db) -> str:
+                  has_compute, has_db, environment="dev") -> str:
     out = [
+        '# Selects the entry of locals.env (main.tf) that backup retention,\n'
+        '# geo-redundant backup and blob retention are drawn from. Pass it\n'
+        '# with -var-file=environments/dev.tfvars or environments/prod.tfvars --\n'
+        '# never edit this default in place, or dev and prod stop being two runs\n'
+        '# of the same module and become two different modules.\n'
+        'variable "environment" {\n'
+        "  type    = string\n"
+        f'  default = "{environment}"\n'
+        "\n"
+        "  validation {\n"
+        '    condition     = contains(["dev", "prod"], var.environment)\n'
+        '    error_message = "environment must be \\"dev\\" or \\"prod\\"."\n'
+        "  }\n"
+        "}\n",
         'variable "location" {\n'
         '  description = "Azure region. Every resource here is regional and\\n'
         'inherits this, including the virtual network -- which, unlike a\\n'
@@ -274,9 +323,42 @@ def _main_tf(*, spec, has_network, has_compute, has_db, has_storage, has_gateway
         "# deletes, bills and grants access by, it is mandatory, and there is\n"
         "# no AWS resource that corresponds to it -- which is why it comes\n"
         "# first rather than being folded into tags.\n"
+        "# The ONLY place dev and prod differ. Every resource below reads\n"
+        "# backup retention, geo-redundant backup and blob retention from\n"
+        "# local.env rather than from a hardcoded value or a second copy of\n"
+        "# this file -- that is what makes this one reusable module instead of\n"
+        "# two maintained ones. VM sizes, Flexible Server SKUs, storage size,\n"
+        "# zone redundancy and the HA block are deliberately absent here:\n"
+        "# those come from what WhichCloud priced, in variables.tf, and stay\n"
+        "# identical across environments so the Terraform never builds\n"
+        "# something other than what the estimate charged for.\n"
+        "locals {\n"
+        "  env_defaults = {\n"
+        "    dev = {\n"
+        "      backup_retention_days   = 7\n"
+        "      geo_redundant_backup    = false\n"
+        "      blob_retention_days     = 1\n"
+        "    }\n"
+        "    prod = {\n"
+        "      # 35 is Flexible Server's maximum; 7 is its floor, which is why\n"
+        "      # dev cannot go lower than prod's old hardcoded value.\n"
+        "      backup_retention_days   = 35\n"
+        "      geo_redundant_backup    = true\n"
+        "      blob_retention_days     = 7\n"
+        "    }\n"
+        "  }\n"
+        "  env = local.env_defaults[var.environment]\n"
+        "\n"
+        "  common_tags = {\n"
+        "    Environment = var.environment\n"
+        "    Project     = var.name\n"
+        "    ManagedBy   = \"terraform\"\n"
+        "  }\n"
+        "}\n",
         'resource "azurerm_resource_group" "main" {\n'
-        "  name     = \"${var.name}-rg\"\n"
+        "  name     = \"${var.name}-${var.environment}-rg\"\n"
         "  location = var.location\n"
+        "  tags     = local.common_tags\n"
         "}\n",
     ]
 
@@ -567,7 +649,9 @@ def _main_tf(*, spec, has_network, has_compute, has_db, has_storage, has_gateway
             "  delegated_subnet_id           = azurerm_subnet.database.id\n"
             "  private_dns_zone_id           = azurerm_private_dns_zone.database.id\n"
             "  public_network_access_enabled = false\n"
-            "  backup_retention_days         = 7\n"
+            "  backup_retention_days         = local.env.backup_retention_days\n"
+            "  geo_redundant_backup_enabled  = local.env.geo_redundant_backup\n"
+            "  tags                          = local.common_tags\n"
             + ha_block
             + "\n  depends_on = [azurerm_private_dns_zone_virtual_network_link.database]\n"
             "}\n"
@@ -594,6 +678,13 @@ def _main_tf(*, spec, has_network, has_compute, has_db, has_storage, has_gateway
                 else '  account_replication_type = "LRS"\n'
             )
             + "  min_tls_version          = \"TLS1_2\"\n"
+            "  tags                     = local.common_tags\n"
+            "\n"
+            "  blob_properties {\n"
+            "    delete_retention_policy {\n"
+            "      days = local.env.blob_retention_days\n"
+            "    }\n"
+            "  }\n"
             "}\n\n"
             'resource "azurerm_storage_container" "main" {\n'
             "  name                  = \"${var.name}-data\"\n"
@@ -659,7 +750,7 @@ def _tfvars(*, region, vm_size, db_sku, compute_count, has_compute, has_db) -> s
     return "\n".join(lines) + "\n"
 
 
-def _readme(*, spec, estimate, has_db, has_gateway, db_sku) -> str:
+def _readme(*, spec, estimate, has_db, has_gateway, db_sku, environment="dev") -> str:
     missing = _not_generated(spec, estimate)
     zones = _zones(spec)
     lines = [
@@ -724,6 +815,35 @@ def _readme(*, spec, estimate, has_db, has_gateway, db_sku) -> str:
         "4. Register the providers this uses if the subscription is new:",
         "   `Microsoft.Network`, `Microsoft.Compute`, `Microsoft.DBforPostgreSQL`,",
         "   `Microsoft.Storage`.",
+        "",
+        "## Environments",
+        "",
+        "One module, two environments. Pick one with a var-file:",
+        "",
+        "```sh",
+        "terraform apply -var-file=environments/dev.tfvars",
+        "terraform apply -var-file=environments/prod.tfvars",
+        "```",
+        "",
+        f"This export defaults to `{environment}`.",
+        "",
+        "| | dev | prod |",
+        "|---|---|---|",
+        "| Flexible Server backup retention | 7 days | 35 days |",
+        "| Geo-redundant backup | off | **on** |",
+        "| Blob delete retention | 1 day | 7 days |",
+        (
+            f"| Scale set capacity | 1 | {spec.compute_count} |"
+            if spec.compute_count > 0
+            else "| Scale set capacity | — | — |"
+        ),
+        "",
+        "7 days is Flexible Server's minimum retention, so dev cannot go",
+        "below it. VM sizes, the server SKU, storage size, zone redundancy",
+        "and the HA block are the same in both: they are what the estimate",
+        "priced, so letting them vary per environment would mean the",
+        "Terraform could build something other than what the bill was",
+        "calculated for.",
         "",
     ]
     lines += ["## Priced but not generated", ""]
