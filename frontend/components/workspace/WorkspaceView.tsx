@@ -869,7 +869,12 @@ export function WorkspaceView({ name }: { name: string | null }) {
             </>
           ) : (
             <div className="grid h-full place-items-center p-8">
-              <div className="max-w-sm text-center">
+              {/* The wrapper caps the whole empty state, and at max-w-sm it
+                  squeezed the three starter cards to 120px each on a 1250px
+                  canvas. The prose still wants a short measure, so it keeps
+                  one of its own below rather than the block keeping it for
+                  everything. */}
+              <div className="w-full max-w-4xl text-center">
                 {busy ? (
                   <>
                     <p className="text-[14px] font-medium text-ink-2">
@@ -944,7 +949,9 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     <p className="mt-4 text-[14.5px] font-medium text-ink-2">
                       Your architecture appears here
                     </p>
-                    <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
+                    {/* Its own measure: the wrapper is wide so the cards can
+                        breathe, but prose at 896px is unreadable. */}
+                    <p className="mx-auto mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-3">
                       Describe what you&apos;re building in the panel on the
                       left. You get a priced architecture across AWS, Azure
                       and Google, drawn from the same estimate as the bill.
