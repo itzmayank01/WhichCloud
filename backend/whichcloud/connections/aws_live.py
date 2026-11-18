@@ -87,11 +87,16 @@ def _boto3_session():
     return boto3.Session(**kwargs)
 
 
-def _fetch_live_ce_spend(session) -> tuple[float, List[Dict[str, Any]]]:
-    """Query AWS Cost Explorer for current month-to-date unblended spend grouped by service."""
+def _boto3_config():
+    from botocore.config import Config
+    return Config(connect_timeout=4, read_timeout=8, retries={"max_attempts": 1})
+
+
+def _fetch_live_ce_spend(session) -> tuple[float, List[Dict[str, Any]], float]:
+    """Query AWS Cost Explorer for current month-to-date and previous month spend grouped by service."""
     from datetime import date, timedelta
     try:
-        ce = session.client("ce", region_name="us-east-1")
+        ce = session.client("ce", region_name="us-east-1", config=_boto3_config())
         today = date.today()
         start = today.replace(day=1)
         end = today + timedelta(days=1)
@@ -110,15 +115,41 @@ def _fetch_live_ce_spend(session) -> tuple[float, List[Dict[str, Any]]]:
                 if amount > 0.001:
                     services.append({"name": service_name, "monthly_usd": round(amount, 2)})
                     total += amount
-        return round(total, 2), services
+        services.sort(key=lambda s: s["monthly_usd"], reverse=True)
+
+        # Also check last 30 days so early-in-month accounts still show real spend context
+        prev_total = 0.0
+        try:
+            prev_end = start
+            prev_start = (start - timedelta(days=1)).replace(day=1)
+            prev_resp = ce.get_cost_and_usage(
+                TimePeriod={"Start": prev_start.isoformat(), "End": prev_end.isoformat()},
+                Granularity="MONTHLY",
+                Metrics=["UnblendedCost"],
+            )
+            for period in prev_resp.get("ResultsByTime", []):
+                prev_total += float(period.get("Total", {}).get("UnblendedCost", {}).get("Amount", "0") or 0)
+        except Exception:
+            prev_total = 0.0
+
+        return round(total, 2), services, round(prev_total, 2)
     except Exception as exc:
         logger.warning("Could not read live Cost Explorer spend: %s", exc)
-        return 0.0, []
+        return 0.0, [], 0.0
 
-# In-memory cache for live telemetry results to ensure sub-second UI response
-_CACHE: Dict[str, Any] = {}
-_CACHE_TIMESTAMP = 0.0
-_CACHE_TTL_SECONDS = 45.0  # cache for 45s, or refreshed on explicit sync
+
+# Per-account in-memory cache keyed by (account_id, role_arn) so one user can NEVER
+# receive another user's cached AWS telemetry.
+_ACCOUNT_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_CACHE_TTL_SECONDS = 45.0  # cache per account for 45s, or refreshed on explicit sync
+
+
+def _cache_key() -> str:
+    creds = _CREDENTIALS.get() or {}
+    acct = (creds.get("AWS_ACCOUNT_ID") or "").strip()
+    role = (creds.get("AWS_ROLE_ARN") or "").strip()
+    ak = (creds.get("AWS_ACCESS_KEY_ID") or "")[:12]
+    return f"{acct}:{role}:{ak}"
 
 
 def get_aws_cli_path() -> str:
@@ -155,79 +186,73 @@ def _run_aws_cmd(args: List[str], timeout: int = 15, env: Optional[Dict[str, str
     return None
 
 
+def _safe_sdk(fn, label: str, default: Any):
+    try:
+        return fn()
+    except Exception as exc:
+        logger.info("AWS SDK read skipped (%s): %s", label, str(exc)[:180])
+        return default
+
+
 def scan_live_aws_account() -> Dict[str, Any]:
-    """Scans live AWS account and returns comprehensive telemetry, topology, and resources across regions in parallel."""
-    global _CACHE, _CACHE_TIMESTAMP
+    """Scans THIS caller's connected AWS account in parallel via in-process boto3 SDK.
+
+    Uses boto3 directly instead of spawning 14 aws-cli subprocesses, keeping
+    latency around 1-2s and memory flat on constrained containers while strictly
+    isolating every user's credentials and cache entry.
+    """
+    creds = _CREDENTIALS.get()
+    if not creds:
+        raise NoCredentialsBound(
+            "No AWS credentials are bound for this request. Connect your AWS account first."
+        )
 
     now = time.time()
-    if _CACHE and (now - _CACHE_TIMESTAMP) < _CACHE_TTL_SECONDS:
-        return _CACHE
-
-    active_regions = ["ap-south-1", "us-east-1", "us-west-2"]
-    futures = {}
-
-    cli_env = _cli_env()
-
-    with ThreadPoolExecutor(max_workers=14) as pool:
-        futures["identity"] = pool.submit(_run_aws_cmd, ["sts", "get-caller-identity"], 15, cli_env)
-        futures["s3"] = pool.submit(_run_aws_cmd, ["s3api", "list-buckets"], 15, cli_env)
-        futures["ecs"] = pool.submit(_run_aws_cmd, ["ecs", "list-clusters", "--region", "us-east-1"], 15, cli_env)
-        futures["lambda"] = pool.submit(_run_aws_cmd, ["lambda", "list-functions", "--region", "us-east-1"], 15, cli_env)
-        futures["dynamo"] = pool.submit(_run_aws_cmd, ["dynamodb", "list-tables", "--region", "us-east-1"], 15, cli_env)
-        for reg in active_regions:
-            futures[f"ec2_{reg}"] = pool.submit(
-                _run_aws_cmd,
-                ["ec2", "describe-instances", "--region", reg, "--filters", "Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped"],
-                15,
-                cli_env,
-            )
-            futures[f"vol_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-volumes", "--region", reg], 15, cli_env)
-            futures[f"eip_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-addresses", "--region", reg], 15, cli_env)
-            futures[f"vpc_{reg}"] = pool.submit(_run_aws_cmd, ["ec2", "describe-vpcs", "--region", reg], 15, cli_env)
+    ck = _cache_key()
+    cached = _ACCOUNT_CACHE.get(ck)
+    if cached and (now - cached[0]) < _CACHE_TTL_SECONDS:
+        return cached[1]
 
     session = _boto3_session()
-    creds = _CREDENTIALS.get() or {}
-    known_account_id = creds.get("AWS_ACCOUNT_ID") or ""
-    known_role_arn = creds.get("AWS_ROLE_ARN") or ""
+    cfg = _boto3_config()
 
-    sts_account_id = ""
-    sts_arn = ""
-    try:
-        sts = session.client("sts")
-        caller_id = sts.get_caller_identity()
-        sts_account_id = caller_id.get("Account") or ""
-        sts_arn = caller_id.get("Arn") or ""
-    except Exception as exc:
-        logger.warning("Boto3 STS identity check: %s", exc)
+    known_account_id = (creds.get("AWS_ACCOUNT_ID") or "").strip()
+    known_role_arn = (creds.get("AWS_ROLE_ARN") or "").strip()
+    preferred_region = (creds.get("AWS_DEFAULT_REGION") or creds.get("AWS_REGION") or "us-east-1").strip()
 
-    # 1. Identity
-    identity = futures["identity"].result() or {}
-    account_id = sts_account_id or identity.get("Account") or known_account_id or "unknown"
-    iam_user = sts_arn or identity.get("Arn") or known_role_arn or "Lab"
+    # Scan the user's primary region plus common active regions (deduplicated)
+    active_regions: List[str] = []
+    for reg in [preferred_region, "us-east-1", "ap-south-1", "us-west-2", "eu-west-1"]:
+        if reg and reg not in active_regions:
+            active_regions.append(reg)
 
-    # 2. S3 Buckets (Global)
-    s3_data = futures["s3"].result() or {}
-    s3_buckets = [b.get("Name") for b in s3_data.get("Buckets", []) if b.get("Name")]
+    def _scan_region(reg: str) -> Dict[str, Any]:
+        ec2 = session.client("ec2", region_name=reg, config=cfg)
+        insts: List[Dict[str, Any]] = []
+        vols: List[Dict[str, Any]] = []
+        eips: List[Dict[str, Any]] = []
+        vpcs: List[Dict[str, Any]] = []
+        rds_list: List[Dict[str, Any]] = []
 
-    # 3. ECS Clusters & Services (us-east-1)
-    ecs_clusters_data = futures["ecs"].result() or {}
-    ecs_cluster_arns = ecs_clusters_data.get("clusterArns", [])
-
-    # 4. Multi-Region Active Infrastructure (ap-south-1, us-east-1, us-west-2)
-    raw_instances: List[Dict[str, Any]] = []
-    raw_volumes: List[Dict[str, Any]] = []
-    raw_eips: List[Dict[str, Any]] = []
-    raw_vpcs: List[Dict[str, Any]] = []
-
-    for reg in active_regions:
-        ec2_data = futures.get(f"ec2_{reg}").result() or {}
-        for r in ec2_data.get("Reservations", []):
+        ec2_resp = _safe_sdk(
+            lambda: ec2.describe_instances(
+                Filters=[
+                    {
+                        "Name": "instance-state-name",
+                        "Values": ["pending", "running", "shutting-down", "stopping", "stopped"],
+                    }
+                ]
+            ),
+            f"ec2:describe_instances:{reg}",
+            {},
+        )
+        for r in ec2_resp.get("Reservations", []):
             for inst in r.get("Instances", []):
                 state = inst.get("State", {}).get("Name", "stopped")
                 if state == "terminated":
                     continue
                 name = next((t["Value"] for t in inst.get("Tags", []) if t["Key"] == "Name"), inst.get("InstanceId"))
-                raw_instances.append({
+                insts.append({
                     "id": inst.get("InstanceId"),
                     "name": name,
                     "type": inst.get("InstanceType", "t3.micro"),
@@ -235,12 +260,12 @@ def scan_live_aws_account() -> Dict[str, Any]:
                     "region": reg,
                 })
 
-        vol_data = futures.get(f"vol_{reg}").result() or {}
-        for v in vol_data.get("Volumes", []):
+        vol_resp = _safe_sdk(lambda: ec2.describe_volumes(), f"ec2:describe_volumes:{reg}", {})
+        for v in vol_resp.get("Volumes", []):
             v_name = next((t["Value"] for t in v.get("Tags", []) if t["Key"] == "Name"), v.get("VolumeId"))
             attachments = v.get("Attachments", [])
             attached_inst = attachments[0].get("InstanceId") if attachments else None
-            raw_volumes.append({
+            vols.append({
                 "id": v.get("VolumeId"),
                 "name": v_name,
                 "size": v.get("Size", 8),
@@ -250,74 +275,150 @@ def scan_live_aws_account() -> Dict[str, Any]:
                 "region": reg,
             })
 
-        eip_data = futures.get(f"eip_{reg}").result() or {}
-        for e in eip_data.get("Addresses", []):
+        eip_resp = _safe_sdk(lambda: ec2.describe_addresses(), f"ec2:describe_addresses:{reg}", {})
+        for e in eip_resp.get("Addresses", []):
             is_associated = bool(e.get("AssociationId") or e.get("InstanceId"))
-            raw_eips.append({
+            eips.append({
                 "id": e.get("AllocationId", e.get("PublicIp")),
                 "ip": e.get("PublicIp"),
                 "associated": is_associated,
                 "region": reg,
             })
 
-        vpc_data = futures.get(f"vpc_{reg}").result() or {}
-        for v in vpc_data.get("Vpcs", []):
-            raw_vpcs.append({
+        vpc_resp = _safe_sdk(lambda: ec2.describe_vpcs(), f"ec2:describe_vpcs:{reg}", {})
+        for v in vpc_resp.get("Vpcs", []):
+            vpcs.append({
                 "id": v.get("VpcId"),
                 "cidr": v.get("CidrBlock"),
                 "is_default": v.get("IsDefault", False),
                 "region": reg,
             })
 
-    # Lambda Functions (us-east-1)
-    lambda_data = futures["lambda"].result() or {}
-    lambdas = [f.get("FunctionName") for f in lambda_data.get("Functions", [])]
+        rds = session.client("rds", region_name=reg, config=cfg)
+        rds_resp = _safe_sdk(lambda: rds.describe_db_instances(), f"rds:describe_db_instances:{reg}", {})
+        for db in rds_resp.get("DBInstances", []):
+            rds_list.append({
+                "id": db.get("DBInstanceIdentifier"),
+                "engine": db.get("Engine", "postgres"),
+                "instance_class": db.get("DBInstanceClass", "db.t3.micro"),
+                "status": db.get("DBInstanceStatus", "available"),
+                "region": reg,
+            })
 
-    # DynamoDB Tables (us-east-1)
+        return {"instances": insts, "volumes": vols, "eips": eips, "vpcs": vpcs, "rds": rds_list}
+
+    futures: Dict[str, Any] = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures["identity"] = pool.submit(
+            _safe_sdk, lambda: session.client("sts", config=cfg).get_caller_identity(), "sts:get_caller_identity", {}
+        )
+        futures["ce"] = pool.submit(_fetch_live_ce_spend, session)
+        futures["s3"] = pool.submit(
+            _safe_sdk, lambda: session.client("s3", config=cfg).list_buckets(), "s3:list_buckets", {}
+        )
+        futures["ecs"] = pool.submit(
+            _safe_sdk,
+            lambda: session.client("ecs", region_name=preferred_region, config=cfg).list_clusters(),
+            "ecs:list_clusters",
+            {},
+        )
+        futures["lambda"] = pool.submit(
+            _safe_sdk,
+            lambda: session.client("lambda", region_name=preferred_region, config=cfg).list_functions(MaxItems=50),
+            "lambda:list_functions",
+            {},
+        )
+        futures["dynamo"] = pool.submit(
+            _safe_sdk,
+            lambda: session.client("dynamodb", region_name=preferred_region, config=cfg).list_tables(Limit=50),
+            "dynamodb:list_tables",
+            {},
+        )
+        for reg in active_regions:
+            futures[f"reg_{reg}"] = pool.submit(_scan_region, reg)
+
+    identity = futures["identity"].result() or {}
+    account_id = identity.get("Account") or known_account_id or "unknown"
+    iam_user = identity.get("Arn") or known_role_arn or "WhichCloudCostRole"
+
+    ce_total, ce_services, ce_prev_total = futures["ce"].result()
+    s3_data = futures["s3"].result() or {}
+    s3_buckets = [b.get("Name") for b in s3_data.get("Buckets", []) if b.get("Name")]
+
+    ecs_data = futures["ecs"].result() or {}
+    ecs_cluster_arns = ecs_data.get("clusterArns", [])
+
+    lambda_data = futures["lambda"].result() or {}
+    lambdas = [f.get("FunctionName") for f in lambda_data.get("Functions", []) if f.get("FunctionName")]
+
     dynamo_data = futures["dynamo"].result() or {}
     dynamo_tables = dynamo_data.get("TableNames", [])
 
-    # Total live resource count
-    total_resources = (
+    raw_instances: List[Dict[str, Any]] = []
+    raw_volumes: List[Dict[str, Any]] = []
+    raw_eips: List[Dict[str, Any]] = []
+    raw_vpcs: List[Dict[str, Any]] = []
+    raw_rds: List[Dict[str, Any]] = []
+    for reg in active_regions:
+        rd = futures[f"reg_{reg}"].result() or {}
+        raw_instances.extend(rd.get("instances", []))
+        raw_volumes.extend(rd.get("volumes", []))
+        raw_eips.extend(rd.get("eips", []))
+        raw_vpcs.extend(rd.get("vpcs", []))
+        raw_rds.extend(rd.get("rds", []))
+
+    # Total live resource count (resources discovered, or Cost Explorer active services if CE-only role)
+    discovered_resources = (
         len(s3_buckets)
         + len(raw_instances)
         + len(raw_volumes)
-        + (1 if ecs_cluster_arns else 0)
+        + len(raw_rds)
+        + len(ecs_cluster_arns)
         + len(lambdas)
         + len(dynamo_tables)
         + len(raw_vpcs)
         + len(raw_eips)
     )
+    total_resources = discovered_resources if discovered_resources > 0 else len(ce_services)
 
-    # Cost calculations based on real live resources and AWS Cost Explorer
+    # Cost calculations based on real Cost Explorer spend & discovered resources
     ebs_monthly = round(sum(v["size"] * 0.10 for v in raw_volumes), 2)
     ec2_monthly = round(sum(8.50 for i in raw_instances if i["state"] == "running"), 2)
     eip_monthly = round(sum(3.65 for e in raw_eips if not e["associated"]), 2)
     s3_monthly = round(len(s3_buckets) * 0.20, 2)
-    ecs_monthly = 9.45 if ecs_cluster_arns else 0.0
-    cw_monthly = 2.80
-    dynamo_monthly = 0.25 if dynamo_tables else 0.0
-    kms_monthly = 1.00
+    rds_monthly = round(len(raw_rds) * 18.00, 2)
+    ecs_monthly = round(len(ecs_cluster_arns) * 9.45, 2)
+    dynamo_monthly = round(len(dynamo_tables) * 0.25, 2)
 
-    ce_total, ce_services = _fetch_live_ce_spend(session)
     if ce_total > 0:
         total_monthly_usd = ce_total
-        prev_monthly_usd = round(total_monthly_usd * 1.05, 2)
+        prev_monthly_usd = ce_prev_total if ce_prev_total > 0 else round(total_monthly_usd, 2)
     else:
-        total_monthly_usd = round(ebs_monthly + ec2_monthly + eip_monthly + s3_monthly + ecs_monthly + cw_monthly + dynamo_monthly + kms_monthly, 2)
-        prev_monthly_usd = round(total_monthly_usd + 3.20, 2)
-    realizable_waste = round(ebs_monthly + eip_monthly + (1.40 if s3_buckets else 0.0), 2)
+        total_monthly_usd = round(
+            ebs_monthly + ec2_monthly + eip_monthly + s3_monthly + rds_monthly + ecs_monthly + dynamo_monthly,
+            2,
+        )
+        prev_monthly_usd = ce_prev_total if ce_prev_total > 0 else total_monthly_usd
 
-    primary_reg = raw_instances[0]["region"] if raw_instances else (raw_vpcs[0]["region"] if raw_vpcs else "us-east-1")
+    stopped_instances = [i for i in raw_instances if i["state"] == "stopped"]
+    stopped_ids = {i["id"] for i in stopped_instances}
+    idle_ebs_monthly = round(
+        sum(
+            v["size"] * 0.10
+            for v in raw_volumes
+            if v.get("state") == "available" or (v.get("attached_to") in stopped_ids)
+        ),
+        2,
+    )
+    realizable_waste = round(idle_ebs_monthly + eip_monthly, 2)
 
-    # Construct the REAL 3-Tier Architecture Diagram Nodes.
-    #
-    # Every node below is conditional on the resource it names actually
-    # existing in the scan. A node for a cluster, function or table nobody
-    # has is a diagram of somebody else's account, not this caller's -- and
-    # for an account with none of the fixed set this used to assume (no
-    # Lambdas, no DynamoDB tables), indexing the empty list crashed the
-    # request outright.
+    primary_reg = (
+        raw_instances[0]["region"]
+        if raw_instances
+        else (raw_rds[0]["region"] if raw_rds else (raw_vpcs[0]["region"] if raw_vpcs else preferred_region))
+    )
+
+    # Construct authentic architecture topology nodes — ONLY resources/services that exist in THIS account
     nodes: List[Dict[str, Any]] = []
 
     non_default_vpcs = [v for v in raw_vpcs if not v["is_default"]]
@@ -342,33 +443,39 @@ def scan_live_aws_account() -> Dict[str, Any]:
             "label": f"Default VPC ({v['id']} • {v.get('region', primary_reg)})",
             "monthly_usd": 0.0,
             "share": 0.0,
-            "utilization": "Idle",
+            "utilization": "Default",
             "waste_usd": 0.0,
             "status": "warning",
-            "alert": "Default VPC open across subnets with unmonitored default security groups",
+            "alert": "Default VPC active with default security group",
         })
 
-    # Layer 2: Compute Workloads & Clusters
-    nodes.append({
-        "id": "ec2-fleet",
-        "kind": "compute",
-        "label": f"EC2 Fleet ({len(raw_instances)} Nodes: {', '.join(i['name'] for i in raw_instances[:3])} • {primary_reg})",
-        "monthly_usd": ec2_monthly + ebs_monthly,
-        "share": round((ec2_monthly + ebs_monthly) / max(1.0, total_monthly_usd), 3),
-        "utilization": "0% (Stopped Instances)" if raw_instances and all(i["state"] == "stopped" for i in raw_instances) else "38% Active",
-        "waste_usd": ebs_monthly,
-        "status": "action_needed" if ebs_monthly > 0 else "healthy",
-        "alert": f"Instances are stopped, but {len(raw_volumes)} attached gp2 volumes ({sum(v['size'] for v in raw_volumes)} GB) continuously bill storage charges (${ebs_monthly:.2f}/mo)",
-    })
+    if raw_instances:
+        nodes.append({
+            "id": "ec2-fleet",
+            "kind": "compute",
+            "label": f"EC2 Fleet ({len(raw_instances)} Nodes: {', '.join(i['name'] for i in raw_instances[:3])} • {primary_reg})",
+            "monthly_usd": round(ec2_monthly + ebs_monthly, 2),
+            "share": round((ec2_monthly + ebs_monthly) / max(1.0, total_monthly_usd), 3),
+            "utilization": "0% (Stopped)" if all(i["state"] == "stopped" for i in raw_instances) else "Active",
+            "waste_usd": idle_ebs_monthly,
+            "status": "action_needed" if idle_ebs_monthly > 0 else "healthy",
+            **(
+                {
+                    "alert": f"{len(stopped_instances)} stopped EC2 instance(s) still billing ${idle_ebs_monthly:.2f}/mo for attached EBS storage"
+                }
+                if idle_ebs_monthly > 0
+                else {}
+            ),
+        })
     if ecs_cluster_arns:
         cluster_name = ecs_cluster_arns[0].rsplit("/", 1)[-1]
         nodes.append({
             "id": "ecs-fleet",
             "kind": "compute",
-            "label": f"Amazon ECS: {cluster_name}",
+            "label": f"Amazon ECS ({len(ecs_cluster_arns)}: {cluster_name})",
             "monthly_usd": ecs_monthly,
             "share": round(ecs_monthly / max(1.0, total_monthly_usd), 3),
-            "utilization": "Fargate Serverless",
+            "utilization": "Active",
             "waste_usd": 0.0,
             "status": "healthy",
         })
@@ -376,138 +483,166 @@ def scan_live_aws_account() -> Dict[str, Any]:
         nodes.append({
             "id": "lambda-functions",
             "kind": "compute",
-            "label": f"Serverless Lambdas ({', '.join(lambdas[:2])})",
-            "monthly_usd": 0.15,
-            "share": round(0.15 / max(1.0, total_monthly_usd), 3),
-            "utilization": "On-Demand Invocations",
+            "label": f"AWS Lambda ({len(lambdas)}: {', '.join(lambdas[:2])})",
+            "monthly_usd": 0.0,
+            "share": 0.0,
+            "utilization": "On-Demand",
             "waste_usd": 0.0,
             "status": "healthy",
         })
-
-    # Layer 3: Persistence, Databases & Storage
-    nodes.append({
-        "id": "ebs-volumes",
-        "kind": "storage",
-        "label": f"Amazon EBS gp2 Storage ({len(raw_volumes)}x Volumes • {sum(v['size'] for v in raw_volumes)} GB Attached • {primary_reg})",
-        "monthly_usd": ebs_monthly,
-        "share": round(ebs_monthly / max(1.0, total_monthly_usd), 3),
-        "utilization": "Provisioned gp2",
-        "waste_usd": ebs_monthly,
-        "status": "action_needed" if ebs_monthly > 0 else "healthy",
-        "alert": f"Attached root storage volumes billing continuously while instances remain stopped (${ebs_monthly:.2f}/mo)",
-    })
-    s3_node = {
-        "id": "s3-fleet",
-        "kind": "storage",
-        "label": f"Amazon S3 Fleet ({len(s3_buckets)} Buckets{': ' + ', '.join(s3_buckets[:3]) + (', ...' if len(s3_buckets) > 3 else '') if s3_buckets else ''})",
-        "monthly_usd": s3_monthly,
-        "share": round(s3_monthly / max(1.0, total_monthly_usd), 3),
-        "utilization": "Active Fleet",
-        "waste_usd": 1.40 if s3_buckets else 0.0,
-        "status": "action_needed" if s3_buckets else "healthy",
-    }
+    if raw_rds:
+        nodes.append({
+            "id": "rds-fleet",
+            "kind": "database",
+            "label": f"Amazon RDS ({len(raw_rds)}: {', '.join(d['id'] for d in raw_rds[:2])})",
+            "monthly_usd": rds_monthly,
+            "share": round(rds_monthly / max(1.0, total_monthly_usd), 3),
+            "utilization": raw_rds[0].get("status", "available"),
+            "waste_usd": 0.0,
+            "status": "healthy",
+        })
+    if raw_volumes:
+        nodes.append({
+            "id": "ebs-volumes",
+            "kind": "storage",
+            "label": f"Amazon EBS ({len(raw_volumes)}x Volumes • {sum(v['size'] for v in raw_volumes)} GB)",
+            "monthly_usd": ebs_monthly,
+            "share": round(ebs_monthly / max(1.0, total_monthly_usd), 3),
+            "utilization": "Provisioned",
+            "waste_usd": idle_ebs_monthly,
+            "status": "action_needed" if idle_ebs_monthly > 0 else "healthy",
+            **(
+                {"alert": f"Unattached or stopped-instance EBS volumes billing ${idle_ebs_monthly:.2f}/mo"}
+                if idle_ebs_monthly > 0
+                else {}
+            ),
+        })
     if s3_buckets:
-        s3_node["alert"] = f"{len(s3_buckets)} buckets lack automated Lifecycle rules and Intelligent-Tiering"
-    nodes.append(s3_node)
+        nodes.append({
+            "id": "s3-fleet",
+            "kind": "storage",
+            "label": f"Amazon S3 ({len(s3_buckets)} Buckets: {', '.join(s3_buckets[:3])}{', ...' if len(s3_buckets) > 3 else ''})",
+            "monthly_usd": s3_monthly,
+            "share": round(s3_monthly / max(1.0, total_monthly_usd), 3),
+            "utilization": "Active",
+            "waste_usd": 0.0,
+            "status": "healthy",
+        })
     if dynamo_tables:
         nodes.append({
             "id": "dynamo-tables",
             "kind": "database",
-            "label": f"Amazon DynamoDB: {', '.join(dynamo_tables[:2])}",
+            "label": f"Amazon DynamoDB ({', '.join(dynamo_tables[:2])})",
             "monthly_usd": dynamo_monthly,
             "share": round(dynamo_monthly / max(1.0, total_monthly_usd), 3),
-            "utilization": "Pay-Per-Request",
+            "utilization": "Active",
             "waste_usd": 0.0,
             "status": "healthy",
         })
-    nodes.append({
-        "id": "cw-logs",
-        "kind": "monitoring",
-        "label": f"Amazon CloudWatch & Logs (aws-logs-{account_id}-us-east-1)",
-        "monthly_usd": cw_monthly,
-        "share": round(cw_monthly / max(1.0, total_monthly_usd), 3),
-        "utilization": "Vended Log Stream",
-        "waste_usd": 0.0,
-        "status": "healthy",
-    })
-    nodes.append({
-        "id": "kms-keys",
-        "kind": "storage",
-        "label": "AWS Key Management Service (Customer Managed Key)",
-        "monthly_usd": kms_monthly,
-        "share": round(kms_monthly / max(1.0, total_monthly_usd), 3),
-        "utilization": "1 Key Active",
-        "waste_usd": 0.0,
-        "status": "healthy",
-    })
 
-    # If no active compute or storage nodes were discovered via CLI (e.g. role only has ce:*),
-    # surface top services directly from Cost Explorer live breakdown
+    # Always surface real AWS Cost Explorer services when no resource-level compute/storage/database
+    # nodes were discovered (e.g., Cost-Explorer-only IAM role or serverless/managed services).
     if not any(n.get("kind") in ("compute", "storage", "database") for n in nodes) and ce_services:
-        for idx, svc in enumerate(sorted(ce_services, key=lambda x: x["monthly_usd"], reverse=True)[:6]):
+        for idx, svc in enumerate(ce_services[:8]):
             s_name = svc["name"]
             s_cost = svc["monthly_usd"]
-            s_share = round((s_cost / max(0.01, total_monthly_usd)) * 100, 1)
+            s_share = round(s_cost / max(0.01, total_monthly_usd), 3)
             kind = "compute"
-            if any(k in s_name.lower() for k in ["s3", "storage", "ebs", "glacier"]):
+            if any(k in s_name.lower() for k in ["s3", "storage", "ebs", "glacier", "efs", "backup"]):
                 kind = "storage"
-            elif any(k in s_name.lower() for k in ["rds", "dynamo", "database", "aurora", "elasticache"]):
+            elif any(k in s_name.lower() for k in ["rds", "dynamo", "database", "aurora", "elasticache", "redshift"]):
                 kind = "database"
-            elif any(k in s_name.lower() for k in ["network", "vpc", "route", "gateway", "cloudfront"]):
+            elif any(k in s_name.lower() for k in ["network", "vpc", "route", "gateway", "cloudfront", "elb"]):
                 kind = "network"
-            elif any(k in s_name.lower() for k in ["watch", "trail", "monitor"]):
+            elif any(k in s_name.lower() for k in ["watch", "trail", "monitor", "guardduty", "kms"]):
                 kind = "monitoring"
             nodes.append({
                 "id": f"ce-svc-{idx}",
                 "kind": kind,
-                "label": f"{s_name} (Live)",
+                "label": s_name,
                 "monthly_usd": s_cost,
                 "share": s_share,
-                "utilization": "Active Telemetry",
+                "utilization": "Live Cost Explorer",
                 "waste_usd": 0.0,
                 "status": "healthy",
             })
 
-    # Real actionable optimization techniques
-    techniques = [
-        {
+    # Brand new / zero-spend account: show one honest connected status node instead of empty state
+    if not nodes:
+        nodes.append({
+            "id": "aws-account-connected",
+            "kind": "monitoring",
+            "label": f"AWS Account {account_id} (Connected • No billable spend detected yet)",
+            "monthly_usd": 0.0,
+            "share": 0.0,
+            "utilization": "Connected",
+            "waste_usd": 0.0,
+            "status": "healthy",
+        })
+
+    # Authentic, account-specific optimization techniques (never hardcoded to another user's resources)
+    techniques: List[Dict[str, Any]] = []
+    if stopped_instances and idle_ebs_monthly > 0:
+        techniques.append({
             "id": "aws-detach-ebs",
-            "name": f"Terminate Stopped EC2 Fleet ({', '.join(i['name'] for i in raw_instances[:3])})",
+            "name": f"Clean Up Stopped EC2 Fleet ({', '.join(i['name'] for i in stopped_instances[:3])})",
             "category": "Storage & Compute Optimization",
-            "monthly_saving": ebs_monthly,
+            "monthly_saving": idle_ebs_monthly,
             "confidence": "High",
-            "description": f"{len(raw_instances)} EC2 instances in {primary_reg} are stopped, but their {sum(v['size'] for v in raw_volumes)} GB attached gp2 EBS volumes generate monthly storage fees.",
-            "terraform_diff": f"""# Terminate stopped instances and eliminate idle EBS storage:
-# aws ec2 terminate-instances --instance-ids {' '.join(i['id'] for i in raw_instances)} --region {primary_reg}""",
-        },
-        {
+            "description": f"{len(stopped_instances)} stopped EC2 instance(s) in {primary_reg} still accrue ${idle_ebs_monthly:.2f}/mo in attached EBS volume charges.",
+            "terraform_diff": f"# Terminate stopped instances to stop attached EBS storage charges:\n# aws ec2 terminate-instances --instance-ids {' '.join(i['id'] for i in stopped_instances)} --region {primary_reg}",
+        })
+    unassociated_eips = [e for e in raw_eips if not e["associated"]]
+    if unassociated_eips:
+        techniques.append({
+            "id": "aws-release-eip",
+            "name": f"Release {len(unassociated_eips)} Unassociated Elastic IP(s)",
+            "category": "Networking",
+            "monthly_saving": eip_monthly,
+            "confidence": "High",
+            "description": f"{len(unassociated_eips)} Elastic IP address(es) are not attached to a running instance and accrue hourly idle charges (${eip_monthly:.2f}/mo).",
+            "terraform_diff": "\n".join(
+                f"# aws ec2 release-address --allocation-id {e['id']} --region {e['region']}"
+                for e in unassociated_eips
+            ),
+        })
+    if s3_buckets:
+        sample_buckets = ", ".join(s3_buckets[:3]) + (", ..." if len(s3_buckets) > 3 else "")
+        techniques.append({
             "id": "aws-s3-lifecycle",
-            "name": "Configure S3 Intelligent-Tiering & Expiration",
+            "name": "Enable S3 Intelligent-Tiering & Lifecycle Rules",
             "category": "Tiering",
-            "monthly_saving": 1.40,
-            "confidence": "High",
-            "description": f"Add lifecycle rules across {len(s3_buckets)} S3 buckets (mayank-emr-lab-data13232, hrmsonboardingstack-documentsbucket, etc.) to transition objects older than 30 days to Archive Instant Access.",
-            "terraform_diff": """resource "aws_s3_bucket_lifecycle_configuration" "documents_lifecycle" {
-+   rule {
-+     id     = "auto-intelligent-tiering"
-+     status = "Enabled"
-+     transition {
-+       days          = 30
-+       storage_class = "INTELLIGENT_TIERING"
-+     }
-+   }
+            "monthly_saving": round(min(s3_monthly * 0.35, max(0.20, s3_monthly * 0.25)), 2),
+            "confidence": "Medium",
+            "description": f"Configure lifecycle transitions across your {len(s3_buckets)} S3 bucket(s) ({sample_buckets}) to move infrequently accessed objects to Intelligent-Tiering.",
+            "terraform_diff": """resource "aws_s3_bucket_lifecycle_configuration" "intelligent_tiering" {
++  rule {
++    id     = "auto-intelligent-tiering"
++    status = "Enabled"
++    transition {
++      days          = 30
++      storage_class = "INTELLIGENT_TIERING"
++    }
++  }
 +}""",
-        },
-    ]
+        })
+
+    savings_pct = (
+        round((realizable_waste / total_monthly_usd) * 100, 1)
+        if total_monthly_usd > 0
+        else 0.0
+    )
+    efficiency_score = max(55, min(98, round(100 - savings_pct)))
+    health_grade = "A" if efficiency_score >= 90 else ("A-" if efficiency_score >= 82 else ("B+" if efficiency_score >= 72 else "B"))
 
     result = {
         "account": {
             "id": account_id,
-            "name": f"AWS Account ({account_id} • awsmayank)",
+            "name": f"AWS Account ({account_id})",
             "provider": "aws",
             "cloud_label": "AWS Cloud",
             "cloud_logo": "logos:aws",
-            "region": f"{primary_reg} & us-east-1",
+            "region": primary_reg,
             "synced_at": "Live Telemetry Active",
             "status": "connected",
             "resource_count": total_resources,
@@ -516,11 +651,11 @@ def scan_live_aws_account() -> Dict[str, Any]:
         "summary": {
             "total_monthly_usd": total_monthly_usd,
             "previous_monthly_usd": prev_monthly_usd,
-            "projected_monthly_usd": round(total_monthly_usd - realizable_waste, 2),
+            "projected_monthly_usd": round(max(0.0, total_monthly_usd - realizable_waste), 2),
             "realizable_savings_usd": realizable_waste,
-            "savings_percentage": round((realizable_waste / max(1.0, total_monthly_usd)) * 100, 1),
-            "health_grade": "A-",
-            "efficiency_score": 88,
+            "savings_percentage": savings_pct,
+            "health_grade": health_grade,
+            "efficiency_score": efficiency_score,
         },
         "nodes": nodes,
         "techniques": techniques,
@@ -531,14 +666,14 @@ def scan_live_aws_account() -> Dict[str, Any]:
             "volumes": raw_volumes,
             "eips": raw_eips,
             "vpcs": raw_vpcs,
+            "rds": raw_rds,
             "lambdas": lambdas,
             "dynamo_tables": dynamo_tables,
             "ecs_clusters": ecs_cluster_arns,
         },
     }
 
-    _CACHE = result
-    _CACHE_TIMESTAMP = now
+    _ACCOUNT_CACHE[ck] = (now, result)
     return result
 
 
@@ -607,7 +742,7 @@ def get_live_aws_resources() -> List[Dict[str, Any]]:
             "monthly_usd": 0.20,
             "utilization_pct": 45,
             "status": "warning" if any(k in b for k in ["temp", "test", "scratch"]) else "healthy",
-            "tags": {"owner": "awsmayank", "account": account_id},
+            "tags": {"account": account_id},
         })
 
     # 5. Real Elastic IPs (only if live on AWS)
@@ -778,14 +913,116 @@ def get_live_aws_issues() -> List[Dict[str, Any]]:
     return issues
 
 
-def invalidate_cache():
-    """Clear telemetry cache to trigger instant re-scan."""
-    global _CACHE, _CACHE_TIMESTAMP
-    _CACHE = {}
-    _CACHE_TIMESTAMP = 0.0
+def invalidate_cache(account_id: Optional[str] = None):
+    """Clear telemetry cache for one account (or all accounts) to trigger instant re-scan."""
+    if not account_id:
+        _ACCOUNT_CACHE.clear()
+        return
+    stale_keys = [k for k in _ACCOUNT_CACHE if k.startswith(f"{account_id}:")]
+    for k in stale_keys:
+        _ACCOUNT_CACHE.pop(k, None)
 
 
-def get_live_aws_planning(account_id: str = "616551057703") -> Dict[str, Any]:
+def demo_aws_account() -> Dict[str, Any]:
+    """Sample FinOps Live dataset for ?account_id=demo (never reads any real user's AWS account)."""
+    return {
+        "account": {
+            "id": "demo",
+            "name": "Demo AWS Sandbox (Sample Data)",
+            "provider": "aws",
+            "cloud_label": "AWS Cloud (Demo)",
+            "cloud_logo": "logos:aws",
+            "region": "us-east-1",
+            "synced_at": "Sample Demo Dataset",
+            "status": "connected",
+            "resource_count": 7,
+            "iam_user": "demo-readonly",
+        },
+        "summary": {
+            "total_monthly_usd": 412.60,
+            "previous_monthly_usd": 448.20,
+            "projected_monthly_usd": 318.10,
+            "realizable_savings_usd": 94.50,
+            "savings_percentage": 22.9,
+            "health_grade": "B+",
+            "efficiency_score": 77,
+        },
+        "nodes": [
+            {
+                "id": "ec2-fleet",
+                "kind": "compute",
+                "label": "EC2 Fleet (3 Nodes • us-east-1)",
+                "monthly_usd": 186.40,
+                "share": 0.452,
+                "utilization": "24% avg CPU",
+                "waste_usd": 62.00,
+                "status": "action_needed",
+                "alert": "2 staging instances idle outside business hours ($62.00/mo savings)",
+            },
+            {
+                "id": "rds-fleet",
+                "kind": "database",
+                "label": "Amazon RDS PostgreSQL (db.t4g.medium)",
+                "monthly_usd": 148.20,
+                "share": 0.359,
+                "utilization": "41% Active",
+                "waste_usd": 0.0,
+                "status": "healthy",
+            },
+            {
+                "id": "ebs-volumes",
+                "kind": "storage",
+                "label": "Amazon EBS (4x Volumes • 325 GB)",
+                "monthly_usd": 32.50,
+                "share": 0.079,
+                "utilization": "2 Unattached",
+                "waste_usd": 24.00,
+                "status": "action_needed",
+                "alert": "2 unattached gp2 volumes still billing ($24.00/mo)",
+            },
+            {
+                "id": "s3-fleet",
+                "kind": "storage",
+                "label": "Amazon S3 (4 Buckets)",
+                "monthly_usd": 45.50,
+                "share": 0.11,
+                "utilization": "Standard Storage",
+                "waste_usd": 8.50,
+                "status": "warning",
+                "alert": "Missing S3 Intelligent-Tiering lifecycle rule",
+            },
+        ],
+        "techniques": [
+            {
+                "id": "aws-detach-ebs",
+                "name": "Remove Unattached EBS Volumes & Idle Staging Instances",
+                "category": "Storage & Compute Optimization",
+                "monthly_saving": 86.00,
+                "confidence": "High",
+                "description": "Delete 2 unattached EBS volumes and schedule staging EC2 shutdown overnight.",
+                "terraform_diff": "# aws ec2 delete-volume --volume-id vol-demo01 --region us-east-1",
+            },
+            {
+                "id": "aws-s3-lifecycle",
+                "name": "Enable S3 Intelligent-Tiering",
+                "category": "Tiering",
+                "monthly_saving": 8.50,
+                "confidence": "High",
+                "description": "Transition cold S3 objects older than 30 days automatically.",
+                "terraform_diff": 'resource "aws_s3_bucket_lifecycle_configuration" "demo" {\n  rule { id = "tiering" status = "Enabled" }\n}',
+            },
+        ],
+        "ce_services": [
+            {"name": "Amazon Elastic Compute Cloud - Compute", "monthly_usd": 186.40},
+            {"name": "Amazon Relational Database Service", "monthly_usd": 148.20},
+            {"name": "Amazon Simple Storage Service", "monthly_usd": 45.50},
+            {"name": "Amazon Elastic Block Store", "monthly_usd": 32.50},
+        ],
+        "raw": {},
+    }
+
+
+def get_live_aws_planning(account_id: str = "") -> Dict[str, Any]:
     """Generates live financial planning, budget envelope, and forecasting from actual telemetry."""
     telemetry = scan_live_aws_account()
     total_monthly = telemetry["summary"]["total_monthly_usd"]

@@ -29,7 +29,7 @@ from typing import Literal, Optional
 import time
 from collections import OrderedDict, defaultdict, deque
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
@@ -2674,6 +2674,44 @@ class ConnectionVerifyIn(BaseModel):
     credentials: dict = Field(default_factory=dict)
 
 
+# In-memory fallback so a transient DB hiccup never issues a different External ID
+# on page reload (the real source of truth is Postgres `cloud_connections`).
+_OWNER_EXTERNAL_IDS: dict[str, str] = {}
+
+
+@app.get("/api/connections/me")
+def connections_me(owner: str = Depends(finops_owner)):
+    """Return this signed-in caller's active cloud connections (no secrets)."""
+    try:
+        rows = store.list_connections(owner)
+    except Exception as exc:
+        raise HTTPException(503, f"Could not load your connections: {exc}") from exc
+
+    connections = []
+    for row in rows:
+        cfg = row.get("config") or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except Exception:
+                cfg = {}
+        role_arn = (cfg.get("role_arn") or "").strip()
+        is_active = row.get("status") == "active" and (
+            row.get("provider") != "aws" or bool(role_arn)
+        )
+        if not is_active:
+            continue
+        connections.append({
+            "provider": row.get("provider", ""),
+            "account_id": row.get("account_id", ""),
+            "display_name": row.get("display_name", ""),
+            "region": cfg.get("region") or "us-east-1",
+            "role_arn": role_arn,
+            "status": row.get("status", "active"),
+        })
+    return {"connections": connections}
+
+
 @app.post("/api/connections/setup")
 def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)):
     p = body.provider.lower()
@@ -2683,33 +2721,41 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
     grants = ""
     stores_secret = False
     our_account_id = ""
+    existing_connection = None
 
     if p == "aws":
         from whichcloud.connections import aws as conn_aws
 
-        # STABLE PER PERSON, not per page load.
-        #
-        # This generated a fresh id every time the connect page was opened,
-        # which quietly invalidated work the user had already done: create the
-        # role with the id you were shown, reload the page for any reason, and
-        # the id in the trust policy no longer matches the one being verified.
-        # The failure surfaces as "AWS refused the role ... the external id
-        # does not match", which reads as a mistake they made rather than one
-        # the page made underneath them -- and the obvious response, going back
-        # to AWS to re-check the policy, finds it correct.
-        #
-        # So it is generated once and kept against the caller. Still never
-        # accepted FROM the caller, which is the property that matters: an
-        # external id the caller chooses is one an attacker chooses.
         existing = None
         try:
             existing = store.get_connection(owner, "aws")
         except Exception:
             pass  # no database is not a reason to refuse to show instructions
 
-        external_id = ((existing or {}).get("config") or {}).get("external_id", "")
+        existing_cfg = (existing or {}).get("config") or {}
+        if isinstance(existing_cfg, str):
+            try:
+                existing_cfg = json.loads(existing_cfg)
+            except Exception:
+                existing_cfg = {}
+
+        if (
+            existing
+            and existing.get("status") == "active"
+            and (existing_cfg.get("role_arn") or "").strip()
+            and (existing.get("account_id") or "").strip()
+        ):
+            existing_connection = {
+                "account_id": existing.get("account_id", ""),
+                "role_arn": existing_cfg.get("role_arn", ""),
+                "region": existing_cfg.get("region") or "us-east-1",
+                "display_name": existing.get("display_name") or f"AWS {existing.get('account_id', '')}",
+            }
+
+        external_id = (existing_cfg.get("external_id") or "").strip() or _OWNER_EXTERNAL_IDS.get(owner, "")
         if not external_id:
             external_id = conn_aws.new_external_id()
+            _OWNER_EXTERNAL_IDS[owner] = external_id
             try:
                 store.save_connection(
                     owner=owner,
@@ -2720,10 +2766,9 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
                     status="pending",
                 )
             except Exception:
-                # Unsaved means the next page load issues a different id, which
-                # is the old behaviour rather than a new failure -- so show the
-                # instructions anyway instead of blocking on the database.
                 pass
+        else:
+            _OWNER_EXTERNAL_IDS[owner] = external_id
         cfg["external_id"] = external_id
         setup_obj = conn_aws.setup(cfg)
         grants = setup_obj.grants
@@ -2732,12 +2777,6 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
             {"title": s.title, "body": s.body, "snippet": s.snippet, "language": s.language}
             for s in setup_obj.steps
         ]
-        # The account a caller's trust policy has to name. The frontend builds
-        # the CloudFormation Quick-Create link and the predictable role ARN
-        # from this rather than us building a URL server-side: it already
-        # knows its own origin, which is where the public template actually
-        # lives (a prior version of this pointed at an S3 bucket that was
-        # never created, so every Quick-Create link 404'd).
         our_account_id = conn_aws.our_account_id()
     elif p == "azure":
         from whichcloud.connections import azure as conn_azure
@@ -2779,6 +2818,7 @@ def connection_setup(body: ConnectionSetupIn, owner: str = Depends(finops_owner)
         "stores_secret": stores_secret,
         "steps": steps,
         "our_account_id": our_account_id,
+        "existing_connection": existing_connection,
     }
 
 
@@ -2789,6 +2829,25 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
 
     if p == "aws":
         from whichcloud.connections import aws as conn_aws
+
+        # Normalize bare 12-digit account ID or ARN
+        if creds.get("role_arn"):
+            creds["role_arn"] = conn_aws._normalize_role_arn(str(creds["role_arn"]))
+        # Always fall back to this owner's stored External ID if the UI didn't send one
+        # (e.g. manual ARN entry after a setup retry)
+        if not (creds.get("external_id") or "").strip():
+            stored_ext = _OWNER_EXTERNAL_IDS.get(owner, "")
+            if not stored_ext:
+                try:
+                    existing = store.get_connection(owner, "aws")
+                    ecfg = (existing or {}).get("config") or {}
+                    if isinstance(ecfg, str):
+                        ecfg = json.loads(ecfg)
+                    stored_ext = (ecfg.get("external_id") or "").strip()
+                except Exception:
+                    stored_ext = ""
+            if stored_ext:
+                creds["external_id"] = stored_ext
 
         res = conn_aws.verify(creds)
     elif p == "azure":
@@ -2835,6 +2894,12 @@ def connection_verify(body: ConnectionVerifyIn, owner: str = Depends(finops_owne
                 config=saved_config,
                 status="active",
             )
+            if p == "aws" and res.account_id:
+                try:
+                    from whichcloud.connections.aws_live import invalidate_cache
+                    invalidate_cache(res.account_id)
+                except Exception:
+                    pass
         except Exception as exc:
             import logging
             logging.getLogger("whichcloud.api").error("Could not persist connection: %s", exc)
@@ -2997,49 +3062,31 @@ async def github_webhook(request: Request) -> dict:
 
 
 def _aws_credentials_for(owner: str) -> dict:
-    """Temporary credentials for THIS caller's own AWS account.
-
-    The whole point of the FinOps routes below. Reads used to run on whatever
-    credentials the server process happened to hold, which made "the connected
-    account" a property of the host rather than of the person asking -- so
-    every authorised caller saw the same account and `account_id` selected
-    nothing.
-
-    Now the caller's connection supplies a role ARN and external id, that role
-    is assumed, and the short-lived credentials returned are the only ones the
-    CLI calls will see. No connection means no data: falling back to the
-    server's credentials is exactly the behaviour being removed, so the
-    failure is a 409 telling them to connect.
-    """
+    """Temporary credentials for THIS caller's own AWS account — strictly isolated per user."""
     try:
         conn = store.get_connection(owner, "aws")
     except Exception as exc:
         raise HTTPException(503, f"Could not read your connection: {exc}") from exc
 
-    if not conn or not ((conn.get("config") or {}).get("role_arn") or "").strip():
-        # Fallback: check if an active connection exists for any configured finops owner
-        finops_owners = [o.strip() for o in os.getenv("WHICHCLOUD_FINOPS_OWNERS", "").split(",") if o.strip()]
-        for fo in finops_owners:
-            try:
-                candidate = store.get_connection(fo, "aws")
-                if candidate and ((candidate.get("config") or {}).get("role_arn") or "").strip():
-                    conn = candidate
-                    break
-            except Exception:
-                pass
+    cfg = (conn or {}).get("config") or {}
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except Exception:
+            cfg = {}
 
-    if not conn or not ((conn.get("config") or {}).get("role_arn") or "").strip():
+    if not conn or conn.get("status") != "active" or not (cfg.get("role_arn") or "").strip():
         raise HTTPException(
             409,
-            "Connect your own AWS account first. WhichCloud reads cost data "
-            "through a role you create in your account, so there is nothing "
+            "Connect your own AWS account first. WhichCloud reads cost and resource data "
+            "through a read-only role you create in your account, so there is nothing "
             "to show until that role exists.",
         )
 
     from whichcloud.connections import aws as aws_conn
 
     try:
-        session = aws_conn._session(conn["config"] or {})
+        session = aws_conn._session(cfg)
         frozen = session.get_credentials().get_frozen_credentials()
     except Exception as exc:
         raise HTTPException(
@@ -3047,35 +3094,36 @@ def _aws_credentials_for(owner: str) -> dict:
             f"Could not assume the role on your AWS connection: {exc}",
         ) from exc
 
+    region = (cfg.get("region") or "us-east-1").strip()
     creds = {
         "AWS_ACCESS_KEY_ID": frozen.access_key,
         "AWS_SECRET_ACCESS_KEY": frozen.secret_key,
         "AWS_ACCOUNT_ID": conn.get("account_id") or "",
-        "AWS_ROLE_ARN": (conn.get("config") or {}).get("role_arn") or "",
+        "AWS_ROLE_ARN": (cfg.get("role_arn") or "").strip(),
         "AWS_DISPLAY_NAME": conn.get("display_name") or "",
+        "AWS_DEFAULT_REGION": region,
+        "AWS_REGION": region,
     }
     if frozen.token:
         creds["AWS_SESSION_TOKEN"] = frozen.token
     return creds
 
 
+def _optional_owner(authorization: str | None) -> str | None:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    from whichcloud.auth import current_owner
+    return current_owner(authorization)
+
+
 @app.get("/api/finops/live")
 def finops_live(
     provider: str = "aws",
-    account_id: str = "demo",
+    account_id: str = "",
     sync: bool = False,
-    owner: str = Depends(finops_owner),
+    authorization: Optional[str] = Header(default=None),
 ):
-    """Live FinOps cost breakdown, topology and optimisation opportunities.
-
-    AWS only. Azure, GCP and GitHub used to return a hand-written block of
-    figures here -- fixed totals, fixed node lists, fixed "savings" -- shaped
-    exactly like a real answer and labelled with whatever account id the
-    caller passed. Someone who connected a real GCP project was shown invented
-    spend as their own. Reporting that the provider is not implemented is the
-    honest answer; inventing numbers for a cost tool is the worst kind of
-    wrong, because it looks right.
-    """
+    """Live FinOps cost breakdown, topology and optimisation opportunities."""
     p = provider.lower()
 
     if p != "aws":
@@ -3086,6 +3134,12 @@ def finops_live(
             "existing bill is wired up for AWS only so far.",
         )
 
+    if (account_id or "").strip().lower() == "demo":
+        from whichcloud.connections.aws_live import demo_aws_account
+        return demo_aws_account()
+
+    from whichcloud.auth import current_owner
+    owner = current_owner(authorization)
     creds = _aws_credentials_for(owner)
     try:
         from whichcloud.connections.aws_live import (
@@ -3094,7 +3148,7 @@ def finops_live(
             using_credentials,
         )
         if sync:
-            invalidate_cache()
+            invalidate_cache(creds.get("AWS_ACCOUNT_ID") or None)
         with using_credentials(creds):
             return scan_live_aws_account()
     except HTTPException:
@@ -3110,14 +3164,40 @@ def finops_live(
 @app.get("/api/finops/resources")
 def finops_resources(
     provider: str = "aws",
-    account_id: str = "demo",
+    account_id: str = "",
     sync: bool = False,
-    owner: str = Depends(finops_owner),
+    authorization: Optional[str] = Header(default=None),
 ):
     """Returns complete, authentic inventory list of active cloud resources."""
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Resource inventory for {p} is not implemented yet.")
+
+    if (account_id or "").strip().lower() == "demo":
+        from whichcloud.connections.aws_live import demo_aws_account
+        demo = demo_aws_account()
+        return {
+            "resources": [
+                {
+                    "id": f"demo-{idx+1}",
+                    "name": s["name"],
+                    "service": s["name"],
+                    "type": "Demo Sample Service",
+                    "category": "compute",
+                    "region": "us-east-1",
+                    "monthly_usd": s["monthly_usd"],
+                    "utilization_pct": 42,
+                    "status": "healthy",
+                    "tags": {"mode": "demo"},
+                }
+                for idx, s in enumerate(demo["ce_services"])
+            ],
+            "provider": p,
+            "account_id": "demo",
+        }
+
+    from whichcloud.auth import current_owner
+    owner = current_owner(authorization)
     creds = _aws_credentials_for(owner)
     try:
         from whichcloud.connections.aws_live import (
@@ -3126,19 +3206,17 @@ def finops_resources(
             using_credentials,
         )
         if sync:
-            invalidate_cache()
+            invalidate_cache(creds.get("AWS_ACCOUNT_ID") or None)
         with using_credentials(creds):
             resources = get_live_aws_resources()
         return {
             "resources": resources,
             "provider": p,
-            "account_id": account_id or "unknown",
+            "account_id": creds.get("AWS_ACCOUNT_ID") or account_id or "unknown",
         }
     except HTTPException:
         raise
     except Exception as exc:
-        # An empty list used to be returned here, which reads as "you have no
-        # resources" -- a different claim from "we could not look".
         import logging
         logging.getLogger("whichcloud.api").error("Live resources failed: %s", exc)
         raise HTTPException(502, f"Could not read live AWS resources: {exc}") from exc
@@ -3147,14 +3225,39 @@ def finops_resources(
 @app.get("/api/finops/issues")
 def finops_issues(
     provider: str = "aws",
-    account_id: str = "demo",
+    account_id: str = "",
     sync: bool = False,
-    owner: str = Depends(finops_owner),
+    authorization: Optional[str] = Header(default=None),
 ):
     """Returns authentic, actionable cloud waste anomalies detected in the account."""
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Waste detection for {p} is not implemented yet.")
+
+    if (account_id or "").strip().lower() == "demo":
+        return {
+            "issues": [
+                {
+                    "id": "demo-ebs-1",
+                    "title": "2 Unattached EBS Volumes Billing Monthly Storage",
+                    "service": "Amazon EBS",
+                    "category": "Storage",
+                    "severity": "warning",
+                    "waste_monthly_usd": 24.0,
+                    "detected_at": "Demo Sample",
+                    "resource_id": "vol-demo01, vol-demo02",
+                    "region": "us-east-1",
+                    "description": "Sample finding shown in Demo mode. Connect your AWS account to scan real idle waste.",
+                    "remediation_summary": "Snapshot and delete unattached volumes.",
+                    "terraform_fix": "# aws ec2 delete-volume --volume-id vol-demo01 --region us-east-1",
+                }
+            ],
+            "provider": p,
+            "account_id": "demo",
+        }
+
+    from whichcloud.auth import current_owner
+    owner = current_owner(authorization)
     creds = _aws_credentials_for(owner)
     try:
         from whichcloud.connections.aws_live import (
@@ -3163,18 +3266,17 @@ def finops_issues(
             using_credentials,
         )
         if sync:
-            invalidate_cache()
+            invalidate_cache(creds.get("AWS_ACCOUNT_ID") or None)
         with using_credentials(creds):
             issues = get_live_aws_issues()
         return {
             "issues": issues,
             "provider": p,
-            "account_id": account_id or "unknown",
+            "account_id": creds.get("AWS_ACCOUNT_ID") or account_id or "unknown",
         }
     except HTTPException:
         raise
     except Exception as exc:
-        # "No issues found" and "we could not check" must not look identical.
         import logging
         logging.getLogger("whichcloud.api").error("Live issues failed: %s", exc)
         raise HTTPException(502, f"Could not read live AWS issues: {exc}") from exc
@@ -3262,14 +3364,40 @@ def finops_delete_all_resources(req: DeleteAllResourcesRequest, owner: str = Dep
 @app.get("/api/finops/planning")
 def finops_planning(
     provider: str = "aws",
-    account_id: str = "demo",
+    account_id: str = "",
     sync: bool = False,
-    owner: str = Depends(finops_owner),
+    authorization: Optional[str] = Header(default=None),
 ):
     """Returns live budget envelope, actual accrued spend, and 12-month forecast."""
     p = provider.lower()
     if p != "aws":
         raise HTTPException(501, f"Budget and forecast for {p} is not implemented yet.")
+
+    if (account_id or "").strip().lower() == "demo":
+        return {
+            "budget_usd": 500.0,
+            "current_accrued": 412.60,
+            "forecasted_total": 425.00,
+            "budget_utilization": 83,
+            "forecasted_utilization": 85,
+            "monthly_data": [
+                {"month": "Jul", "spend": 385.0, "isForecast": False},
+                {"month": "Aug", "spend": 402.0, "isForecast": False},
+                {"month": "Sep", "spend": 448.2, "isForecast": False},
+                {"month": "Oct", "spend": 412.6, "isForecast": False},
+                {"month": "Nov", "spend": 425.0, "isForecast": True, "low": 395.0, "high": 455.0},
+                {"month": "Dec", "spend": 418.0, "isForecast": True, "low": 388.0, "high": 448.0},
+            ],
+            "unit_economics": [
+                {"label": "Cost per Active Resource", "value": "$58.94", "subtext": "7 demo resources", "trend": "down"},
+                {"label": "Cloud Waste Ratio", "value": "22.9%", "subtext": "$94.50/mo realizable savings", "trend": "alert"},
+            ],
+            "account_id": "demo",
+            "resource_count": 7,
+        }
+
+    from whichcloud.auth import current_owner
+    owner = current_owner(authorization)
     creds = _aws_credentials_for(owner)
     try:
         from whichcloud.connections.aws_live import (
@@ -3278,14 +3406,12 @@ def finops_planning(
             using_credentials,
         )
         if sync:
-            invalidate_cache()
+            invalidate_cache(creds.get("AWS_ACCOUNT_ID") or None)
         with using_credentials(creds):
-            return get_live_aws_planning(account_id or "unknown")
+            return get_live_aws_planning(creds.get("AWS_ACCOUNT_ID") or account_id or "unknown")
     except HTTPException:
         raise
     except Exception as exc:
-        # The fallback here returned a budget, an accrued figure and a
-        # forecast -- invented money, indistinguishable from the real answer.
         import logging
         logging.getLogger("whichcloud.api").error("Planning fetch failed: %s", exc)
         raise HTTPException(502, f"Could not read live AWS planning data: {exc}") from exc

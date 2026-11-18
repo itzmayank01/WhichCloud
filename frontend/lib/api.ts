@@ -908,6 +908,9 @@ export const api = {
   connectionVerify: (provider: string, credentials: Record<string, unknown> = {}, token?: string) =>
     post<ConnectionVerifyResult>("/api/connections/verify", { provider, credentials }, undefined, token),
 
+  myConnections: (token?: string) =>
+    get<{ connections: MyConnection[] }>("/api/connections/me", 0, token),
+
   // GitHub App sign-in: distinct from connectionSetup/connectionVerify's
   // `github` branch above, which is the PAT-based Terraform scanner. This
   // is "list my repos", so both calls carry the Clerk token and neither
@@ -998,6 +1001,15 @@ export type ConnectionSetupStep = {
   language: string;
 };
 
+export type MyConnection = {
+  provider: string;
+  account_id: string;
+  display_name: string;
+  region: string;
+  role_arn: string;
+  status: string;
+};
+
 export type ConnectionSetup = {
   provider: string;
   external_id?: string;
@@ -1008,6 +1020,12 @@ export type ConnectionSetup = {
    *  deployment has no WHICHCLOUD_AWS_ACCOUNT_ID configured, in which case
    *  no AWS connection can be completed yet. */
   our_account_id?: string;
+  existing_connection?: {
+    account_id: string;
+    role_arn: string;
+    region: string;
+    display_name: string;
+  } | null;
 };
 
 export type ConnectionVerifyResult = {

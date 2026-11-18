@@ -106,13 +106,11 @@ def verify(token: str) -> dict:
 def current_owner(authorization: str | None = Header(default=None)) -> str:
     """FastAPI dependency: the caller's user id, proven.
 
-    Returned as the same opaque string the frontend used to send, so every
-    store call keeps working -- what changed is where it comes from.
+    Never falls back to an operator's user id when the Authorization header is
+    missing -- doing so caused any user whose Clerk token had not finished
+    hydrating to receive another user's External ID or AWS connection.
     """
     if not authorization or not authorization.lower().startswith("bearer "):
-        finops_owners = [o.strip() for o in os.getenv("WHICHCLOUD_FINOPS_OWNERS", "").split(",") if o.strip()]
-        if finops_owners:
-            return finops_owners[0]
         raise AuthError("Send the Clerk session token as `Authorization: Bearer <token>`.")
     return str(verify(authorization.split(" ", 1)[1].strip())["sub"])
 

@@ -23,7 +23,7 @@ const POLL_WINDOW_MS = 5 * 60 * 1000;
 
 export default function ConnectAwsPage() {
   const router = useRouter();
-  const { getToken, userId } = useAuth();
+  const { getToken, userId, isLoaded } = useAuth();
   const [setupData, setSetupData] = useState<ConnectionSetup | null>(null);
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState("");
@@ -43,12 +43,23 @@ export default function ConnectAwsPage() {
   const pollDeadlineRef = useRef(0);
 
   const loadSetup = useCallback(async () => {
+    if (!isLoaded) return;
     setLoading(true);
     setSetupError("");
     try {
       const token = await getToken();
-      const data = await api.connectionSetup("aws", {}, token ?? undefined);
+      if (!token) {
+        setSetupError("Please sign in to connect your AWS account.");
+        return;
+      }
+      const data = await api.connectionSetup("aws", {}, token);
       setSetupData(data);
+      if (data.existing_connection?.account_id) {
+        setAwsAccountId((prev) => prev || data.existing_connection!.account_id);
+        if (data.existing_connection.region) {
+          setRegion(data.existing_connection.region);
+        }
+      }
     } catch (err) {
       // A setup call that fails must say so, not hand the page a fake
       // external id and a broken link that looks the same as a working one.
@@ -60,11 +71,11 @@ export default function ConnectAwsPage() {
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, [getToken, isLoaded]);
 
   useEffect(() => {
-    loadSetup();
-  }, [loadSetup]);
+    if (isLoaded) loadSetup();
+  }, [isLoaded, loadSetup]);
 
   useEffect(() => {
     return () => {
@@ -116,17 +127,39 @@ export default function ConnectAwsPage() {
       Statement: [
         {
           Effect: "Allow",
-          Action: ["ce:GetCostAndUsage", "ce:GetDimensionValues"],
+          Action: [
+            "ce:GetCostAndUsage",
+            "ce:GetDimensionValues",
+            "ce:GetCostForecast",
+            "ce:GetRightsizingRecommendation",
+            "ec2:DescribeInstances",
+            "ec2:DescribeVolumes",
+            "ec2:DescribeAddresses",
+            "ec2:DescribeVpcs",
+            "ec2:DescribeRegions",
+            "s3:ListAllMyBuckets",
+            "ecs:ListClusters",
+            "lambda:ListFunctions",
+            "dynamodb:ListTables",
+            "rds:DescribeDBInstances",
+          ],
           Resource: "*",
         },
       ],
     });
+    // Idempotent: works whether WhichCloudCostRole is brand new OR already exists
+    // from an earlier attempt (updates its trust policy to this External ID),
+    // and prints the signed-in AWS account id + role ARN to catch account mismatches immediately.
     return [
-      `aws iam create-role --role-name WhichCloudCostRole \\`,
-      `  --assume-role-policy-document '${trust}' && \\`,
+      `echo "Signed-in AWS Account: $(aws sts get-caller-identity --query Account --output text)" && \\`,
+      `(aws iam create-role --role-name WhichCloudCostRole \\`,
+      `  --assume-role-policy-document '${trust}' >/dev/null 2>&1 || \\`,
+      ` aws iam update-assume-role-policy --role-name WhichCloudCostRole \\`,
+      `  --policy-document '${trust}') && \\`,
       `aws iam put-role-policy --role-name WhichCloudCostRole \\`,
       `  --policy-name WhichCloudCostExplorerReadOnly \\`,
-      `  --policy-document '${permissions}'`,
+      `  --policy-document '${permissions}' && \\`,
+      `echo "Ready! Role ARN: $(aws iam get-role --role-name WhichCloudCostRole --query Role.Arn --output text)"`,
     ].join("\n");
   }, [externalId, ourAccountId]);
 
@@ -318,7 +351,22 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["ce:GetCostAndUsage", "ce:GetDimensionValues"]
+      Action   = [
+        "ce:GetCostAndUsage",
+        "ce:GetDimensionValues",
+        "ce:GetCostForecast",
+        "ce:GetRightsizingRecommendation",
+        "ec2:DescribeInstances",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeRegions",
+        "s3:ListAllMyBuckets",
+        "ecs:ListClusters",
+        "lambda:ListFunctions",
+        "dynamodb:ListTables",
+        "rds:DescribeDBInstances"
+      ]
       Resource = "*"
     }]
   })
@@ -473,6 +521,25 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
 
         {!loading && !setupError && ourAccountId && (
           <>
+            {setupData?.existing_connection?.account_id && (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-[13.5px]">
+                <div className="text-ink">
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                    AWS Account {setupData.existing_connection.account_id} is connected
+                  </span>
+                  <p className="mt-0.5 text-[12.5px] text-ink-2">
+                    Open your live FinOps dashboard directly, or enter a different AWS Account ID below to switch accounts.
+                  </p>
+                </div>
+                <Link
+                  href={`/finops?provider=aws&account_id=${encodeURIComponent(setupData.existing_connection.account_id)}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-xs hover:bg-emerald-700"
+                >
+                  Open Live FinOps &rarr;
+                </Link>
+              </div>
+            )}
+
             <ol className="mt-6 space-y-3.5 text-[14.5px] leading-relaxed text-ink-2">
               <li className="flex items-start gap-2.5">
                 <span className="font-semibold text-ink">1.</span>
@@ -570,14 +637,14 @@ resource "aws_iam_role_policy" "whichcloud_cost_explorer_readonly" {
                   </span>
                 )}
 
-                {autoStatus !== "idle" && (
+                {(autoStatus !== "idle" || accountIdValid) && (
                   <button
                     type="button"
                     disabled={connecting || !roleArnToUse}
                     onClick={handleCheckNow}
                     className="rounded-lg border border-line bg-surface px-4 py-2 text-[13px] font-medium text-ink hover:bg-sunk disabled:opacity-50"
                   >
-                    Check now
+                    {connecting ? "Verifying..." : "Verify & Connect Now"}
                   </button>
                 )}
               </div>

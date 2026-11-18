@@ -52,7 +52,7 @@ jobs:
           psql "$WHICHCLOUD_DSN" -f infra/init/01_schema.sql
           PYTHONPATH=backend python -c "from whichcloud.pricing import store; pts = store._load_fallback_points(); print('Seeded rows:', store.upsert_prices(pts))"
       - name: Run unit & stale-result tests
-        run: pytest backend/tests/test_stale_result_fix.py backend/tests/test_pricing.py backend/tests/test_azure_pricing.py backend/tests/test_availability.py backend/tests/test_budget_ladder.py backend/tests/test_migration_correctness.py -k "not test_2_tier_3_cost_never_decreases_as_budget_rises" -q
+        run: pytest backend/tests/test_stale_result_fix.py backend/tests/test_aws_connect_finops.py backend/tests/test_pricing.py backend/tests/test_azure_pricing.py backend/tests/test_availability.py backend/tests/test_budget_ladder.py backend/tests/test_migration_correctness.py -k "not test_2_tier_3_cost_never_decreases_as_budget_rises" -q
       - name: Run full pytest suite (when full catalog is provisioned)
         if: ${{ vars.WHICHCLOUD_FULL_CATALOG_CI == 'true' }}
         run: |

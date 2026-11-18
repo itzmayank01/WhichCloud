@@ -92,7 +92,7 @@ function ProgressBar({
 }
 
 function FinOpsContent() {
-  const { getToken, userId } = useAuth();
+  const { getToken, userId, isLoaded } = useAuth();
   const searchParams = useSearchParams();
   const providerParam = searchParams.get("provider");
   const accountIdParam = searchParams.get("account_id");
@@ -164,44 +164,82 @@ function FinOpsContent() {
   // Sync state when URL params, provider, or stored account changes
   useEffect(() => {
     let mounted = true;
+    const isDemo = (accountIdParam || "").trim().toLowerCase() === "demo";
 
-    const effectiveId = accountIdParam || getStoredAccount(userId)?.id || (provider === "aws" ? "616551057703" : "");
-
-    if (!effectiveId) {
-      setNotConnected(true);
-      setLoading(false);
+    // Wait for Clerk to finish loading before fetching per-user connections
+    // (demo mode works without authentication so it never blocks on Clerk).
+    if (!isDemo && !isLoaded) {
       return;
     }
 
-    setNotConnected(false);
-    setLoading(true);
-    setLoadError(null);
-    setLoadStatus(null);
-
-    const currentStored = getStoredAccount(userId);
-    if (!currentStored || currentStored.id !== effectiveId || currentStored.provider !== provider) {
-      setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId, ownerId: userId ?? undefined });
-    }
-
     (async () => {
+      setNotConnected(false);
+      setLoading(true);
+      setLoadError(null);
+      setLoadStatus(null);
+
       try {
-        const token = await getToken();
-        const res = await api.finopsLive(provider, effectiveId, token ?? undefined);
+        const token = isDemo ? undefined : ((await getToken()) ?? undefined);
+        let effectiveId = (accountIdParam || "").trim();
+
+        if (!effectiveId) {
+          const stored = getStoredAccount(userId);
+          if (stored && stored.provider === provider && stored.id) {
+            effectiveId = stored.id;
+          }
+        }
+
+        // Ask the backend for this signed-in user's real connected account
+        // (works across devices/browsers without hardcoding any account ID).
+        if (!effectiveId && token && provider === "aws") {
+          try {
+            const mine = await api.myConnections(token);
+            const awsConn = mine.connections.find((c) => c.provider === "aws" && c.account_id);
+            if (awsConn) {
+              effectiveId = awsConn.account_id;
+            }
+          } catch {
+            // Fall through to notConnected if lookup fails
+          }
+        }
+
+        if (!mounted) return;
+
+        if (!effectiveId) {
+          setNotConnected(true);
+          setLoading(false);
+          return;
+        }
+
+        if (!isDemo) {
+          const currentStored = getStoredAccount(userId);
+          if (!currentStored || currentStored.id !== effectiveId || currentStored.provider !== provider) {
+            setStoredAccount({ provider: provider as CloudProviderId, id: effectiveId, ownerId: userId ?? undefined });
+          }
+        }
+
+        const res = await api.finopsLive(provider, effectiveId, token);
         if (mounted) {
           setData(res);
           setAppliedTechniques({});
-          setActiveNode(res.nodes.find((n) => n.status === "action_needed") || res.nodes[2]);
+          setActiveNode(res.nodes.find((n) => n.status === "action_needed") || res.nodes[0] || null);
           setLoading(false);
         }
       } catch (err) {
         console.error(err);
         if (mounted) {
-          setLoadError(err instanceof Error ? err.message : "Could not load this account.");
-          setLoadStatus(
+          const status =
             typeof (err as { status?: unknown })?.status === "number"
               ? (err as { status: number }).status
-              : null,
-          );
+              : null;
+          if (status === 409) {
+            setNotConnected(true);
+            setLoadError(null);
+            setLoadStatus(409);
+          } else {
+            setLoadError(err instanceof Error ? err.message : "Could not load this account.");
+            setLoadStatus(status);
+          }
           setLoading(false);
         }
       }
@@ -210,7 +248,7 @@ function FinOpsContent() {
     return () => {
       mounted = false;
     };
-  }, [provider, accountIdParam, getToken, accountChangeTick, userId]);
+  }, [provider, accountIdParam, getToken, accountChangeTick, userId, isLoaded]);
 
   /* Switching provider cannot invent an account for the new one. */
   const handleSwitchAccount = (newProv: string) => {
@@ -233,10 +271,11 @@ function FinOpsContent() {
     if (syncing) return;
     setSyncing(true);
     try {
-      const effectiveId = accountIdParam || getStoredAccount(userId)?.id || (provider === "aws" ? "616551057703" : "");
+      const effectiveId = accountIdParam || getStoredAccount(userId)?.id || data?.account?.id || "";
       if (!effectiveId) return;
-      const token = await getToken();
-      const res = await api.finopsLive(provider, effectiveId, token ?? undefined, true);
+      const isDemo = effectiveId.toLowerCase() === "demo";
+      const token = isDemo ? undefined : ((await getToken()) ?? undefined);
+      const res = await api.finopsLive(provider, effectiveId, token, true);
       setData(res);
       setSecondsUntilNextSync(25);
       if (res?.nodes?.length) {
@@ -258,8 +297,8 @@ function FinOpsContent() {
         if (prev <= 1) {
           (async () => {
             try {
-              const effectiveId = accountIdParam || getStoredAccount(userId)?.id || (provider === "aws" ? "616551057703" : "");
-              if (!effectiveId) return;
+              const effectiveId = accountIdParam || getStoredAccount(userId)?.id || data?.account?.id || "";
+              if (!effectiveId || effectiveId.toLowerCase() === "demo") return;
               const token = await getToken();
               const res = await api.finopsLive(provider, effectiveId, token ?? undefined, true);
               setData(res);
@@ -274,7 +313,7 @@ function FinOpsContent() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [liveAutoUpdate, notConnected, loading, !!data, provider, accountIdParam, userId, getToken]);
+  }, [liveAutoUpdate, notConnected, loading, data, provider, accountIdParam, userId, getToken]);
 
   /* No connection of this user's own, or the server refused the one asked
      for. Either way the answer is an invitation to connect -- never another
@@ -306,13 +345,23 @@ function FinOpsContent() {
                 ? "Your sign-in does not have access to this account's cost data. Connect an account of your own to see its spend here."
                 : "FinOps Live reads cost and usage from an account you connect. Nothing is shown until one is linked to your sign-in."}
           </p>
-          <Link
-            href={unsupported ? "/dashboard" : "/connect"}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-canvas transition hover:opacity-90"
-          >
-            <Icon icon={unsupported ? "mdi:calculator-variant-outline" : "mdi:link-variant"} className="h-4 w-4" />
-            {unsupported ? "Price an architecture instead" : "Connect an account"}
-          </Link>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href={unsupported ? "/dashboard" : "/connect/aws"}
+              className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-[13.5px] font-semibold text-canvas transition hover:opacity-90"
+            >
+              <Icon icon={unsupported ? "mdi:calculator-variant-outline" : "mdi:link-variant"} className="h-4 w-4" />
+              {unsupported ? "Price an architecture instead" : "Connect AWS Account"}
+            </Link>
+            {!unsupported && (
+              <Link
+                href="/finops?provider=aws&account_id=demo"
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 text-[13.5px] font-medium text-ink transition hover:bg-sunk"
+              >
+                Explore Live Demo Account
+              </Link>
+            )}
+          </div>
           {refused && !unsupported && loadError && (
             <p className="mt-4 font-mono text-[11.5px] text-ink-3">{loadError}</p>
           )}
@@ -353,10 +402,10 @@ function FinOpsContent() {
   }, 0);
 
   const currentSpend = Math.max(0, data.summary.total_monthly_usd - totalTechniqueSavings);
-  const savingsPct = Math.min(
-    100,
-    Math.round((totalTechniqueSavings / data.summary.total_monthly_usd) * 100)
-  );
+  const savingsPct =
+    data.summary.total_monthly_usd > 0
+      ? Math.min(100, Math.round((totalTechniqueSavings / data.summary.total_monthly_usd) * 100))
+      : 0;
   const dynamicEfficiencyScore = Math.min(
     98,
     Math.round(

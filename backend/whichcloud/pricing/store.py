@@ -795,6 +795,17 @@ def save_connection(
     AssumeRole precisely so that nothing worth stealing is stored.
     """
     with connect(dsn) as conn:
+        # When an active connection is saved, remove any older pending placeholder
+        # row (account_id = '') for this owner+provider so it can never shadow the
+        # verified connection.
+        if status == "active" and account_id:
+            conn.execute(
+                """
+                DELETE FROM cloud_connections
+                WHERE owner = %s AND provider = %s AND status = 'pending' AND account_id = ''
+                """,
+                (owner, provider),
+            )
         row = conn.execute(
             """
             INSERT INTO cloud_connections
@@ -805,6 +816,7 @@ def save_connection(
                 account_id   = EXCLUDED.account_id,
                 config       = EXCLUDED.config,
                 status       = EXCLUDED.status,
+                created_at   = NOW(),
                 last_error   = ''
             RETURNING id, owner, provider, display_name, account_id, config, status
             """,
@@ -816,9 +828,8 @@ def save_connection(
 def get_connection(owner: str, provider: str, dsn: str | None = None) -> dict | None:
     """This owner's connection to one provider, or None.
 
-    None is the answer that matters: it means the caller has not connected
-    this provider, and the routes above it must refuse rather than fall back
-    to any credentials the server happens to hold.
+    Active connections always take precedence over pending placeholders, and
+    within the same status the most recently saved/updated connection wins.
     """
     with connect(dsn) as conn:
         row = conn.execute(
@@ -826,12 +837,27 @@ def get_connection(owner: str, provider: str, dsn: str | None = None) -> dict | 
             SELECT id, owner, provider, display_name, account_id, config, status, last_error
             FROM cloud_connections
             WHERE owner = %s AND provider = %s
-            ORDER BY created_at DESC
+            ORDER BY (status = 'active') DESC, created_at DESC
             LIMIT 1
             """,
             (owner, provider),
         ).fetchone()
     return dict(row) if row else None
+
+
+def list_connections(owner: str, dsn: str | None = None) -> list[dict]:
+    """All connections belonging to this owner (active first, newest first)."""
+    with connect(dsn) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, owner, provider, display_name, account_id, config, status, last_error
+            FROM cloud_connections
+            WHERE owner = %s
+            ORDER BY (status = 'active') DESC, created_at DESC
+            """,
+            (owner,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def delete_connection(owner: str, provider: str, dsn: str | None = None) -> bool:

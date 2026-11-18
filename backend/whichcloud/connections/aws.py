@@ -90,10 +90,26 @@ def our_account_id() -> str:
     _discovered_account_id = found
     return found
 
-#: What we ask for. Read-only, and narrow: Cost Explorer and the identity
-#: call used to prove the role works. Nothing that can see a resource,
-#: read an object, or change anything.
-POLICY_ACTIONS = ["ce:GetCostAndUsage", "ce:GetDimensionValues"]
+#: What we ask for. Strictly read-only: Cost Explorer totals + read-only
+#: inventory metadata so FinOps Live can map real EC2, EBS, VPC, S3, RDS, ECS,
+#: Lambda, and DynamoDB spend and idle waste. Nothing can read object contents,
+#: query database data, or modify/delete any resource.
+POLICY_ACTIONS = [
+    "ce:GetCostAndUsage",
+    "ce:GetDimensionValues",
+    "ce:GetCostForecast",
+    "ce:GetRightsizingRecommendation",
+    "ec2:DescribeInstances",
+    "ec2:DescribeVolumes",
+    "ec2:DescribeAddresses",
+    "ec2:DescribeVpcs",
+    "ec2:DescribeRegions",
+    "s3:ListAllMyBuckets",
+    "ecs:ListClusters",
+    "lambda:ListFunctions",
+    "dynamodb:ListTables",
+    "rds:DescribeDBInstances",
+]
 
 
 def new_external_id() -> str:
@@ -187,12 +203,19 @@ def setup(config: dict) -> Setup:
     )
 
 
+def _normalize_role_arn(raw: str) -> str:
+    val = (raw or "").strip()
+    if val.isdigit() and len(val) == 12:
+        return f"arn:aws:iam::{val}:role/WhichCloudCostRole"
+    return val
+
+
 def _session(config: dict):
     """Short-lived credentials from the user's role, or a clear failure."""
     import boto3
     from botocore.exceptions import ClientError
 
-    role_arn = (config.get("role_arn") or "").strip()
+    role_arn = _normalize_role_arn(config.get("role_arn") or "")
     external_id = (config.get("external_id") or "").strip()
     if not role_arn:
         raise ValueError("No role ARN has been set for this connection.")
@@ -208,7 +231,7 @@ def _session(config: dict):
             DurationSeconds=3600,
         )
     except ClientError as exc:
-        raise ValueError(_explain(exc)) from exc
+        raise ValueError(_explain(exc, role_arn=role_arn, external_id=external_id)) from exc
 
     creds = assumed["Credentials"]
     return boto3.Session(
@@ -218,20 +241,27 @@ def _session(config: dict):
     )
 
 
-def _explain(exc) -> str:
-    """AWS's errors, turned into the thing to go and fix.
-
-    `AccessDenied` on AssumeRole has four common causes that need four
-    different fixes, and the raw message distinguishes none of them.
-    """
-    code = exc.response.get("Error", {}).get("Code", "")
+def _explain(exc, role_arn: str = "", external_id: str = "") -> str:
+    """AWS's errors, turned into the exact thing to go and fix."""
+    err = exc.response.get("Error", {})
+    code = err.get("Code", "")
+    raw_msg = err.get("Message", "")
     if code == "AccessDenied":
+        if "no identity-based policy allows the sts:AssumeRole action" in raw_msg:
+            return (
+                "WhichCloud's backend IAM identity does not have sts:AssumeRole permission yet. "
+                "That is on our side, not yours."
+            )
+        acct_hint = f" (trusting AWS account {our_account_id()})" if our_account_id() else ""
+        arn_hint = f" Role attempted: {role_arn}." if role_arn else ""
         return (
-            "AWS refused the role. Usually one of: the trust policy does "
-            "not name our account, the external id does not match, the "
-            "role was created in a different account than the ARN says, "
-            "or the role was only just created and has not propagated "
-            "yet — that one clears within a minute."
+            f"AWS refused AssumeRole{acct_hint}.{arn_hint} "
+            "Check these 3 things in AWS CloudShell: "
+            "(1) Run `aws sts get-caller-identity --query Account --output text` to confirm you are "
+            "signed into the same 12-digit AWS account ID you typed above. "
+            "(2) If WhichCloudCostRole already existed from an earlier attempt, re-run the updated "
+            "CloudShell command — it updates the trust policy with your current External ID. "
+            "(3) If you just created the role, wait ~15 seconds for IAM propagation and click Check now."
         )
     if code in ("InvalidClientTokenId", "SignatureDoesNotMatch"):
         return (
@@ -244,7 +274,7 @@ def _explain(exc) -> str:
             "Cost Explorer has no data for this account yet. It takes up "
             "to 24 hours after first enabling it."
         )
-    return f"AWS refused: {exc.response.get('Error', {}).get('Message', code)}"
+    return f"AWS refused: {raw_msg or code}"
 
 
 def verify(config: dict, secret: str = "") -> VerifyResult:

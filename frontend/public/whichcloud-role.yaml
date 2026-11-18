@@ -31,13 +31,26 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Matches connections/aws.py's POLICY_ACTIONS exactly. This role
-              # cannot see resources or read data -- only Cost Explorer's own
-              # totals -- because that is the only thing this grant promises.
+              # Matches connections/aws.py's POLICY_ACTIONS exactly. Strictly
+              # read-only: Cost Explorer totals + read-only resource metadata
+              # so FinOps Live can show real bills and idle waste. Cannot read
+              # object contents, query database data, or modify any resource.
               - Effect: Allow
                 Action:
                   - 'ce:GetCostAndUsage'
                   - 'ce:GetDimensionValues'
+                  - 'ce:GetCostForecast'
+                  - 'ce:GetRightsizingRecommendation'
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:DescribeVolumes'
+                  - 'ec2:DescribeAddresses'
+                  - 'ec2:DescribeVpcs'
+                  - 'ec2:DescribeRegions'
+                  - 's3:ListAllMyBuckets'
+                  - 'ecs:ListClusters'
+                  - 'lambda:ListFunctions'
+                  - 'dynamodb:ListTables'
+                  - 'rds:DescribeDBInstances'
                 Resource: '*'
 
 Outputs:
