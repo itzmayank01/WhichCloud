@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { PricedDiagram } from "@/components/PricedDiagram";
-import { money, type Option, type Recommendation } from "@/lib/api";
+import { API_BASE, money, type Option, type Recommendation } from "@/lib/api";
 
 /**
  * The estimate page: requirements in, three priced architectures out.
@@ -14,7 +14,7 @@ import { money, type Option, type Recommendation } from "@/lib/api";
  * guesses as though they were stated.
  */
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8010";
+const BASE = API_BASE;
 
 const WORKLOADS = [
   ["web", "Web app"],

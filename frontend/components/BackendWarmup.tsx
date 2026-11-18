@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import { API_BASE } from "@/lib/api";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8010";
+const BASE = API_BASE;
 const KEY = "wc:warmed-at";
 const EVERY_MS = 5 * 60 * 1000;
 
