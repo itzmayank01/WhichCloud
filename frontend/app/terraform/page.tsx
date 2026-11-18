@@ -606,9 +606,9 @@ resource "whichcloud_cost_report" "ai_curated_report" {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas text-ink">
+    <div className="flex min-h-screen flex-col overflow-x-clip bg-canvas text-ink">
       {/* ── TOP HEADER ────────────────────────────────────────────────────────── */}
-      <header className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface/95 px-5 py-2.5 backdrop-blur">
+      <header className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 sm:px-5 py-2.5 backdrop-blur">
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -703,12 +703,12 @@ resource "whichcloud_cost_report" "ai_curated_report" {
           {/* Architecture Tier Switcher (Screenshot 2). Scrolls rather than
               wraps: three priced tiers read as one control, and a tier that
               drops onto its own line stops looking like a peer of the others. */}
-          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-line bg-canvas p-1">
+          <div className="flex w-full max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-line bg-canvas p-1 sm:w-auto">
             {allOptions.map((opt) => (
               <button
                 key={opt.label}
                 onClick={() => setSelectedOption(opt.label)}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-1 transition-all ${
+                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-1 transition-all ${
                   opt.label === selectedOption
                     ? "border-[#5C4EE5] bg-[#5C4EE5]/10 shadow-sm text-ink"
                     : "border-transparent text-ink-3 hover:border-line hover:text-ink"
@@ -735,7 +735,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
         </div>
 
         {/* Right Header: View Mode Switcher + Download */}
-        <div className="flex items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center gap-2">
           {/* View Mode Toggle: Architecture Diagram vs Cost Report */}
           <div className="flex items-center rounded-xl border border-line bg-canvas p-1 text-[12px] font-medium shadow-2xs">
             <button
@@ -812,11 +812,11 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               Edit Workload
             </button>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-3 font-mono text-[11px]">
+          <div className="flex max-w-full flex-wrap items-center gap-3 font-mono text-[11px]">
             {generatedFor && (
               <span
                 data-testid="generated-for-stamp"
-                className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-medium text-emerald-700 dark:text-emerald-300"
+                className="max-w-full break-words rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-medium text-emerald-700 dark:text-emerald-300"
               >
                 Generated for: {generatedFor.workload.slice(0, 60)}
                 {generatedFor.workload.length > 60 ? "…" : ""} at {generatedFor.time}
@@ -1021,7 +1021,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
       )}
 
       {/* ── SPLIT VIEW: TERRAFORM ON LEFT, ARCHITECTURE DIAGRAM ON RIGHT ─────── */}
-      <main className="flex-1 p-4 lg:p-5">
+      <div className="flex-1 p-4 lg:p-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {/* ════════════════════════════════════════════════════════════════════
               LEFT COLUMN: TERRAFORM CONFIGURATION WITH FILE EXPLORER SIDEBAR
@@ -1371,9 +1371,9 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               /* ── 1. ARCHITECTURE DIAGRAM VIEW (SCREENSHOT 2) ── */
               <div className="relative flex flex-col h-full overflow-hidden">
                 {/* Right Pane Header */}
-                <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded bg-brand/15 text-brand">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 bg-surface shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-brand/15 text-brand">
                       <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="2" y="3" width="6" height="5" rx="1" />
                         <rect x="12" y="3" width="6" height="5" rx="1" />
@@ -1384,7 +1384,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                     <h2 className="text-[13.5px] font-semibold text-ink">
                       Architecture Topology — {selectedOption}
                     </h2>
-                    <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[10.5px] text-ink-3">
+                    <span className="shrink-0 whitespace-nowrap rounded-full border border-line px-2 py-0.5 font-mono text-[10.5px] text-ink-3">
                       {activeOption?.topology?.nodes?.length || 15} services • {region}
                     </span>
                   </div>
@@ -1895,7 +1895,7 @@ resource "whichcloud_cost_report" "service_summary" {
             </div>
           )}
         </section>
-      </main>
+      </div>
     </div>
   );
 }

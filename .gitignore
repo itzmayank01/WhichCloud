@@ -73,8 +73,10 @@ Thumbs.db
 # regression harness: append-only price-drift log, local to this checkout
 backend/tests/harness_history.jsonl
 
-# browser mcp artifacts
+# browser mcp & playwright artifacts
 .playwright-mcp/
+test-results/
+playwright-report/
 backend/uv.lock
 
 

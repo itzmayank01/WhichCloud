@@ -876,7 +876,18 @@ export function ArchitectureGraph(props: {
           title="Open the diagram full page"
           className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-md border border-line bg-surface/95 px-2.5 py-1 text-[11px] font-medium text-ink-2 opacity-90 shadow-sm transition-opacity hover:bg-sunk hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         >
-          <Icon icon="mdi:arrow-expand-all" className="h-3.5 w-3.5" />
+          <svg
+            viewBox="0 0 20 20"
+            className="h-3.5 w-3.5 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M13 3h4v4M17 3l-5 5M7 17H3v-4M3 17l5-5" />
+          </svg>
           Click to expand
         </button>
       )}
@@ -894,7 +905,18 @@ export function ArchitectureGraph(props: {
             aria-label="Close full-page diagram"
             className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-lg border border-line-strong bg-surface text-ink-2 shadow-sm transition-colors hover:bg-sunk focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
-            <Icon icon="mdi:close" className="h-5 w-5" />
+            <svg
+              viewBox="0 0 20 20"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
           </button>
           <div className="h-full w-full">{graph(true)}</div>
           {props.overlayFooter && (

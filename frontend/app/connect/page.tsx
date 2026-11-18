@@ -29,6 +29,7 @@ const PROVIDERS: ProviderItem[] = [
     logo: "logos:microsoft-azure",
     description: "Connect Service Principal & Cost Management",
     route: "/connect/azure",
+    badge: "Coming Soon",
     enabled: true,
   },
   {
@@ -37,6 +38,7 @@ const PROVIDERS: ProviderItem[] = [
     logo: "logos:google-cloud",
     description: "Connect BigQuery billing export & project IAM",
     route: "/connect/gcp",
+    badge: "Coming Soon",
     enabled: true,
   },
   {
