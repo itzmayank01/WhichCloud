@@ -35,26 +35,26 @@ interface OptionItem {
 }
 
 const DEFAULT_WORKLOAD =
-  "I run operations for a retail chain in India with 120 stores. Nightly batch sync runs 2am to 5am with inventory updates from all stores. In-store POS queries the catalog during store hours. Mobile app for customers with 50k daily active users. 500 GB catalog images with fast delivery to users across India.";
+  "I run operations for a retail chain in India with 40 stores. We want to move our stock and billing system online so staff can use it from any store and head office can see live numbers. Around 300 staff use it daily and we do about 8,000 transactions a day. It must not go down during business hours because billing stops. Budget is around $5000 a month.";
 
 const PRESET_WORKLOADS = [
   {
     id: "retail-40",
     label: "Retail (40 Stores, Billing)",
     badge: "HA Billing",
-    text: "I run operations for a retail chain in India with 40 stores. We want to move our stock and billing system online so staff can use it from any store and head office can see live numbers. Around 300 staff use it daily and we do about 8,000 transactions a day. It must not go down during business hours because billing stops. Budget is around $500 a month.",
-  },
-  {
-    id: "retail-120",
-    label: "Retail (120 Stores, Batch POS)",
-    badge: "Batch & POS",
     text: DEFAULT_WORKLOAD,
   },
   {
-    id: "video-stream",
-    label: "Video Stream API (5TB)",
-    badge: "High Egress",
-    text: "High-throughput video streaming API with 5TB monthly egress across India and Singapore, Redis caching for hot video metadata, and auto-scaling compute cluster with S3 glacier lifecycle tiering.",
+    id: "hospital-pune",
+    label: "Hospital Group (Pune, 450 Staff)",
+    badge: "Healthcare",
+    text: "I manage IT for a 3-hospital group in Pune. We want to move patient appointments, records and lab reports online so doctors and front desk can access them from all three sites. About 450 staff use it, roughly 6,000 record lookups a day, with peaks in the morning. Patient data must stay inside India and cannot be lost. Downtime during OPD hours is unacceptable. Budget is about $900 a month.",
+  },
+  {
+    id: "static-studio",
+    label: "Static Site (30k Visitors)",
+    badge: "Low Cost",
+    text: "Marketing site for our design studio. About 30,000 visitors a month, mostly from India. It's just pages and images, no login, no database. We want it cheap.",
   },
   {
     id: "fintech-payment",
@@ -226,55 +226,42 @@ function TerraformStudioContent() {
 
   const [editingWorkload, setEditingWorkload] = useState(false);
   const [customWorkloadDraft, setCustomWorkloadDraft] = useState(description);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [submitNonce, setSubmitNonce] = useState(0);
+  const [generatedFor, setGeneratedFor] = useState<{ workload: string; time: string } | null>(null);
 
-  // Instant 0ms cache read from sessionStorage on initial mount
+  const archAbortRef = useRef<AbortController | null>(null);
+  const filesAbortRef = useRef<AbortController | null>(null);
+  const archReqIdRef = useRef(0);
+  const filesReqIdRef = useRef(0);
+  const hydratedFromSessionRef = useRef(false);
+
+  // Seed ONLY the initial workload description once on mount when no URL
+  // description param was provided. Never restore cached architecture JSON or
+  // hardcoded fallback files, because doing so masks fresh edits with stale data.
   useEffect(() => {
+    if (hydratedFromSessionRef.current) return;
+    hydratedFromSessionRef.current = true;
     if (typeof window !== "undefined" && !descriptionParam) {
       try {
-        const cachedArchStr = sessionStorage.getItem("whichcloud:active_architecture");
         const cachedDesc = sessionStorage.getItem("whichcloud:active_description");
         const cachedCloud = sessionStorage.getItem("whichcloud:active_cloud") as CloudId | null;
-        if (cachedArchStr) {
-          const parsed = JSON.parse(cachedArchStr) as Recommendation;
-          if (parsed && parsed.options?.length) {
-            setRecommendation(parsed);
-            setLoadingRecommendation(false);
-            setAllOptions(
-              parsed.options.map((o) => ({
-                label: o.label,
-                monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
-                region: o.region,
-              }))
-            );
-          }
+        if (cachedDesc && cachedDesc.trim()) {
+          setDescription(cachedDesc.trim());
+          setCustomWorkloadDraft(cachedDesc.trim());
         }
-        if (cachedDesc) {
-          setDescription(cachedDesc);
-          setCustomWorkloadDraft(cachedDesc);
-          const initialFallback = getDefaultFallbackFiles(
-            (cloudParam as CloudId) || cachedCloud || "aws",
-            optionParam || "Most optimized",
-            519.04,
-            "ap-south-1",
-            cachedDesc
-          );
-          setFiles(initialFallback);
-          setEditedCode(initialFallback);
-        }
-        if (cachedCloud) {
+        if (cachedCloud && (cachedCloud === "aws" || cachedCloud === "gcp" || cachedCloud === "azure")) {
           setCloud(cachedCloud);
         }
       } catch {
-        // ignore
+        // ignore storage errors
       }
     }
-  }, [descriptionParam, cloudParam, optionParam]);
+  }, [descriptionParam]);
 
-  // Recommendation & Architecture Data (Initialized with instant 0ms fallback)
-  const [recommendation, setRecommendation] = useState<Recommendation | null>(() =>
-    buildFallbackRecommendation(DEFAULT_WORKLOAD, (cloudParam as CloudId) || "aws")
-  );
-  const [loadingRecommendation, setLoadingRecommendation] = useState(false);
+  // Recommendation & Architecture Data — starts null until real engine response arrives
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [loadingRecommendation, setLoadingRecommendation] = useState(true);
   const [isSyncingLive, setIsSyncingLive] = useState(false);
   const [inspectedNode, setInspectedNode] = useState<SelectedNode | null>(null);
   const [replayCount, setReplayCount] = useState(0);
@@ -285,43 +272,19 @@ function TerraformStudioContent() {
   // Modules folder toggle in file explorer sidebar
   const [modulesExpanded, setModulesExpanded] = useState(true);
 
-  // Terraform files state (Initialized with instant 0ms fallback)
-  const [files, setFiles] = useState<Record<string, string>>(() =>
-    getDefaultFallbackFiles(
-      (cloudParam as CloudId) || "aws",
-      optionParam || "Most optimized",
-      519.04,
-      "ap-south-1",
-      DEFAULT_WORKLOAD
-    )
-  );
+  // Terraform files state — starts empty until real engine response arrives
+  const [files, setFiles] = useState<Record<string, string>>({});
   const [activeFile, setActiveFile] = useState<string>("main.tf");
-  const [editedCode, setEditedCode] = useState<Record<string, string>>(() =>
-    getDefaultFallbackFiles(
-      (cloudParam as CloudId) || "aws",
-      optionParam || "Most optimized",
-      519.04,
-      "ap-south-1",
-      DEFAULT_WORKLOAD
-    )
-  );
-  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [editedCode, setEditedCode] = useState<Record<string, string>>({});
+  const [loadingFiles, setLoadingFiles] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [monthlyCost, setMonthlyCost] = useState<number>(519.04);
-  const [region, setRegion] = useState<string>("ap-south-1");
-  const [allOptions, setAllOptions] = useState<OptionItem[]>([
-    { label: "Cheapest", monthly: 245.28, region: "ap-south-1" },
-    { label: "Most reliable", monthly: 478.16, region: "ap-south-1" },
-    { label: "Most optimized", monthly: 519.04, region: "ap-south-1" },
-  ]);
-  const [items, setItems] = useState<ArchitectureItem[]>([
-    { label: "Amazon Relational Database Service (Multi-AZ)", monthly: 219.07, sku: "rds:mysql-multi-az" },
-    { label: "Amazon VPC (NAT Gateway & Egress)", monthly: 149.63, sku: "vpc:nat-gateway" },
-    { label: "Amazon Elastic Compute Cloud (Fargate & EC2)", monthly: 24.65, sku: "ec2:t3.medium" },
-    { label: "Amazon Simple Storage Service (Standard)", monthly: 10.40, sku: "s3:general-purpose" },
-    { label: "AWS Key Management Service & CloudWatch", monthly: 65.83, sku: "kms:cmk" },
-  ]);
+  const [monthlyCost, setMonthlyCost] = useState<number>(0);
+  const [region, setRegion] = useState<string>(
+    cloudParam === "gcp" ? "asia-south1" : cloudParam === "azure" ? "centralindia" : "ap-south-1"
+  );
+  const [allOptions, setAllOptions] = useState<OptionItem[]>([]);
+  const [items, setItems] = useState<ArchitectureItem[]>([]);
 
   // Actions & UI States
   const [validating, setValidating] = useState(false);
@@ -360,42 +323,73 @@ function TerraformStudioContent() {
     return () => clearInterval(id);
   }, [isSyncingLive]);
 
-  // 1. Fetch full Recommendation for the Architecture Diagram (Non-blocking background sync)
+  // 1. Fetch full Recommendation for the Architecture Diagram
   useEffect(() => {
-    let cancelled = false;
+    archAbortRef.current?.abort();
+    const controller = new AbortController();
+    archAbortRef.current = controller;
+    const reqId = ++archReqIdRef.current;
+
+    const text = description.trim() || DEFAULT_WORKLOAD;
+
+    // Immediately clear stale architecture & options so old results never linger
+    setRecommendation(null);
+    setAllOptions([]);
+    setInspectedNode(null);
+    setError(null);
+    setGeneratedFor(null);
+    setLoadingRecommendation(true);
+    setIsSyncingLive(true);
+
     async function loadArchitecture() {
-      setIsSyncingLive(true);
       try {
-        const text = description.trim() || DEFAULT_WORKLOAD;
-        const answer = await Promise.race([
-          api.describe({ description: text, provider: cloud }),
-          new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error("Render wake timeout")), 5500)
-          ),
-        ]);
-        if (!cancelled && answer) {
-          setRecommendation(answer);
-          if (answer.options?.length) {
-            setAllOptions(
-              answer.options.map((o) => ({
-                label: o.label,
-                monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
-                region: o.region,
-              }))
-            );
-            const match = answer.options.find((o) => o.label === selectedOption);
-            if (!match && answer.options[0]) {
-              setSelectedOption(answer.options[0].label);
-            }
-          }
+        const answer = await api.describe(
+          { description: text, provider: cloud },
+          controller.signal
+        );
+        if (controller.signal.aborted || reqId !== archReqIdRef.current) return;
+
+        setRecommendation(answer);
+        if (answer.options?.length) {
+          setAllOptions(
+            answer.options.map((o) => ({
+              label: o.label,
+              monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
+              region: o.region,
+            }))
+          );
+          setRegion(answer.region || answer.options[0].region);
+          setSelectedOption((prev) =>
+            answer.options.some((o) => o.label === prev)
+              ? prev
+              : (answer.cheapest_compliant || answer.options[0].label)
+          );
         }
-      } catch {
-        // Retain 0ms fallback architecture if backend is sleeping
-        if (!cancelled) {
-          setRecommendation((prev) => prev ?? buildFallbackRecommendation(description.trim() || DEFAULT_WORKLOAD, cloud));
+        setGeneratedFor({
+          workload: text,
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+        if (typeof window !== "undefined") {
+          try {
+            sessionStorage.setItem("whichcloud:active_description", text);
+            sessionStorage.setItem("whichcloud:active_cloud", cloud);
+          } catch {}
         }
+      } catch (err: unknown) {
+        if (controller.signal.aborted || reqId !== archReqIdRef.current) return;
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Failed to generate architecture for this workload.";
+        setError(msg);
+        setRecommendation(null);
+        setAllOptions([]);
       } finally {
-        if (!cancelled) {
+        if (!controller.signal.aborted && reqId === archReqIdRef.current) {
           setIsSyncingLive(false);
           setLoadingRecommendation(false);
         }
@@ -403,136 +397,97 @@ function TerraformStudioContent() {
     }
     loadArchitecture();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [description, cloud]);
+  }, [description, cloud, submitNonce]);
 
-  // 2. Fetch Terraform inspect files (Non-blocking background sync)
+  // 2. Fetch Terraform inspect files
   useEffect(() => {
-    let cancelled = false;
-    async function loadFiles() {
-      setError(null);
-      // Immediately render matching fallback files in 0ms
-      const initialFallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region, description);
-      setFiles((prev) => (Object.keys(prev).length ? { ...prev, ...initialFallback } : initialFallback));
+    filesAbortRef.current?.abort();
+    const controller = new AbortController();
+    filesAbortRef.current = controller;
+    const reqId = ++filesReqIdRef.current;
 
+    const text = description.trim() || DEFAULT_WORKLOAD;
+
+    // Clear old Terraform files immediately on every workload/tier/provider/env change
+    setFiles({});
+    setEditedCode({});
+    setItems([]);
+    setValidationResult(null);
+    setLoadingFiles(true);
+
+    async function loadFiles() {
       try {
-        const data = await Promise.race([
-          api.describeInspectTf({
-            description: description.trim() || DEFAULT_WORKLOAD,
+        const data = await api.describeInspectTf(
+          {
+            description: text,
             option: selectedOption,
             provider: cloud,
             environment,
-          }),
-          new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error("Render wake timeout")), 5500)
-          ),
-        ]);
+          },
+          controller.signal
+        );
+        if (controller.signal.aborted || reqId !== filesReqIdRef.current) return;
 
-        if (!cancelled && data) {
-          const loadedFiles: Record<string, string> = { ...data.files };
-          const activeComputeSku =
-            data.items?.find((it) => it.label.toLowerCase().includes("compute"))?.sku || "t4g.medium";
-          const activeDbSku =
-            data.items?.find((it) => it.label.toLowerCase().includes("database") && !it.label.includes("replica"))?.sku || "db.t4g.micro";
-          const activeEngine = description.toLowerCase().includes("mysql") ? "mysql" : "postgres";
-          const activeStorageGb = description.toLowerCase().includes("500 gb") ? 500 : 50;
-
-          if (!loadedFiles["modules/vpc.tf"]) {
-            loadedFiles["modules/vpc.tf"] = `# Reusable VPC Networking Module
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
-
-  name = "whichcloud-${cloud}-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["${data.region}a", "${data.region}b", "${data.region}c"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = ${selectedOption === "Cheapest"}
-
-  tags = {
-    Environment = "${environment}"
-    Tier        = "${selectedOption}"
-  }
-}
-`;
-          }
-          if (!loadedFiles["modules/compute.tf"]) {
-            loadedFiles["modules/compute.tf"] = `# Reusable Compute Cluster Module
-module "compute_cluster" {
-  source = "./modules/compute"
-
-  cluster_name    = "whichcloud-${environment}-cluster"
-  instance_type   = "${activeComputeSku}"
-  min_capacity    = ${selectedOption === "Cheapest" ? 1 : 2}
-  max_capacity    = ${selectedOption === "Cheapest" ? 2 : 6}
-  vpc_id          = module.vpc.vpc_id
-  private_subnets = module.vpc.private_subnets
-
-  target_cpu_utilization = 70.0
-}
-`;
-          }
-          if (!loadedFiles["modules/database.tf"]) {
-            loadedFiles["modules/database.tf"] = `# Reusable Managed Database Module
-module "managed_db" {
-  source = "./modules/database"
-
-  identifier             = "whichcloud-${environment}-db"
-  allocated_storage      = ${activeStorageGb}
-  engine                 = "${activeEngine}"
-  engine_version         = "${activeEngine === "postgres" ? "15.4" : "8.0"}"
-  instance_class         = "${activeDbSku}"
-  multi_az               = ${selectedOption !== "Cheapest"}
-  vpc_security_group_ids = [module.vpc.default_security_group_id]
-}
-`;
-          }
-          if (!loadedFiles["modules/storage.tf"]) {
-            loadedFiles["modules/storage.tf"] = `# Reusable Object Storage & Cache Module
-resource "aws_s3_bucket" "app_storage" {
-  bucket        = "whichcloud-${environment}-storage-${data.region}"
-  force_destroy = ${environment !== "prod"}
-
-  tags = {
-    Environment = "${environment}"
-    Tier        = "${selectedOption}"
-  }
-}
-`;
-          }
-
-          setFiles(loadedFiles);
-          setEditedCode(loadedFiles);
-          setMonthlyCost(data.monthly_cost);
-          setRegion(data.region);
-          if (data.items?.length) {
-            setItems(data.items);
-          }
-          if (!loadedFiles[activeFile]) {
-            setActiveFile("main.tf");
-          }
+        const loadedFiles: Record<string, string> = { ...data.files };
+        setFiles(loadedFiles);
+        setEditedCode(loadedFiles);
+        setMonthlyCost(data.monthly_cost);
+        setRegion(data.region);
+        setItems(data.items ?? []);
+        if (data.all_options?.length) {
+          setAllOptions((prev) => (prev.length ? prev : data.all_options!));
         }
-      } catch {
-        if (!cancelled) {
-          // If live call timed out or failed, keep the fallback files
-          const fallback = getDefaultFallbackFiles(cloud, selectedOption, monthlyCost, region, description);
-          setFiles(fallback);
-          setEditedCode(fallback);
-        }
+        setActiveFile((prev) => (loadedFiles[prev] ? prev : Object.keys(loadedFiles)[0] || "main.tf"));
+        setGeneratedFor((prev) =>
+          prev && prev.workload === text
+            ? prev
+            : {
+                workload: text,
+                time: new Date().toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                }),
+              }
+        );
+      } catch (err: unknown) {
+        if (controller.signal.aborted || reqId !== filesReqIdRef.current) return;
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Failed to generate Terraform files for this workload.";
+        setError((prev) => prev ?? msg);
+        setFiles({});
+        setEditedCode({});
+        setItems([]);
       } finally {
-        if (!cancelled) setLoadingFiles(false);
+        if (!controller.signal.aborted && reqId === filesReqIdRef.current) {
+          setLoadingFiles(false);
+        }
       }
     }
     loadFiles();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [description, selectedOption, cloud, environment]);
+  }, [description, selectedOption, cloud, environment, submitNonce]);
+
+  // Compute the engine's real recommended tier for the PICK badge
+  const recommendedTierLabel = React.useMemo(() => {
+    if (!recommendation?.options?.length) return null;
+    const opts = recommendation.options;
+    const compliant = opts.filter((o) => o.compliant !== false);
+    const pool = compliant.length ? compliant : opts;
+    const affordable = pool.filter((o) => o.within_budget !== false);
+    if (affordable.length > 0) {
+      return affordable.reduce((a, b) =>
+        (a.ondemand_monthly_usd ?? a.monthly_usd) >= (b.ondemand_monthly_usd ?? b.monthly_usd) ? a : b
+      ).label;
+    }
+    return recommendation.cheapest_compliant || pool[0]?.label || null;
+  }, [recommendation]);
 
   // Active Option for the Architecture Graph
   const activeOption: Option | null =
@@ -764,13 +719,18 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                   ${opt.monthly.toFixed(2)}
                   <span className="text-[10px] font-normal text-ink-3">/mo</span>
                 </span>
-                {opt.label === "Most optimized" && (
-                  <span className="rounded bg-emerald-500/15 px-1 py-0.2 text-[9px] font-semibold uppercase text-emerald-500">
+                {opt.label === recommendedTierLabel && (
+                  <span className="rounded bg-emerald-500/15 px-1 py-0.2 text-[9px] font-semibold uppercase text-emerald-600 dark:text-emerald-400">
                     PICK
                   </span>
                 )}
               </button>
             ))}
+            {allOptions.length === 0 && loadingRecommendation && (
+              <span className="px-3 py-1 text-[11.5px] font-medium text-ink-3 animate-pulse">
+                Pricing tiers…
+              </span>
+            )}
           </div>
         </div>
 
@@ -818,7 +778,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
           <button
             type="button"
             onClick={handleDownloadZip}
-            disabled={downloadingZip}
+            disabled={downloadingZip || loadingFiles}
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#5C4EE5] px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-[#4d3fd4] active:scale-[0.98] disabled:opacity-60 shrink-0"
           >
             <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -831,14 +791,20 @@ resource "whichcloud_cost_report" "ai_curated_report" {
 
       {/* Subheader: Workload context banner with quick-switch chips and live editor */}
       <div className="border-b border-line/60 bg-surface/50 px-5 py-2 text-[11.5px] text-ink-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
             <span className="font-semibold text-ink-2 uppercase tracking-wide shrink-0">Workload:</span>
-            <span className="truncate italic font-mono text-ink-2">“{description}”</span>
+            <span
+              className="line-clamp-2 break-words italic font-mono text-ink-2"
+              title={description}
+            >
+              “{description}”
+            </span>
             <button
               type="button"
               onClick={() => {
                 setCustomWorkloadDraft(description);
+                setModalError(null);
                 setEditingWorkload(true);
               }}
               className="ml-1 shrink-0 rounded-md border border-line bg-canvas px-2 py-0.5 text-[10.5px] font-semibold text-brand hover:border-brand hover:bg-sunk transition shadow-2xs"
@@ -846,12 +812,37 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               Edit Workload
             </button>
           </div>
-          <div className="flex shrink-0 items-center gap-3 font-mono text-[11px]">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 font-mono text-[11px]">
+            {generatedFor && (
+              <span
+                data-testid="generated-for-stamp"
+                className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-medium text-emerald-700 dark:text-emerald-300"
+              >
+                Generated for: {generatedFor.workload.slice(0, 60)}
+                {generatedFor.workload.length > 60 ? "…" : ""} at {generatedFor.time}
+              </span>
+            )}
             <span>Region: <strong className="text-ink">{region}</strong></span>
             <span>•</span>
             <span>Provider: <strong className="uppercase text-ink">{cloud}</strong></span>
           </div>
         </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+          >
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setSubmitNonce((n) => n + 1)}
+              className="rounded-md border border-red-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-900/40 dark:text-red-100"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Quick-Switch Example Workload Chips */}
         <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
@@ -865,39 +856,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 onClick={() => {
                   setDescription(preset.text);
                   setCustomWorkloadDraft(preset.text);
-                  // Update fallback recommendation and files immediately in 0ms
-                  const fallbackRec = buildFallbackRecommendation(preset.text, cloud);
-                  setRecommendation(fallbackRec);
-                  if (fallbackRec.options?.length) {
-                    setAllOptions(
-                      fallbackRec.options.map((o) => ({
-                        label: o.label,
-                        monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
-                        region: o.region,
-                      }))
-                    );
-                    const optMatch =
-                      fallbackRec.options.find((o) => o.label === selectedOption) ??
-                      fallbackRec.options[0];
-                    if (optMatch) {
-                      setMonthlyCost(optMatch.monthly_usd);
-                    }
-                  }
-                  const freshFiles = getDefaultFallbackFiles(
-                    cloud,
-                    selectedOption,
-                    monthlyCost,
-                    region,
-                    preset.text
-                  );
-                  setFiles(freshFiles);
-                  setEditedCode(freshFiles);
-                  if (typeof window !== "undefined") {
-                    try {
-                      sessionStorage.setItem("whichcloud:active_description", preset.text);
-                      sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(fallbackRec));
-                    } catch {}
-                  }
+                  setSubmitNonce((n) => n + 1);
                 }}
                 className={`shrink-0 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium transition-all ${
                   isSelected
@@ -923,6 +882,7 @@ resource "whichcloud_cost_report" "ai_curated_report" {
               <h3 className="text-[15px] font-bold text-ink">Describe or Modify Workload</h3>
               <button
                 type="button"
+                aria-label="Close modal"
                 onClick={() => setEditingWorkload(false)}
                 className="rounded-lg p-1 text-ink-3 hover:text-ink hover:bg-sunk"
               >
@@ -931,16 +891,29 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             </div>
 
             <p className="mt-3 text-[12.5px] text-ink-2">
-              Enter your architectural requirements (traffic, storage, database, budget, region, and availability constraints). Terraform files and architecture graph will update dynamically in &lt;300ms.
+              Enter your architectural requirements (traffic, storage, database, budget, region, and availability constraints). The engine will re-price all three tiers and regenerate the diagram and Terraform files.
             </p>
 
+            <label htmlFor="terraform-workload-input" className="sr-only">
+              Workload description
+            </label>
             <textarea
+              id="terraform-workload-input"
               rows={4}
               value={customWorkloadDraft}
-              onChange={(e) => setCustomWorkloadDraft(e.target.value)}
+              onChange={(e) => {
+                setCustomWorkloadDraft(e.target.value);
+                if (modalError) setModalError(null);
+              }}
               className="mt-3 w-full rounded-xl border border-line bg-canvas p-3 font-mono text-[12.5px] text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand"
               placeholder="e.g. Online store with 40 branches, PostgreSQL Multi-AZ, 500GB storage, $500 budget..."
             />
+
+            {modalError && (
+              <p role="alert" className="mt-2 text-[12px] font-medium text-red-600 dark:text-red-400">
+                {modalError}
+              </p>
+            )}
 
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
@@ -954,41 +927,13 @@ resource "whichcloud_cost_report" "ai_curated_report" {
                 type="button"
                 onClick={() => {
                   const newDesc = customWorkloadDraft.trim();
-                  if (newDesc) {
-                    setDescription(newDesc);
-                    const fallbackRec = buildFallbackRecommendation(newDesc, cloud);
-                    setRecommendation(fallbackRec);
-                    if (fallbackRec.options?.length) {
-                      setAllOptions(
-                        fallbackRec.options.map((o) => ({
-                          label: o.label,
-                          monthly: o.ondemand_monthly_usd ?? o.monthly_usd,
-                          region: o.region,
-                        }))
-                      );
-                      const optMatch =
-                        fallbackRec.options.find((o) => o.label === selectedOption) ??
-                        fallbackRec.options[0];
-                      if (optMatch) {
-                        setMonthlyCost(optMatch.monthly_usd);
-                      }
-                    }
-                    const freshFiles = getDefaultFallbackFiles(
-                      cloud,
-                      selectedOption,
-                      monthlyCost,
-                      region,
-                      newDesc
-                    );
-                    setFiles(freshFiles);
-                    setEditedCode(freshFiles);
-                    if (typeof window !== "undefined") {
-                      try {
-                        sessionStorage.setItem("whichcloud:active_description", newDesc);
-                        sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(fallbackRec));
-                      } catch {}
-                    }
+                  if (!newDesc) {
+                    setModalError("Please enter a workload description before generating.");
+                    return;
                   }
+                  setModalError(null);
+                  setDescription(newDesc);
+                  setSubmitNonce((n) => n + 1);
                   setEditingWorkload(false);
                 }}
                 className="rounded-xl bg-brand px-4 py-2 text-[12.5px] font-semibold text-white shadow-sm hover:bg-brand-strong transition active:scale-[0.98]"
@@ -1325,26 +1270,35 @@ resource "whichcloud_cost_report" "ai_curated_report" {
 
                 {/* Code Editor Body */}
                 <div className="flex flex-1 overflow-hidden font-mono text-[12px] leading-relaxed">
-                  {/* Line Numbers */}
-                  <div
-                    className="select-none overflow-y-hidden border-r border-line/40 bg-surface/30 px-3 py-4 text-right text-ink-3 font-mono text-[11px]"
-                    aria-hidden="true"
-                  >
-                    {currentCode.split("\n").map((_, i) => (
-                      <div key={i} className="h-5">
-                        {i + 1}
+                  {loadingFiles ? (
+                    <div className="flex flex-1 items-center justify-center p-6 text-center text-[12.5px] text-ink-3 animate-pulse">
+                      Generating Terraform files for this workload…
+                    </div>
+                  ) : (
+                    <>
+                      {/* Line Numbers */}
+                      <div
+                        className="select-none overflow-y-hidden border-r border-line/40 bg-surface/30 px-3 py-4 text-right text-ink-3 font-mono text-[11px]"
+                        aria-hidden="true"
+                      >
+                        {currentCode.split("\n").map((_, i) => (
+                          <div key={i} className="h-5">
+                            {i + 1}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
 
-                  {/* Textarea Code Input */}
-                  <textarea
-                    value={currentCode}
-                    onChange={(e) => handleCodeChange(e.target.value)}
-                    spellCheck={false}
-                    className="h-full flex-1 resize-none bg-transparent p-4 font-mono text-ink outline-none focus:ring-0 focus:outline-none"
-                    placeholder="Terraform HCL configuration..."
-                  />
+                      {/* Textarea Code Input */}
+                      <textarea
+                        aria-label={`Terraform file ${activeFile}`}
+                        value={currentCode}
+                        onChange={(e) => handleCodeChange(e.target.value)}
+                        spellCheck={false}
+                        className="h-full flex-1 resize-none bg-transparent p-4 font-mono text-ink outline-none focus:ring-0 focus:outline-none"
+                        placeholder="Terraform HCL configuration..."
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             </div>

@@ -44,13 +44,24 @@ Started: 2026-11-17
 
 ## Phase 1: Fix the Stale-Result Bug
 
+### Phase 1.1 Root-Cause Diagnosis on `/terraform`
+- Frontend state not reset or wrong `useEffect` dependencies: **YES** (`frontend/app/terraform/page.tsx:395` kept `prev ?? fallback`; line `417` merged `{ ...prev, ...initialFallback }`; submit handler passed stale `monthlyCost`/`region` into `getDefaultFallbackFiles`; no nonce to re-trigger on retry; 5.5s timeout fired before live API completed).
+- Fetch or data cache key missing the workload text: **YES** (client-side `fallbackRecommendation.ts` returned identical canned prices on timeout; backend `_cached_intake` lacked whitespace normalization and schema version; `iacApi` GETs lacked `cache: "no-store"`).
+- Result restored from `localStorage` or `sessionStorage`: **YES** (`frontend/app/terraform/page.tsx:231-271` restored `whichcloud:active_architecture` and hardcoded `$519.04` fallback files on mount/param changes; modal saved fallback JSON into `sessionStorage`).
+- Next.js route or fetch cached on Vercel (`dynamic` / `revalidate` / `Cache-Control`): **YES (partial)** (backend POST/dynamic responses lacked `Cache-Control: no-store`; `iacApi` lacked `cache: "no-store"`).
+- Backend Redis or in-memory cache key too coarse: **YES (partial)** (`_cached_intake` lacked normalization and schema version; `/describe/terraform/inspect` & `/describe/export.tf` wasted a separate LLM call via `_cached_intake` before running `planning.build`).
+- LLM extraction cache returning an old answer: **YES (partial)** (`backend/whichcloud/intake.py:1113` cached degraded `_fast_heuristic_draft` results into Postgres `constraints_cache`).
+- Race condition where an older response overwrites a newer one: **YES** (`terraform/page.tsx`, `EstimateWorkbench.tsx`, `WorkspaceView.tsx`, `plan/page.tsx`, `AuditWorkbench.tsx`, `environments/page.tsx` lacked `AbortController` + request ID guards; `fetchThroughWake` in `api.ts` retried aborted requests).
+- Example chips or provider and DEV/PROD toggles overriding the new text: **YES (partial)** (`DEFAULT_WORKLOAD` was a composite prompt rejected with 400 by `/describe`; example chips injected stale `monthlyCost`/`region` fallback files).
+- Textarea value truncated or not the value that is sent: **NO** (full text sent, but banner truncated without a `"Generated for"` timestamp and modal falsely claimed `"<300ms"`).
+
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
-| 1.1 Diagnose root causes on `/terraform` | doing | Checking frontend state, caches, storage, backend cache keys, race conditions | - |
-| 1.2 Fix cache keys & submit lifecycle on `/terraform` | todo | - | - |
-| 1.3 Add "Generated for: <first 60 chars> at <time>" indicator | todo | - | - |
-| 1.4 Check & fix stale-result bugs on `/estimate`, `/audit`, `/environments`, `/dashboard`, `/plan` | todo | - | - |
-| 1.5 Add backend + Playwright tests for stale-result fix | todo | - | - |
+| 1.1 Diagnose root causes on `/terraform` | done | All 9 causes verified YES/NO above with exact file & line evidence | pending |
+| 1.2 Fix cache keys & submit lifecycle on `/terraform` | done | `api.py` (`build_workload_cache_key`, `Cache-Control: no-store`, direct `planning.build`), `intake.py` (no heuristic cache poisoning), `api.ts` (`AbortSignal` + no-retry on abort + `no-store`), `terraform/page.tsx` (clear on submit, `AbortController`, request ID, error + Retry, removed `<300ms`) | pending |
+| 1.3 Add "Generated for: <first 60 chars> at <time>" indicator | done | Added `data-testid="generated-for-stamp"` on `/terraform`, `/estimate`, `/audit`, `/plan`, `/dashboard` | pending |
+| 1.4 Check & fix stale-result bugs on `/estimate`, `/audit`, `/environments`, `/dashboard`, `/plan` | done | Added `AbortController`, request ID guards, clear-on-submit, error display, and `cache: "no-store"` across all 5 pages | pending |
+| 1.5 Add backend + Playwright tests for stale-result fix | done | Curl A (`$491.86`, 32 items, `no-store`) vs B (`$19.39`, 19 items, `no-store`); `pytest backend/tests/test_stale_result_fix.py` 3/3 passed; `npx playwright test tests/stale-result.spec.ts` 1/1 passed (3.1s) | pending |
 
 ---
 

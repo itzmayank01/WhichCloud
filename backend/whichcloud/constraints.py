@@ -507,7 +507,7 @@ def extract(description: str) -> Constraints:
 
     # ── volumes ──
     users, ev = _number_near(
-        text, ("staff", "users", "people", "employees", "doctors", "person")
+        text, ("staff", "users", "visitors", "customers", "people", "employees", "doctors", "person")
     )
     if users:
         c.users = users
@@ -516,10 +516,12 @@ def extract(description: str) -> Constraints:
 
     reqs, ev = _number_near(
         text, ("lookups", "requests", "transactions", "orders", "appointments",
-               "records a day", "queries", "visits", "hits", "bookings",
+               "records a day", "queries", "visits", "visitors", "hits", "bookings",
                "page views", "views a day")
     )
     if reqs:
+        if re.search(r"\b(?:a|per|/)\s*month\b", text.lower()):
+            reqs = max(1, reqs // 30)
         c.requests_per_day = reqs
         c.stated.add("requests_per_day")
         c.evidence["requests_per_day"] = ev

@@ -210,19 +210,28 @@ export default function EnvironmentsPage() {
     loadData();
   }, []);
 
-  // Fetch terraform files when selected environment changes
+  // Fetch terraform files when selected environment changes (abort stale requests)
   useEffect(() => {
     if (!selectedEnvName) return;
+    const controller = new AbortController();
+    setTfFiles({});
+    setDriftReport(null);
+    setFailureReport(null);
     iacApi
-      .getTerraformFiles(selectedEnvName)
+      .getTerraformFiles(selectedEnvName, controller.signal)
       .then((res) => {
+        if (controller.signal.aborted) return;
         setTfFiles(res.files || {});
-        if (res.files && !res.files[selectedTfFile]) {
-          const firstKey = Object.keys(res.files)[0];
-          if (firstKey) setSelectedTfFile(firstKey);
+        const firstKey = Object.keys(res.files || {})[0];
+        if (res.files && !res.files[selectedTfFile] && firstKey) {
+          setSelectedTfFile(firstKey);
         }
       })
-      .catch((err) => console.error("Could not fetch terraform files", err));
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error("Could not fetch terraform files", err);
+      });
+    return () => controller.abort();
   }, [selectedEnvName]);
 
   const selectedEnv =

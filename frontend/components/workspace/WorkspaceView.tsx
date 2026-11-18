@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,7 +15,6 @@ import {
   ArchitectureGraph,
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
-import { buildFallbackRecommendation } from "@/lib/fallbackRecommendation";
 import { CostRail } from "@/components/workspace/CostRail";
 import { TerraformLogo } from "@/components/Logo";
 import { AskPanel } from "@/components/workspace/AskPanel";
@@ -174,10 +173,13 @@ const GENERATE_BUDGET_S = 15;
 export function WorkspaceView({ name }: { name: string | null }) {
   const [description, setDescription] = useState("");
   const [asked, setAsked] = useState("");
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [result, setResult] = useState<Recommendation | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const reqIdRef = useRef(0);
   /* Seconds spent on the current generate, for the progress line below.
      The backend caps the read at 14s and pricing costs well under a second,
      so GENERATE_BUDGET_S is a real ceiling rather than a guess -- which is
@@ -217,24 +219,15 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [picked, setPicked] = useState<SketchSelection | null>(null);
   const [command, setCommand] = useState<SketchCommand | null>(null);
 
-  // Hydrate from sessionStorage on initial load if available
+  // Seed only the saved workload text & cloud preference on mount — never restore stale architecture results
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const cachedArch = sessionStorage.getItem("whichcloud:active_architecture");
       const cachedDesc = sessionStorage.getItem("whichcloud:active_description");
       const cachedCloud = sessionStorage.getItem("whichcloud:active_cloud") as CloudId | null;
-      if (cachedArch) {
-        const parsed = JSON.parse(cachedArch) as Recommendation;
-        if (parsed?.options?.length) {
-          setResult(parsed);
-          if (cachedDesc) {
-            setDescription(cachedDesc);
-            setAsked(cachedDesc);
-          }
-          if (cachedCloud) setCloud(cachedCloud);
-          setSelected(recommend(parsed.options)?.pick.label ?? parsed.options[0]?.label ?? null);
-        }
+      if (cachedDesc) setDescription(cachedDesc);
+      if (cachedCloud === "aws" || cachedCloud === "gcp" || cachedCloud === "azure") {
+        setCloud(cachedCloud);
       }
     } catch {
       // ignore
@@ -248,6 +241,11 @@ export function WorkspaceView({ name }: { name: string | null }) {
   // fibre, so the failure surfaced as "Converting circular structure to JSON"
   // rather than as anything to do with clouds.
   async function ask(overrideCloud?: CloudId | null | unknown) {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const reqId = ++reqIdRef.current;
+
     const text = description.trim() || EXAMPLE;
     const picked =
       overrideCloud === null ||
@@ -259,55 +257,55 @@ export function WorkspaceView({ name }: { name: string | null }) {
     const provider = (picked === undefined ? cloud : picked) ?? "aws";
     setBusy(true);
     setError(null);
-
-    // Prepare instant fallback recommendation matching the user's workload
-    const fallback = buildFallbackRecommendation(text, provider);
+    setResult(null);
+    setSelected(null);
+    setGeneratedAt(null);
 
     try {
-      // Race api.describe with a 4.5s ceiling so waking Render never stalls or fails the user
-      const answer = await Promise.race([
-        api.describe({
+      const answer = await api.describe(
+        {
           description: text,
           provider,
-        }),
-        new Promise<Recommendation>((resolve) => {
-          setTimeout(() => resolve(fallback), 4500);
-        }),
-      ]);
+        },
+        controller.signal,
+      );
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
 
-      const resolved = answer && answer.options?.length ? answer : fallback;
-      setResult(resolved);
+      setResult(answer);
       setAsked(text);
-      setCloud(resolved.provider || provider);
+      setGeneratedAt(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      );
+      setCloud(answer.provider || provider);
       setSelected(
-        recommend(resolved.options)?.pick.label ?? resolved.options[0]?.label ?? null,
+        recommend(answer.options, answer.budget_monthly_usd)?.pick.label ??
+          answer.options[0]?.label ??
+          null,
       );
       if (typeof window !== "undefined") {
         try {
-          sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(resolved));
           sessionStorage.setItem("whichcloud:active_description", text);
-          sessionStorage.setItem("whichcloud:active_cloud", resolved.provider || provider);
+          sessionStorage.setItem("whichcloud:active_cloud", answer.provider || provider);
         } catch {
           // ignore session quota
         }
       }
-    } catch {
-      // On network timeout or Render sleeping, gracefully render the instant fallback
-      setResult(fallback);
-      setAsked(text);
-      setCloud(provider);
-      setSelected(
-        recommend(fallback.options)?.pick.label ?? fallback.options[0]?.label ?? null,
+    } catch (err: unknown) {
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
+      setResult(null);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not price this workload. Please check the backend connection and try again.",
       );
-      if (typeof window !== "undefined") {
-        try {
-          sessionStorage.setItem("whichcloud:active_architecture", JSON.stringify(fallback));
-          sessionStorage.setItem("whichcloud:active_description", text);
-          sessionStorage.setItem("whichcloud:active_cloud", provider);
-        } catch {}
-      }
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted && reqId === reqIdRef.current) {
+        setBusy(false);
+      }
     }
   }
 
@@ -442,6 +440,16 @@ export function WorkspaceView({ name }: { name: string | null }) {
                 </button>
               );
             })}
+            {generatedAt && asked && (
+              <span
+                data-testid="generated-for-stamp"
+                className="ml-auto hidden xl:inline-block truncate max-w-[340px] rounded-md bg-sunk px-2 py-1 font-mono text-[11px] text-ink-3"
+                title={`Generated for: ${asked} at ${generatedAt}`}
+              >
+                Generated for: {asked.slice(0, 60)}
+                {asked.length > 60 ? "…" : ""} at {generatedAt}
+              </span>
+            )}
           </div>
         )}
         {result && result.options.length > 0 ? (
@@ -494,6 +502,16 @@ export function WorkspaceView({ name }: { name: string | null }) {
                 </button>
               );
             })}
+            {generatedAt && asked && (
+              <span
+                data-testid="generated-for-stamp"
+                className="ml-auto hidden xl:inline-block truncate max-w-[340px] rounded-md bg-sunk px-2 py-1 font-mono text-[11px] text-ink-3"
+                title={`Generated for: ${asked} at ${generatedAt}`}
+              >
+                Generated for: {asked.slice(0, 60)}
+                {asked.length > 60 ? "…" : ""} at {generatedAt}
+              </span>
+            )}
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-between">
