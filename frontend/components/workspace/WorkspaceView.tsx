@@ -146,8 +146,13 @@ function DownloadTerraformButton({
     <Link
       href={targetUrl}
       onClick={() => {
-        // Guarantee hard navigation even if client-side SPA router is cached
+        /* Guarantee hard navigation even if client-side SPA router is
+           cached. /terraform reads its workload from the query params, and
+           serving it from the router cache is the stale-result bug Phase 1
+           fixed, so this is deliberate rather than a missed router.push().
+        */
         if (typeof window !== "undefined") {
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
           window.location.href = targetUrl;
         }
       }}

@@ -39,6 +39,14 @@ function DownloadTerraformButton({
     if (description) params.set("description", description);
     if (tier) params.set("option", tier);
     const targetUrl = `/terraform?${params.toString()}`;
+    /* Deliberate hard navigation, not a missed useRouter(). router.push()
+       goes through Next's client router cache, and /terraform reads its
+       workload from these query params -- serving that page from cache is
+       precisely the stale-result bug Phase 1 fixed (see PROGRESS.md Phase
+       1.2). A full document load guarantees the new params are what gets
+       priced.
+    */
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = targetUrl;
   }
 
