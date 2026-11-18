@@ -124,9 +124,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             Set here as well as in .env.local because that file is gitignored
             -- it holds the secret key -- so an env-only setting silently
             reverts to the landing page on any other machine. */}
+        {/* `force`, not `fallback`. A fallback only applies when nothing else
+            asked for a destination, so signing in from a protected page --
+            which is most of them, since the proxy sends you to /sign-in with
+            a redirect_url attached -- landed you back on that page instead of
+            the workspace. Forcing it means signing in always finishes in the
+            same place, which is what makes it feel like a front door rather
+            than an interruption. */}
         <ClerkProvider
-          signInFallbackRedirectUrl="/dashboard"
-          signUpFallbackRedirectUrl="/dashboard"
+          signInForceRedirectUrl="/dashboard"
+          signUpForceRedirectUrl="/dashboard"
         >
           <BackendWarmup />
           {/* Gaps and padding tighten below md. At 390px the signed-in header

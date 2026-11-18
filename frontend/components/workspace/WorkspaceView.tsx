@@ -51,6 +51,46 @@ const EXAMPLE =
   "daily and we do about 8,000 transactions a day. It must not go down " +
   "during business hours because billing stops. Budget is around $500 a month.";
 
+/**
+ * Starting points for the empty canvas.
+ *
+ * The workspace opened on an icon and two lines of text in the middle of an
+ * otherwise empty two-thirds of the viewport -- which asks the one question
+ * a first-time user cannot answer ("what should I type?") and gives them a
+ * blank box to answer it in. These are the same shapes the engine is built
+ * around, written the way somebody actually describes their own system, so
+ * one click produces a real priced architecture instead of a cold start.
+ *
+ * They are deliberately NOT auto-submitted: the text lands in the box so it
+ * can be edited into the reader's own numbers first, which is the point of
+ * a description-driven tool.
+ */
+const STARTERS: { title: string; note: string; text: string }[] = [
+  {
+    title: "Retail chain going online",
+    note: "40 stores · 300 staff · must not go down in business hours",
+    text: EXAMPLE,
+  },
+  {
+    title: "Consumer app with spiky traffic",
+    note: "Launch spikes · media uploads · mostly reads",
+    text:
+      "We run a consumer mobile app in India with about 60,000 monthly users. " +
+      "Traffic is spiky — quiet most of the day, then a big spike each evening " +
+      "and much bigger when we run a campaign. Users upload photos, and most " +
+      "requests are reads of the same content. Budget is around $800 a month.",
+  },
+  {
+    title: "Internal reporting system",
+    note: "Nightly batch · 2 TB history · no public access",
+    text:
+      "We need an internal reporting system for a finance team of 25 people. " +
+      "It loads data overnight from our billing system, keeps about 2 TB of " +
+      "history, and nobody outside the company should ever reach it. Queries " +
+      "run during office hours only. Budget is around $600 a month.",
+  },
+];
+
 /** Which option to put forward, and why. Unchanged from the previous
  *  workspace — the reasoning is sound, only its presentation moved. */
 function recommend(
@@ -878,9 +918,56 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     </p>
                     <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
                       Describe what you&apos;re building in the panel on the
-                      left. You get a priced AWS architecture, drawn from the
-                      same estimate as the bill.
+                      left. You get a priced architecture across AWS, Azure
+                      and Google, drawn from the same estimate as the bill.
                     </p>
+
+                    {/* The canvas is two thirds of the viewport and held
+                        nothing until a description existed, so the first
+                        thing a new user met was a blank box and no idea what
+                        to put in it. One click now fills the description with
+                        a real workload they can edit into their own. */}
+                    <div className="mx-auto mt-8 max-w-xl text-left">
+                      <p className="mb-2.5 text-center font-mono text-[11.5px] uppercase tracking-[0.12em] text-ink-3">
+                        Or start from one of these
+                      </p>
+                      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+                        {STARTERS.map((s) => (
+                          <li key={s.title}>
+                            <button
+                              type="button"
+                              onClick={() => setDescription(s.text)}
+                              className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sunk focus-visible:bg-sunk focus-visible:outline-none"
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13.5px] font-medium text-ink">
+                                  {s.title}
+                                </span>
+                                <span className="mt-0.5 block truncate font-mono text-[11.5px] text-ink-3">
+                                  {s.note}
+                                </span>
+                              </span>
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <path d="M5 12h14M13 6l6 6-6 6" />
+                              </svg>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2.5 text-center text-[12px] text-ink-3">
+                        Lands in the description box so you can change the
+                        numbers to yours before pricing it.
+                      </p>
+                    </div>
                   </>
                 )}
               </div>
