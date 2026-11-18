@@ -15,7 +15,9 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: whichcloud
-          POSTGRES_PASSWORD: whichcloud_dev
+          # No password: trust auth on a container only this job can
+          # reach. Keeps a credential-shaped literal out of the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: whichcloud
         ports:
           - 5432:5432
@@ -34,7 +36,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      WHICHCLOUD_DSN: postgresql://whichcloud:whichcloud_dev@127.0.0.1:5432/whichcloud
+      WHICHCLOUD_DSN: postgresql://whichcloud@127.0.0.1:5432/whichcloud
       WHICHCLOUD_REDIS_URL: redis://127.0.0.1:6379/0
       WHICHCLOUD_DISABLE_LLM: "1"
     steps:
@@ -96,7 +98,9 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: whichcloud
-          POSTGRES_PASSWORD: whichcloud_dev
+          # No password: trust auth on a container only this job can
+          # reach. Keeps a credential-shaped literal out of the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: whichcloud
         ports:
           - 5432:5432
@@ -115,7 +119,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      WHICHCLOUD_DSN: postgresql://whichcloud:whichcloud_dev@127.0.0.1:5432/whichcloud
+      WHICHCLOUD_DSN: postgresql://whichcloud@127.0.0.1:5432/whichcloud
       WHICHCLOUD_REDIS_URL: redis://127.0.0.1:6379/0
       WHICHCLOUD_DISABLE_LLM: "1"
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8010
@@ -175,7 +179,9 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: whichcloud
-          POSTGRES_PASSWORD: whichcloud_dev
+          # No password: trust auth on a container only this job can
+          # reach. Keeps a credential-shaped literal out of the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: whichcloud
         ports:
           - 5432:5432
@@ -185,7 +191,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      WHICHCLOUD_DSN: postgresql://whichcloud:whichcloud_dev@127.0.0.1:5432/whichcloud
+      WHICHCLOUD_DSN: postgresql://whichcloud@127.0.0.1:5432/whichcloud
       WHICHCLOUD_DISABLE_LLM: "1"
       # Shared provider cache. Without it every `terraform init` in the suite
       # re-downloads the aws/google/azurerm providers, which are hundreds of
@@ -196,13 +202,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.8"
-          # The default wrapper replaces `terraform` with a script that adds
-          # its own output. These tests shell out and assert on the real
-          # return code, so they need the genuine binary on PATH.
-          terraform_wrapper: false
+      - name: Install Terraform 1.9.8
+        # Installed by hand rather than with hashicorp/setup-terraform. Two
+        # reasons: that action would have to be pinned to a full commit SHA to
+        # be trustworthy supply-chain-wise (SonarCloud flags the floating tag,
+        # correctly), and almost nothing it offers is wanted here -- its
+        # `terraform` wrapper has to be disabled anyway, because these tests
+        # shell out and assert on the real return code, and the provider cache
+        # below is managed explicitly. So this is a checksum-verified download
+        # of one pinned version, with no third-party action in the chain.
+        env:
+          TF_VERSION: 1.9.8
+          # From https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_SHA256SUMS
+          TF_SHA256: 186e0145f5e5f2eb97cbd785bc78f21bae4ef15119349f6ad4fa535b83b10df8
+        run: |
+          set -euo pipefail
+          zip="terraform_${TF_VERSION}_linux_amd64.zip"
+          curl -fsSL -o "$zip" "https://releases.hashicorp.com/terraform/${TF_VERSION}/${zip}"
+          echo "${TF_SHA256}  ${zip}" | sha256sum -c -
+          sudo unzip -o -q "$zip" -d /usr/local/bin
+          rm -f "$zip"
+          terraform version
       - name: Create the provider plugin cache directory
         # terraform fails rather than creating TF_PLUGIN_CACHE_DIR itself.
         run: mkdir -p "$TF_PLUGIN_CACHE_DIR"

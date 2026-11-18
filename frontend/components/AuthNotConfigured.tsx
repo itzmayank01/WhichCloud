@@ -9,13 +9,10 @@ import Link from "next/link";
  * and where the rest of the product still works -- the pricing engine,
  * diagrams and Terraform export need no account.
  */
-export function AuthNotConfigured({ action }: { action: string }) {
+export function AuthNotConfigured({ action }: Readonly<{ action: string }>) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <div
-        role="status"
-        className="max-w-md rounded-2xl border border-line bg-surface p-7 text-center shadow-xs"
-      >
+      <output className="block max-w-md rounded-2xl border border-line bg-surface p-7 text-center shadow-xs">
         <h1 className="text-[19px] font-semibold text-ink">
           {action} is unavailable
         </h1>
@@ -43,7 +40,7 @@ export function AuthNotConfigured({ action }: { action: string }) {
             Back to home
           </Link>
         </div>
-      </div>
+      </output>
     </div>
   );
 }
