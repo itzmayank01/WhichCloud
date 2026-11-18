@@ -7,6 +7,7 @@ import {
   Controls,
   Handle,
   Position,
+  MarkerType,
   BaseEdge,
   EdgeLabelRenderer,
   useReactFlow,
@@ -689,7 +690,7 @@ function Inner({
       markerEnd: e.attach
         ? undefined
         : {
-            type: "arrowclosed" as any,
+            type: MarkerType.ArrowClosed,
             color: EDGE_STYLE(e).stroke,
             width: 16,
             height: 16,

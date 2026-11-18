@@ -25,9 +25,17 @@ import { buildGraphModel } from "../lib/graphModel.ts";
 import { layout, routeStats, type LaidEdge } from "../lib/elkLayout.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** The fixture file's shape, derived from what buildGraphModel accepts so it
+ *  cannot drift from the real node/edge types. */
+type TopoNodes = Parameters<typeof buildGraphModel>[0];
+type TopoEdges = Parameters<typeof buildGraphModel>[1];
+type Tier = { label: string; nodes: TopoNodes; edges: TopoEdges };
+type Fixtures = Record<string, { tiers: Tier[] }>;
+
 const data = JSON.parse(
   readFileSync(join(here, "..", "lib", "fixtureTopologies.json"), "utf8")
-);
+) as { fixtures: Fixtures };
 
 type Rect = { x: number; y: number; w: number; h: number };
 const overlap = (a: Rect, b: Rect, pad = -1) =>
@@ -120,8 +128,8 @@ type Metrics = {
 };
 
 async function measureTier(
-  nodes: any[],
-  edges: any[],
+  nodes: TopoNodes,
+  edges: TopoEdges,
   label: string,
   cloud: "aws" | "gcp" | "azure" = "aws"
 ): Promise<Metrics> {
@@ -349,7 +357,7 @@ function bfs(start: string, adj: Map<string, Set<string>>): Set<string> {
 }
 
 async function main() {
-  const fixtures = data.fixtures as Record<string, any>;
+  const fixtures = data.fixtures;
   let failures = 0;
   const lines: string[] = [];
   lines.push("# Diagram layout quality\n");

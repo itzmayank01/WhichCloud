@@ -16,7 +16,7 @@
  * user sees.
  */
 
-import ELK from "elkjs/lib/elk.bundled.js";
+import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
 import type { GraphModel, PlanedNode, ContainerId } from "@/lib/graphModel";
 
 // AWS reference service-box proportions. Was 200x92, which at 21 services
@@ -597,9 +597,9 @@ export async function layout(
   // ratio is the one the reader gets.
   const TARGET_RATIO = 1.6;
   const attempt = async (direction: string) => {
-    const g = JSON.parse(JSON.stringify(graph));
-    g.layoutOptions["elk.direction"] = direction;
-    const out: any = await new ELK().layout(g);
+    const g = JSON.parse(JSON.stringify(graph)) as ElkNode;
+    g.layoutOptions = { ...g.layoutOptions, "elk.direction": direction };
+    const out = await new ELK().layout(g);
     const ratio = (out.width ?? 1) / (out.height ?? 1);
     // Score by how much of the viewport the result will actually COVER once
     // fitted, not by |ratio - target|. That difference is asymmetric and picks
@@ -613,11 +613,11 @@ export async function layout(
     return { out, ratio, coverage };
   };
   const [right, down] = await Promise.all([attempt("RIGHT"), attempt("DOWN")]);
-  const res: any = (right.coverage >= down.coverage ? right : down).out;
+  const res = (right.coverage >= down.coverage ? right : down).out;
 
   // Post-process VPC: ensure Zone A is above Zone B, and align Zone B's
   // App subnet horizontally directly below Zone A's App subnet.
-  const findVpc = (node: any): any => {
+  const findVpc = (node: ElkNode): ElkNode | null => {
     if (node.id === "vpc") return node;
     for (const c of node.children ?? []) {
       const v = findVpc(c);
@@ -627,16 +627,16 @@ export async function layout(
   };
   const vpcNode = findVpc(res);
   if (vpcNode && vpcNode.children) {
-    const aza = vpcNode.children.find((c: any) => c.id === "az-a");
-    const azb = vpcNode.children.find((c: any) => c.id === "az-b");
-    if (aza && azb && azb.y < aza.y) {
-      const topY = azb.y;
+    const aza = vpcNode.children.find((c) => c.id === "az-a");
+    const azb = vpcNode.children.find((c) => c.id === "az-b");
+    if (aza && azb && (azb.y ?? 0) < (aza.y ?? 0)) {
+      const topY = azb.y ?? 0;
       const h_a = aza.height ?? 0;
       aza.y = topY;
       azb.y = topY + h_a + 28;
-      const appA = (aza.children ?? []).find((c: any) => c.id.startsWith("subnet-app"));
+      const appA = (aza.children ?? []).find((c) => c.id.startsWith("subnet-app"));
       if (appA) {
-        azb.x = aza.x + (appA.x ?? 0) - 16;
+        azb.x = (aza.x ?? 0) + (appA.x ?? 0) - 16;
       }
     }
   }
@@ -653,7 +653,7 @@ export async function layout(
   const abs = new Map<string, { x: number; y: number }>();
   const box = new Map<string, { x: number; y: number; w: number; h: number }>();
 
-  const walk = (elkNode: any, ox: number, oy: number, parentId?: string) => {
+  const walk = (elkNode: ElkNode, ox: number, oy: number, parentId?: string) => {
     const x = ox + (elkNode.x ?? 0);
     const y = oy + (elkNode.y ?? 0);
     abs.set(elkNode.id, { x, y });
@@ -700,7 +700,7 @@ export async function layout(
   // puts cross-container edges on the root, so their sections are already
   // absolute. Resolve each edge's container offset to be safe.
   const edges: LaidEdge[] = [];
-  const collectEdges = (elkNode: any, ox: number, oy: number) => {
+  const collectEdges = (elkNode: ElkNode, ox: number, oy: number) => {
     const base = abs.get(elkNode.id) ?? { x: ox, y: oy };
     for (const e of elkNode.edges ?? []) {
       // The tier-ordering chain is a LAYOUT CONSTRAINT, not a relationship. It

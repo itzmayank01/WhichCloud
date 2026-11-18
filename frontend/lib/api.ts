@@ -941,14 +941,14 @@ export const api = {
     ),
 
   finopsResources: (provider = "aws", accountId = "demo", token?: string, sync = false) =>
-    get<{ resources: any[]; provider: string; account_id: string }>(
+    get<{ resources: CloudResource[]; provider: string; account_id: string }>(
       `/api/finops/resources?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}${sync ? `&sync=true&_t=${Date.now()}` : ""}`,
       0,
       token,
     ),
 
   finopsIssues: (provider = "aws", accountId = "demo", token?: string, sync = false) =>
-    get<{ issues: any[]; provider: string; account_id: string }>(
+    get<{ issues: FinOpsIssue[]; provider: string; account_id: string }>(
       `/api/finops/issues?provider=${encodeURIComponent(provider)}&account_id=${encodeURIComponent(accountId)}${sync ? `&sync=true&_t=${Date.now()}` : ""}`,
       0,
       token,
@@ -1049,6 +1049,57 @@ export type GitHubReposResponse = {
    *  mid-session -- surfaced rather than silently dropped. */
   errors: string[];
 };
+
+/** The live resource identifiers an environment reports. The four keys the
+ *  UI reads are strings; the index signature leaves room for ones the
+ *  backend adds without forcing a frontend change. Typed concretely rather
+ *  than as opaque JSON because /environments renders these directly, and an
+ *  object reaching a React child throws at runtime. */
+export interface IacLiveResources {
+  vpc_id?: string;
+  alb_dns?: string;
+  rds_primary?: string;
+  s3_bucket?: string;
+  [key: string]: string | undefined;
+}
+
+/** A resource as /api/finops/resources returns it. Declared here rather than
+ *  in the view that renders it, so the API client can type its own response:
+ *  `resources: any[]` meant every consumer re-described the shape by hand. */
+export interface CloudResource {
+  id: string;
+  name: string;
+  service: string;
+  type: string;
+  category: "compute" | "database" | "storage" | "networking" | "cache";
+  region: string;
+  monthly_usd: number;
+  utilization_pct: number;
+  status: "healthy" | "idle" | "overprovisioned" | "warning";
+  tags: {
+    env: string;
+    team: string;
+    attached_to?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+/** An issue as /api/finops/issues returns it. Same reasoning as above. */
+export interface FinOpsIssue {
+  id: string;
+  title: string;
+  service: string;
+  category: string;
+  severity: "critical" | "warning" | "opportunity";
+  waste_monthly_usd: number;
+  detected_at: string;
+  resource_id: string;
+  region: string;
+  description: string;
+  remediation_summary: string;
+  terraform_fix: string;
+  remediated?: boolean;
+}
 
 export type FinOpsNode = {
   id: string;
@@ -1267,7 +1318,7 @@ export interface IacEnvironmentRecord {
   is_locked: boolean;
   lock_reason?: string | null;
   parameters: IacEnvironmentConfig;
-  live_resources: Record<string, any>;
+  live_resources: IacLiveResources;
   last_deployed_at: string;
   last_drift_check_at?: string | null;
   last_drift_status?: string | null;
@@ -1282,8 +1333,8 @@ export interface IacDeploymentRecord {
   triggered_by: string;
   trigger_type: "MANUAL" | "CI_CD" | "AUTO_REMEDIATION" | "ROLLBACK";
   status: "PLANNING" | "IN_PROGRESS" | "SUCCESS" | "FAILED" | "ROLLED_BACK";
-  plan_summary: Record<string, any>;
-  parameters_snapshot: Record<string, any>;
+  plan_summary: Record<string, unknown>;
+  parameters_snapshot: Record<string, unknown>;
   execution_logs: string[];
   duration_ms: number;
   rollback_from_id?: string | null;
@@ -1294,8 +1345,8 @@ export interface IacDriftItem {
   resource_id: string;
   resource_type: string;
   attribute: string;
-  expected_value: any;
-  actual_value: any;
+  expected_value: unknown;
+  actual_value: unknown;
   severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 }
 
@@ -1363,7 +1414,7 @@ export const iacApi = {
   },
   deploy: async (body: {
     environment_name: string;
-    parameter_overrides?: Record<string, any>;
+    parameter_overrides?: Record<string, unknown>;
     dry_run_only?: boolean;
     triggered_by?: string;
   }): Promise<IacDeploymentRecord> => {

@@ -15,10 +15,21 @@ import { buildGraphModel } from "../lib/graphModel.ts";
 import { layout } from "../lib/elkLayout.ts";
 
 const RUNS = 10;
-const data = JSON.parse(
+
+/** The fixture file's shape, derived from what buildGraphModel accepts so it
+ *  cannot drift from the real node/edge types. */
+type Tier = {
+  label: string;
+  nodes: Parameters<typeof buildGraphModel>[0];
+  edges: Parameters<typeof buildGraphModel>[1];
+};
+type Fixtures = Record<string, { tiers: Tier[] }>;
+
+const data: unknown = JSON.parse(
   readFileSync(new URL("../lib/fixtureTopologies.json", import.meta.url), "utf8")
 );
-const fixtures: any = (data as any).fixtures ?? data;
+/* The file has been written both as {fixtures: {...}} and as a bare map. */
+const fixtures = ((data as { fixtures?: Fixtures }).fixtures ?? data) as Fixtures;
 
 const hashOf = (laid: Awaited<ReturnType<typeof layout>>) =>
   createHash("sha1")
@@ -39,7 +50,7 @@ const hashOf = (laid: Awaited<ReturnType<typeof layout>>) =>
 async function main() {
   let failures = 0;
   let checked = 0;
-  for (const [name, fx] of Object.entries<any>(fixtures)) {
+  for (const [name, fx] of Object.entries(fixtures)) {
     for (const tier of fx.tiers) {
       const hashes = new Set<string>();
       for (let i = 0; i < RUNS; i++) {

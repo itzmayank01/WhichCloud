@@ -154,6 +154,13 @@ const DEFAULT_DEVOPS_METRICS: IacDevOpsMetrics = {
   avg_apply_duration_seconds: 14.8,
 };
 
+/** A caught value is `unknown`, not an Error: a rejected fetch can throw a
+ *  string or a plain object. Reading `.message` off `any` silently yields
+ *  undefined for those, which is what reached the console log. */
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export default function EnvironmentsPage() {
   const [environments, setEnvironments] = useState<IacEnvironmentRecord[]>(DEFAULT_IAC_ENVIRONMENTS);
   const [selectedEnvName, setSelectedEnvName] = useState<string>("dev");
@@ -249,8 +256,8 @@ export default function EnvironmentsPage() {
 
       setConsoleLogs(dep.execution_logs);
       await loadData();
-    } catch (err: any) {
-      setConsoleLogs((prev) => [...prev, `[ERROR] Deployment failed: ${err.message}`]);
+    } catch (err) {
+      setConsoleLogs((prev) => [...prev, `[ERROR] Deployment failed: ${errorText(err)}`]);
     } finally {
       setActionInProgress(null);
     }
@@ -271,8 +278,8 @@ export default function EnvironmentsPage() {
 
       setConsoleLogs(dep.execution_logs);
       await loadData();
-    } catch (err: any) {
-      setConsoleLogs((prev) => [...prev, `[ERROR] Rollback failed: ${err.message}`]);
+    } catch (err) {
+      setConsoleLogs((prev) => [...prev, `[ERROR] Rollback failed: ${errorText(err)}`]);
     } finally {
       setActionInProgress(null);
     }
@@ -291,8 +298,8 @@ export default function EnvironmentsPage() {
         ...audit.remediation_plan.map((p) => `[PLAN] ${p}`),
       ]);
       await loadData();
-    } catch (err: any) {
-      setConsoleLogs((prev) => [...prev, `[ERROR] Drift scan failed: ${err.message}`]);
+    } catch (err) {
+      setConsoleLogs((prev) => [...prev, `[ERROR] Drift scan failed: ${errorText(err)}`]);
     } finally {
       setActionInProgress(null);
     }
@@ -313,8 +320,8 @@ export default function EnvironmentsPage() {
         `[METRICS] Calculated MTTR: ${result.mttr_seconds}s`,
       ]);
       await loadData();
-    } catch (err: any) {
-      setConsoleLogs((prev) => [...prev, `[ERROR] Failure simulation failed: ${err.message}`]);
+    } catch (err) {
+      setConsoleLogs((prev) => [...prev, `[ERROR] Failure simulation failed: ${errorText(err)}`]);
     } finally {
       setActionInProgress(null);
     }
@@ -464,16 +471,18 @@ export default function EnvironmentsPage() {
 
       {/* Tabs Navigation */}
       <div className="mb-6 flex border-b border-line">
-        {[
+        {([
           { id: "overview", label: "Environment Overview", icon: "lucide:layout-grid" },
           { id: "matrix", label: "Parameterized Differences Matrix", icon: "lucide:table" },
           { id: "terraform", label: "Terraform IaC Code", icon: "lucide:file-code-2" },
           { id: "failure-lab", label: "Controlled Failure & Recovery Lab", icon: "lucide:flame" },
           { id: "deployments", label: "Deployment History", icon: "lucide:history" },
-        ].map((t) => (
+          // `as const` so t.id is the tab union rather than string -- that is
+          // what made the cast necessary, and a typo in an id now fails here.
+        ] as const).map((t) => (
           <button
             key={t.id}
-            onClick={() => setActiveTab(t.id as any)}
+            onClick={() => setActiveTab(t.id)}
             className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === t.id
                 ? "border-accent text-accent"
