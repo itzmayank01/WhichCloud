@@ -1099,18 +1099,19 @@ def parse_description(
 
     draft = _cached_draft(key) if cacheable else None
     if draft is None:
+        used_fallback = False
         if client is not None:
             draft = _draft_with_failover(description, provider, client)
         else:
             try:
                 draft = _draft_with_failover(description, provider, client)
             except Exception:
+                used_fallback = True
                 draft = _fast_heuristic_draft(description)
-        # Never cache nothing. A draft that reads as no requirement at all is
-        # a failure that happens to validate, and storing it would serve that
-        # emptiness back for every later request for the same description --
-        # permanently, since the first answer is the one kept.
-        if cacheable and draft.goal.strip():
+        # Never cache nothing, and never cache degraded heuristic fallbacks:
+        # a temporary LLM failure must not permanently poison the cache for
+        # this workload description.
+        if cacheable and not used_fallback and draft.goal.strip():
             _store_draft(key, description, provider, draft)
 
     try:

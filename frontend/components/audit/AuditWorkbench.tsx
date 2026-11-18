@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, money, type AuditReport } from "@/lib/api";
 import { CostReport } from "./CostReport";
 
@@ -15,20 +15,44 @@ import { CostReport } from "./CostReport";
  */
 export function AuditWorkbench() {
   const [report, setReport] = useState<AuditReport | null>(null);
+  const [generatedFor, setGeneratedFor] = useState<{ filename: string; time: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const reqIdRef = useRef(0);
 
   async function upload(file: File) {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const reqId = ++reqIdRef.current;
+
     setBusy(true);
     setError(null);
     setReport(null);
+    setGeneratedFor(null);
+    setExpanded(null);
     try {
-      setReport(await api.audit(file));
+      const res = await api.audit(file, controller.signal);
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
+      setReport(res);
+      setGeneratedFor({
+        filename: file.name,
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     } catch (e) {
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
       setError(e instanceof Error ? e.message : "Could not read that file.");
+      setReport(null);
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted && reqId === reqIdRef.current) {
+        setBusy(false);
+      }
     }
   }
 
@@ -48,14 +72,24 @@ export function AuditWorkbench() {
           disabled={busy}
           onChange={(e) => {
             const file = e.target.files?.[0];
+            e.target.value = "";
             if (file) void upload(file);
           }}
         />
       </label>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-relaxed text-red-800">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-relaxed text-red-800">
           {error}
+        </div>
+      )}
+
+      {generatedFor && report && (
+        <div
+          data-testid="generated-for-stamp"
+          className="text-xs font-mono text-ink-3"
+        >
+          Generated for: {generatedFor.filename.slice(0, 60)} at {generatedFor.time}
         </div>
       )}
 

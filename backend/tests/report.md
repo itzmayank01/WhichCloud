@@ -1,6 +1,6 @@
 # WhichCloud regression harness report
 
-Run at 2026-11-16 17:21:02 UTC
+Run at 2026-11-18 07:21:28 UTC
 
 ## Architecture fingerprint matrix
 
@@ -11,12 +11,13 @@ Run at 2026-11-16 17:21:02 UTC
 | coaching-platform | web_app | 21 | [7, 0] _(declared: no further improvement)_ |
 | ecommerce-scale | web_app | 17 | [8, 0] _(declared: no further improvement)_ |
 | event-webhook | event_driven | 10 | [5, 6] |
-| fintech-bengaluru | web_app | 17 | [6, 5] |
-| hospital-pune | web_app | 17 | [7, 0] _(declared: no further improvement)_ |
-| hospital-pune-public | web_app | 18 | [8, 0] _(declared: no further improvement)_ |
+| fintech-bengaluru | web_app | 18 | [6, 5] |
+| hospital-pune | web_app | 17 | [7, 5] |
+| hospital-pune-public | web_app | 18 | [8, 5] |
 | internal-low-stakes | web_app | 10 | [7, 0] _(declared: no further improvement)_ |
 | ml-inference | ml_inference | 8 | [8, 5] |
 | realtime-chat | realtime | 8 | [5, 6] |
+| retail-chain | web_app | 13 | [7, 8] |
 | static-site | static_site | 6 | [3, 4] |
 | vm-migration | migration | 10 | [4, 4] |
 
@@ -24,7 +25,7 @@ Run at 2026-11-16 17:21:02 UTC
 
 **Tier spread** (consecutive tiers must differ by >= 3 services, or say no further improvement is worth buying): none thin
 
-Coverage: **13** fixture(s) priced, **0** withheld.
+Coverage: **14** fixture(s) priced, **0** withheld.
 
 | fixture | passed | failed | status |
 |---|---|---|---|
@@ -34,12 +35,13 @@ Coverage: **13** fixture(s) priced, **0** withheld.
 | coaching-platform | 158 | 0 | OK |
 | ecommerce-scale | 139 | 0 | OK |
 | event-webhook | 144 | 0 | OK |
-| fintech-bengaluru | 136 | 0 | OK |
-| hospital-pune-public | 155 | 0 | OK |
-| hospital-pune | 148 | 0 | OK |
+| fintech-bengaluru | 139 | 0 | OK |
+| hospital-pune-public | 161 | 0 | OK |
+| hospital-pune | 154 | 0 | OK |
 | internal-low-stakes | 122 | 0 | OK |
 | ml-inference | 133 | 0 | OK |
 | realtime-chat | 142 | 0 | OK |
+| retail-chain | 112 | 0 | OK |
 | static-site | 126 | 0 | OK |
 | vm-migration | 137 | 0 | OK |
 
@@ -776,7 +778,7 @@ Tier totals: tier_1=$137.50, tier_2=$146.40, tier_3=$180.17
 
 ## fintech-bengaluru
 
-Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
+Tier totals: tier_1=$229.67, tier_2=$296.41, tier_3=$440.52
 
 | assertion | result | expected | actual | reason |
 |---|---|---|---|---|
@@ -796,9 +798,9 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-1:tier_1 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_2 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_3 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
-| INV-2:tier_1 | pass | <= 1 NAT gateways | 1 |  |
-| INV-2:tier_2 | pass | <= 1 NAT gateways | 1 |  |
-| INV-2:tier_3 | pass | <= 1 NAT gateways | 1 |  |
+| INV-2:tier_1 | pass | <= 2 NAT gateways | 2 |  |
+| INV-2:tier_2 | pass | <= 2 NAT gateways | 2 |  |
+| INV-2:tier_3 | pass | <= 2 NAT gateways | 2 |  |
 | INV-3:tier_1 | pass | passes constraint_filter.check() | valid |  |
 | INV-3:tier_2 | pass | passes constraint_filter.check() | valid |  |
 | INV-3:tier_3 | pass | passes constraint_filter.check() | valid |  |
@@ -808,16 +810,17 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-5:Message queue: not added, noth | pass | non-empty reason string | Message queue: not added, nothing in the description is asynchronous, batched or long-running |  |
 | INV-6:tier_2 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=4 no_further=False |  |
 | INV-6:tier_3 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=1 no_further=False |  |
-| INV-7:tier_1 | pass | non-null rto and rpo | rto='30-120 min' rpo='= backup interval' |  |
-| INV-7:tier_2 | pass | non-null rto and rpo | rto='30-120 min' rpo='= backup interval' |  |
+| INV-7:tier_1 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
+| INV-7:tier_2 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_3 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
-| INV-8:tier_1 | pass | sum of line items == 139.66 | 139.66 |  |
-| INV-8:tier_2 | pass | sum of line items == 176.69 | 176.69 |  |
-| INV-8:tier_3 | pass | sum of line items == 320.8 | 320.8 |  |
-| INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 1 |
-| INV-9:tier_1:db.t4g.micro | pass | sku exists in region ap-south-1 | found | Database |
+| INV-8:tier_1 | pass | sum of line items == 229.67 | 229.67 |  |
+| INV-8:tier_2 | pass | sum of line items == 296.41 | 296.41 |  |
+| INV-8:tier_3 | pass | sum of line items == 440.52 | 440.52 |  |
+| INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 2 |
+| INV-9:tier_1:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
 | INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
 | INV-9:tier_1:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
+| INV-9:tier_1:alb | pass | sku exists in region ap-south-1 | found | Load balancer |
 | INV-9:tier_1:backup:cross-region-warm | pass | sku exists in region ap-south-1 | found | Cross-region backup copy (storage at destination) |
 | INV-9:tier_1:transfer:inter-region | pass | sku exists in region ap-south-1 | found | Cross-region backup transfer (changed data) |
 | INV-9:tier_1:s3:glacier-instant | pass | sku exists in region ap-south-1 | found | Archived retention |
@@ -827,16 +830,17 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-9:tier_1:waf:webacl | pass | sku exists in region ap-south-1 | found | WAF Web ACL |
 | INV-9:tier_1:waf:rule | pass | sku exists in region ap-south-1 | found | WAF rules × 3 |
 | INV-9:tier_1:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
-| INV-9:tier_1:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
+| INV-9:tier_1:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 2 |
 | INV-9:tier_1:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
 | INV-9:tier_1:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
 | INV-9:tier_1:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
 | INV-9:tier_1:backup:warm-storage | pass | sku exists in region ap-south-1 | found | Backup storage |
 | INV-9:tier_1:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_1:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
-| INV-9:tier_2:db.t4g.micro | pass | sku exists in region ap-south-1 | found | Database |
+| INV-9:tier_2:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
 | INV-9:tier_2:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
 | INV-9:tier_2:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
+| INV-9:tier_2:alb | pass | sku exists in region ap-south-1 | found | Load balancer |
 | INV-9:tier_2:backup:cross-region-warm | pass | sku exists in region ap-south-1 | found | Cross-region backup copy (storage at destination) |
 | INV-9:tier_2:transfer:inter-region | pass | sku exists in region ap-south-1 | found | Cross-region backup transfer (changed data) |
 | INV-9:tier_2:s3:glacier-instant | pass | sku exists in region ap-south-1 | found | Archived retention |
@@ -846,13 +850,13 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-9:tier_2:waf:webacl | pass | sku exists in region ap-south-1 | found | WAF Web ACL |
 | INV-9:tier_2:waf:rule | pass | sku exists in region ap-south-1 | found | WAF rules × 3 |
 | INV-9:tier_2:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
-| INV-9:tier_2:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
+| INV-9:tier_2:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 2 |
 | INV-9:tier_2:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
 | INV-9:tier_2:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
 | INV-9:tier_2:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
 | INV-9:tier_2:backup:warm-storage | pass | sku exists in region ap-south-1 | found | Backup storage |
-| INV-9:tier_2:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-1 | found | Fargate vCPU × 1 tasks |
-| INV-9:tier_2:fargate:arm-gb-hour | pass | sku exists in region ap-south-1 | found | Fargate memory × 1 tasks |
+| INV-9:tier_2:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-1 | found | Fargate vCPU × 2 tasks |
+| INV-9:tier_2:fargate:arm-gb-hour | pass | sku exists in region ap-south-1 | found | Fargate memory × 2 tasks |
 | INV-9:tier_2:secretsmanager:secret | pass | sku exists in region ap-south-1 | found | Secrets × 1 |
 | INV-9:tier_2:guardduty:fargate-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: Fargate |
 | INV-9:tier_2:guardduty:rds-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: database |
@@ -860,9 +864,10 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-9:tier_2:securityhub:compliance-check | pass | sku exists in region ap-south-1 | found | Security posture checks |
 | INV-9:tier_2:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_2:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
-| INV-9:tier_3:db.t4g.micro | pass | sku exists in region ap-south-1 | found | Database |
+| INV-9:tier_3:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
 | INV-9:tier_3:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
 | INV-9:tier_3:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
+| INV-9:tier_3:alb | pass | sku exists in region ap-south-1 | found | Load balancer |
 | INV-9:tier_3:backup:cross-region-warm | pass | sku exists in region ap-south-1 | found | Cross-region backup copy (storage at destination) |
 | INV-9:tier_3:transfer:inter-region | pass | sku exists in region ap-south-1 | found | Cross-region backup transfer (changed data) |
 | INV-9:tier_3:s3:glacier-instant | pass | sku exists in region ap-south-1 | found | Archived retention |
@@ -872,13 +877,13 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-9:tier_3:waf:webacl | pass | sku exists in region ap-south-1 | found | WAF Web ACL |
 | INV-9:tier_3:waf:rule | pass | sku exists in region ap-south-1 | found | WAF rules × 3 |
 | INV-9:tier_3:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
-| INV-9:tier_3:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 1 |
+| INV-9:tier_3:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 2 |
 | INV-9:tier_3:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
 | INV-9:tier_3:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
 | INV-9:tier_3:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
 | INV-9:tier_3:backup:warm-storage | pass | sku exists in region ap-south-1 | found | Backup storage |
-| INV-9:tier_3:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-1 | found | Fargate vCPU × 1 tasks |
-| INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-1 | found | Fargate memory × 1 tasks |
+| INV-9:tier_3:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-1 | found | Fargate vCPU × 2 tasks |
+| INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-1 | found | Fargate memory × 2 tasks |
 | INV-9:tier_3:secretsmanager:secret | pass | sku exists in region ap-south-1 | found | Secrets × 1 |
 | INV-9:tier_3:guardduty:fargate-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: Fargate |
 | INV-9:tier_3:guardduty:rds-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: database |
@@ -893,7 +898,7 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | Digital Personal Data Protection Act 2023; RBI Storage of Payment System Data directive | Digital Personal Data Protection Act 2023; RBI Storage of Payment System Data directive |  |
-| INV-11 | pass | private_standard (or no_vpc, for a design with no network of your own) whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=low, durability=high, isolation_required=True) |  |
+| INV-11 | pass | private_standard (or no_vpc, for a design with no network of your own) whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
 | INV-12 | pass | no priced output when the archetype is not priceable | state=priced (priceable, not withheld) |  |
 | INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
 | INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=250 durability=high (stated) |  |
@@ -904,22 +909,22 @@ Tier totals: tier_1=$139.66, tier_2=$176.69, tier_3=$320.80
 | INV-17:tier_1->tier_2 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=6 added=['compute_fargate', 'posture', 'secrets', 'threat', 'tracing'] dropped=['compute'] | Compute: self-managed EC2 + Auto Scaling → ECS on Fargate — removes unpatched-host compromise and manual patch-window downtime as risks.; Secrets: environment v |
 | INV-17:tier_2->tier_3 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=5 added=['audit@standby', 'compute_fargate@standby', 'database@standby', 'kms@standby', 'tls@standby'] dropped=[] | Topology: single-region Multi-AZ → warm standby in a second in-country region — removes a whole-region outage as a risk. |
 | INV-18 | pass | duty cycle applied wherever it is below 1.0 | no tier has a duty cycle below 1.0 (always-on workload) |  |
-| INV-19:tier_1 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 18 nodes, 15 edges, clean |  |
-| INV-19:tier_2 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 22 nodes, 14 edges, clean |  |
-| INV-19:tier_3 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 26 nodes, 18 edges, clean |  |
-| INV-20:tier_1 | pass | every priced service kind has a node | all 17 priced kinds drawn |  |
-| INV-20:tier_2 | pass | every priced service kind has a node | all 21 priced kinds drawn |  |
-| INV-20:tier_3 | pass | every priced service kind has a node | all 21 priced kinds drawn |  |
+| INV-19:tier_1 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 19 nodes, 16 edges, clean |  |
+| INV-19:tier_2 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 23 nodes, 15 edges, clean |  |
+| INV-19:tier_3 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 27 nodes, 19 edges, clean |  |
+| INV-20:tier_1 | pass | every priced service kind has a node | all 18 priced kinds drawn |  |
+| INV-20:tier_2 | pass | every priced service kind has a node | all 22 priced kinds drawn |  |
+| INV-20:tier_3 | pass | every priced service kind has a node | all 22 priced kinds drawn |  |
 | INV-21:tier_1->tier_2 | pass | a different graph, or an explicit 'no further improvement' statement | 6 node(s) differ |  |
 | INV-21:tier_2->tier_3 | pass | a different graph, or an explicit 'no further improvement' statement | 4 node(s) differ |  |
 | INV-4:public_facing | pass | True not written in the prompt | not in prompt text |  |
-| golden_totals:tier_1 | pass | $139.66 | $139.66 |  |
-| golden_totals:tier_2 | pass | $176.69 | $176.69 |  |
-| golden_totals:tier_3 | pass | $320.80 | $320.80 |  |
+| golden_totals:tier_1 | pass | $229.67 | $229.67 |  |
+| golden_totals:tier_2 | pass | $296.41 | $296.41 |  |
+| golden_totals:tier_3 | pass | $440.52 | $440.52 |  |
 
 ## hospital-pune-public
 
-Tier totals: tier_1=$289.01, tier_2=$346.29, tier_3=$346.29
+Tier totals: tier_1=$289.01, tier_2=$346.29, tier_3=$490.41
 
 | assertion | result | expected | actual | reason |
 |---|---|---|---|---|
@@ -951,7 +956,7 @@ Tier totals: tier_1=$289.01, tier_2=$346.29, tier_3=$346.29
 | forbidden:GDPR | pass | never cites GDPR | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
 | budget:tier_1 | pass | True | True | $289.01 vs $900.00 budget |
 | budget:tier_2 | pass | True | True | $346.29 vs $900.00 budget |
-| budget:tier_3 | pass | True | True | $346.29 vs $900.00 budget |
+| budget:tier_3 | pass | True | True | $490.41 vs $900.00 budget |
 | INV-1:tier_1 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_2 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=True rung1_ok=True |  |
 | INV-1:tier_3 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=True rung1_ok=True |  |
@@ -965,13 +970,13 @@ Tier totals: tier_1=$289.01, tier_2=$346.29, tier_3=$346.29
 | INV-5:Read replica: not added, 0.69  | pass | non-empty reason string | Read replica: not added, 0.69 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |  |
 | INV-5:Message queue: not added, noth | pass | non-empty reason string | Message queue: not added, nothing in the description is asynchronous, batched or long-running |  |
 | INV-6:tier_2 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=5 no_further=False |  |
-| INV-6:tier_3 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=0 no_further=True |  |
+| INV-6:tier_3 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=1 no_further=False |  |
 | INV-7:tier_1 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_2 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_3 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-8:tier_1 | pass | sum of line items == 289.01 | 289.01 |  |
 | INV-8:tier_2 | pass | sum of line items == 346.29 | 346.29 |  |
-| INV-8:tier_3 | pass | sum of line items == 346.29 | 346.29 |  |
+| INV-8:tier_3 | pass | sum of line items == 490.41 | 490.41 |  |
 | INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 2 |
 | INV-9:tier_1:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
 | INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -1053,6 +1058,12 @@ Tier totals: tier_1=$289.01, tier_2=$346.29, tier_3=$346.29
 | INV-9:tier_3:securityhub:compliance-check | pass | sku exists in region ap-south-1 | found | Security posture checks |
 | INV-9:tier_3:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
+| INV-9:tier_3:db.t4g.large | pass | sku exists in region ap-south-2 | found | Database (standby — second region) |
+| INV-9:tier_3:cloudtrail:management-events | pass | sku exists in region ap-south-2 | found | Audit logging (standby — second region) |
+| INV-9:tier_3:acm:public-certificate | pass | sku exists in region ap-south-2 | found | TLS certificate (standby — second region) |
+| INV-9:tier_3:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-2 | found | Fargate vCPU × 1 tasks (standby — second region) |
+| INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
+| INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
 | INV-11 | pass | private_standard (or no_vpc, for a design with no network of your own) whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
 | INV-12 | pass | no priced output when the archetype is not priceable | state=priced (priceable, not withheld) |  |
@@ -1063,25 +1074,25 @@ Tier totals: tier_1=$289.01, tier_2=$346.29, tier_3=$346.29
 | INV-15 | pass | no ARM instance family when x86 is required | cpu_architecture=unknown (not x86_required) |  |
 | INV-16 | pass | a stated quantity that was not read withholds pricing | every stated quantity was read |  |
 | INV-17:tier_1->tier_2 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=8 added=['auth', 'cdn', 'compute_fargate', 'posture', 'secrets', 'threat', 'tracing'] dropped=['compute'] | Compute: self-managed EC2 + Auto Scaling → ECS on Fargate — removes unpatched-host compromise and manual patch-window downtime as risks.; Identity: static IAM u |
-| INV-17:tier_2->tier_3 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=0 added=[] dropped=[] (declared no further improvement) |  |
+| INV-17:tier_2->tier_3 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=5 added=['audit@standby', 'compute_fargate@standby', 'database@standby', 'kms@standby', 'tls@standby'] dropped=[] | Topology: single-region Multi-AZ → warm standby in a second in-country region — removes a whole-region outage as a risk. |
 | INV-18 | pass | duty cycle applied wherever it is below 1.0 | no tier has a duty cycle below 1.0 (always-on workload) |  |
 | INV-19:tier_1 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 19 nodes, 16 edges, clean |  |
 | INV-19:tier_2 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 25 nodes, 18 edges, clean |  |
-| INV-19:tier_3 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 25 nodes, 18 edges, clean |  |
+| INV-19:tier_3 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 29 nodes, 22 edges, clean |  |
 | INV-20:tier_1 | pass | every priced service kind has a node | all 18 priced kinds drawn |  |
 | INV-20:tier_2 | pass | every priced service kind has a node | all 24 priced kinds drawn |  |
 | INV-20:tier_3 | pass | every priced service kind has a node | all 24 priced kinds drawn |  |
 | INV-21:tier_1->tier_2 | pass | a different graph, or an explicit 'no further improvement' statement | 8 node(s) differ |  |
-| INV-21:tier_2->tier_3 | pass | a different graph, or an explicit 'no further improvement' statement | identical graph (declared) |  |
+| INV-21:tier_2->tier_3 | pass | a different graph, or an explicit 'no further improvement' statement | 4 node(s) differ |  |
 | diff_against:hospital-pune:sizing_unchanged | pass | sizing identical to hospital-pune | identical |  |
 | diff_against:hospital-pune:compliance_unchanged | pass | compliance identical to hospital-pune | identical |  |
 | golden_totals:tier_1 | pass | $289.01 | $289.01 |  |
 | golden_totals:tier_2 | pass | $346.29 | $346.29 |  |
-| golden_totals:tier_3 | pass | $346.29 | $346.29 |  |
+| golden_totals:tier_3 | pass | $490.41 | $490.41 |  |
 
 ## hospital-pune
 
-Tier totals: tier_1=$281.01, tier_2=$347.74, tier_3=$347.74
+Tier totals: tier_1=$281.01, tier_2=$347.74, tier_3=$491.86
 
 | assertion | result | expected | actual | reason |
 |---|---|---|---|---|
@@ -1116,7 +1127,7 @@ Tier totals: tier_1=$281.01, tier_2=$347.74, tier_3=$347.74
 | forbidden:GDPR | pass | never cites GDPR | Digital Personal Data Protection Act 2023; IT Act s43A / SPDI Rules 2011; ABDM Health Data Management Policy; EHR Standards 2016 |  |
 | budget:tier_1 | pass | True | True | $281.01 vs $900.00 budget |
 | budget:tier_2 | pass | True | True | $347.74 vs $900.00 budget |
-| budget:tier_3 | pass | True | True | $347.74 vs $900.00 budget |
+| budget:tier_3 | pass | True | True | $491.86 vs $900.00 budget |
 | INV-1:tier_1 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_2 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
 | INV-1:tier_3 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
@@ -1132,13 +1143,13 @@ Tier totals: tier_1=$281.01, tier_2=$347.74, tier_3=$347.74
 | INV-5:Read replica: not added, 0.69  | pass | non-empty reason string | Read replica: not added, 0.69 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |  |
 | INV-5:Message queue: not added, noth | pass | non-empty reason string | Message queue: not added, nothing in the description is asynchronous, batched or long-running |  |
 | INV-6:tier_2 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=5 no_further=False |  |
-| INV-6:tier_3 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=0 no_further=True |  |
+| INV-6:tier_3 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=1 no_further=False |  |
 | INV-7:tier_1 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_2 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-7:tier_3 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
 | INV-8:tier_1 | pass | sum of line items == 281.01 | 281.01 |  |
 | INV-8:tier_2 | pass | sum of line items == 347.74 | 347.74 |  |
-| INV-8:tier_3 | pass | sum of line items == 347.74 | 347.74 |  |
+| INV-8:tier_3 | pass | sum of line items == 491.86 | 491.86 |  |
 | INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 2 |
 | INV-9:tier_1:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
 | INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
@@ -1210,6 +1221,12 @@ Tier totals: tier_1=$281.01, tier_2=$347.74, tier_3=$347.74
 | INV-9:tier_3:securityhub:compliance-check | pass | sku exists in region ap-south-1 | found | Security posture checks |
 | INV-9:tier_3:vpc:flow-logs | pass | sku exists in region ap-south-1 | found | VPC flow logs |
 | INV-9:tier_3:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
+| INV-9:tier_3:db.t4g.large | pass | sku exists in region ap-south-2 | found | Database (standby — second region) |
+| INV-9:tier_3:cloudtrail:management-events | pass | sku exists in region ap-south-2 | found | Audit logging (standby — second region) |
+| INV-9:tier_3:acm:public-certificate | pass | sku exists in region ap-south-2 | found | TLS certificate (standby — second region) |
+| INV-9:tier_3:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-2 | found | Fargate vCPU × 1 tasks (standby — second region) |
+| INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
+| INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
 | INV-10 | pass | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 | ABDM Health Data Management Policy; Digital Personal Data Protection Act 2023; EHR Standards 2016; IT Act s43A / SPDI Rules 2011 |  |
 | INV-11 | pass | private_standard (or no_vpc, for a design with no network of your own) whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=high, isolation_required=True) |  |
 | INV-12 | pass | no priced output when the archetype is not priceable | state=priced (priceable, not withheld) |  |
@@ -1220,19 +1237,19 @@ Tier totals: tier_1=$281.01, tier_2=$347.74, tier_3=$347.74
 | INV-15 | pass | no ARM instance family when x86 is required | cpu_architecture=unknown (not x86_required) |  |
 | INV-16 | pass | a stated quantity that was not read withholds pricing | every stated quantity was read |  |
 | INV-17:tier_1->tier_2 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=7 added=['auth', 'compute_fargate', 'posture', 'secrets', 'threat', 'tracing'] dropped=['compute'] | Compute: self-managed EC2 + Auto Scaling → ECS on Fargate — removes unpatched-host compromise and manual patch-window downtime as risks.; Identity: static IAM u |
-| INV-17:tier_2->tier_3 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=0 added=[] dropped=[] (declared no further improvement) |  |
+| INV-17:tier_2->tier_3 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=5 added=['audit@standby', 'compute_fargate@standby', 'database@standby', 'kms@standby', 'tls@standby'] dropped=[] | Topology: single-region Multi-AZ → warm standby in a second in-country region — removes a whole-region outage as a risk. |
 | INV-18 | pass | duty cycle applied wherever it is below 1.0 | no tier has a duty cycle below 1.0 (always-on workload) |  |
 | INV-19:tier_1 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 18 nodes, 15 edges, clean |  |
 | INV-19:tier_2 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 23 nodes, 15 edges, clean |  |
-| INV-19:tier_3 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 23 nodes, 15 edges, clean |  |
+| INV-19:tier_3 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 27 nodes, 19 edges, clean |  |
 | INV-20:tier_1 | pass | every priced service kind has a node | all 17 priced kinds drawn |  |
 | INV-20:tier_2 | pass | every priced service kind has a node | all 22 priced kinds drawn |  |
 | INV-20:tier_3 | pass | every priced service kind has a node | all 22 priced kinds drawn |  |
 | INV-21:tier_1->tier_2 | pass | a different graph, or an explicit 'no further improvement' statement | 7 node(s) differ |  |
-| INV-21:tier_2->tier_3 | pass | a different graph, or an explicit 'no further improvement' statement | identical graph (declared) |  |
+| INV-21:tier_2->tier_3 | pass | a different graph, or an explicit 'no further improvement' statement | 4 node(s) differ |  |
 | golden_totals:tier_1 | pass | $281.01 | $281.01 |  |
 | golden_totals:tier_2 | pass | $347.74 | $347.74 |  |
-| golden_totals:tier_3 | pass | $347.74 | $347.74 |  |
+| golden_totals:tier_3 | pass | $491.86 | $491.86 |  |
 
 ## internal-low-stakes
 
@@ -1651,6 +1668,125 @@ Tier totals: tier_1=$386.78, tier_2=$485.18, tier_3=$546.60
 | golden_totals:tier_1 | pass | $386.78 | $386.78 |  |
 | golden_totals:tier_2 | pass | $485.18 | $485.18 |  |
 | golden_totals:tier_3 | pass | $546.60 | $546.60 |  |
+
+## retail-chain
+
+Tier totals: tier_1=$175.30, tier_2=$242.03, tier_3=$388.71
+
+| assertion | result | expected | actual | reason |
+|---|---|---|---|---|
+| INV-1:tier_1 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
+| INV-1:tier_2 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
+| INV-1:tier_3 | pass | rung-1 satisfied whenever a rung-4 component is present | rung4_present=False rung1_ok=True |  |
+| INV-2:tier_1 | pass | <= 2 NAT gateways | 2 |  |
+| INV-2:tier_2 | pass | <= 2 NAT gateways | 2 |  |
+| INV-2:tier_3 | pass | <= 2 NAT gateways | 2 |  |
+| INV-3:tier_1 | pass | passes constraint_filter.check() | valid |  |
+| INV-3:tier_2 | pass | passes constraint_filter.check() | valid |  |
+| INV-3:tier_3 | pass | passes constraint_filter.check() | valid |  |
+| INV-5:CloudFront (CDN): not added, 2 | pass | non-empty reason string | CloudFront (CDN): not added, 2.31 peak req/sec and staff-only access, no large static assets and no users outside the home country described |  |
+| INV-5:AWS WAF: not added, staff-only | pass | non-empty reason string | AWS WAF: not added, staff-only access — reachable only from known networks, so security groups plus an IP allowlist are the control that fits; a firewall in front of an internal system filters traffic that never arrives |  |
+| INV-5:ElastiCache: not added, 2.31 p | pass | non-empty reason string | ElastiCache: not added, 2.31 peak req/sec does not repeat reads often enough to pay for itself |  |
+| INV-5:Read replica: not added, 2.31  | pass | non-empty reason string | Read replica: not added, 2.31 peak req/sec is served by the primary; a replica adds cost and a second thing to fail over |  |
+| INV-5:Message queue: not added, noth | pass | non-empty reason string | Message queue: not added, nothing in the description is asynchronous, batched or long-running |  |
+| INV-5:VPC flow logs: not added, no c | pass | non-empty reason string | VPC flow logs: not added, no compliance obligation requires network audit — they are an audit control billed per GB of traffic, not baseline infrastructure |  |
+| INV-6:tier_2 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=5 no_further=False |  |
+| INV-6:tier_3 | pass | >=1 pattern_diff, or an explicit no-further-improvement note | pattern_diff=4 no_further=False |  |
+| INV-7:tier_1 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
+| INV-7:tier_2 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
+| INV-7:tier_3 | pass | non-null rto and rpo | rto='1-2 min' rpo='~5 min' |  |
+| INV-8:tier_1 | pass | sum of line items == 175.3 | 175.3 |  |
+| INV-8:tier_2 | pass | sum of line items == 242.03 | 242.03 |  |
+| INV-8:tier_3 | pass | sum of line items == 388.71 | 388.71 |  |
+| INV-9:tier_1:t4g.medium | pass | sku exists in region ap-south-1 | found | Compute × 2 |
+| INV-9:tier_1:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
+| INV-9:tier_1:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
+| INV-9:tier_1:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
+| INV-9:tier_1:alb | pass | sku exists in region ap-south-1 | found | Load balancer |
+| INV-9:tier_1:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
+| INV-9:tier_1:organizations:scp | pass | sku exists in region ap-south-1 | found | Region-deny guardrail |
+| INV-9:tier_1:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
+| INV-9:tier_1:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 2 |
+| INV-9:tier_1:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
+| INV-9:tier_1:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
+| INV-9:tier_1:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
+| INV-9:tier_1:backup:warm-storage | pass | sku exists in region ap-south-1 | found | Backup storage |
+| INV-9:tier_1:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
+| INV-9:tier_2:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
+| INV-9:tier_2:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
+| INV-9:tier_2:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
+| INV-9:tier_2:alb | pass | sku exists in region ap-south-1 | found | Load balancer |
+| INV-9:tier_2:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
+| INV-9:tier_2:organizations:scp | pass | sku exists in region ap-south-1 | found | Region-deny guardrail |
+| INV-9:tier_2:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
+| INV-9:tier_2:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 2 |
+| INV-9:tier_2:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
+| INV-9:tier_2:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
+| INV-9:tier_2:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
+| INV-9:tier_2:cognito:user-pool-mau | pass | sku exists in region ap-south-1 | found | Authentication (MAU) |
+| INV-9:tier_2:backup:warm-storage | pass | sku exists in region ap-south-1 | found | Backup storage |
+| INV-9:tier_2:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-1 | found | Fargate vCPU × 2 tasks |
+| INV-9:tier_2:fargate:arm-gb-hour | pass | sku exists in region ap-south-1 | found | Fargate memory × 2 tasks |
+| INV-9:tier_2:secretsmanager:secret | pass | sku exists in region ap-south-1 | found | Secrets × 1 |
+| INV-9:tier_2:guardduty:fargate-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: Fargate |
+| INV-9:tier_2:guardduty:rds-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: database |
+| INV-9:tier_2:xray:traces-recorded | pass | sku exists in region ap-south-1 | found | Distributed tracing |
+| INV-9:tier_2:securityhub:compliance-check | pass | sku exists in region ap-south-1 | found | Security posture checks |
+| INV-9:tier_2:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
+| INV-9:tier_3:db.t4g.micro:multi-az | pass | sku exists in region ap-south-1 | found | Database (Multi-AZ) |
+| INV-9:tier_3:s3:general-purpose | pass | sku exists in region ap-south-1 | found | Object storage |
+| INV-9:tier_3:cloudwatch:metrics | pass | sku exists in region ap-south-1 | found | Monitoring |
+| INV-9:tier_3:alb | pass | sku exists in region ap-south-1 | found | Load balancer |
+| INV-9:tier_3:backup:cross-region-warm | pass | sku exists in region ap-south-1 | found | Cross-region backup copy (storage at destination) |
+| INV-9:tier_3:transfer:inter-region | pass | sku exists in region ap-south-1 | found | Cross-region backup transfer (changed data) |
+| INV-9:tier_3:s3:glacier-instant | pass | sku exists in region ap-south-1 | found | Archived retention |
+| INV-9:tier_3:vpce:gateway | pass | sku exists in region ap-south-1 | found | Gateway endpoints × 2 (S3 + DynamoDB — no charge, keeps that traffic off NAT) |
+| INV-9:tier_3:s3:object-lock | pass | sku exists in region ap-south-1 | found | Object Lock (WORM retention) |
+| INV-9:tier_3:organizations:scp | pass | sku exists in region ap-south-1 | found | Region-deny guardrail |
+| INV-9:tier_3:cloudtrail:management-events | pass | sku exists in region ap-south-1 | found | Audit logging |
+| INV-9:tier_3:nat:gateway-hour | pass | sku exists in region ap-south-1 | found | NAT gateway × 2 |
+| INV-9:tier_3:nat:gb-processed | pass | sku exists in region ap-south-1 | found | NAT data processing |
+| INV-9:tier_3:acm:public-certificate | pass | sku exists in region ap-south-1 | found | TLS certificate |
+| INV-9:tier_3:route53:hosted-zone | pass | sku exists in region ap-south-1 | found | DNS hosted zone × 1 |
+| INV-9:tier_3:cognito:user-pool-mau | pass | sku exists in region ap-south-1 | found | Authentication (MAU) |
+| INV-9:tier_3:backup:warm-storage | pass | sku exists in region ap-south-1 | found | Backup storage |
+| INV-9:tier_3:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-1 | found | Fargate vCPU × 2 tasks |
+| INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-1 | found | Fargate memory × 2 tasks |
+| INV-9:tier_3:secretsmanager:secret | pass | sku exists in region ap-south-1 | found | Secrets × 1 |
+| INV-9:tier_3:guardduty:fargate-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: Fargate |
+| INV-9:tier_3:guardduty:rds-vcpu | pass | sku exists in region ap-south-1 | found | Threat detection: database |
+| INV-9:tier_3:xray:traces-recorded | pass | sku exists in region ap-south-1 | found | Distributed tracing |
+| INV-9:tier_3:securityhub:compliance-check | pass | sku exists in region ap-south-1 | found | Security posture checks |
+| INV-9:tier_3:kms:key | pass | sku exists in region ap-south-1 | found | KMS keys × 1 |
+| INV-9:tier_3:db.t4g.large | pass | sku exists in region ap-south-2 | found | Database (standby — second region) |
+| INV-9:tier_3:cloudtrail:management-events | pass | sku exists in region ap-south-2 | found | Audit logging (standby — second region) |
+| INV-9:tier_3:acm:public-certificate | pass | sku exists in region ap-south-2 | found | TLS certificate (standby — second region) |
+| INV-9:tier_3:fargate:arm-vcpu-hour | pass | sku exists in region ap-south-2 | found | Fargate vCPU × 1 tasks (standby — second region) |
+| INV-9:tier_3:fargate:arm-gb-hour | pass | sku exists in region ap-south-2 | found | Fargate memory × 1 tasks (standby — second region) |
+| INV-9:tier_3:kms:key | pass | sku exists in region ap-south-2 | found | KMS keys × 1 (standby — second region) |
+| INV-10 | pass | (none) | (none) |  |
+| INV-11 | pass | private_standard (or no_vpc, for a design with no network of your own) whenever availability=high, durability=high, or a compliance obligation requires network isolation | topology=private_standard (availability=high, durability=medium, isolation_required=False) |  |
+| INV-12 | pass | no priced output when the archetype is not priceable | state=priced (priceable, not withheld) |  |
+| INV-13:tier_1 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=26.4648 durability=medium (assumed) |  |
+| INV-13:tier_2 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=26.4648 durability=medium (assumed) |  |
+| INV-13:tier_3 | pass | a backup component, unless durability == ephemeral from stated text | backup_gb=26.4648 durability=medium (assumed) |  |
+| INV-14 | pass | no priced tier when the prompt describes two workloads | state=priced tiers=3 composite_of=[] |  |
+| INV-15 | pass | no ARM instance family when x86 is required | cpu_architecture=unknown (not x86_required) |  |
+| INV-16 | pass | a stated quantity that was not read withholds pricing | every stated quantity was read |  |
+| INV-17:tier_1->tier_2 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=7 added=['auth', 'compute_fargate', 'posture', 'secrets', 'threat', 'tracing'] dropped=['compute'] | Compute: self-managed EC2 + Auto Scaling → ECS on Fargate — removes unpatched-host compromise and manual patch-window downtime as risks.; Identity: static IAM u |
+| INV-17:tier_2->tier_3 | pass | >= 3 services different, or an explicit 'no further improvement' statement | spread=8 added=['archive', 'audit@standby', 'backup_dr', 'compute_fargate@standby', 'database@standby', 'kms@standby', 'object_lock', 'tls@standby'] dropped=[] | Backups: mutable → Object Lock (WORM) — removes an intruder with valid credentials deleting the backups as a risk.; Recovery: backups in one region → a copy in  |
+| INV-18 | pass | duty cycle applied wherever it is below 1.0 | no tier has a duty cycle below 1.0 (always-on workload) |  |
+| INV-19:tier_1 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 14 nodes, 12 edges, clean |  |
+| INV-19:tier_2 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 19 nodes, 12 edges, clean |  |
+| INV-19:tier_3 | pass | every data-plane node reachable, every edge endpoint real, no edges on account-plane nodes | 26 nodes, 19 edges, clean |  |
+| INV-20:tier_1 | pass | every priced service kind has a node | all 13 priced kinds drawn |  |
+| INV-20:tier_2 | pass | every priced service kind has a node | all 18 priced kinds drawn |  |
+| INV-20:tier_3 | pass | every priced service kind has a node | all 21 priced kinds drawn |  |
+| INV-21:tier_1->tier_2 | pass | a different graph, or an explicit 'no further improvement' statement | 7 node(s) differ |  |
+| INV-21:tier_2->tier_3 | pass | a different graph, or an explicit 'no further improvement' statement | 7 node(s) differ |  |
+| golden_totals:tier_1 | pass | $175.30 | $175.30 |  |
+| golden_totals:tier_2 | pass | $242.03 | $242.03 |  |
+| golden_totals:tier_3 | pass | $388.71 | $388.71 |  |
 
 ## static-site
 

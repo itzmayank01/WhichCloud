@@ -108,13 +108,14 @@ def build_load(constraints: Constraints, description: str = "") -> Load:
     """Derive the rate, then decide what the rate does and does not justify."""
     text = description.lower()
     avg = constraints.requests_per_day / 86_400 if constraints.requests_per_day else 0.0
-    multiplier = MULTIPLIER[constraints.peak_shape]
+    shape = constraints.peak_shape if constraints.peak_shape in MULTIPLIER else "flat"
+    multiplier = MULTIPLIER[shape]
     peak = avg * multiplier
     load = Load(
         avg_rps=avg,
         peak_rps=peak,
         tier=_band(peak),
-        peak_shape=constraints.peak_shape,
+        peak_shape=shape,
         multiplier=multiplier,
     )
 

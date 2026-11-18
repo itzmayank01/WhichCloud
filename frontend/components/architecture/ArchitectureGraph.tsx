@@ -83,13 +83,15 @@ const CONTAINER_STYLE: Record<string, ContainerStyle> = {
   // #00A4A6 fails 4.5:1 on white, so the darker #007F80 is used for the text
   // while the border keeps the lighter teal.
   region:   { border: "#00A4A6", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#007F80" },
+  "region-dr": { border: "#00A4A6", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#007F80" },
   vpc:      { border: "#248814", width: 2,   fill: "#FFFFFF", ink: "#248814" },
   az:       { border: "#147EBA", width: 1.5, dash: "5 4", fill: "#FFFFFF", ink: "#147EBA" },
-  "subnet-public": { border: "#248814", width: 1.5, fill: "#F5FBF5", ink: "#248814" },
-  "subnet-app":    { border: "#147EBA", width: 1.5, fill: "#F6FAFD", ink: "#147EBA" },
-  "subnet-data":   { border: "#3B48CC", width: 1.5, fill: "#F7F8FD", ink: "#3B48CC" },
+  "subnet-public": { border: "#248814", width: 1.5, fill: "#FFFFFF", ink: "#248814" },
+  "subnet-app":    { border: "#147EBA", width: 1.5, fill: "#FFFFFF", ink: "#147EBA" },
+  "subnet-data":   { border: "#3B48CC", width: 1.5, fill: "#FFFFFF", ink: "#3B48CC" },
   edge:     { border: "#8C4FFF", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#8C4FFF" },
   regional: { border: "#232F3E", width: 1.5, dash: "6 4", fill: "#FFFFFF", ink: "#232F3E" },
+  governance: { border: "#545B64", width: 1.5, dash: "5 4", fill: "#FFFFFF", ink: "#232F3E" },
   "routetable-public": { border: "#7AA116", width: 1.5, fill: "#FFFFFF", ink: "#5B7A10" },
   "routetable-private": { border: "#00A4A6", width: 1.5, fill: "#FFFFFF", ink: "#007F80" },
 };
@@ -118,7 +120,7 @@ function badgeFor(kind: string): { bg: string; glyph: React.ReactNode } | null {
   // NOTE: the wordmark above is resolved per provider by ContainerBadge --
   // it read "aws" on every cloud, so a container labelled "Google Cloud
   // project" carried the AWS smile.
-  if (kind === "region")
+  if (kind === "region" || kind === "region-dr")
     return {
       // Flag on a pole -- the reference's region marker.
       bg: "#00A4A6",
@@ -127,6 +129,18 @@ function badgeFor(kind: string): { bg: string; glyph: React.ReactNode } | null {
           <path d="M4 3v9" stroke="#FFF" strokeWidth="1.3" strokeLinecap="round" />
           <path d="M4.8 3.6h5l-1.4 2 1.4 2h-5z" fill="#FFF" />
         </>
+      ),
+    };
+  if (kind === "governance")
+    return {
+      bg: "#545B64",
+      glyph: (
+        <path
+          d="M6.5 2.4L10 3.8v2.9c0 2-1.5 3.6-3.5 4.2-2-.6-3.5-2.2-3.5-4.2V3.8l3.5-1.4z"
+          fill="none"
+          stroke="#FFF"
+          strokeWidth="1.2"
+        />
       ),
     };
   if (kind.startsWith("az-"))
@@ -392,7 +406,7 @@ function AccountNode({ data }: NodeProps) {
   const cloud = d.cloud ?? "aws";
   const icon = serviceIconPath(d.kind, cloud);
   return (
-    <div className="flex h-full w-full items-center gap-1.5 rounded-md border border-line bg-sunk/60 px-2">
+    <div className="flex h-full w-full items-center gap-1.5 rounded-md border border-line bg-white px-2">
       {icon ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={icon} alt="" className="h-5 w-5 shrink-0 object-contain opacity-90" />
@@ -860,9 +874,20 @@ export function ArchitectureGraph(props: {
           type="button"
           onClick={() => setExpanded(true)}
           title="Open the diagram full page"
-          className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-md border border-line bg-surface/95 px-2 py-1 text-[11px] font-medium text-ink-2 opacity-0 shadow-sm transition-opacity hover:bg-sunk focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group-hover:opacity-100"
+          className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-md border border-line bg-surface/95 px-2.5 py-1 text-[11px] font-medium text-ink-2 opacity-90 shadow-sm transition-opacity hover:bg-sunk hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         >
-          <Icon icon="mdi:arrow-expand-all" className="h-3.5 w-3.5" />
+          <svg
+            viewBox="0 0 20 20"
+            className="h-3.5 w-3.5 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M13 3h4v4M17 3l-5 5M7 17H3v-4M3 17l5-5" />
+          </svg>
           Click to expand
         </button>
       )}
@@ -880,7 +905,18 @@ export function ArchitectureGraph(props: {
             aria-label="Close full-page diagram"
             className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-lg border border-line-strong bg-surface text-ink-2 shadow-sm transition-colors hover:bg-sunk focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
-            <Icon icon="mdi:close" className="h-5 w-5" />
+            <svg
+              viewBox="0 0 20 20"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
           </button>
           <div className="h-full w-full">{graph(true)}</div>
           {props.overlayFooter && (

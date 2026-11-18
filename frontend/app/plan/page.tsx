@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, type Plan } from "@/lib/api";
 import { PlanView } from "@/components/plan/PlanView";
 
@@ -16,25 +16,47 @@ export default function PlanPage() {
   const [description, setDescription] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [plannedDescription, setPlannedDescription] = useState("");
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+  const reqIdRef = useRef(0);
 
   async function run() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const reqId = ++reqIdRef.current;
+
     const text = description.trim() || EXAMPLE;
     setBusy(true);
     setError("");
+    setPlan(null);
+    setGeneratedAt(null);
     try {
-      setPlan(await api.plan({ description: text }));
+      const next = await api.plan({ description: text }, controller.signal);
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
+      setPlan(next);
       setPlannedDescription(text);
+      setGeneratedAt(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
     } catch (cause) {
-      /* The message says what to do, not merely that something failed. */
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
+      setPlan(null);
       setError(
         cause instanceof Error
           ? cause.message
-          : "Could not reach the planner. The engine is synchronizing, please try again in a moment.",
+          : "Could not reach the planner. Please try again in a moment.",
       );
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted && reqId === reqIdRef.current) {
+        setBusy(false);
+      }
     }
   }
 
@@ -83,7 +105,17 @@ export default function PlanPage() {
         )}
       </section>
 
-      {plan && <PlanView plan={plan} description={plannedDescription} />}
+      {plan && (
+        <>
+          {generatedAt && (
+            <div data-testid="generated-for-stamp" className="font-mono text-xs text-ink-3">
+              Generated for: {plannedDescription.slice(0, 60)}
+              {plannedDescription.length > 60 ? "…" : ""} at {generatedAt}
+            </div>
+          )}
+          <PlanView plan={plan} description={plannedDescription} />
+        </>
+      )}
     </main>
   );
 }

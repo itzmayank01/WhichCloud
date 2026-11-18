@@ -15,10 +15,10 @@ constraints:
   durability: medium
   users: 300
   requests_per_day: 8000
-  peak_shape: business_hours
+  peak_shape: spiky
   budget_monthly_usd: 5000.0
-  storage_gb: 100.0
-  egress_gb: 50.0
+  storage_gb: 0.0
+  egress_gb: 0.0
   public_facing: false
   country_lock: true
   static_assets: none
@@ -28,6 +28,9 @@ constraints:
   user_data_gb: 0.0
   archetype: web_app
   stated: [availability, budget_monthly_usd, country, requests_per_day, users]
+
+expect:
+  invariants: [all]
 
 budgets:
   - 500

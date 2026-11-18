@@ -39,7 +39,9 @@ import {
 } from "@clerk/nextjs";
 import Link from "next/link";
 
-export function HeaderAuth() {
+const HAS_CLERK_KEY = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+function ClerkHeaderAuth() {
   const { isSignedIn, isLoaded } = useAuth();
 
   // Nothing until Clerk has read the session cookie – avoids a flash
@@ -77,4 +79,9 @@ export function HeaderAuth() {
       </SignUpButton>
     </>
   );
+}
+
+export function HeaderAuth() {
+  if (!HAS_CLERK_KEY) return null;
+  return <ClerkHeaderAuth />;
 }

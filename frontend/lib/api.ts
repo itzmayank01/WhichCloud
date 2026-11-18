@@ -16,7 +16,23 @@
    first took the port and the other silently failed to bind -- which is why
    the API was intermittently unreachable rather than consistently broken.
    Moving ours removes the race without touching the other project. */
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8010";
+const DEFAULT_PROD_API = "https://whichcloud-backend.onrender.com";
+
+function resolveApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
+    return DEFAULT_PROD_API;
+  }
+  if (process.env.VERCEL === "1") {
+    return DEFAULT_PROD_API;
+  }
+  return "http://127.0.0.1:8010";
+}
+
+const BASE = resolveApiBase();
+export const API_BASE = BASE;
 
 export type Health = {
   status: string;
@@ -315,24 +331,26 @@ async function fetchThroughWake(
   input: string,
   init: RequestInit & { next?: { revalidate: number } },
 ): Promise<Response> {
-  if (!RETRYING) return fetchWithTimeout(input, init, 15000);
+  if (!RETRYING) return fetchWithTimeout(input, init, 25000);
 
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= WAKE_RETRY_DELAYS_MS.length; attempt++) {
+    if (init.signal?.aborted) {
+      throw init.signal.reason ?? new DOMException("Aborted", "AbortError");
+    }
     const last = attempt === WAKE_RETRY_DELAYS_MS.length;
     try {
-      const response = await fetchWithTimeout(input, init, 15000);
+      const response = await fetchWithTimeout(input, init, 25000);
       if (WAKING.has(response.status) && !last) {
         await sleep(WAKE_RETRY_DELAYS_MS[attempt]);
         continue;
       }
       return response;
     } catch (err) {
-      /* fetch() rejects with TypeError or DOMException for a network/timeout/CORS failure, which
-         is exactly the shape a cold backend produces. A genuine programming
-         error would reject the same way, so this retries it too -- at the
-         cost of some delay before the same failure surfaces. */
+      if (init.signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+        throw err;
+      }
       lastError = err;
       if (last) break;
       await sleep(WAKE_RETRY_DELAYS_MS[attempt]);
@@ -404,11 +422,13 @@ async function post<T>(
   body: Record<string, unknown>,
   revalidate?: number,
   token?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetchThroughWake(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...bearer(token) },
     body: JSON.stringify(body),
+    signal,
     ...(revalidate === undefined
       ? { cache: "no-store" as const }
       : { next: { revalidate } }),
@@ -759,7 +779,8 @@ export const api = {
   /* No cache. A plan is the answer to one description; serving a stale one
      for a different description is the failure this whole layer exists to
      avoid. */
-  plan: (body: Record<string, unknown>) => post<Plan>("/plan", body),
+  plan: (body: Record<string, unknown>, signal?: AbortSignal) =>
+    post<Plan>("/plan", body, undefined, undefined, signal),
 
   /** A question about the architecture on screen, answered against its bill.
    *
@@ -773,8 +794,8 @@ export const api = {
     provider?: string;
   }) => post<Advice>("/advise", body),
 
-  describe: (body: Record<string, unknown>) =>
-    post<Recommendation>("/describe", body),
+  describe: (body: Record<string, unknown>, signal?: AbortSignal) =>
+    post<Recommendation>("/describe", body, undefined, undefined, signal),
 
   architecture: (body: Record<string, unknown>) =>
     post<ArchitectureView>("/architecture", body),
@@ -813,24 +834,31 @@ export const api = {
   },
 
   /** Inspect all generated Terraform files and WhichCloud provider templates for an option. */
-  describeInspectTf: (body: {
-    description?: string;
-    option: string;
-    provider?: string;
-    reader?: string;
-    /** "dev" or "prod" -- selects which environments/*.tfvars the generated
-     *  variables.tf defaults to. The project always carries both. */
-    environment?: "dev" | "prod";
-  }) =>
+  describeInspectTf: (
+    body: {
+      description?: string;
+      option: string;
+      provider?: string;
+      reader?: string;
+      /** "dev" or "prod" -- selects which environments/*.tfvars the generated
+       *  variables.tf defaults to. The project always carries both. */
+      environment?: "dev" | "prod";
+    },
+    signal?: AbortSignal,
+  ) =>
     post<{
       files: Record<string, string>;
       option: string;
       provider: string;
+      environment?: string;
       monthly_cost: number;
       region: string;
+      cache_key?: string;
+      generated_at?: string;
+      workload_summary?: string;
       all_options?: Array<{ label: string; monthly: number; region: string }>;
       items?: Array<{ label: string; monthly: number; sku: string }>;
-    }>("/describe/terraform/inspect", body),
+    }>("/describe/terraform/inspect", body, undefined, undefined, signal),
 
   /** Real-time HCL validation of user-edited code. */
   describeValidateTf: (body: { code: string; filename?: string }) =>
@@ -839,10 +867,15 @@ export const api = {
   /** Upload a billing export for review. multipart, not JSON — a CUR is
    *  a file, and base64-ing megabytes through a JSON body to avoid one
    *  content type is not a simplification. */
-  audit: async (file: File): Promise<AuditReport> => {
+  audit: async (file: File, signal?: AbortSignal): Promise<AuditReport> => {
     const form = new FormData();
     form.append("file", file);
-    const response = await fetchThroughWake(`${BASE}/audit`, { method: "POST", body: form });
+    const response = await fetchThroughWake(`${BASE}/audit`, {
+      method: "POST",
+      body: form,
+      cache: "no-store",
+      signal,
+    });
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
       throw new ApiError(detail.detail ?? "Could not read that file", response.status);
@@ -1318,13 +1351,13 @@ export interface IacDevOpsMetrics {
 }
 
 export const iacApi = {
-  getEnvironments: async (): Promise<IacEnvironmentRecord[]> => {
-    const res = await fetch(`${BASE}/api/iac/environments`);
+  getEnvironments: async (signal?: AbortSignal): Promise<IacEnvironmentRecord[]> => {
+    const res = await fetch(`${BASE}/api/iac/environments`, { cache: "no-store", signal });
     if (!res.ok) throw new Error(`Failed to fetch environments: ${res.statusText}`);
     return res.json();
   },
-  getEnvironment: async (name: string): Promise<IacEnvironmentRecord> => {
-    const res = await fetch(`${BASE}/api/iac/environments/${name}`);
+  getEnvironment: async (name: string, signal?: AbortSignal): Promise<IacEnvironmentRecord> => {
+    const res = await fetch(`${BASE}/api/iac/environments/${name}`, { cache: "no-store", signal });
     if (!res.ok) throw new Error(`Failed to fetch environment ${name}`);
     return res.json();
   },
@@ -1336,6 +1369,7 @@ export const iacApi = {
   }): Promise<IacDeploymentRecord> => {
     const res = await fetch(`${BASE}/api/iac/deploy`, {
       method: "POST",
+      cache: "no-store",
       headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
       body: JSON.stringify(body),
     });
@@ -1352,6 +1386,7 @@ export const iacApi = {
   }): Promise<IacDeploymentRecord> => {
     const res = await fetch(`${BASE}/api/iac/rollback`, {
       method: "POST",
+      cache: "no-store",
       headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
       body: JSON.stringify(body),
     });
@@ -1367,6 +1402,7 @@ export const iacApi = {
   }): Promise<IacDriftAuditRecord> => {
     const res = await fetch(`${BASE}/api/iac/drift-detection`, {
       method: "POST",
+      cache: "no-store",
       headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
       body: JSON.stringify(body),
     });
@@ -1379,27 +1415,34 @@ export const iacApi = {
   }): Promise<IacFailureIncidentRecord> => {
     const res = await fetch(`${BASE}/api/iac/simulate-failure`, {
       method: "POST",
+      cache: "no-store",
       headers: { "Content-Type": "application/json", "X-API-Key": "whichcloud-iac-admin-key" },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error("Failure simulation failed");
     return res.json();
   },
-  getMetrics: async (): Promise<IacDevOpsMetrics> => {
-    const res = await fetch(`${BASE}/api/iac/metrics`);
+  getMetrics: async (signal?: AbortSignal): Promise<IacDevOpsMetrics> => {
+    const res = await fetch(`${BASE}/api/iac/metrics`, { cache: "no-store", signal });
     if (!res.ok) throw new Error("Failed to fetch DevOps metrics");
     return res.json();
   },
-  getDeployments: async (environment_name?: string): Promise<IacDeploymentRecord[]> => {
+  getDeployments: async (environment_name?: string, signal?: AbortSignal): Promise<IacDeploymentRecord[]> => {
     const url = environment_name
       ? `${BASE}/api/iac/deployments?environment_name=${environment_name}`
       : `${BASE}/api/iac/deployments`;
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store", signal });
     if (!res.ok) throw new Error("Failed to fetch deployments");
     return res.json();
   },
-  getTerraformFiles: async (environment_name: string): Promise<{ environment: string; files: Record<string, string> }> => {
-    const res = await fetch(`${BASE}/api/iac/terraform/${environment_name}`);
+  getTerraformFiles: async (
+    environment_name: string,
+    signal?: AbortSignal,
+  ): Promise<{ environment: string; files: Record<string, string> }> => {
+    const res = await fetch(`${BASE}/api/iac/terraform/${environment_name}`, {
+      cache: "no-store",
+      signal,
+    });
     if (!res.ok) throw new Error(`Failed to fetch terraform files for ${environment_name}`);
     return res.json();
   },

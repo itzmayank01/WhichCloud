@@ -210,19 +210,28 @@ export default function EnvironmentsPage() {
     loadData();
   }, []);
 
-  // Fetch terraform files when selected environment changes
+  // Fetch terraform files when selected environment changes (abort stale requests)
   useEffect(() => {
     if (!selectedEnvName) return;
+    const controller = new AbortController();
+    setTfFiles({});
+    setDriftReport(null);
+    setFailureReport(null);
     iacApi
-      .getTerraformFiles(selectedEnvName)
+      .getTerraformFiles(selectedEnvName, controller.signal)
       .then((res) => {
+        if (controller.signal.aborted) return;
         setTfFiles(res.files || {});
-        if (res.files && !res.files[selectedTfFile]) {
-          const firstKey = Object.keys(res.files)[0];
-          if (firstKey) setSelectedTfFile(firstKey);
+        const firstKey = Object.keys(res.files || {})[0];
+        if (res.files && !res.files[selectedTfFile] && firstKey) {
+          setSelectedTfFile(firstKey);
         }
       })
-      .catch((err) => console.error("Could not fetch terraform files", err));
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error("Could not fetch terraform files", err);
+      });
+    return () => controller.abort();
   }, [selectedEnvName]);
 
   const selectedEnv =
@@ -625,7 +634,7 @@ export default function EnvironmentsPage() {
               </div>
               <div className="max-h-60 overflow-y-auto space-y-1">
                 {consoleLogs.length === 0 ? (
-                  <div className="text-[#8b949e] italic">No recent execution logs. Click 'Terraform Plan', 'Terraform Apply', or 'Detect Drift' to inspect live execution.</div>
+                  <div className="text-[#8b949e] italic">No recent execution logs. Click &apos;Terraform Plan&apos;, &apos;Terraform Apply&apos;, or &apos;Detect Drift&apos; to inspect live execution.</div>
                 ) : (
                   consoleLogs.map((line, idx) => (
                     <div

@@ -1,3 +1,4 @@
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 /**
@@ -23,7 +24,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  */
 const isProtected = createRouteMatcher(["/dashboard(.*)", "/finops(.*)", "/connect(.*)"]);
 
-export default clerkMiddleware(async (auth, request) => {
+const clerkHandler = clerkMiddleware(async (auth, request) => {
   const isDemo =
     request.nextUrl.pathname.startsWith("/finops") &&
     request.nextUrl.searchParams.get("account_id") === "demo";
@@ -31,6 +32,13 @@ export default clerkMiddleware(async (auth, request) => {
     await auth.protect();
   }
 });
+
+export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY) {
+    return NextResponse.next();
+  }
+  return clerkHandler(request, event);
+}
 
 export const config = {
   matcher: [

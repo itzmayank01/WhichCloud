@@ -25,19 +25,19 @@
     "tier_3": 180.17
   },
   "fintech-bengaluru": {
-    "tier_1": 139.66,
-    "tier_2": 176.69,
-    "tier_3": 320.8
+    "tier_1": 229.67,
+    "tier_2": 296.41,
+    "tier_3": 440.52
   },
   "hospital-pune": {
     "tier_1": 281.01,
     "tier_2": 347.74,
-    "tier_3": 347.74
+    "tier_3": 491.86
   },
   "hospital-pune-public": {
     "tier_1": 289.01,
     "tier_2": 346.29,
-    "tier_3": 346.29
+    "tier_3": 490.41
   },
   "internal-low-stakes": {
     "tier_1": 43.79,
@@ -53,6 +53,11 @@
     "tier_1": 386.78,
     "tier_2": 485.18,
     "tier_3": 546.6
+  },
+  "retail-chain": {
+    "tier_1": 175.3,
+    "tier_2": 242.03,
+    "tier_3": 388.71
   },
   "static-site": {
     "tier_1": 3.92,

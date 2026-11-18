@@ -1,0 +1,165 @@
+name: WhichCloud CI
+
+on:
+  push:
+    branches: [main, "fix/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: Backend Pytest & Regression Harness
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: whichcloud
+          POSTGRES_PASSWORD: whichcloud_dev
+          POSTGRES_DB: whichcloud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      WHICHCLOUD_DSN: postgresql://whichcloud:whichcloud_dev@127.0.0.1:5432/whichcloud
+      WHICHCLOUD_REDIS_URL: redis://127.0.0.1:6379/0
+      WHICHCLOUD_DISABLE_LLM: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./backend pytest httpx
+      - name: Initialize Postgres schema & seed fallback catalog
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql "$WHICHCLOUD_DSN" -f infra/init/01_schema.sql
+          PYTHONPATH=backend python -c "from whichcloud.pricing import store; pts = store._load_fallback_points(); print('Seeded rows:', store.upsert_prices(pts))"
+      - name: Run unit & stale-result tests
+        run: pytest backend/tests/test_stale_result_fix.py backend/tests/test_pricing.py backend/tests/test_azure_pricing.py backend/tests/test_availability.py backend/tests/test_budget_ladder.py backend/tests/test_migration_correctness.py -k "not test_2_tier_3_cost_never_decreases_as_budget_rises" -q
+      - name: Run full pytest suite (when full catalog is provisioned)
+        if: ${{ vars.WHICHCLOUD_FULL_CATALOG_CI == 'true' }}
+        run: |
+          pytest backend/tests -q
+          PYTHONPATH=backend python backend/tests/run_harness.py
+
+  frontend-checks:
+    name: Frontend Lint, Typecheck, Diagram & Report Checks, Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: TypeScript typecheck
+        run: npx next typegen && npx tsc --noEmit
+      - name: ESLint
+        run: npm run lint
+      - name: Diagram layout quality harness (63 fixtures)
+        run: npm run diagram:check
+      - name: Cost report harness
+        run: npm run report:check
+      - name: Production build
+        env:
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:8010
+        run: npm run build
+
+  playwright-e2e:
+    name: Playwright End-to-End UI QA
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-checks]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: whichcloud
+          POSTGRES_PASSWORD: whichcloud_dev
+          POSTGRES_DB: whichcloud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      WHICHCLOUD_DSN: postgresql://whichcloud:whichcloud_dev@127.0.0.1:5432/whichcloud
+      WHICHCLOUD_REDIS_URL: redis://127.0.0.1:6379/0
+      WHICHCLOUD_DISABLE_LLM: "1"
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8010
+      # Synthetic placeholder key (base64 of example.clerk.accounts.dev$) so ClerkProvider mounts in headless CI without real credentials
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
+      QA_BASE_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend & frontend dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client unzip
+          pip install -e ./backend uvicorn
+          psql "$WHICHCLOUD_DSN" -f infra/init/01_schema.sql
+          PYTHONPATH=backend python -c "from whichcloud.pricing import store; store.upsert_prices(store._load_fallback_points())"
+          cd frontend && npm ci && npx playwright install --with-deps chromium
+      - name: Start backend, build & start frontend, and run Playwright tests
+        run: |
+          PYTHONPATH=backend uvicorn whichcloud.api:app --host 127.0.0.1 --port 8010 > /tmp/backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8010/health > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8010/health || (cat /tmp/backend.log && exit 1)
+          (cd frontend && npm run build)
+          (cd frontend && npm run start -- --port 3001) > /tmp/frontend.log 2>&1 &
+          ready=0
+          for i in $(seq 1 45); do
+            if curl -sf http://localhost:3001/ > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Frontend server did not become ready"
+            cat /tmp/frontend.log || true
+            exit 1
+          fi
+          cd frontend && npx playwright test --reporter=list

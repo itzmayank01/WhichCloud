@@ -213,16 +213,20 @@ class PublicCacheMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         if request.method != "GET" or response.status_code != 200:
+            response.headers.setdefault("Cache-Control", "no-store")
             return response
         # `Authorization` means the answer may be caller-specific even on an
         # allow-listed path; never let a shared cache hold one of those.
         if request.headers.get("authorization"):
+            response.headers.setdefault("Cache-Control", "no-store")
             return response
         max_age = _CACHEABLE_PATHS.get(request.url.path)
         if max_age is not None:
             response.headers["Cache-Control"] = (
                 f"public, max-age={max_age}, stale-while-revalidate=86400"
             )
+        else:
+            response.headers.setdefault("Cache-Control", "no-store")
         return response
 
 
@@ -286,10 +290,41 @@ _intake_cache_lock = threading.Lock()
 _intake_inflight: dict[str, threading.Event] = {}
 
 
+_INTAKE_CACHE_SCHEMA_VERSION = "v2"
+
+
+def _normalize_workload(text: str) -> str:
+    """Collapse surrounding and repeated whitespace so semantically identical
+    prompts share a key while any change in wording gets a distinct key."""
+    return " ".join((text or "").strip().split())
+
+
+def build_workload_cache_key(
+    description: str,
+    provider: str = "aws",
+    environment: str = "dev",
+    option: str = "",
+    schema_version: str = _INTAKE_CACHE_SCHEMA_VERSION,
+) -> str:
+    """Deterministic cache key spanning full normalized workload text,
+    provider, environment, option tier, and schema version."""
+    payload = "|".join([
+        _normalize_workload(description),
+        (provider or "aws").strip().lower(),
+        (environment or "dev").strip().lower(),
+        (option or "").strip().lower(),
+        schema_version,
+    ])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _cached_intake(description: str, reader: str | None):
     from .intake import parse_description
 
-    key = hashlib.sha256(f"{description.strip()}|{reader or ''}".encode()).hexdigest()
+    normalized = _normalize_workload(description)
+    key = hashlib.sha256(
+        f"{normalized}|{reader or ''}|{_INTAKE_CACHE_SCHEMA_VERSION}".encode("utf-8")
+    ).hexdigest()
 
     while True:
         with _intake_cache_lock:
@@ -2106,39 +2141,16 @@ def advise_route(body: AdviseIn) -> dict:
 
 @app.post("/describe/export.tf")
 def describe_export_terraform_route(body: DescribeExportIn):
-    """One option from `/describe`, as a downloadable Terraform project.
-
-    Reads through `_cached_intake` rather than `parse_description` directly:
-    `/describe` already cached this description's extraction (or is about to
-    cache it, if this export request comes first), and reusing it is the only
-    way to guarantee this matches what `/describe` showed. `parse_description`
-    has no cache of its own -- re-running it here would risk a different
-    priced architecture than the one already on screen.
-    """
+    """One option from `/describe`, as a downloadable Terraform project."""
     from fastapi.responses import Response
 
     from . import terraform_export, terraform_export_azure, terraform_export_gcp
-    from .intake import IntakeError
 
-    try:
-        intake = _cached_intake(body.description, body.reader)
-    except Exception:
-        from .intake import _fast_heuristic_draft, Intake
-        draft = _fast_heuristic_draft(body.description)
-        requirement = draft.to_requirement()
-        intake = Intake(
-            requirement=requirement,
-            assumed=tuple(draft.assumed),
-            clarifying_question=draft.question,
-            provider="aws",
-            raw=draft,
-        )
+    description = body.description.strip() if body.description else ""
+    if not description:
+        raise HTTPException(400, "Workload description cannot be empty.")
 
-    requirement = intake.requirement
-    provider = body.provider or requirement.provider_preference or "aws"
-    # One generator per cloud, because the resource graphs differ in shape and
-    # not merely in resource names -- a global network, one regional Cloud NAT
-    # and an anycast load balancer are different FILES, not renamed ones.
+    provider = (body.provider or "aws").strip().lower()
     generators = {
         "aws": terraform_export,
         "gcp": terraform_export_gcp,
@@ -2153,11 +2165,11 @@ def describe_export_terraform_route(body: DescribeExportIn):
             f"cleanly and builds the wrong thing.",
         )
 
-    # Route through archetype planner first
+    # Route through archetype planner first (matches /describe exactly)
     try:
         from whichcloud import plan as planning
-        plan = planning.build(body.description, provider=provider)
-        if plan.priced:
+        plan = planning.build(description, provider=provider)
+        if plan.priced and plan.tiers:
             idx = 0
             if body.option == "Most reliable":
                 idx = 1
@@ -2170,11 +2182,32 @@ def describe_export_terraform_route(body: DescribeExportIn):
                 content=archive,
                 media_type="application/zip",
                 headers={
-                    "Content-Disposition": 'attachment; filename="whichcloud-terraform.zip"'
+                    "Content-Disposition": 'attachment; filename="whichcloud-terraform.zip"',
+                    "Cache-Control": "no-store",
                 },
             )
     except Exception:
         pass
+
+    # Fallback to legacy intake + recommend only if planner did not price
+    try:
+        intake = _cached_intake(description, body.reader)
+    except Exception:
+        from .intake import _fast_heuristic_draft, Intake
+        draft = _fast_heuristic_draft(description)
+        requirement = draft.to_requirement()
+        intake = Intake(
+            requirement=requirement,
+            assumed=tuple(draft.assumed),
+            clarifying_question=draft.question,
+            provider=provider,
+            raw=draft,
+        )
+
+    requirement = intake.requirement
+    if not body.provider and requirement.provider_preference:
+        provider = requirement.provider_preference
+        generator = generators.get(provider, terraform_export)
 
     options = recommend(requirement, provider)
 
@@ -2188,7 +2221,8 @@ def describe_export_terraform_route(body: DescribeExportIn):
         content=archive,
         media_type="application/zip",
         headers={
-            "Content-Disposition": 'attachment; filename="whichcloud-terraform.zip"'
+            "Content-Disposition": 'attachment; filename="whichcloud-terraform.zip"',
+            "Cache-Control": "no-store",
         },
     )
 
@@ -2198,48 +2232,31 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
     """Returns the generated Terraform files as a JSON dictionary {filename: content},
     along with architecture metadata, cost report template, and WhichCloud provider configuration.
     """
+    from datetime import datetime, timezone
     from . import terraform_export, terraform_export_azure, terraform_export_gcp
-    from .intake import IntakeError
 
     description = body.description.strip() if body.description else ""
     if not description:
-        description = (
-            "I run operations for a retail chain in India with 120 stores. "
-            "Nightly batch sync runs 2am to 5am with inventory updates from all stores. "
-            "In-store POS queries the catalog during store hours. Mobile app for customers with 50k daily active users. "
-            "500 GB catalog images with fast delivery to users across India."
-        )
+        raise HTTPException(400, "Workload description cannot be empty.")
 
-    try:
-        intake = _cached_intake(description, body.reader)
-    except Exception:
-        from .intake import _fast_heuristic_draft, Intake
-        draft = _fast_heuristic_draft(description)
-        requirement = draft.to_requirement()
-        intake = Intake(
-            requirement=requirement,
-            assumed=tuple(draft.assumed),
-            clarifying_question=draft.question,
-            provider="aws",
-            raw=draft,
-        )
-
-    requirement = intake.requirement
-    provider = body.provider or requirement.provider_preference or "aws"
+    provider = (body.provider or "aws").strip().lower()
     generators = {
         "aws": terraform_export,
         "gcp": terraform_export_gcp,
         "azure": terraform_export_azure,
     }
-    generator = generators.get(provider, terraform_export)
+    generator = generators.get(provider)
+    if generator is None:
+        raise HTTPException(400, f"No Terraform generator for {provider!r}.")
 
     spec = None
     estimate = None
-    option_label = body.option
+    plan = None
+    options = []
     try:
         from whichcloud import plan as planning
         plan = planning.build(description, provider=provider)
-        if plan.priced:
+        if plan.priced and plan.tiers:
             idx = 0
             if body.option == "Most reliable":
                 idx = 1
@@ -2249,9 +2266,26 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
             spec = tier.spec
             estimate = tier.estimate
     except Exception:
-        pass
+        plan = None
 
     if spec is None or estimate is None:
+        try:
+            intake = _cached_intake(description, body.reader)
+        except Exception:
+            from .intake import _fast_heuristic_draft, Intake
+            draft = _fast_heuristic_draft(description)
+            requirement = draft.to_requirement()
+            intake = Intake(
+                requirement=requirement,
+                assumed=tuple(draft.assumed),
+                clarifying_question=draft.question,
+                provider=provider,
+                raw=draft,
+            )
+        requirement = intake.requirement
+        if not body.provider and requirement.provider_preference:
+            provider = requirement.provider_preference
+            generator = generators.get(provider, terraform_export)
         options = recommend(requirement, provider)
         option = next((o for o in options if o.label == body.option), None)
         if option is None:
@@ -2260,12 +2294,22 @@ def describe_terraform_inspect_route(body: DescribeExportIn):
             spec = option.spec
             estimate = option.estimate
 
-    files: dict[str, str] = {}
-    if spec and estimate:
-        files = generator.generate(spec, estimate, environment=body.environment)
+    if spec is None or estimate is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not generate a priced architecture for this workload.",
+        )
 
-    region = estimate.region if estimate else ("ap-south-1" if provider == "aws" else "asia-south1")
-    total_cost = float(estimate.total_monthly) if estimate else 469.58
+    files: dict[str, str] = generator.generate(spec, estimate, environment=body.environment)
+    region = estimate.region
+    total_cost = float(estimate.total_monthly)
+    cache_key = build_workload_cache_key(
+        description=description,
+        provider=provider,
+        environment=body.environment,
+        option=body.option or "Most optimized",
+    )
+    generated_at = datetime.now(timezone.utc).isoformat()
 
     def _hcl_str(value: str) -> str:
         """Escape a value for embedding inside an HCL double-quoted string.
@@ -2565,8 +2609,12 @@ backup_retention_days = 30
         "files": files,
         "option": body.option or "Most optimized",
         "provider": provider,
+        "environment": body.environment,
         "monthly_cost": total_cost,
         "region": region,
+        "cache_key": cache_key,
+        "generated_at": generated_at,
+        "workload_summary": _normalize_workload(description)[:120],
         "all_options": all_options_list,
         "items": [
             {

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PricedDiagram } from "@/components/PricedDiagram";
-import { money, type Option, type Recommendation } from "@/lib/api";
-import { buildFallbackRecommendation } from "@/lib/fallbackRecommendation";
+import { API_BASE, money, type Option, type Recommendation } from "@/lib/api";
 
 /**
  * The estimate page: requirements in, three priced architectures out.
@@ -15,7 +14,7 @@ import { buildFallbackRecommendation } from "@/lib/fallbackRecommendation";
  * guesses as though they were stated.
  */
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8010";
+const BASE = API_BASE;
 
 const WORKLOADS = [
   ["web", "Web app"],
@@ -125,49 +124,69 @@ export function EstimateWorkbench() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Recommendation | null>(null);
+  const [generatedFor, setGeneratedFor] = useState<{ label: string; time: string } | null>(null);
   const [active, setActive] = useState(1);
+  const abortRef = useRef<AbortController | null>(null);
+  const reqIdRef = useRef(0);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
   async function run() {
+    if (mode === "describe" && !description.trim()) {
+      setError("Please describe your workload before pricing.");
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const reqId = ++reqIdRef.current;
+
+    const label =
+      mode === "describe"
+        ? description.trim()
+        : `${form.goal} (${form.workload_type}, ${form.traffic_scale})`;
+
     setBusy(true);
     setError(null);
+    setResult(null);
+    setGeneratedFor(null);
     try {
       const [path, body] =
         mode === "describe"
-          ? ["/describe", { description }]
+          ? ["/describe", { description: description.trim() }]
           : ["/recommend", form];
 
-      const fetchPromise = fetch(`${BASE}${path}`, {
+      const res = await fetch(`${BASE}${path}`, {
         method: "POST",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }).then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail ?? "Could not price that.");
-        return data;
+        signal: controller.signal,
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "Could not price that.");
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Render wake timeout")), 5000)
-      );
-
-      const data = await Promise.race([fetchPromise, timeoutPromise]);
       setResult(data);
       const optsCount = data?.options?.length ?? 0;
       setActive(Math.max(0, Math.min(1, optsCount - 1)));
+      setGeneratedFor({
+        label,
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     } catch (e) {
-      if (mode === "describe" && description.trim()) {
-        const fallback = buildFallbackRecommendation(description.trim(), "aws");
-        setResult(fallback);
-        setActive(1);
-      } else {
-        setError(e instanceof Error ? e.message : "Something went wrong.");
-        setResult(null);
-      }
+      if (controller.signal.aborted || reqId !== reqIdRef.current) return;
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setResult(null);
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted && reqId === reqIdRef.current) {
+        setBusy(false);
+      }
     }
   }
 
@@ -290,6 +309,12 @@ export function EstimateWorkbench() {
       {/* ── result ── */}
       {result && option && (
         <div className="flex flex-col gap-5">
+          {generatedFor && (
+            <div data-testid="generated-for-stamp" className="font-mono text-xs text-ink-3">
+              Generated for: {generatedFor.label.slice(0, 60)}
+              {generatedFor.label.length > 60 ? "…" : ""} at {generatedFor.time}
+            </div>
+          )}
           {(result.assumed.length > 0 || result.clarifying_question) && (
             <div className="rounded-xl border border-caution/30 bg-caution-wash px-5 py-4">
               {result.assumed.length > 0 && (

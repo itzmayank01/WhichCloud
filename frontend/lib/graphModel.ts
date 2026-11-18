@@ -171,6 +171,7 @@ export type ContainerId =
   | "edge"
   | "region"
   | "region-dr"
+  | "governance"
   | "regional"
   | "vpc"
   | "az"

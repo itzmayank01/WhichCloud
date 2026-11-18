@@ -89,6 +89,28 @@ export async function GET() {
 
     const categories = [...shared].sort();
 
+    /* Everything a cloud is billed for that the OTHER clouds have no
+       equivalent line for.
+
+       `categories` is the intersection of the three clouds' line labels,
+       because the stacked bars need one shared set of bands to be
+       comparable at all. Summing only those bands, though, silently threw
+       away every cost that was not common to all three -- and that is not
+       a rounding error: it hid $190 of Azure, $266 of Google and $1,059 of
+       AWS (26% of its bill), because "Database (Multi-AZ)", CDN requests,
+       threat detection and eleven more labels exist on some clouds and not
+       others. The bars under-reported all three by different amounts, so
+       the chart understated the real AWS-vs-Azure gap of $1,655 as $787,
+       and the headline figure (the winner's FULL monthly cost) matched no
+       bar on the chart beneath it.
+
+       Rolling the remainder into one band keeps the shared bands readable
+       AND makes every bar sum to what that cloud actually costs. It is
+       deliberately left out of `categories`, which exists only to rank the
+       ramp colours: an unranked label resolves to the neutral grey, which
+       is the right treatment for a bucket rather than a service. */
+    const OTHER = "Other services";
+
     const data: ShowcaseData = {
       chart: {
         categories,
@@ -101,10 +123,14 @@ export async function GET() {
                 .filter((i) => i.label.replace(/ ×.*$/, "") === label)
                 .reduce((sum, i) => sum + i.monthly_usd, 0),
             }));
+            const named = segments.reduce((sum, s) => sum + s.value, 0);
+            const rest = r.option.monthly_usd - named;
+            // Half a cent, so floating-point dust never draws a band.
+            if (rest > 0.005) segments.push({ label: OTHER, value: rest });
             return {
               id: r.id,
               label: LABEL[r.id] ?? r.id,
-              total: segments.reduce((sum, s) => sum + s.value, 0),
+              total: r.option.monthly_usd,
               segments,
             };
           }),
