@@ -39,8 +39,18 @@ export default async function PricesPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-14">
-      <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
-        Price index
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+          Price index
+        </div>
+        {fetchedAt && (
+          <div
+            data-testid="prices-last-updated"
+            className="rounded-full border border-line bg-surface px-3 py-1 font-mono text-[12px] text-ink-2"
+          >
+            Last updated: {fetchedAt.slice(0, 10)} UTC ({freshness(fetchedAt)})
+          </div>
+        )}
       </div>
       <h1 className="mt-3 text-balance text-[clamp(2rem,4.5vw,3rem)] font-semibold leading-[1.06] tracking-[-0.03em]">
         Every machine, and what it costs

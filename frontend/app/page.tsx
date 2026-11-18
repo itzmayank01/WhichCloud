@@ -400,9 +400,11 @@ export default function Home() {
           </h2>
           <p className="mt-5 text-[17px] leading-relaxed text-ink-2">
             Sizing is a documented heuristic, not measured from your workload.
-            GCP covers compute only. Prices are public list rates, with no
-            committed-use or negotiated discounts. Spot rates move continuously,
-            so treat them as indicative. These are estimates, not quotes.
+            Catalog depth is broadest on AWS; GCP and Azure price core compute,
+            database, storage and networking and openly flag any unpriced line
+            items. Prices are public list rates, with no negotiated discounts.
+            Spot rates move continuously, so treat them as indicative. These are
+            estimates, not quotes.
           </p>
         </div>
       </section>

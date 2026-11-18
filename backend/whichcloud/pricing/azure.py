@@ -26,7 +26,7 @@ RETAIL_API = "https://prices.azure.com/api/retail/prices"
 # Services" meter contains neither "windows" nor anything else distinctive, and
 # picking it made 36 Azure machine types read 2.65x too expensive until
 # validation caught it. So we allow-list instead of deny-list.
-_EXCLUDE_VM = ("low priority", "windows")
+_EXCLUDE_VM = ("low priority", "windows", "promo", "expired")
 
 # Only the plain on-demand consumption meter counts.
 _ALLOWED_PRICE_TYPE = "Consumption"

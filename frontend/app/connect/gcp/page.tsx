@@ -84,7 +84,12 @@ export default function ConnectGcpPage() {
               <span>/</span>
               <span>Connect GCP</span>
             </div>
-            <h2 className="text-[20px] font-bold text-ink">GCP</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[20px] font-bold text-ink">GCP</h2>
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                Coming soon
+              </span>
+            </div>
           </div>
         </div>
 

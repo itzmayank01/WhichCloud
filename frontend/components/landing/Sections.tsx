@@ -468,14 +468,13 @@ export async function Stats() {
       count: techniques || undefined,
       label: "optimizations tested against your workload",
     },
-    /* 0 is the point being made and does not read better for counting up. */
-    { figure: "0", label: "hardcoded prices in the source" },
+    { figure: "100%", label: "line items cite SKU, quantity & source" },
   ];
 
   return (
     <Reveal className="mx-auto max-w-5xl">
       <h2 className="text-center text-balance text-[clamp(1.75rem,3.6vw,2.5rem)] font-semibold leading-tight tracking-[-0.025em] text-white">
-        Every price is fetched, not estimated.
+        Catalog-backed pricing, never LLM guesses.
       </h2>
       <div className="mt-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((s, i) => (

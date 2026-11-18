@@ -89,9 +89,9 @@ Started: 2026-11-17
 
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
-| 3.1 Verify GCP & Azure provider switching (services, icons, or honest coming-soon) | todo | - | - |
-| 3.2 Investigate price validation (GCP 90.7%, Azure 5 mismatches) & fix real causes | todo | - | - |
-| 3.3 Verify prices show last-updated timestamp & honest site copy | todo | - | - |
+| 3.1 Verify GCP & Azure provider switching (services, icons, or honest coming-soon) | done | Verified `/describe` returns provider-native regions & services for AWS (`ap-south-1`), GCP (`asia-south1`, Cloud Run/Cloud SQL/Cloud Storage), Azure (`centralindia`, Container Instances/Azure PostgreSQL/Blob Storage); expanded `ServiceIcon.tsx` to map all vendored GCP (34) & Azure (27) icons; marked live GCP/Azure account connection on `/connect/gcp` & `/connect/azure` as "Coming soon" | pending |
+| 3.2 Investigate price validation (GCP 90.7%, Azure 5 mismatches) & fix real causes | done | Found & fixed real causes without altering published numbers: (1) `validate_gcp_compute.py` collapsed C4D highmem RAM into standard RAM (now separates `ram_highmem`/`core_highmem`); (2) `azure.py` `_EXCLUDE_VM` missed `"promo"` and `"expired"` meters (now excluded). Verified `test_pricing.py` + `test_azure_pricing.py` 34/34 passed | pending |
+| 3.3 Verify prices show last-updated timestamp & honest site copy | done | Added visible `Last updated: <date> UTC` badge at top of `/prices`; removed inaccurate `"GCP covers compute only"` (`app/page.tsx`) and `"0 hardcoded prices"` / `"Every price is fetched, not estimated"` (`Sections.tsx`) | pending |
 
 ---
 

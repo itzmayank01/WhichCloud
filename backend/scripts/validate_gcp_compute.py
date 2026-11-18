@@ -80,9 +80,9 @@ def catalog_rates(region: str) -> dict[str, dict[str, Decimal]]:
             continue
 
         if "instance core" in desc:
-            kind = "core"
+            kind = "core_highmem" if "highmem" in desc else "core"
         elif "instance ram" in desc:
-            kind = "ram"
+            kind = "ram_highmem" if "highmem" in desc else "ram"
         else:
             continue
 
@@ -93,7 +93,7 @@ def catalog_rates(region: str) -> dict[str, dict[str, Decimal]]:
         # "N2D AMD Instance Core running in Mumbai" -> N2D
         family = desc.split(" instance ")[0].split()[0].upper()
         rates.setdefault(family, {})
-        # Lowest rate per family: the plain one, not an upgrade tier.
+        # Lowest rate per family & tier: the plain one, not an upgrade tier.
         if kind not in rates[family] or price < rates[family][kind]:
             rates[family][kind] = price
     return rates
@@ -152,7 +152,10 @@ def main() -> int:
             skipped_family += 1
             continue
 
-        expected = r["core"] * Decimal(vcpu) + r["ram"] * Decimal(str(memory))
+        is_highmem = "highmem" in name.lower()
+        core_rate = r.get("core_highmem") if is_highmem and "core_highmem" in r else r["core"]
+        ram_rate = r.get("ram_highmem") if is_highmem and "ram_highmem" in r else r["ram"]
+        expected = core_rate * Decimal(vcpu) + ram_rate * Decimal(str(memory))
         if expected <= 0:
             continue
         checked += 1
