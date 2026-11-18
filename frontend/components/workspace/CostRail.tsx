@@ -184,6 +184,74 @@ function groupedItems(option: Option, cloud: CloudId) {
     .sort((a, b) => b.total - a.total);
 }
 
+/**
+ * A refusal, given a shape instead of a wall.
+ *
+ * The engine's refusals are deliberately detailed -- they name the gate, the
+ * evidence behind it, and why withholding beats guessing -- and the panel
+ * printed all of it as one tinted paragraph. The result was five lines of
+ * orange that became the loudest object on the screen, louder than the
+ * primary action, while the sentence a reader actually needs ("this shape
+ * isn't supported yet") was buried mid-paragraph next to "confidence 1.00,
+ * 0 supporting span(s)".
+ *
+ * Nothing is dropped. The same three facts are ranked: what happened, why,
+ * and the machine evidence last and quietest.
+ */
+function splitRefusal(raw: string) {
+  const parenAt = raw.indexOf(" (");
+  const head = parenAt > -1 ? raw.slice(0, parenAt) : raw;
+  const detail =
+    parenAt > -1 ? raw.slice(parenAt + 2).replace(/\)\s*$/, "").trim() : "";
+  const found = head.match(/confidence [\d.]+, \d+ supporting span\(s\)/);
+  const lead = (
+    found
+      ? head.replace(/:?\s*confidence [\d.]+, \d+ supporting span\(s\)\.?/, "")
+      : head
+  )
+    .replace(/[:\s]+$/, "")
+    .trim();
+  return { lead, detail, evidence: found ? found[0] : "" };
+}
+
+function PanelError({ text }: { text: string }) {
+  const { lead, detail, evidence } = splitRefusal(text);
+  return (
+    <div
+      role="status"
+      className="mt-2.5 rounded-lg border border-caution/30 bg-caution-wash px-3 py-2.5"
+    >
+      <div className="flex gap-2">
+        <svg
+          viewBox="0 0 24 24"
+          className="mt-[1px] h-3.5 w-3.5 shrink-0 text-caution"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          aria-hidden
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7.5v5M12 16h.01" />
+        </svg>
+        <p className="text-[12.5px] font-medium leading-snug text-caution">
+          {lead}
+        </p>
+      </div>
+      {detail && (
+        <p className="mt-1.5 pl-[22px] text-[12px] leading-relaxed text-ink-2">
+          {detail}
+        </p>
+      )}
+      {evidence && (
+        <p className="mt-1.5 pl-[22px] font-mono text-[11px] text-ink-3">
+          {evidence}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function CostRail({
   description,
   setDescription,
@@ -316,11 +384,7 @@ export function CostRail({
               </button>
             )}
           </div>
-          {error && (
-            <p className="mt-2.5 rounded-lg bg-caution-wash px-3 py-2 text-[12.5px] leading-relaxed text-caution">
-              {error}
-            </p>
-          )}
+          {error && <PanelError text={error} />}
         </div>
       )}
 

@@ -65,29 +65,57 @@ const EXAMPLE =
  * can be edited into the reader's own numbers first, which is the point of
  * a description-driven tool.
  */
+/*
+ * EVERY ENTRY HERE MUST CLASSIFY AND PRICE. That is not a style note.
+ *
+ * The engine refuses to price a description it cannot place in one of the
+ * seven implemented archetypes (whichcloud/archetype.py), and refuses again
+ * if a stated quantity could not be read. A starter is therefore not just
+ * copy -- it is a claim that this exact text produces an architecture, and
+ * the only way to know is to run it.
+ *
+ * The first draft of this list did not do that, and shipped two that broke:
+ * a "consumer mobile app" that matched no archetype phrase at all and
+ * refused outright, and an "internal reporting system" that priced only by
+ * accidentally matching 'billing system' -- so a nightly batch workload was
+ * being drawn as a web app. A starter that misclassifies is worse than one
+ * that refuses, because nothing on screen says it went wrong.
+ *
+ * Each of the three below was checked end to end against the live engine:
+ * the archetype it lands in is the one its title claims, and /describe
+ * returns three priced options. Re-check with the same two steps before
+ * adding or rewording any of them -- a reworded phrase can silently drop
+ * the signal the classifier matched on.
+ */
 const STARTERS: { title: string; note: string; text: string }[] = [
   {
+    // web_app — 4 phrase matches. Already the shipped EXAMPLE.
     title: "Retail chain going online",
     note: "40 stores · 300 staff · must not go down in business hours",
     text: EXAMPLE,
   },
   {
-    title: "Consumer app with spiky traffic",
-    note: "Launch spikes · media uploads · mostly reads",
+    // batch_etl — matches 'overnight', 'next-day reports', 'nobody uses it
+    // during the day'. Deliberately states no head-count: "a team of 25"
+    // reads as a quantity the planner then refuses to guess around.
+    title: "Overnight reporting pipeline",
+    note: "Loads nightly · next-day reports · idle during the day",
     text:
-      "We run a consumer mobile app in India with about 60,000 monthly users. " +
-      "Traffic is spiky — quiet most of the day, then a big spike each evening " +
-      "and much bigger when we run a campaign. Users upload photos, and most " +
-      "requests are reads of the same content. Budget is around $800 a month.",
+      "Our sales data is loaded overnight from the till systems into a " +
+      "reporting database, and the finance team reads next-day reports each " +
+      "morning. Nobody uses it during the day. We keep about 2 TB of " +
+      "history. Budget is around $600 a month.",
   },
   {
-    title: "Internal reporting system",
-    note: "Nightly batch · 2 TB history · no public access",
+    // static_site — matches 'marketing site', 'just pages and images',
+    // 'no login', 'no database'. Prices at a few dollars, which is the
+    // useful end of the range to show next to the other two.
+    title: "Marketing site",
+    note: "Just pages and images · no login · no database",
     text:
-      "We need an internal reporting system for a finance team of 25 people. " +
-      "It loads data overnight from our billing system, keeps about 2 TB of " +
-      "history, and nobody outside the company should ever reach it. Queries " +
-      "run during office hours only. Budget is around $600 a month.",
+      "We need a marketing site for our product — just pages and images, no " +
+      "login and no database. It should load fast for visitors in India and " +
+      "the UK. Budget is around $50 a month.",
   },
 ];
 
@@ -927,48 +955,55 @@ export function WorkspaceView({ name }: { name: string | null }) {
                         thing a new user met was a blank box and no idea what
                         to put in it. One click now fills the description with
                         a real workload they can edit into their own. */}
-                    {/* 2xl rather than xl: at xl the second line truncated on
-                        a canvas with room to spare, which is the detail that
-                        makes a panel look unfinished. */}
-                    <div className="mx-auto mt-8 w-full max-w-2xl text-left">
-                      <p className="mb-2.5 text-center font-mono text-[11.5px] uppercase tracking-[0.12em] text-ink-3">
-                        Or start from one of these
-                      </p>
-                      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+                    {/* Three across rather than a stacked list. The canvas is
+                        the widest thing on the page and a 670px column of thin
+                        rows sitting in the middle of it is what made this read
+                        as unfinished -- the composition has to use the space it
+                        occupies. Each card carries the workload's shape and its
+                        own note, so the row is worth its height. */}
+                    <div className="mx-auto mt-9 w-full max-w-4xl">
+                      <div className="mb-3 flex items-center gap-3">
+                        <span className="h-px flex-1 bg-line" />
+                        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-3">
+                          Or start from one
+                        </span>
+                        <span className="h-px flex-1 bg-line" />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
                         {STARTERS.map((s) => (
-                          <li key={s.title}>
-                            <button
-                              type="button"
-                              onClick={() => setDescription(s.text)}
-                              className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sunk focus-visible:bg-sunk focus-visible:outline-none"
-                            >
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[13.5px] font-medium text-ink">
-                                  {s.title}
-                                </span>
-                                <span className="mt-0.5 block truncate font-mono text-[11.5px] text-ink-3">
-                                  {s.note}
-                                </span>
-                              </span>
+                          <button
+                            key={s.title}
+                            type="button"
+                            onClick={() => setDescription(s.text)}
+                            className="group flex h-full flex-col rounded-xl border border-line bg-surface p-4 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-line-strong hover:elev-2 focus-visible:border-line-strong focus-visible:outline-none"
+                          >
+                            <span className="text-[13.5px] font-medium leading-snug text-ink">
+                              {s.title}
+                            </span>
+                            <span className="mt-1.5 flex-1 font-mono text-[11.5px] leading-relaxed text-ink-3">
+                              {s.note}
+                            </span>
+                            <span className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-accent">
+                              Use this
                               <svg
                                 viewBox="0 0 24 24"
-                                className="h-4 w-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5"
+                                className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-x-0.5"
                                 fill="none"
                                 stroke="currentColor"
-                                strokeWidth="1.8"
+                                strokeWidth="2"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 aria-hidden
                               >
                                 <path d="M5 12h14M13 6l6 6-6 6" />
                               </svg>
-                            </button>
-                          </li>
+                            </span>
+                          </button>
                         ))}
-                      </ul>
-                      <p className="mt-2.5 text-center text-[12px] text-ink-3">
-                        Lands in the description box so you can change the
-                        numbers to yours before pricing it.
+                      </div>
+                      <p className="mt-3 text-center text-[12px] text-ink-3">
+                        Fills the description so you can change the numbers to
+                        yours before pricing it.
                       </p>
                     </div>
                   </>
