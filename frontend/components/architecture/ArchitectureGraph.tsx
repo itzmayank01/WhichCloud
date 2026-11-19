@@ -698,7 +698,14 @@ function Inner({
       zIndex: e.attach ? 4 : 5,
     }));
     return { rfNodes, rfEdges };
-  }, [laid, playing, reduced]);
+    /* `cloud` is read inside (each node carries it so the right provider
+       icon renders) and belongs in the deps. It is currently masked: `laid`
+       is the result of layout(model, cloud), so switching provider gives a
+       new object and the memo recomputes anyway. That makes this a latent
+       bug rather than a live one -- if `laid` ever became referentially
+       stable across clouds, every node would keep the previous provider's
+       icon. Declaring it costs nothing today and removes that trap. */
+  }, [laid, playing, reduced, cloud]);
 
   // ONE fit path, one set of options. There used to be six -- the fitView
   // prop, two onInit timers, three settle timers and a ResizeObserver -- and
