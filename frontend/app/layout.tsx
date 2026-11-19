@@ -150,8 +150,20 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 pages exist. */}
             <nav
               aria-label="Main"
-              className="hidden gap-7 text-[15.5px] text-ink-2 md:flex"
+              className="hidden gap-5 lg:gap-6 text-[15px] text-ink-2 md:flex items-center"
             >
+              <Link
+                href="/projects"
+                className="rounded-sm font-medium text-ink transition-colors hover:text-accent"
+              >
+                Projects
+              </Link>
+              <Link
+                href="/pricing"
+                className="rounded-sm font-semibold text-accent transition-colors hover:opacity-85"
+              >
+                Pricing
+              </Link>
               <Link
                 href="/prices"
                 className="rounded-sm transition-colors hover:text-ink"
@@ -196,18 +208,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               >
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 Multi-Env IaC
-              </Link>
-              <Link
-                href="/#architecture"
-                className="rounded-sm transition-colors hover:text-ink"
-              >
-                Architecture
-              </Link>
-              <Link
-                href="/#optimizations"
-                className="rounded-sm transition-colors hover:text-ink"
-              >
-                Optimizations
               </Link>
             </nav>
 

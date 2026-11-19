@@ -517,11 +517,13 @@ const FOOTER: {
   {
     heading: "Product",
     links: [
+      { label: "Pricing & Plans", href: "/pricing" },
+      { label: "Projects Hub", href: "/projects" },
       { label: "Price index", href: "/prices" },
-      { label: "Compare clouds", href: "/#pricing" },
-      { label: "Architecture", href: "/#architecture" },
-      { label: "Optimizations", href: "/#optimizations" },
       { label: "Price your app", href: "/estimate" },
+      { label: "FinOps Live", href: "/finops" },
+      { label: "Terraform IaC", href: "/terraform" },
+      { label: "Multi-Env IaC", href: "/environments" },
     ],
   },
   {

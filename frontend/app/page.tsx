@@ -409,6 +409,68 @@ export default function Home() {
         </div>
       </section>
 
+      {/* pricing preview */}
+      <section className="border-t border-line px-6 py-20 bg-surface/40">
+        <div className="mx-auto max-w-5xl text-center">
+          <div className="font-mono text-[13.5px] uppercase tracking-[0.14em] text-accent font-medium">
+            Plans & ROI
+          </div>
+          <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.5vw,2.5rem)] font-semibold tracking-tight">
+            Predictable pricing for engineers & growing teams
+          </h2>
+          <p className="mt-3 text-[16px] text-ink-2 max-w-2xl mx-auto">
+            Get started for free, or unlock production multi-module Terraform ZIPs, STS live AWS waste telemetry, and multi-environment drift management.
+          </p>
+
+          <div className="mt-10 grid gap-6 sm:grid-cols-3 text-left">
+            <div className="rounded-2xl border border-line bg-surface p-6 flex flex-col justify-between">
+              <div>
+                <span className="font-mono text-[12px] uppercase tracking-wider text-ink-3 font-semibold">Starter</span>
+                <div className="mt-2 font-mono text-[28px] font-bold text-ink">$0</div>
+                <p className="mt-2 text-[14px] text-ink-2">Free exploration, 3 architecture estimates/mo, catalog index lookup.</p>
+              </div>
+              <Link href="/estimate" className="mt-6 block text-center rounded-xl border border-line py-2 text-[14px] font-medium text-ink hover:bg-sunk">
+                Try Free
+              </Link>
+            </div>
+
+            <div className="rounded-2xl border-2 border-accent bg-surface p-6 flex flex-col justify-between shadow-lg relative">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-0.5 text-[11px] font-bold uppercase tracking-wider text-canvas">
+                Most Popular
+              </span>
+              <div>
+                <span className="font-mono text-[12px] uppercase tracking-wider text-accent font-semibold">Pro Engineer</span>
+                <div className="mt-2 font-mono text-[28px] font-bold text-ink">$29<span className="text-[14px] text-ink-3 font-normal">/mo</span></div>
+                <p className="mt-2 text-[14px] text-ink-2">Unlimited architectures, production Terraform ZIP with KMS/IAM, 1 live AWS account FinOps waste monitor.</p>
+              </div>
+              <Link href="/pricing" className="mt-6 block text-center rounded-xl bg-accent py-2 text-[14px] font-semibold text-canvas hover:opacity-90">
+                View Pro Details
+              </Link>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-surface p-6 flex flex-col justify-between">
+              <div>
+                <span className="font-mono text-[12px] uppercase tracking-wider text-ink-3 font-semibold">Team & Scale</span>
+                <div className="mt-2 font-mono text-[28px] font-bold text-ink">$99<span className="text-[14px] text-ink-3 font-normal">/mo</span></div>
+                <p className="mt-2 text-[14px] text-ink-2">Up to 5 cloud accounts, multi-env IaC drift sync, unlimited saved projects, team workspaces.</p>
+              </div>
+              <Link href="/pricing" className="mt-6 block text-center rounded-xl border border-line py-2 text-[14px] font-medium text-ink hover:bg-sunk">
+                Explore Team
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-2 text-[15px] font-medium text-accent hover:underline"
+            >
+              Compare full feature matrix & calculate your cloud savings →
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* final CTA */}
       <section className="border-t border-line px-6 py-24 text-center">
         <h2 className="mx-auto max-w-3xl text-balance text-[clamp(2rem,5vw,3.25rem)] font-semibold leading-[1.05] tracking-[-0.03em]">

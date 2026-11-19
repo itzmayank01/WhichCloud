@@ -140,3 +140,15 @@ Started: 2026-11-17
 | Task | Status | Evidence | Commit |
 |---|---|---|---|
 | 7.1 Write `FINAL_REPORT.md` in plain text | done | Created `FINAL_REPORT.md` covering fixes, before/after test counts, coming-soon features, manual deploy steps, and top 10 next improvements | final |
+
+---
+
+## Phase 8: Product Monetization, SaaS Workflow & Pricing Architecture
+
+| Task | Status | Evidence | Commit |
+|---|---|---|---|
+| 8.1 Dedicated Pricing Page (`/pricing`) | done | Built responsive `/pricing` page with 4 tiers (Starter $0, Pro $29/mo or $290/yr, Team $99/mo or $990/yr, Enterprise custom), monthly/annual toggle, interactive FinOps ROI calculator, full feature comparison matrix, social proof, and FAQ | `c873f10` |
+| 8.2 Dedicated Projects Hub (`/projects`) | done | Built `/projects` workspace hub with 3 tabs (Saved Cloud Architectures, Connected Cloud Accounts, Multi-Env IaC Deployments), 1-click actions to open in Workspace, Terraform, or Deploy, live account list, and project usage meters | `c873f10` |
+| 8.3 Global Navigation & In-App Upsell Hooks | done | Added `/pricing` and `/projects` to desktop `<nav>`, `HeaderAuth` ("Upgrade to Pro" pill + "Projects" button), `MobileNav`, and `Footer`; added Pro feature badges on Terraform ZIP download & FinOps Live | `c873f10` |
+| 8.4 E2E Playwright Suite & Production Build | done | Added `tests/pricing-and-projects.spec.ts`; all 11 Playwright tests passed (9.4s); Next.js production build generated 23/23 routes with zero errors | `c873f10` |
+

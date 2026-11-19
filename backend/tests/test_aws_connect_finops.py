@@ -209,3 +209,4 @@ def test_multi_user_connect_verify_me_and_strict_finops_isolation(monkeypatch):
     # Cost-Explorer-only role still populates real Cost Explorer topology nodes!
     assert any("Amazon EC2" in n["label"] for n in ja["nodes"])
     assert any("Amazon RDS" in n["label"] for n in jb["nodes"])
+

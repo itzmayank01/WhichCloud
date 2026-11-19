@@ -9,6 +9,8 @@ import { TerraformLogo } from "@/components/Logo";
  *  -- below that breakpoint the primary navigation had no way to reach a
  *  reader at all, not even a button to open one. This is that button. */
 const LINKS = [
+  { href: "/projects", label: "Projects Hub" },
+  { href: "/pricing", label: "Pricing & Plans", pricingBadge: true },
   { href: "/prices", label: "Price index" },
   { href: "/estimate", label: "Price your app" },
   { href: "/audit", label: "Audit bill" },
@@ -16,8 +18,6 @@ const LINKS = [
   { href: "/finops", label: "FinOps Live", accent: true },
   { href: "/terraform", label: "Terraform IaC", terraform: true },
   { href: "/environments", label: "Multi-Env IaC", envBadge: true },
-  { href: "/#architecture", label: "Architecture" },
-  { href: "/#optimizations", label: "Optimizations" },
 ];
 
 export function MobileNav() {
@@ -59,9 +59,10 @@ export function MobileNav() {
               key={l.href}
               href={l.href}
               className={`flex items-center gap-1.5 rounded-lg px-2 py-2.5 transition-colors hover:bg-sunk ${
-                l.accent ? "font-medium text-accent" : "text-ink-2 hover:text-ink"
+                l.accent || l.pricingBadge ? "font-semibold text-accent" : "text-ink-2 hover:text-ink"
               }`}
             >
+              {l.pricingBadge && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
               {l.accent && <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />}
               {l.envBadge && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />}
               {l.terraform && <TerraformLogo className="h-4 w-4" />}

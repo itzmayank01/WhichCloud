@@ -563,6 +563,15 @@ function FinOpsContent() {
               <span>{syncing ? "Syncing..." : "Sync"}</span>
             </button>
 
+            {/* Pro Badge & Pricing */}
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-1 rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 text-[12px] font-semibold text-accent shadow-2xs hover:bg-accent/20 transition-colors"
+            >
+              <Icon icon="heroicons:sparkles-20-solid" className="h-3.5 w-3.5" />
+              <span>Pro Plan</span>
+            </Link>
+
             {/* Delete All Resources Button for Active Resources Tab */}
             {activeTab === "resources" && (
               <button

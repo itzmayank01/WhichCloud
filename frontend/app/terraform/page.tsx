@@ -779,12 +779,16 @@ resource "whichcloud_cost_report" "ai_curated_report" {
             type="button"
             onClick={handleDownloadZip}
             disabled={downloadingZip || loadingFiles}
+            title="Complete production multi-module ZIP with KMS encryption, variables, outputs, and cost report markdown"
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#5C4EE5] px-3.5 py-1.5 text-[12.5px] font-semibold text-white shadow-sm transition hover:bg-[#4d3fd4] active:scale-[0.98] disabled:opacity-60 shrink-0"
           >
             <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M4 14v2a2 2 0 002 2h8a2 2 0 002-2v-2M10 3v9m0 0l-3-3m3 3l3-3" />
             </svg>
             <span>{downloadingZip ? "Packaging…" : "Download ZIP"}</span>
+            <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider text-white">
+              PRO
+            </span>
           </button>
         </div>
       </header>
