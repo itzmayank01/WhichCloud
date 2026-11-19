@@ -492,6 +492,16 @@ export async function layout(
       "elk.randomSeed": "1",
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.crossingMinimization.semiInteractive": "true",
+      // ELK's crossing-minimisation effort. The default is 7, which is tuned
+      // for interactive editors redrawing on every keystroke; this graph is
+      // laid out once and then looked at, so the extra passes are free where
+      // it matters. Measured over all 63 harness fixtures: 54 crossings down
+      // to 51, entirely on GCP (12 -> 9), with no fixture getting worse.
+      //
+      // It does NOT touch AWS, which sits at 32 of those 51. That is not a
+      // tuning problem -- see the note on replication edges in the hand
+      // router below.
+      "elk.layered.thoroughness": "40",
       "elk.layered.mergeEdges": "false",
     },
     labels: [{ text: CONTAINER_LABEL["cloud"] }],
@@ -1089,9 +1099,32 @@ export async function layout(
     return null;
   };
 
-  // Draw the replication edges withheld from ELK. They were excluded so they
-  // could not distort layering, but they still have to be DRAWN -- a standby
-  // database with no line to its primary reads as a second unrelated database.
+  /* Draw the replication edges withheld from ELK. They were excluded so they
+     could not distort layering, but they still have to be DRAWN -- a standby
+     database with no line to its primary reads as a second unrelated database.
+   *
+   * THESE LINES ARE WHERE THE REMAINING CROSSINGS LIVE. Measured on the two
+   * AWS web fixtures: 7 of 9 crossings on Most reliable and 8 of 10 on Most
+   * optimized involve one of them, and AWS carries 32 of the 51 crossings
+   * across all 63 fixtures while Azure carries 10 -- the same shapes, and the
+   * difference is that multi-AZ AWS has the most replication edges.
+   *
+   * The cause is structural, not a tuning gap: ELK minimises crossings over
+   * the edges it is given, and these are the ones it is never given, so they
+   * are free to cut across its result. Two tuning routes were tried against
+   * the harness and neither moved AWS at all -- raising crossing-minimisation
+   * effort (helps GCP only) and scoring candidate lanes by how many drawn
+   * lines they cross (no discrimination; every lane between the zones crosses
+   * the same branch edges, because that corridor IS where they run).
+   *
+   * So the fix is not here. It is either to give ELK these edges with a zero
+   * layering weight -- `elk.layered.priority.direction` / a partitioning
+   * constraint, so it routes them without letting them set ranks, which is
+   * what the original exclusion was protecting against -- or to reserve a
+   * dedicated corridor between the zone boxes that branch edges are kept out
+   * of. Both change the arrangement, so both need the harness run before and
+   * after rather than being judged by eye.
+   */
   for (const [i, e] of model.dataEdges.entries()) {
     if (e.kind !== "replication") continue;
     let route = routeBetween(e.source, e.target);

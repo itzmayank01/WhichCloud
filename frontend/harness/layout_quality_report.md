@@ -37,7 +37,7 @@
 | gcp | batch-etl | Most optimized | 6 | 0 | 0 | 0 (4) | 0 | 0 | 1 | all | 3.46 | 1331 | 734 | 6/1 | 0 | 2 | 0 | 6 | 0 |
 | gcp | event-iot | Cheapest | 8 | 0 | 0 | 1 (6) | 0 | 0 | 1 | all | 2.18 | 2804 | 844 | 11/0 | 0 | 3 | 0 | 3 | 0 |
 | gcp | event-iot | Most reliable | 10 | 0 | 0 | 2 (6) | 0 | 0 | 1 | missed firehose,streaming | 3.07 | 3438 | 797 | 10/2 | 0 | 2 | 5 | 6 | 0 |
-| gcp | event-iot | Most optimized | 11 | 0 | 0 | 3 (7) | 0 | 0 | 1 | missed iot | 0.7 | 4281 | 702 | 9/4 | 0 | 3 | 0 | 8 | 0 |
+| gcp | event-iot | Most optimized | 11 | 0 | 0 | 0 (7) | 0 | 0 | 1 | missed iot | 3.04 | 4944 | 1328 | 12/1 | 0 | 3 | 0 | 5 | 0 |
 | gcp | serverless-api | Cheapest | 6 | 0 | 0 | 0 (6) | 0 | 0 | 1 | all | 2.53 | 1970 | 915 | 11/0 | 0 | 2 | 0 | 5 | 0 |
 | gcp | serverless-api | Most reliable | 8 | 0 | 0 | 0 (7) | 0 | 0 | 1 | all | 0.8 | 3374 | 1086 | 13/0 | 0 | 3 | 0 | 8 | 0 |
 | gcp | serverless-api | Most optimized | 11 | 0 | 0 | 0 (9) | 0 | 0 | 1 | all | 0.75 | 3645 | 941 | 17/0 | 1 | 3 | 0 | 7 | 0 |
