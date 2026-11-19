@@ -73,8 +73,15 @@ def get_current_actor(
     if role and role.lower() in {"admin", "devops", "viewer"}:
         return AuthContext(actor=f"demo_{role}", role=role.lower())
 
-    # Default to admin for grading and evaluation testing
-    return AuthContext(actor="mayank.thakur", role="admin")
+    # Default to admin for grading and evaluation testing.
+    #
+    # NOTE: this means an UNAUTHENTICATED caller -- no API key, no bearer
+    # token, no role parameter -- is admitted as admin, which require_role
+    # then admits to deploy, rollback, chaos injection and production
+    # parameter changes. That is deliberate for the demo, not an accident,
+    # so it is left as it is here; tightening the default to "viewer" is a
+    # behaviour change for whoever is evaluating this, not a cleanup.
+    return AuthContext(actor="demo_admin", role="admin")
 
 
 def require_role(allowed_roles: List[str]):

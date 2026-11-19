@@ -348,12 +348,6 @@ export default function EnvironmentsPage() {
             Reusable Terraform modules with parameterized differences for Development, Staging, and Production.
           </p>
         </div>
-
-        <div className="flex flex-col items-start rounded-xl border border-line bg-canvas p-4 text-xs md:items-end">
-          <div className="font-semibold text-ink">Mayank Thakur</div>
-          <div className="font-mono text-ink-2">Roll / SAP: 500123412</div>
-          <div className="text-ink-3">Section B3 • Cloud Application & Development</div>
-        </div>
       </div>
 
       {/* DORA & DevOps Metrics Bar */}

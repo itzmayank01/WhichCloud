@@ -486,7 +486,16 @@ def scan_live_aws_account() -> Dict[str, Any]:
             "category": "Tiering",
             "monthly_saving": 1.40,
             "confidence": "High",
-            "description": f"Add lifecycle rules across {len(s3_buckets)} S3 buckets (mayank-emr-lab-data13232, hrmsonboardingstack-documentsbucket, etc.) to transition objects older than 30 days to Archive Instant Access.",
+            "description": (
+                f"Add lifecycle rules across {len(s3_buckets)} S3 buckets"
+                + (
+                    " (" + ", ".join(s3_buckets[:2])
+                    + (", etc." if len(s3_buckets) > 2 else "") + ")"
+                    if s3_buckets
+                    else ""
+                )
+                + " to transition objects older than 30 days to Archive Instant Access."
+            ),
             "terraform_diff": """resource "aws_s3_bucket_lifecycle_configuration" "documents_lifecycle" {
 +   rule {
 +     id     = "auto-intelligent-tiering"
@@ -503,7 +512,7 @@ def scan_live_aws_account() -> Dict[str, Any]:
     result = {
         "account": {
             "id": account_id,
-            "name": f"AWS Account ({account_id} • awsmayank)",
+            "name": f"AWS Account ({account_id})",
             "provider": "aws",
             "cloud_label": "AWS Cloud",
             "cloud_logo": "logos:aws",
@@ -607,7 +616,7 @@ def get_live_aws_resources() -> List[Dict[str, Any]]:
             "monthly_usd": 0.20,
             "utilization_pct": 45,
             "status": "warning" if any(k in b for k in ["temp", "test", "scratch"]) else "healthy",
-            "tags": {"owner": "awsmayank", "account": account_id},
+            "tags": {"owner": "unassigned", "account": account_id},
         })
 
     # 5. Real Elastic IPs (only if live on AWS)

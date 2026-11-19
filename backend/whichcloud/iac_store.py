@@ -288,7 +288,7 @@ def _seed_initial_data(conn: sqlite3.Connection):
                 duration_ms, rollback_from_id, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            dep_id, cfg.name, "v1.0.0", "mayank.thakur", "CI_CD", "SUCCESS",
+            dep_id, cfg.name, "v1.0.0", "demo_admin", "CI_CD", "SUCCESS",
             json.dumps({"resources_to_add": 14, "resources_to_change": 0, "resources_to_destroy": 0}),
             cfg.model_dump_json(),
             json.dumps([
