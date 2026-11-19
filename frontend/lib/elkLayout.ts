@@ -16,7 +16,7 @@
  * user sees.
  */
 
-import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
+import ELK, { type ElkNode, type ElkExtendedEdge } from "elkjs/lib/elk.bundled.js";
 import type { GraphModel, PlanedNode, ContainerId } from "@/lib/graphModel";
 
 // AWS reference service-box proportions. Was 200x92, which at 21 services
@@ -700,6 +700,49 @@ export async function layout(
   // puts cross-container edges on the root, so their sections are already
   // absolute. Resolve each edge's container offset to be safe.
   const edges: LaidEdge[] = [];
+  type Pt = { x: number; y: number };
+
+  /** One ELK edge's sections flattened into an absolute polyline. */
+  const polylineOf = (e: ElkExtendedEdge, base: Pt): Pt[] => {
+    const pts: Pt[] = [];
+    for (const sec of e.sections ?? []) {
+      pts.push({ x: base.x + sec.startPoint.x, y: base.y + sec.startPoint.y });
+      for (const bp of sec.bendPoints ?? []) {
+        pts.push({ x: base.x + bp.x, y: base.y + bp.y });
+      }
+      pts.push({ x: base.x + sec.endPoint.x, y: base.y + sec.endPoint.y });
+    }
+    return pts;
+  };
+
+  /** Is this endpoint sitting on (or within 64px of) the box it claims? */
+  const nearBox = (pt: Pt, bx: { x: number; y: number; w: number; h: number }) => {
+    const ddx = Math.max(bx.x - pt.x, 0, pt.x - (bx.x + bx.w));
+    const ddy = Math.max(bx.y - pt.y, 0, pt.y - (bx.y + bx.h));
+    return Math.hypot(ddx, ddy) <= 64;
+  };
+
+  /**
+   * Under INCLUDE_CHILDREN a cross-container edge can be stored against a
+   * different ancestor than the offset we add for it, so the whole polyline
+   * lands somewhere it does not belong. The SHAPE is right; only the origin
+   * is wrong. Measure how far BOTH ends have drifted from their own boxes
+   * and translate the polyline back by the average -- both, because one end
+   * landing correctly means the offset was right and the other end is simply
+   * a long edge. Mutates `pts` in place.
+   */
+  const recentreOntoBoxes = (pts: Pt[], srcId?: string, tgtId?: string) => {
+    const sBox = srcId ? box.get(srcId) : undefined;
+    const tBox = tgtId ? box.get(tgtId) : undefined;
+    if (pts.length < 2 || !sBox || !tBox) return;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (nearBox(first, sBox) || nearBox(last, tBox)) return;
+    const ddx = (sBox.x + sBox.w / 2 - first.x + (tBox.x + tBox.w / 2 - last.x)) / 2;
+    const ddy = (sBox.y + sBox.h / 2 - first.y + (tBox.y + tBox.h / 2 - last.y)) / 2;
+    for (const pt of pts) { pt.x += ddx; pt.y += ddy; }
+  };
+
   const collectEdges = (elkNode: ElkNode, ox: number, oy: number) => {
     const base = abs.get(elkNode.id) ?? { x: ox, y: oy };
     for (const e of elkNode.edges ?? []) {
@@ -716,36 +759,8 @@ export async function layout(
       const model_e = model.dataEdges.find(
         (d) => d.source === src && d.target === tgt
       );
-      const isAttach = !model_e; // attachment edges are the ones not in dataEdges
-      const pts: Array<{ x: number; y: number }> = [];
-      for (const sec of e.sections ?? []) {
-        pts.push({ x: base.x + sec.startPoint.x, y: base.y + sec.startPoint.y });
-        for (const bp of sec.bendPoints ?? []) {
-          pts.push({ x: base.x + bp.x, y: base.y + bp.y });
-        }
-        pts.push({ x: base.x + sec.endPoint.x, y: base.y + sec.endPoint.y });
-      }
-      // Under INCLUDE_CHILDREN a cross-container edge can be stored against a
-      // different ancestor than the offset we add for it, so the whole
-      // polyline lands somewhere it does not belong. The SHAPE is right; only
-      // the origin is wrong. Measure how far both ends have drifted from their
-      // own boxes and translate the polyline back by the average.
-      const sBox = src ? box.get(src) : undefined;
-      const tBox = tgt ? box.get(tgt) : undefined;
-      if (pts.length >= 2 && sBox && tBox) {
-        const near = (pt: { x: number; y: number }, bx: typeof sBox) => {
-          const ddx = Math.max(bx!.x - pt.x, 0, pt.x - (bx!.x + bx!.w));
-          const ddy = Math.max(bx!.y - pt.y, 0, pt.y - (bx!.y + bx!.h));
-          return Math.hypot(ddx, ddy) <= 64;
-        };
-        const first = pts[0];
-        const last = pts[pts.length - 1];
-        if (!near(first, sBox) && !near(last, tBox)) {
-          const ddx = (sBox.x + sBox.w / 2 - first.x + (tBox.x + tBox.w / 2 - last.x)) / 2;
-          const ddy = (sBox.y + sBox.h / 2 - first.y + (tBox.y + tBox.h / 2 - last.y)) / 2;
-          for (const pt of pts) { pt.x += ddx; pt.y += ddy; }
-        }
-      }
+      const pts = polylineOf(e, base);
+      recentreOntoBoxes(pts, src, tgt);
       edges.push({
         id: e.id,
         source: src,
@@ -753,7 +768,7 @@ export async function layout(
         label: model_e?.label ?? "",
         onPath: model_e?.onPath ?? false,
         seq: model_e?.seq ?? null,
-        attach: isAttach,
+        attach: !model_e, // attachment edges are the ones not in dataEdges
         kind: model_e?.kind ?? "branch",
         points: pts,
       });

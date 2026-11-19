@@ -239,9 +239,14 @@ jobs:
           restore-keys: |
             tf-providers-${{ runner.os }}-
       - name: Install backend dependencies
+        # The [dev] extra rather than naming pytest and httpx here: both are
+        # already declared in backend/pyproject.toml (httpx as a runtime
+        # dependency, pytest under optional-dependencies.dev), so listing
+        # them again in CI meant two places to keep in step and no version
+        # constraint on either.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ./backend pytest httpx
+          pip install -e "./backend[dev]"
       - name: Initialize Postgres schema & seed fallback catalog
         # The export tests skip themselves without a catalog, because they
         # price a real ArchitectureSpec rather than using a fixture.
