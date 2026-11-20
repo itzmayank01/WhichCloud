@@ -77,3 +77,58 @@ def test_ignores_memory_while_reading_a_real_store() -> None:
     assert stated_storage_gb(
         "Servers are 4 vCPU / 16 GB RAM, and we keep about 2 TB of history."
     ) == pytest.approx(2048.0)
+
+
+# ── the wiring, not just the reader ──────────────────────────────────────
+#
+# The reader being right is half of it; the other half is that
+# parse_description actually prefers it over the model, and that it does
+# NOT start overriding descriptions that state nothing.
+
+
+def _stub(storage_gb: float):
+    import sys, os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from test_intake import FakeGeminiClient, FakeGeminiResponse, draft
+
+    d = draft(assumed=["storage_gb"])
+    d.storage_gb = storage_gb
+    return FakeGeminiClient(FakeGeminiResponse(d))
+
+
+BATCH_DESCRIPTION = (
+    "Our sales data is loaded overnight from the till systems into a reporting "
+    "database, and the finance team reads next-day reports each morning. Nobody "
+    "uses it during the day. We keep about 2 TB of history. Budget is around "
+    "$600 a month."
+)
+
+
+def test_a_stated_size_overrides_the_model() -> None:
+    """The production failure, reproduced: groq returned 75,000 GB for a
+    description whose own sentence says 2 TB."""
+    from whichcloud.intake import parse_description
+
+    intake = parse_description(BATCH_DESCRIPTION, provider="gemini", client=_stub(75_000.0))
+    assert intake.requirement.storage_gb == pytest.approx(2048.0)
+
+
+def test_a_stated_size_is_not_reported_as_an_assumption() -> None:
+    """It was in `assumed`, which told the reader the one figure that was
+    actually theirs had been invented."""
+    from whichcloud.intake import parse_description
+
+    intake = parse_description(BATCH_DESCRIPTION, provider="gemini", client=_stub(75_000.0))
+    assert "storage_gb" not in intake.assumed
+
+
+def test_the_model_still_decides_when_nothing_is_stated() -> None:
+    """The override must not become a second guesser. A description with no
+    size in it leaves the model's figure alone, still marked assumed."""
+    from whichcloud.intake import parse_description
+
+    intake = parse_description(
+        "a reporting system for the finance team", provider="gemini", client=_stub(123.0)
+    )
+    assert intake.requirement.storage_gb == pytest.approx(123.0)
+    assert "storage_gb" in intake.assumed
