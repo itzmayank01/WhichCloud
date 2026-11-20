@@ -861,7 +861,13 @@ def _draft_with_failover(description: str, provider: Provider, client=None):
 #: It is part of the hashed key, not just a column, so a collision with a
 #: Constraints row is not merely unlikely but unrepresentable.
 _DRAFT_NAMESPACE = "intake-draft"
-_DRAFT_SCHEMA_VERSION = "1"
+#: Bumped to 2 when stated sizes started overriding the reader. Drafts cached
+#: under 1 were read by a model that was free to invent a figure the text
+#: gave -- the batch fixture's cached draft held 75,000 GB for a description
+#: saying "about 2 TB" -- and those rows are keyed by description, so without
+#: a bump the wrong answer would be served forever to exactly the people who
+#: had already asked.
+_DRAFT_SCHEMA_VERSION = "2"
 
 
 def _draft_cache_key(description: str, provider: str) -> str:
@@ -904,6 +910,71 @@ def _store_draft(key: str, description: str, provider: str, draft: RequirementDr
 
 import re
 
+#: Byte units, in GB. A description writes "2 TB", never "2048 GB".
+_SIZE_IN_GB = {
+    "mb": 1 / 1024, "gb": 1.0, "gib": 1.0,
+    "tb": 1024.0, "tib": 1024.0, "pb": 1048576.0, "pib": 1048576.0,
+}
+_SIZE_RE = re.compile(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)\s*(pib|tib|gib|pb|tb|gb|mb)\b", re.I)
+
+#: Words that make a size a STORED size.
+_STORAGE_WORDS = (
+    "storage", "store", "stored", "storing", "data", "history", "historical",
+    "archive", "archived", "retain", "retention", "records", "record",
+    "database", "dataset", "backup", "backups", "files", "photos", "images",
+    "documents", "logs", "media", "library", "catalogue", "catalog", "keep",
+)
+#: Words that make it something else entirely. RAM is the dangerous one: a
+#: description saying "4 vCPU / 16 GB" must never be read as 16 GB of disk.
+_NOT_STORAGE_WORDS = (
+    "ram", "memory", "vcpu", "cpu", "egress", "transfer", "bandwidth",
+    "outbound", "inbound", "download", "upload", "throughput", "per second",
+    "per day", "per month", "/s", "instance", "node",
+)
+
+
+def stated_storage_gb(description: str) -> float | None:
+    """The stored size a description states outright, in GB, or None.
+
+    THE MODEL DOES NOT GET A VOTE ON A FIGURE THE TEXT ALREADY GIVES.
+    That is the same rule as "the model reads and classifies, it never sets
+    a price", applied one level up: reading "about 2 TB of history" as
+    75,000 GB is not a cheaper or dearer answer to the question asked, it is
+    an answer to a different question. It is also not hypothetical -- groq
+    returned exactly that for the batch fixture, object storage came out at
+    75,000 GB and $1,875, and with backup tracking it the two made up 97% of
+    a $2,783 estimate against a stated $600 budget.
+
+    Deterministic, so it cannot drift between reads, and unit-aware, which
+    the heuristic fallback never was: its regex matched `gb` only, so every
+    description measured in TB fell through to a 50 GB default.
+    """
+    best: float | None = None
+    for match in _SIZE_RE.finditer(description):
+        try:
+            value = float(match.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        gb = value * _SIZE_IN_GB[match.group(2).lower()]
+        # Judge the phrase around the number, not the number -- and judge it
+        # with two different reaches. What a size IS attaches tightly ("16 GB
+        # RAM", "500 GB egress"), so a disqualifying word only counts when it
+        # is right against the figure. What a size is FOR can sit further off
+        # ("about 2 TB of history"), so the qualifying reach is wider.
+        #
+        # One window for both does not work: at ±60 either way, the RAM in
+        # "4 vCPU / 16 GB RAM, and we keep about 2 TB of history" reaches the
+        # 2 TB and throws away the one real figure in the sentence.
+        near = description[max(0, match.start() - 22) : match.end() + 26].lower()
+        wide = description[max(0, match.start() - 60) : match.end() + 60].lower()
+        if any(w in near for w in _NOT_STORAGE_WORDS):
+            continue
+        if not any(w in wide for w in _STORAGE_WORDS):
+            continue
+        best = gb if best is None else max(best, gb)
+    return best
+
+
 def _fast_heuristic_draft(description: str) -> RequirementDraft:
     """Instant heuristic fallback parser that extracts architectural requirements in <1ms.
     Guarantees that WhichCloud generates fast without getting blocked on external LLM timeouts.
@@ -945,16 +1016,13 @@ def _fast_heuristic_draft(description: str) -> RequirementDraft:
         except Exception:
             budget = -1.0
 
-    # Storage GB extraction
-    storage_gb = 50.0
-    storage_match = re.search(r'([0-9]+)\s*gb', text)
-    if storage_match:
-        try:
-            storage_gb = float(storage_match.group(1))
-        except Exception:
-            storage_gb = 50.0
-    elif "video" in text or "catalog images" in text or "500 gb" in text:
-        storage_gb = 500.0
+    # Storage extraction. Was `([0-9]+)\s*gb` -- GB and nothing else, so a
+    # description measured in TB (which is how anyone states a real data
+    # estate) matched nothing and silently took the 50 GB default. Shares the
+    # unit-aware reader with the LLM path so both agree on what the text says.
+    storage_gb = stated_storage_gb(description)
+    if storage_gb is None:
+        storage_gb = 500.0 if ("video" in text or "catalog images" in text) else 50.0
 
     # Egress GB extraction
     egress_gb = 100.0
@@ -1113,6 +1181,18 @@ def parse_description(
         # this workload description.
         if cacheable and not used_fallback and draft.goal.strip():
             _store_draft(key, description, provider, draft)
+
+    # A SIZE THE DESCRIPTION STATES OUTRIGHT OVERRIDES THE READER.
+    #
+    # Applied after the cache, deliberately: a draft cached before this
+    # existed is corrected on the way out rather than being trusted because
+    # it is old. `assumed` is corrected with it -- a figure the text gives is
+    # not an assumption, and leaving it listed tells the reader the one
+    # number that IS theirs was invented.
+    stated = stated_storage_gb(description)
+    if stated is not None and stated > 0:
+        draft.storage_gb = stated
+        draft.assumed = [a for a in draft.assumed if a != "storage_gb"]
 
     try:
         requirement = draft.to_requirement()
