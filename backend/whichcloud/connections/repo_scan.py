@@ -33,6 +33,11 @@ from dataclasses import dataclass, field
 __all__ = ["Detection", "RepoScan", "scan_manifests", "MANIFESTS"]
 
 
+#: The compose filenames, named once: they are matched in three places
+#: (the manifest list, the two-pass ordering, and the dispatch below).
+COMPOSE_FILENAMES: tuple[str, ...] = ("docker-compose.yml", "docker-compose.yaml")
+SERVERLESS_FILENAMES: tuple[str, ...] = ("serverless.yml", "serverless.yaml", "vercel.json")
+
 #: Manifests worth reading, in the order we would want them in a report.
 #: Paths are matched against the repository's file list case-sensitively,
 #: at the root and one level down (a monorepo usually puts them in
@@ -102,7 +107,7 @@ _DEPENDENCY_SIGNALS: tuple[tuple[str, str], ...] = (
     # queues and background work
     (r"celery|bullmq?|sidekiq|rq|dramatiq|resque|bee-queue|agenda", "queue"),
     # event streaming, which is a different shape from a work queue
-    (r"kafkajs?|confluent-kafka|aiokafka|pulsar-client|@aws-sdk/client-kinesis", "event_streaming"),
+    (r"kafkajs?|kafka-go|sarama|confluent-kafka|aiokafka|pulsar-client|@aws-sdk/client-kinesis", "event_streaming"),
     # search
     (r"elasticsearch|@elastic/elasticsearch|opensearch-py|meilisearch|typesense|algoliasearch", "search"),
     # analytics / warehouse work, as opposed to ordinary CRUD
@@ -217,18 +222,64 @@ def _deps_from_pyproject(text: str) -> list[str]:
 
 
 def _deps_from_go_mod(text: str) -> list[str]:
-    """Module paths from require blocks and single-line requires."""
+    r"""Module paths from require blocks and single-line requires.
+
+    Split on whitespace rather than matched with a regex. The pattern this
+    replaced -- `([a-z0-9\-./]+\.[a-z]{2,}/[^\s]+)\s+v` -- was ambiguous:
+    its first class already contains `.` and `/`, so every one of those
+    characters could be consumed by either the class or the literals that
+    follow, and the engine backtracks through the combinations. That is
+    super-linear on a long line, and this parses files from repositories we
+    do not control, so it is a denial-of-service shape rather than a
+    performance nit. Splitting is linear and reads better besides.
+    """
     names = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("//") or not line:
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//"):
             continue
-        m = re.match(r"(?:require\s+)?([a-z0-9\-./]+\.[a-z]{2,}/[^\s]+)\s+v", line)
-        if m:
-            # match against the last two path segments: gin-gonic/gin
-            parts = m.group(1).split("/")
-            names.append("/".join(parts[-2:]) if len(parts) >= 2 else m.group(1))
+        parts = line.split()
+        if parts[0] == "require":
+            parts = parts[1:]
+        # `github.com/gin-gonic/gin v1.9.1` -- a path, then a v-prefixed
+        # version. Anything else in a go.mod (module, go, toolchain, the
+        # bare parentheses of a require block) fails one of these.
+        if len(parts) < 2 or not parts[1].startswith("v"):
+            continue
+        module = parts[0]
+        host, _, rest = module.partition("/")
+        if "." not in host or not rest:
+            continue
+        names.extend(_go_candidates(module))
     return names
+
+
+def _go_candidates(module: str) -> list[str]:
+    """The names a Go module path might be recognised under.
+
+    Go import paths do not put the package name in one predictable place.
+    `github.com/gin-gonic/gin` ends with it, `gorm.io/driver/postgres`
+    ends with it too, but `github.com/redis/go-redis/v9` ends with a major
+    version suffix and carries the useful word one and two segments back.
+    Taking only the last two segments -- which is what this did first --
+    reduced that to "go-redis/v9" and matched nothing, so a Go service
+    using Redis and Postgres reported neither.
+
+    So offer several readings of the path and let the patterns decide.
+    They are anchored whole-name matches, so an extra candidate can only
+    match something it genuinely names.
+    """
+    segments = [s for s in module.split("/") if s]
+    # a trailing major-version suffix is Go module notation, not a name
+    if len(segments) > 1 and re.fullmatch(r"v[0-9]+", segments[-1]):
+        segments = segments[:-1]
+    if not segments:
+        return []
+    candidates = {"/".join(segments), segments[-1]}
+    if len(segments) >= 2:
+        candidates.add("/".join(segments[-2:]))
+        candidates.add(segments[-2])
+    return sorted(candidates)
 
 
 def _compose_services(text: str) -> tuple[list[str], int]:
@@ -277,6 +328,73 @@ _PARSERS = {
 }
 
 
+def _read_compose(path: str, text: str, scan: RepoScan, datastores: dict[str, str]) -> None:
+    try:
+        images, app_services = _compose_services(text)
+    except Exception:
+        scan.unreadable.append(path)
+        return
+    scan.files_read.append(path)
+    scan.service_count = max(scan.service_count, app_services)
+    for image in images:
+        label = _image_datastore(image)
+        if label:
+            datastores.setdefault(label, f"{image} in {path}")
+
+
+def _read_dependencies(
+    path: str,
+    name: str,
+    text: str,
+    scan: RepoScan,
+    datastores: dict[str, str],
+    note,
+) -> None:
+    parser, language = _PARSERS[name]
+    try:
+        raw_names = parser(text)
+    except Exception:
+        # A manifest we recognise but cannot parse is reported, not
+        # skipped -- see RepoScan.unreadable.
+        scan.unreadable.append(path)
+        return
+
+    scan.files_read.append(path)
+    if language not in scan.languages:
+        scan.languages.append(language)
+
+    for raw in raw_names:
+        dep = _normalise(raw)
+        if not dep:
+            continue
+        for pattern, signal in _DEPENDENCY_SIGNALS:
+            if _match(pattern, dep):
+                note(signal, f"{dep} in {path}", path)
+        for pattern, label in _DATASTORE_DEPENDENCIES:
+            if _match(pattern, dep):
+                datastores.setdefault(label, f"{dep} in {path}")
+        for pattern, label, _hint in _FRAMEWORKS:
+            if re.fullmatch(pattern, dep) and label not in scan.frameworks:
+                scan.frameworks.append(label)
+
+
+def _ordered_for_evidence(files: dict[str, str]) -> list[tuple[str, str]]:
+    """Compose files first, because an image outranks a client library.
+
+    A `postgres:16` service IS a database; `psycopg` only proves something
+    talks to one, possibly a managed instance that is not in this repo at
+    all. First-wins over one alphabetical pass gave the opposite result:
+    backend/pyproject.toml sorts before infra/docker-compose.yml, so
+    "psycopg" was cited for a stack whose compose file names the image.
+    """
+    compose = {
+        p: t for p, t in files.items()
+        if p.rsplit("/", 1)[-1] in COMPOSE_FILENAMES
+    }
+    rest = {p: t for p, t in files.items() if p not in compose}
+    return sorted(compose.items()) + sorted(rest.items())
+
+
 def scan_manifests(files: dict[str, str]) -> RepoScan:
     """Turn `{path: contents}` into a RepoScan.
 
@@ -294,75 +412,17 @@ def scan_manifests(files: dict[str, str]) -> RepoScan:
         # four times reads as noise rather than confidence.
         seen_signals.setdefault(signal, Detection(signal, evidence, source))
 
-    # Two passes, because an image outranks a client library as evidence.
-    # A `postgres:16` service IS a database; `psycopg` only proves something
-    # talks to one, possibly a managed instance that is not in this repo at
-    # all. First-wins over one alphabetical pass gave the opposite result:
-    # backend/pyproject.toml sorts before infra/docker-compose.yml, so
-    # "psycopg" was cited for a stack whose compose file names the image.
-    compose_files = {
-        p: t for p, t in files.items()
-        if p.rsplit("/", 1)[-1] in ("docker-compose.yml", "docker-compose.yaml")
-    }
-    ordered = sorted(compose_files.items()) + sorted(
-        (p, t) for p, t in files.items() if p not in compose_files
-    )
-
-    for path, text in ordered:
+    for path, text in _ordered_for_evidence(files):
         name = path.rsplit("/", 1)[-1]
-
-        if name in ("docker-compose.yml", "docker-compose.yaml"):
-            try:
-                images, app_services = _compose_services(text)
-            except Exception:
-                scan.unreadable.append(path)
-                continue
-            scan.files_read.append(path)
-            scan.service_count = max(scan.service_count, app_services)
-            for image in images:
-                label = _image_datastore(image)
-                if label:
-                    datastores.setdefault(label, f"{image} in {path}")
-            continue
-
-        if name in ("serverless.yml", "serverless.yaml", "vercel.json"):
+        if name in COMPOSE_FILENAMES:
+            _read_compose(path, text, scan, datastores)
+        elif name in SERVERLESS_FILENAMES:
             scan.files_read.append(path)
             note("serverless", name, path)
-            continue
-
-        if name == "Dockerfile":
+        elif name == "Dockerfile":
             scan.files_read.append(path)
-            continue
-
-        parser_entry = _PARSERS.get(name)
-        if parser_entry is None:
-            continue
-        parser, language = parser_entry
-        try:
-            raw_names = parser(text)
-        except Exception:
-            # A manifest we recognise but cannot parse is reported, not
-            # skipped -- see RepoScan.unreadable.
-            scan.unreadable.append(path)
-            continue
-
-        scan.files_read.append(path)
-        if language not in scan.languages:
-            scan.languages.append(language)
-
-        for raw in raw_names:
-            dep = _normalise(raw)
-            if not dep:
-                continue
-            for pattern, signal in _DEPENDENCY_SIGNALS:
-                if _match(pattern, dep):
-                    note(signal, f"{dep} in {path}", path)
-            for pattern, label in _DATASTORE_DEPENDENCIES:
-                if _match(pattern, dep):
-                    datastores.setdefault(label, f"{dep} in {path}")
-            for pattern, label, _hint in _FRAMEWORKS:
-                if re.fullmatch(pattern, dep) and label not in scan.frameworks:
-                    scan.frameworks.append(label)
+        elif name in _PARSERS:
+            _read_dependencies(path, name, text, scan, datastores, note)
 
     scan.detections = sorted(seen_signals.values(), key=lambda d: d.signal)
     scan.datastores = sorted(datastores)

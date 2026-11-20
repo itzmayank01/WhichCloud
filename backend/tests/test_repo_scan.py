@@ -155,3 +155,51 @@ def test_a_compose_image_outranks_a_client_library_as_evidence():
     evidence = [d.evidence for d in scan.detections if d.signal == "datastore"]
     assert any("pgvector" in e for e in evidence), evidence
     assert not any("psycopg" in e for e in evidence), evidence
+
+
+GO_SERVICE = {
+    "go.mod": """
+    module github.com/acme/billing
+
+    go 1.22
+
+    require (
+    \tgithub.com/gin-gonic/gin v1.10.0
+    \tgithub.com/redis/go-redis/v9 v9.6.1
+    \tgorm.io/driver/postgres v1.5.9
+    )
+
+    require github.com/segmentio/kafka-go v0.4.47 // indirect
+    """
+}
+
+
+def test_go_modules_are_read_from_require_blocks_and_single_lines():
+    """Covers the parser that replaced a backtracking regex: the pattern
+    `([a-z0-9\\-./]+\\.[a-z]{2,}/[^\\s]+)\\s+v` was ambiguous -- its first
+    class already contains `.` and `/` -- which is super-linear on a long
+    line, and go.mod comes from a repository we do not control."""
+    scan = scan_manifests(GO_SERVICE)
+    assert "Go" in scan.languages
+    assert "Go HTTP service" in scan.frameworks        # gin-gonic/gin
+    assert "Redis" in scan.datastores                  # redis/go-redis
+    assert "event_streaming" in scan.signals()         # segmentio/kafka-go
+
+
+def test_go_mod_directives_are_not_mistaken_for_dependencies():
+    """`module`, `go` and `toolchain` lines must not become packages."""
+    scan = scan_manifests({"go.mod": "module github.com/acme/x\n\ngo 1.22\n\ntoolchain go1.22.5\n"})
+    assert scan.datastores == []
+    assert scan.signals() == set()
+
+
+def test_a_pathological_go_mod_line_does_not_hang_the_scanner():
+    """The old regex backtracked; this must stay linear. A repository we
+    scan is not one we control, so a line crafted to be slow is a
+    denial-of-service shape, not a curiosity."""
+    import time
+
+    hostile = "a" * 4000 + "." * 4000 + "/" * 4000 + " v1"
+    start = time.monotonic()
+    scan_manifests({"go.mod": hostile})
+    assert time.monotonic() - start < 1.0
