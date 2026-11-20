@@ -14,6 +14,16 @@ architecture as the recommended PICK on /terraform. Two defects stacked up:
 These cover the backend half: the budget reaches the response, and
 affordability is answered as a real boolean rather than None.
 
+A note for anyone reading the commit that introduced this file: it claims
+the production LLM extractor returned "no budget" for text that plainly
+states one. That is wrong, and it is wrong because of a mistake in the
+probe used to investigate, which read budget_monthly_usd from a nested
+"requirement" object that the response does not have, and so saw None for
+a field that was present all along. Re-checked against production: the
+extractor reads 600.0 from this description correctly, via groq. There is
+no extraction bug to chase. The only backend defect was the dropped
+spec_budget tested below.
+
 The over-budget case uses an absurdly small budget on purpose. Asserting
 "$600 does not buy this" would depend on the size of the ingested catalog
 and would pass or fail by accident on a developer machine with only the
