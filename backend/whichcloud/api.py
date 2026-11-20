@@ -2041,6 +2041,12 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
             modules_omitted=tuple(getattr(tier, "modules_omitted", [])),
             budget_used_pct=getattr(tier, "budget_used_pct", 0.0),
             budget_left_usd=getattr(tier, "budget_left_usd", 0.0),
+            # Without this, Option.within_budget returns None for every option
+            # /describe produces -- it is computed from spec_budget, and this
+            # route never passed it. The budget was extracted and then dropped
+            # on the floor, so no caller could tell an affordable tier from one
+            # eight times over the stated budget.
+            spec_budget=float(budget) if budget else None,
         )
         options.append(opt)
 

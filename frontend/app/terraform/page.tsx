@@ -471,17 +471,39 @@ function TerraformStudioContent() {
     };
   }, [description, selectedOption, cloud, environment, submitNonce]);
 
-  // Compute the engine's real recommended tier for the PICK badge
+  /* The engine's recommended tier, for the PICK badge.
+   *
+   * "Spend the budget you have" is the intent: among the options you can
+   * afford, the dearest is the most capable. That is only sound when we
+   * actually KNOW the budget.
+   *
+   * `within_budget` is tri-state -- true, false, or null for "no budget
+   * given". This filtered on `!== false`, so null passed as affordable, and
+   * with no budget every option qualified and the badge landed on the most
+   * expensive one. A workload stating "Budget is around $600 a month" was
+   * shown a $5,331/mo architecture as the pick.
+   *
+   * So affordability is now an explicit `=== true`, and the no-budget case
+   * is handled on its own terms rather than falling through the same branch:
+   * with nothing to spend against, defer to the engine's own
+   * cheapest_compliant rather than upselling. */
   const recommendedTierLabel = React.useMemo(() => {
     if (!recommendation?.options?.length) return null;
     const opts = recommendation.options;
     const compliant = opts.filter((o) => o.compliant !== false);
     const pool = compliant.length ? compliant : opts;
-    const affordable = pool.filter((o) => o.within_budget !== false);
+
+    const priceOf = (o: Option) => o.ondemand_monthly_usd ?? o.monthly_usd;
+    const affordable = pool.filter((o) => o.within_budget === true);
     if (affordable.length > 0) {
-      return affordable.reduce((a, b) =>
-        (a.ondemand_monthly_usd ?? a.monthly_usd) >= (b.ondemand_monthly_usd ?? b.monthly_usd) ? a : b
-      ).label;
+      return affordable.reduce((a, b) => (priceOf(a) >= priceOf(b) ? a : b)).label;
+    }
+
+    // Every option is over budget, or no budget was given. Either way the
+    // honest answer is the least costly compliant option, not the dearest.
+    const overBudget = pool.some((o) => o.within_budget === false);
+    if (overBudget) {
+      return pool.reduce((a, b) => (priceOf(a) <= priceOf(b) ? a : b)).label;
     }
     return recommendation.cheapest_compliant || pool[0]?.label || null;
   }, [recommendation]);
