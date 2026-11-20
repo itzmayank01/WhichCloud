@@ -271,7 +271,7 @@ def _go_candidates(module: str) -> list[str]:
     """
     segments = [s for s in module.split("/") if s]
     # a trailing major-version suffix is Go module notation, not a name
-    if len(segments) > 1 and re.fullmatch(r"v[0-9]+", segments[-1]):
+    if len(segments) > 1 and re.fullmatch(r"v\d+", segments[-1]):
         segments = segments[:-1]
     if not segments:
         return []
@@ -342,6 +342,27 @@ def _read_compose(path: str, text: str, scan: RepoScan, datastores: dict[str, st
             datastores.setdefault(label, f"{image} in {path}")
 
 
+def _classify_dependency(
+    dep: str, path: str, scan: RepoScan, datastores: dict[str, str], note
+) -> None:
+    """Match one dependency name against every rule table.
+
+    Its own function because the three tables are three separate
+    questions -- what capability does this imply, what does it store, what
+    framework is this -- and nesting all three inside the file loop made
+    that loop read as one knot rather than three lookups.
+    """
+    for pattern, signal in _DEPENDENCY_SIGNALS:
+        if _match(pattern, dep):
+            note(signal, f"{dep} in {path}", path)
+    for pattern, label in _DATASTORE_DEPENDENCIES:
+        if _match(pattern, dep):
+            datastores.setdefault(label, f"{dep} in {path}")
+    for pattern, label, _hint in _FRAMEWORKS:
+        if re.fullmatch(pattern, dep) and label not in scan.frameworks:
+            scan.frameworks.append(label)
+
+
 def _read_dependencies(
     path: str,
     name: str,
@@ -365,17 +386,8 @@ def _read_dependencies(
 
     for raw in raw_names:
         dep = _normalise(raw)
-        if not dep:
-            continue
-        for pattern, signal in _DEPENDENCY_SIGNALS:
-            if _match(pattern, dep):
-                note(signal, f"{dep} in {path}", path)
-        for pattern, label in _DATASTORE_DEPENDENCIES:
-            if _match(pattern, dep):
-                datastores.setdefault(label, f"{dep} in {path}")
-        for pattern, label, _hint in _FRAMEWORKS:
-            if re.fullmatch(pattern, dep) and label not in scan.frameworks:
-                scan.frameworks.append(label)
+        if dep:
+            _classify_dependency(dep, path, scan, datastores, note)
 
 
 def _ordered_for_evidence(files: dict[str, str]) -> list[tuple[str, str]]:
@@ -445,6 +457,17 @@ def workload_type_hint(scan: RepoScan) -> str | None:
     return None
 
 
+#: Directories whose manifests describe someone else's code. node_modules
+#: and vendor hold thousands of package.json and go.mod files belonging to
+#: dependencies; reading them would describe the dependency tree rather
+#: than the project, and would blow the file budget doing it.
+_SKIPPED_DIRS = frozenset({"node_modules", "vendor", ".git", "dist", "build", ".next"})
+
+
+def _is_skipped_dir(name: str) -> bool:
+    return name in _SKIPPED_DIRS
+
+
 def fetch_manifests(
     repo_url: str, branch: str = "main", token: str = "", max_depth: int = 2
 ) -> dict[str, str]:
@@ -484,15 +507,9 @@ def fetch_manifests(
             for entry in _list_dir(client, owner, repo, branch, dir_path):
                 base = entry.path.rsplit("/", 1)[-1]
                 if entry.kind == "dir":
-                    # node_modules and vendor directories hold thousands of
-                    # manifests belonging to dependencies, not to this
-                    # project; reading them would describe the wrong thing.
-                    if base in ("node_modules", "vendor", ".git", "dist", "build"):
-                        continue
-                    if depth < max_depth:
+                    if depth < max_depth and not _is_skipped_dir(base):
                         walk(entry.path, depth + 1)
-                    continue
-                if base in wanted:
+                elif base in wanted:
                     found[entry.path] = _fetch_file(client, owner, repo, branch, entry.path)
 
         walk("", 0)
