@@ -3544,6 +3544,143 @@ def finops_reports(
     }
 
 
+# ── repository sync: price what a codebase implies ──────────────────────
+
+
+class RepoScanIn(BaseModel):
+    repo_url: str
+    branch: str = "main"
+    #: A token that can read the repository. Required even for public
+    #: repositories: unauthenticated GitHub API calls are rate limited per
+    #: IP, which on a shared backend means one user's scan can exhaust
+    #: everyone's budget for the hour.
+    token: str = ""
+
+
+class DetectionOut(BaseModel):
+    signal: str
+    evidence: str
+    source: str
+
+
+class RepoScanOut(BaseModel):
+    languages: list[str]
+    frameworks: list[str]
+    datastores: list[str]
+    detections: list[DetectionOut]
+    service_count: int
+    files_read: list[str]
+    #: Manifests found but not parseable. Surfaced rather than swallowed:
+    #: the file that names the database being skipped would understate the
+    #: architecture and the bill with it.
+    unreadable: list[str]
+    #: What a repository cannot state, and the caller must therefore supply
+    #: before anything is priced. Returned with the scan so an interface
+    #: can ask for exactly these and nothing more.
+    must_supply: list[str]
+
+
+#: The answers no repository contains. Kept beside the endpoint that has to
+#: ask for them so the two cannot drift apart.
+MUST_SUPPLY = ["traffic_scale", "region", "budget_monthly_usd", "storage_gb", "egress_gb"]
+
+
+def _scan_out(scan) -> RepoScanOut:
+    return RepoScanOut(
+        languages=scan.languages,
+        frameworks=scan.frameworks,
+        datastores=scan.datastores,
+        detections=[
+            DetectionOut(signal=d.signal, evidence=d.evidence, source=d.source)
+            for d in scan.detections
+        ],
+        service_count=scan.service_count,
+        files_read=scan.files_read,
+        unreadable=scan.unreadable,
+        must_supply=MUST_SUPPLY,
+    )
+
+
+@app.post("/api/repo/scan", response_model=RepoScanOut)
+def repo_scan_route(body: RepoScanIn) -> RepoScanOut:
+    """What a repository's manifests say it needs to run.
+
+    Deliberately stops short of a price. A scan reads the SHAPE of a
+    workload -- a queue, a search index, a relational database -- and
+    nothing in a repository states the traffic, the data volumes or the
+    budget that decide what any of it costs. Those come back in
+    `must_supply`, and /api/repo/estimate takes them.
+    """
+    from .connections.repo_scan import scan_repo
+
+    try:
+        scan = scan_repo(body.repo_url, branch=body.branch, token=body.token)
+    except ValueError as exc:
+        # connections/ raises ValueError for anything it can explain to a
+        # person -- a bad token, a missing branch, no manifests found.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _scan_out(scan)
+
+
+class RepoEstimateIn(RepoScanIn):
+    goal: str = ""
+    traffic_scale: Literal["low", "medium", "high"] = "medium"
+    region: str = "india"
+    budget_monthly_usd: float | None = None
+    storage_gb: float = 50.0
+    egress_gb: float = 100.0
+    provider: Literal["aws", "gcp", "azure"] = "aws"
+
+
+class RepoEstimateOut(BaseModel):
+    scan: RepoScanOut
+    options: list[OptionOut]
+    region: str
+    provider: str
+    #: Fields nothing in the repository spoke to. The interface should mark
+    #: these as assumptions rather than findings, so a number the caller
+    #: typed is never shown as something read out of their code.
+    assumed: list[str]
+
+
+@app.post("/api/repo/estimate", response_model=RepoEstimateOut)
+def repo_estimate_route(body: RepoEstimateIn) -> RepoEstimateOut:
+    """Scan a repository, then price what it implies on one cloud.
+
+    The scale inputs are what the caller supplies; everything else is read
+    from the manifests. They are returned in `assumed` so the interface can
+    keep the distinction visible -- the difference between "your code uses
+    Redis" and "you told us to assume medium traffic" is the difference
+    between a finding and a guess, and a costing tool that blurs them is
+    not trustworthy.
+    """
+    from .connections.repo_requirement import build_requirement
+    from .connections.repo_scan import scan_repo
+
+    try:
+        scan = scan_repo(body.repo_url, branch=body.branch, token=body.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    built = build_requirement(
+        scan,
+        goal=body.goal or f"the application in {body.repo_url}",
+        traffic_scale=body.traffic_scale,
+        region=body.region,
+        budget_monthly_usd=body.budget_monthly_usd,
+        storage_gb=body.storage_gb,
+        egress_gb=body.egress_gb,
+    )
+    options = recommend(built.requirement, body.provider)
+    return RepoEstimateOut(
+        scan=_scan_out(scan),
+        options=[_option_out(o, body.provider) for o in options[:3]],
+        region=options[0].estimate.region if options else body.region,
+        provider=body.provider,
+        assumed=built.assumed,
+    )
+
+
 # Include Router for Project P74: Infrastructure-as-Code Multi-Environment Deployment
 from . import iac_api
 app.include_router(iac_api.router)
