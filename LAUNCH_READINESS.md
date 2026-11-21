@@ -10,6 +10,60 @@ do?"** Today the answer is no, and that is what P0 is about.
 
 ---
 
+## Status, 2026-11-21
+
+Worked top-down. What changed since this list was written:
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Render not deploying | **Resolved** — it does deploy, it is just slow (~15–20 min). Not a blocker |
+| 2 | Storage read 37x too large | **Fixed and live.** Root cause was not extraction — see below |
+| 3 | No payment integration | **Open — needs your provider choice** |
+| 4 | Stale price catalog | **Workflow shipped** — needs a `WHICHCLOUD_DSN` repo secret to run |
+| 5 | `/describe` HTTP 500 | **Fixed and live** — now a 400 naming the conflict |
+| 6 | Budget overrun shown as "$0 left" | **Fixed and live** |
+| 7 | "Totals are floors" | **Scoped** — AWS is complete; Azure/GCP need 2 SKUs (below) |
+
+### What the storage bug actually was
+
+Not the reader. `batch_etl` documents `storage_gb` as the volume of ONE run
+and multiplies it by 30 runs plus a curated copy — exactly 37.5x. Right for
+"500 GB of sensor readings" (arrives nightly, estate grows each time), wrong
+for "we keep about 2 TB of history", which IS the estate. That is why 2 TB
+gave 75,000 and 3 TB gave 112,500.
+
+Measured on production, same description, before and after:
+
+| | before | after |
+|---|---|---|
+| Object storage | 76,800 GB | **2,048 GB** |
+| Backup storage | 15,360 GB | **409.6 GB** |
+| Cheapest tier | **$2,849.55** | **$85.47** |
+
+Three fixes went in along the way, all live: the stated size now overrides
+the model on both readers (`/describe` goes through `llm_extract`, not
+`intake` — the first fix landed on a path the UI never takes), the phrase
+tables now convert TB (they matched the unit and recorded the bare number, a
+1024x *under*-count), and `batch_etl` distinguishes an accumulated total from
+per-run input.
+
+### Exact coverage gaps (item 7), measured
+
+AWS prices **every component on all three tiers** — it is already the
+complete path. Azure and GCP are two SKUs away:
+
+| provider | missing |
+|---|---|
+| aws | *(nothing)* |
+| azure | `event bus`, and `cross-region backup copy` on Most optimized |
+| gcp | `event bus`, and `cross-region backup copy` on Most optimized |
+
+So the earlier recommendation to restrict the paid product to AWS is still
+the safe launch, but "close the catalog gaps" is now a small, named job
+rather than an open-ended one.
+
+---
+
 ## P0 — Blocks taking money at all
 
 ### 1. The deploy pipeline is not deploying [verified]
