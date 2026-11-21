@@ -523,7 +523,7 @@ function FinOpsContent() {
                 className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12.5px] font-bold text-red-500 hover:bg-red-500/20 hover:border-red-500/60 shadow-2xs transition-all active:scale-95"
                 title="Open Delete All Resources confirmation modal"
               >
-                <Icon icon="mdi:trash-can-alert" className="h-4 w-4" />
+                <Icon icon="mdi:delete-alert-outline" className="h-4 w-4" />
                 <span>Delete All Resources</span>
               </button>
             )}

@@ -80,6 +80,14 @@ jobs:
         run: npx next typegen && npx tsc --noEmit
       - name: ESLint
         run: npm run lint
+      - name: Bundled icon subset is current
+        # lib/generated/icon-subset.json is what keeps @iconify/react from
+        # resolving icons against api.iconify.design at runtime. It is
+        # committed, so an icon added to source without regenerating it would
+        # silently go back to being a third-party request on the render path.
+        # This also fails on an icon name that does not exist in its
+        # collection -- it caught three that were rendering blank.
+        run: npm run icons:check
       - name: Diagram layout quality harness (63 fixtures)
         run: npm run diagram:check
       - name: Cost report harness

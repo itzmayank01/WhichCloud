@@ -313,7 +313,7 @@ export function FinOpsPlanningView({
             <div className="rounded-2xl border border-line bg-surface p-5 shadow-xs">
               <div className="flex items-center justify-between text-[12.5px] text-ink-3">
                 <span>Compute vs Storage Ratio</span>
-                <Icon icon="mdi:pie-chart" className="h-4 w-4 text-accent" />
+                <Icon icon="mdi:chart-pie" className="h-4 w-4 text-accent" />
               </div>
               <div className="mt-2 font-mono text-[24px] font-bold text-ink">
                 74% / 26%

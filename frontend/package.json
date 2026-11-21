@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "diagram:check": "tsx harness/layoutQuality.ts",
-    "report:check": "tsx harness/costReport.ts"
+    "report:check": "tsx harness/costReport.ts",
+    "icons:build": "node scripts/build-icon-subset.mjs",
+    "icons:check": "node scripts/build-icon-subset.mjs --check"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.6",
@@ -21,6 +23,11 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@iconify-json/line-md": "^1.2.16",
+    "@iconify-json/lucide": "^1.2.157",
+    "@iconify-json/mdi": "^1.2.3",
+    "@iconify-json/simple-icons": "^1.2.103",
+    "@iconify/utils": "^3.1.7",
     "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

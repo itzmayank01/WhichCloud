@@ -47,6 +47,19 @@ infracost.json
 *.sqlite3
 pricing-data/
 generated/
+# ...except the bundled icon subset, which has to be in the repo: it is what
+# stops @iconify/react resolving every icon against api.iconify.design at
+# runtime, and a Vercel build that did not have it would silently go back to
+# doing exactly that. Regenerate with `npm run icons:build`; CI's
+# `npm run icons:check` fails if it is stale. Treated like a lockfile --
+# generated, committed, reviewed.
+#
+# Three lines rather than one negation, because git cannot re-include a file
+# whose parent directory is excluded: the directory has to be un-excluded
+# first, its contents excluded again, then the one file allowed back.
+!frontend/lib/generated/
+frontend/lib/generated/*
+!frontend/lib/generated/icon-subset.json
 *.png
 !docs/**/*.png
 # Vendored AWS architecture icons (scripts/fetch_aws_icons.py) -- these are

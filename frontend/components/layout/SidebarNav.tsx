@@ -51,7 +51,7 @@ export function SidebarNav({
   const navItems: { key: NavItemKey; label: string; icon: string; badge?: string }[] = [
     { key: "overview", label: "Overview", icon: "mdi:view-grid-outline" },
     { key: "reports", label: "Cost Reports", icon: "mdi:chart-box-outline" },
-    { key: "issues", label: "Issues", icon: "mdi:alert-triangle-outline", badge: "4" },
+    { key: "issues", label: "Issues", icon: "mdi:alert-outline", badge: "4" },
     { key: "resources", label: "Active Resources", icon: "mdi:lightning-bolt-outline" },
     { key: "planning", label: "Financial Planning", icon: "mdi:calendar-month-outline" },
     { key: "recommendations", label: "Recommendations", icon: "mdi:bookmark-outline", badge: "6" },
