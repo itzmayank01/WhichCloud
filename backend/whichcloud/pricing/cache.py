@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -122,6 +124,7 @@ def reset() -> None:
     """Drop the client and the counters. For tests that need a cold start."""
     global _client, _client_tried, STATS
     _client, _client_tried = None, False
+    _local.clear()
     STATS = Stats()
 
 
@@ -129,10 +132,64 @@ def key(*parts: object) -> str:
     return ":".join(["wc", CACHE_SCHEMA, *(str(p) for p in parts)])
 
 
+# ── the tier that works with no Redis at all ─────────────────────────────
+#
+# Redis is optional by design, and on the deployed service it is ABSENT:
+# `_connect` fails once, remembers it, and every later `get` returns None
+# before touching a counter -- which is why /health reports the cache
+# "enabled" with zero lookups forever. Correct, and it means every price
+# lookup reaches Postgres.
+#
+# That is survivable while Postgres is quick and ruinous when it is not.
+# Measured against the deployed Neon instance: /health (one query) answers
+# in under two seconds while /compare, which prices three tiers across
+# three clouds and asks for the same SKUs over and over, did not finish in
+# 240. The query count is the problem, not any single query.
+#
+# A process-local dict fixes the pathological part of that without any
+# infrastructure: within one request the engine asks for the same handful
+# of SKUs repeatedly, and this answers those from memory. It is a SECOND
+# tier, not a replacement -- Redis still shares across processes and
+# survives restarts, and this does neither.
+#
+# Bounded, because an unbounded dict keyed by SKU on a 512 MB instance is
+# the OOM this project has already met once in `_intake_cache`.
+_LOCAL_MAX = 4096
+_local: "OrderedDict[str, tuple[float, object]]" = OrderedDict()
+
+
+def _local_get(cache_key: str):
+    hit = _local.get(cache_key)
+    if hit is None:
+        return None
+    expires, value = hit
+    if expires < time.time():
+        _local.pop(cache_key, None)
+        return None
+    _local.move_to_end(cache_key)
+    return value
+
+
+def _local_put(cache_key: str, value) -> None:
+    _local[cache_key] = (time.time() + TTL_SECONDS, value)
+    _local.move_to_end(cache_key)
+    while len(_local) > _LOCAL_MAX:
+        _local.popitem(last=False)
+
+
 def get(cache_key: str):
     """A cached value, or None. Never raises."""
+    if _DISABLED:
+        return None
+
+    local = _local_get(cache_key)
+    if local is not None:
+        STATS.hits += 1
+        return local
+
     client = _connect()
     if client is None:
+        STATS.misses += 1
         return None
     try:
         raw = client.get(cache_key)
@@ -143,16 +200,25 @@ def get(cache_key: str):
         STATS.misses += 1
         return None
     try:
-        STATS.hits += 1
-        return json.loads(raw)
+        value = json.loads(raw)
     except Exception:  # noqa: BLE001 -- a corrupt row is a miss, not a crash
         STATS.errors += 1
         return None
+    STATS.hits += 1
+    # Promote, so the next ask in this request costs nothing.
+    _local_put(cache_key, value)
+    return value
 
 
 def put(cache_key: str, value) -> None:
     """Store a value. Never raises, and a failure to cache is not a
     failure to price."""
+    if _DISABLED:
+        return
+    # The local tier is written FIRST and unconditionally: it is the one
+    # that works when Redis is absent, which on the deployed service is
+    # always.
+    _local_put(cache_key, value)
     client = _connect()
     if client is None:
         return
