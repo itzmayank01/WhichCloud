@@ -91,7 +91,18 @@ function recommend(
     const usedPct = (pick.monthly_usd / budgetMonthlyUsd) * 100;
     const leftUsd = Math.max(0, budgetMonthlyUsd - pick.monthly_usd);
     const leftFormatted = "$" + Math.round(leftUsd).toLocaleString();
-    if (usedPct < 50) {
+    /* Over budget first — `leftUsd` clamps at zero, so without this a design
+       at 857% of budget reported "uses most of your budget ($0/mo left)".
+       Same bug, same fix, as the workspace rail. */
+    if (pick.monthly_usd > budgetMonthlyUsd) {
+      const over = "$" + Math.round(pick.monthly_usd - budgetMonthlyUsd).toLocaleString();
+      because =
+        `Over your budget by ${over}/mo — this costs ` +
+        `$${Math.round(pick.monthly_usd).toLocaleString()}/mo against a ` +
+        `$${Math.round(budgetMonthlyUsd).toLocaleString()}/mo budget. ` +
+        `Your stated requirements set the floor; a cheaper design means ` +
+        `relaxing one of them.`;
+    } else if (usedPct < 50) {
       because = `Well within budget (${leftFormatted}/mo unallocated). You can add resilience or reserve this for growth.`;
     } else if (usedPct > 90) {
       because = `Uses most of your budget (${leftFormatted}/mo left). Designed for your stated uptime needs.`;
