@@ -40,6 +40,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .pricing.models import REGIONS
+from .constraints import stated_storage_gb
 from .requirements import Requirement
 
 #: Wall-clock budget per provider call. A provider slow to respond is one the
@@ -910,69 +911,6 @@ def _store_draft(key: str, description: str, provider: str, draft: RequirementDr
 
 import re
 
-#: Byte units, in GB. A description writes "2 TB", never "2048 GB".
-_SIZE_IN_GB = {
-    "mb": 1 / 1024, "gb": 1.0, "gib": 1.0,
-    "tb": 1024.0, "tib": 1024.0, "pb": 1048576.0, "pib": 1048576.0,
-}
-_SIZE_RE = re.compile(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)\s*(pib|tib|gib|pb|tb|gb|mb)\b", re.I)
-
-#: Words that make a size a STORED size.
-_STORAGE_WORDS = (
-    "storage", "store", "stored", "storing", "data", "history", "historical",
-    "archive", "archived", "retain", "retention", "records", "record",
-    "database", "dataset", "backup", "backups", "files", "photos", "images",
-    "documents", "logs", "media", "library", "catalogue", "catalog", "keep",
-)
-#: Words that make it something else entirely. RAM is the dangerous one: a
-#: description saying "4 vCPU / 16 GB" must never be read as 16 GB of disk.
-_NOT_STORAGE_WORDS = (
-    "ram", "memory", "vcpu", "cpu", "egress", "transfer", "bandwidth",
-    "outbound", "inbound", "download", "upload", "throughput", "per second",
-    "per day", "per month", "/s", "instance", "node",
-)
-
-
-def stated_storage_gb(description: str) -> float | None:
-    """The stored size a description states outright, in GB, or None.
-
-    THE MODEL DOES NOT GET A VOTE ON A FIGURE THE TEXT ALREADY GIVES.
-    That is the same rule as "the model reads and classifies, it never sets
-    a price", applied one level up: reading "about 2 TB of history" as
-    75,000 GB is not a cheaper or dearer answer to the question asked, it is
-    an answer to a different question. It is also not hypothetical -- groq
-    returned exactly that for the batch fixture, object storage came out at
-    75,000 GB and $1,875, and with backup tracking it the two made up 97% of
-    a $2,783 estimate against a stated $600 budget.
-
-    Deterministic, so it cannot drift between reads, and unit-aware, which
-    the heuristic fallback never was: its regex matched `gb` only, so every
-    description measured in TB fell through to a 50 GB default.
-    """
-    best: float | None = None
-    for match in _SIZE_RE.finditer(description):
-        try:
-            value = float(match.group(1).replace(",", ""))
-        except ValueError:
-            continue
-        gb = value * _SIZE_IN_GB[match.group(2).lower()]
-        # Judge the phrase around the number, not the number -- and judge it
-        # with two different reaches. What a size IS attaches tightly ("16 GB
-        # RAM", "500 GB egress"), so a disqualifying word only counts when it
-        # is right against the figure. What a size is FOR can sit further off
-        # ("about 2 TB of history"), so the qualifying reach is wider.
-        #
-        # One window for both does not work: at ±60 either way, the RAM in
-        # "4 vCPU / 16 GB RAM, and we keep about 2 TB of history" reaches the
-        # 2 TB and throws away the one real figure in the sentence.
-        near = description[max(0, match.start() - 22) : match.end() + 26].lower()
-        wide = description[max(0, match.start() - 60) : match.end() + 60].lower()
-        if any(w in near for w in _NOT_STORAGE_WORDS):
-            continue
-        if not any(w in wide for w in _STORAGE_WORDS):
-            continue
-        best = gb if best is None else max(best, gb)
-    return best
 
 
 def _fast_heuristic_draft(description: str) -> RequirementDraft:

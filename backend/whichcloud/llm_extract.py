@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field
 from whichcloud import quantity_audit
 from whichcloud.archetype import ARCHETYPES, COMPOSITE, UNKNOWN
 from whichcloud.architecture.readers import candidates, is_exhausted
-from whichcloud.constraints import REQUIRED, Constraints
+from whichcloud.constraints import stated_storage_gb, REQUIRED, Constraints
 from whichcloud.constraints import extract as phrase_extract
 from whichcloud.pricing import store
 
@@ -778,6 +778,36 @@ class NotInCacheError(RuntimeError):
     """Offline mode, and this prompt has never been extracted."""
 
 
+
+def _apply_stated_sizes(description: str, constraints) -> None:
+    """A size the description states outright is not the model's to invent.
+
+    The model is asked for storage and is free to answer with a guess it
+    marks `assumed`. For "We keep about 2 TB of history" it answered 75,000
+    GB -- object storage $1,875, backup tracking it to 15,000 GB / $825, and
+    the two together 97% of a $2,783 estimate against the $600 budget the
+    same sentence states. It scales, too: 3 TB came back as 112,500 GB.
+
+    Applied at every return path, including the cached one and for the same
+    reason the quantity audit is: a row written before this existed would
+    otherwise serve the invented figure forever, and re-deriving it from the
+    description is pure, so it can only tighten the answer.
+    """
+    stated = stated_storage_gb(description)
+    if not stated:
+        return
+    constraints.storage_gb = stated
+    constraints.stated.add("storage_gb")
+    constraints.evidence["storage_gb"] = (
+        f"stated in the description ({stated:,.0f} GB)"
+    )
+    # Derived splits must not survive alongside a stated total, or
+    # _default_storage_gb adds invented content/user data on top of the real
+    # figure.
+    constraints.content_storage_gb = 0.0
+    constraints.user_data_gb = 0.0
+
+
 def extract(
     description: str,
     *,
@@ -817,6 +847,7 @@ def extract(
                 # serve a dropped quantity forever, and the audit is pure
                 # over (description, constraints) so re-running it costs
                 # nothing and can only tighten the answer.
+                _apply_stated_sizes(description, constraints)
                 constraints.unparsed_quantities = quantity_audit.audit(
                     description, constraints,
                 )
@@ -857,6 +888,7 @@ def extract(
         return _fallback(description, str(exc)[:200])
 
     constraints, meta = _to_constraints(payload)
+    _apply_stated_sizes(description, constraints)
     constraints.unparsed_quantities = quantity_audit.audit(description, constraints)
     if description:
         from whichcloud.availability import classify_availability
@@ -909,6 +941,7 @@ def _fallback(description: str, reason: str) -> tuple[Constraints, ExtractionMet
     constraints = phrase_extract(description)
     # The degraded reader misses far more, so the net matters MORE here,
     # not less: this is the path most likely to have dropped a figure.
+    _apply_stated_sizes(description, constraints)
     constraints.unparsed_quantities = quantity_audit.audit(
         description, constraints,
     )

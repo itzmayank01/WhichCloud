@@ -132,3 +132,67 @@ def test_the_model_still_decides_when_nothing_is_stated() -> None:
     )
     assert intake.requirement.storage_gb == pytest.approx(123.0)
     assert "storage_gb" in intake.assumed
+
+
+# ── the /describe path ───────────────────────────────────────────────────
+#
+# The first fix landed in intake.py, which /recommend uses. The UI does not:
+# /describe routes through llm_extract into Constraints and plan.py, so the
+# fix missed the only path a user actually takes. These cover that one.
+
+
+BATCH_DESC = BATCH_DESCRIPTION  # same sentence, read by the other reader
+
+
+def test_phrase_tables_convert_the_unit() -> None:
+    """`_number_near` matched "tb " and then recorded the bare number, so
+    "about 2 TB" became 2.0 GB -- a 1024x under-count from a reader that
+    matched the unit and dropped it."""
+    from whichcloud.constraints import extract
+
+    c = extract(BATCH_DESC)
+    assert c.storage_gb == pytest.approx(2048.0)
+    assert "storage_gb" in c.stated
+
+
+def test_a_stated_size_overrides_the_model_on_the_describe_path() -> None:
+    """The production failure: the model answered 75,000 GB and marked it
+    assumed, and nothing checked it against the sentence that says 2 TB."""
+    from whichcloud.llm_extract import _apply_stated_sizes
+    from whichcloud.constraints import Constraints
+
+    c = Constraints()
+    c.storage_gb = 75_000.0
+    _apply_stated_sizes(BATCH_DESC, c)
+
+    assert c.storage_gb == pytest.approx(2048.0)
+    assert "storage_gb" in c.stated
+
+
+def test_a_stated_total_clears_the_derived_splits() -> None:
+    """content + user_data are added together by _default_storage_gb. Left
+    alongside a stated total they pile invented data on top of the real
+    figure."""
+    from whichcloud.llm_extract import _apply_stated_sizes
+    from whichcloud.constraints import Constraints
+
+    c = Constraints()
+    c.storage_gb = 75_000.0
+    c.content_storage_gb = 250.0
+    c.user_data_gb = 40.0
+    _apply_stated_sizes(BATCH_DESC, c)
+
+    assert c.content_storage_gb == 0.0
+    assert c.user_data_gb == 0.0
+
+
+def test_describe_path_leaves_an_unstated_description_alone() -> None:
+    from whichcloud.llm_extract import _apply_stated_sizes
+    from whichcloud.constraints import Constraints
+
+    c = Constraints()
+    c.storage_gb = 123.0
+    _apply_stated_sizes("a reporting system for the finance team", c)
+
+    assert c.storage_gb == pytest.approx(123.0)
+    assert "storage_gb" not in c.stated
