@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field
 from whichcloud import quantity_audit
 from whichcloud.archetype import ARCHETYPES, COMPOSITE, UNKNOWN
 from whichcloud.architecture.readers import candidates, is_exhausted
-from whichcloud.constraints import stated_storage_gb, REQUIRED, Constraints
+from whichcloud.constraints import stated_storage_gb, stated_size_is_retained_total, REQUIRED, Constraints
 from whichcloud.constraints import extract as phrase_extract
 from whichcloud.pricing import store
 
@@ -806,6 +806,7 @@ def _apply_stated_sizes(description: str, constraints) -> None:
     # figure.
     constraints.content_storage_gb = 0.0
     constraints.user_data_gb = 0.0
+    constraints.storage_is_retained_total = stated_size_is_retained_total(description)
 
 
 def extract(

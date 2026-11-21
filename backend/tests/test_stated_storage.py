@@ -196,3 +196,67 @@ def test_describe_path_leaves_an_unstated_description_alone() -> None:
 
     assert c.storage_gb == pytest.approx(123.0)
     assert "storage_gb" not in c.stated
+
+
+# ── per-run input vs the accumulated estate ──────────────────────────────
+#
+# batch_etl reads storage_gb as the volume of ONE run and multiplies it by
+# 30 runs and a curated copy -- 37.5x. That is right for "500 GB of sensor
+# readings [each night]" and wrong for "we keep about 2 TB of history",
+# which IS the estate. The second priced 76,800 GB of object storage,
+# $1,875/mo, 97% of the estimate.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We keep about 2 TB of history.",
+        "about 3 TB of archived records",
+        "we retain 4 TB of data in total",
+    ],
+)
+def test_recognises_an_accumulated_total(text: str) -> None:
+    from whichcloud.constraints import stated_size_is_retained_total
+
+    assert stated_size_is_retained_total(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "500 GB of sensor readings each night",
+        "we load 500 GB per run",
+        # Explicit per-cycle phrasing wins even when a total word is present,
+        # because it is the more specific statement.
+        "2 TB of history, loaded 500 GB per night",
+        "a reporting system with no sizes in it",
+    ],
+)
+def test_does_not_treat_per_run_input_as_a_total(text: str) -> None:
+    from whichcloud.constraints import stated_size_is_retained_total
+
+    assert stated_size_is_retained_total(text) is False
+
+
+def test_a_stated_total_is_not_multiplied_by_retention() -> None:
+    from whichcloud.constraints import Constraints
+    from whichcloud.archetypes import batch_etl
+
+    c = Constraints()
+    c.storage_gb = 2048.0
+    c.storage_is_retained_total = True
+
+    total = batch_etl._raw_gb(c) + batch_etl._curated_gb(c)
+    assert total == pytest.approx(2048.0), "raw + curated must land on the stated figure"
+
+
+def test_a_per_run_figure_still_accumulates() -> None:
+    """The flag must not flatten the archetype's whole sizing model."""
+    from whichcloud.constraints import Constraints
+    from whichcloud.archetypes import batch_etl
+
+    c = Constraints()
+    c.storage_gb = 500.0  # per run, nothing said about a total
+
+    total = batch_etl._raw_gb(c) + batch_etl._curated_gb(c)
+    assert total == pytest.approx(500.0 * 30 * 1.25)

@@ -106,7 +106,22 @@ def _run_hours(constraints) -> float:
 
 
 def _raw_gb(constraints) -> float:
-    """The landing zone accumulates. One month retained is the floor."""
+    """The landing zone accumulates. One month retained is the floor.
+
+    UNLESS THE DESCRIPTION ALREADY GAVE THE ACCUMULATED FIGURE. `storage_gb`
+    is documented above as the volume of one run, which is right for "500 GB
+    of sensor readings" -- it is read nightly and the estate grows by that
+    much each time. It is wrong for "we keep about 2 TB of history", which
+    IS the estate. Multiplying that by 30 runs and a curated copy priced
+    76,800 GB of object storage: $1,875/mo, 97% of the estimate, on a
+    workload whose own sentence says 2 TB.
+
+    When the text stated a total, the total is the answer, so raw is backed
+    out of it and `raw + curated` lands exactly on the stated figure rather
+    than 37.5x it.
+    """
+    if getattr(constraints, "storage_is_retained_total", False) and constraints.storage_gb:
+        return float(constraints.storage_gb) / (1.0 + CURATED_SHARE)
     return _gb_per_run(constraints) * _runs_per_month(constraints)
 
 

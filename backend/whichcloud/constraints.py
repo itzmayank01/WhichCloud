@@ -214,6 +214,11 @@ class Constraints:
     peak_shape: PeakShape = "flat"
     budget_monthly_usd: float = 0.0
     storage_gb: float = 0.0
+    #: True when the stated size is the ACCUMULATED estate rather than
+    #: the volume of one run. batch_etl multiplies a per-run figure by
+    #: 30 runs and a curated copy (37.5x), so reading "2 TB of history"
+    #: as per-run input priced 76,800 GB.
+    storage_is_retained_total: bool = False
     egress_gb: float = 0.0
     public_facing: bool = False
 
@@ -613,6 +618,37 @@ _NOT_STORAGE_WORDS = (
     "outbound", "inbound", "download", "upload", "throughput", "per second",
     "per day", "per month", "/s", "instance", "node",
 )
+
+
+#: Phrases that make a stated size the ACCUMULATED TOTAL rather than the
+#: volume of one run or one load.
+_RETAINED_TOTAL_WORDS = (
+    "history", "historical", "retain", "retention", "archive", "archived",
+    "accumulated", "we keep", "keep about", "stored in total", "estate",
+    "altogether", "in total", "of data in", "grown to",
+)
+#: Phrases that make it explicitly per-cycle, which beats the above.
+_PER_RUN_WORDS = (
+    "per run", "each run", "per night", "each night", "nightly load",
+    "per load", "each load", "per batch", "each batch", "per job",
+    "per cycle", "a night", "every night",
+)
+
+
+def stated_size_is_retained_total(description: str) -> bool:
+    """Whether a stated size describes the whole retained estate.
+
+    This is the difference between "500 GB of sensor readings [each night]"
+    and "about 2 TB of history", and it is worth a whole function because
+    batch_etl multiplies the first by 30 runs and a curated copy -- 37.5x.
+    Read the second as the first and 2 TB becomes 76,800 GB, which is what
+    production did: $1,875 of object storage on a workload whose own
+    sentence gives the answer.
+    """
+    text = description.lower()
+    if any(w in text for w in _PER_RUN_WORDS):
+        return False
+    return any(w in text for w in _RETAINED_TOTAL_WORDS)
 
 
 def stated_storage_gb(description: str) -> float | None:
