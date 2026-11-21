@@ -1235,6 +1235,23 @@ def _attach_extraction_meta(plan: Plan, meta: llm_extract.ExtractionMeta) -> Non
     plan.extraction_spans = dict(meta.spans)
 
 
+class IncompatibleRequirements(Exception):
+    """The archetype cannot satisfy a stated requirement by construction.
+
+    Not a defect. It is the engine noticing that two things the description
+    asked for cannot both be true of the same design, which is a finding
+    worth reporting rather than a crash to swallow.
+    """
+
+    def __init__(self, archetype: str, tier: str, violations: list[str]) -> None:
+        self.archetype = archetype
+        self.tier = tier
+        self.violations = violations
+        super().__init__(
+            f"{archetype} {tier} was generated non-compliant: {violations}"
+        )
+
+
 def _withheld_plan(
     constraints: Constraints, load: Load, detected: str, evidence: str,
     composite_of: list[str] | None = None,
@@ -1410,10 +1427,27 @@ def _graph_plan(
             ),
         )
         if not verdict.valid:
-            raise AssertionError(
-                f"{detected} {name} was generated non-compliant: "
-                f"{verdict.violations}"
-            )
+            # WAS AN AssertionError, WHICH REACHED USERS AS A BARE HTTP 500.
+            #
+            # The invariant is right -- a tier must never be offered beside
+            # compliant ones while failing a stated requirement. What was
+            # wrong is treating every way of reaching it as a programming
+            # error. Some are a genuine conflict between two things the
+            # DESCRIPTION asked for, and the archetype is correct to refuse:
+            #
+            #   "move it to the cloud before modernising anything" and "it
+            #   cannot be down during working hours" is a lift-and-shift that
+            #   also survives a zone failure. A 1:1 copy of the estate has one
+            #   instance per source machine and no load balancer BY DESIGN --
+            #   that is what lift-and-shift means -- so the compliance check
+            #   reports single instance, no balancer, single-AZ database, and
+            #   it is right. Silently adding a balancer would be the
+            #   re-architecture the user ruled out in the same sentence.
+            #
+            # Raised as a typed exception so plan_from can answer with the
+            # conflict named, which is a usable answer. The message keeps the
+            # full diagnostic for the harness and the logs.
+            raise IncompatibleRequirements(detected, name, list(verdict.violations))
 
         est = estimate(spec, provider, dsn=dsn)
         obj = objectives(
@@ -1639,10 +1673,29 @@ def plan_from(
     # no VPC to decide a topology for.
     graph = archetype_graphs.graph_for(detected)
     if graph is not None:
-        plan = _graph_plan(
-            graph, constraints, load, detected, evidence,
-            description=description, provider=provider, dsn=dsn,
-        )
+        try:
+            plan = _graph_plan(
+                graph, constraints, load, detected, evidence,
+                description=description, provider=provider, dsn=dsn,
+            )
+        except IncompatibleRequirements as conflict:
+            # Answer with the conflict named rather than a 500. Which
+            # requirement to relax is the user's call, not ours -- offering a
+            # design that quietly drops one is how a stated requirement
+            # becomes a surprise in production.
+            plan = _withheld_plan(constraints, load, detected, evidence)
+            plan.archetype_note = (
+                f"Recognised as {detected!r}, but two of your requirements "
+                "cannot both hold in one design."
+            )
+            plan.withheld_reason = (
+                f"A {detected} design of this estate "
+                + "; ".join(conflict.violations)
+                + ". Pricing is withheld rather than shown for a design that "
+                "fails something you asked for. Relax one of the two -- allow "
+                "the parts that must stay up to be re-architected, or accept "
+                "the downtime a like-for-like move implies."
+            )
         _attach_extraction_meta(plan, meta)
         return plan
 
