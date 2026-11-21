@@ -84,6 +84,7 @@ type Metrics = {
   tier: string;
   nodeOverlaps: number;
   edgeNodeHits: number;
+  edgeLabelHits: number;
   edgeCrossings: number;
   crossingBudget: number;
   labelOverlaps: number;
@@ -186,6 +187,41 @@ async function measureTier(
       if (A.s === B.s || A.t === B.t || A.s === B.t || A.t === B.s) continue;
       if (segIntersect(A.a, A.b, B.a, B.b)) edgeCrossings++;
     }
+
+
+  /* EDGES STRIKING A CONTAINER'S OWN LABEL.
+   *
+   * The label-overlap check above compares EDGE labels to EDGE labels, so
+   * nothing ever looked at the container captions -- and that is where the
+   * damage was visible: arrows ran straight through "VPC 10.0.0.0/16",
+   * "Availability Zone ap-south-1a" and "Private data subnet", which read on
+   * screen as "10.0.0.0/ 6", "Zo e ap-s uth-1a" and "ata subne". The harness
+   * passed every run while the diagram was unreadable, because it was
+   * measuring the wrong pair.
+   *
+   * Geometry mirrors ContainerNode in ArchitectureGraph.tsx exactly: the
+   * caption is a white chip at left: 8, top: -10, 18px tall, 12px semibold,
+   * with a badge and right padding. Recomputing it differently here would
+   * measure a picture nobody sees.
+   */
+  const CAPTION_H = 18;
+  const captionRects: Rect[] = (laid.containers ?? []).map((c) => ({
+    x: c.x + 8,
+    y: c.y - 10,
+    // badge (16) + gap (6) + text + right padding (6)
+    w: 28 + String(c.label ?? "").length * 6.4,
+    h: CAPTION_H,
+  }));
+  let edgeLabelHits = 0;
+  for (const e of laid.edges) {
+    for (const cap of captionRects) {
+      let hit = false;
+      for (let k = 0; k < e.points.length - 1 && !hit; k++) {
+        if (segRect(e.points[k], e.points[k + 1], cap)) hit = true;
+      }
+      if (hit) edgeLabelHits++;
+    }
+  }
 
   // label overlaps (label vs label)
   const lrects = laid.edges.map(labelRect).filter(Boolean) as Rect[];
@@ -301,6 +337,7 @@ async function measureTier(
     tier: label,
     nodeOverlaps,
     edgeNodeHits,
+    edgeLabelHits,
     edgeCrossings,
     crossingBudget: Math.max(2, Math.round(edgeCount * 0.5)),
     labelOverlaps,
@@ -354,9 +391,9 @@ async function main() {
   const lines: string[] = [];
   lines.push("# Diagram layout quality\n");
   lines.push(
-    "| cloud | fixture | tier | svc | nodeOvl | edge→node | crossings (budget) | labelOvl | orphans | comps | reach | aspect | edgeLen | longest | elk kept/repl | cyc | fanOut | collin | rankSpan | orphan |"
+    "| cloud | fixture | tier | svc | nodeOvl | edge→node | edge→caption | crossings (budget) | labelOvl | orphans | comps | reach | aspect | edgeLen | longest | elk kept/repl | cyc | fanOut | collin | rankSpan | orphan |"
   );
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 
   /* Every cloud, not just AWS.
    *
@@ -386,7 +423,7 @@ async function main() {
       if (hardFail) failures++;
       const flag = hardFail ? " ⚠️" : "";
       lines.push(
-        `| ${cloud} | ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} | ${m.edgeLength} | ${m.longestEdge} | ${m.elkKept}/${m.elkReplaced} | ${m.cycles} | ${m.maxFanOut} | ${m.collinear} | ${m.maxRankSpan} | ${m.orphanNodes} |`
+        `| ${cloud} | ${name} | ${m.tier} | ${m.services} | ${m.nodeOverlaps} | ${m.edgeNodeHits} | ${m.edgeLabelHits} | ${m.edgeCrossings} (${m.crossingBudget}) | ${m.labelOverlaps} | ${m.orphans} | ${m.components} | ${m.reachableFromUsers} | ${m.aspect}${flag} | ${m.edgeLength} | ${m.longestEdge} | ${m.elkKept}/${m.elkReplaced} | ${m.cycles} | ${m.maxFanOut} | ${m.collinear} | ${m.maxRankSpan} | ${m.orphanNodes} |`
       );
     }
     // three tiers must differ
