@@ -1,0 +1,111 @@
+# Re-ingest the provider price catalogs on a schedule.
+#
+# WHY THIS EXISTS: the catalog went 65 days without a refresh while the
+# landing page said "Prices from AWS, Azure and Google" and the README says
+# "0 hardcoded prices in the source". Both are true and neither is the
+# claim a buyer hears -- they hear "these are today's prices". A costing
+# product whose prices are two months old is selling the one thing it is
+# worst at, and nothing in the system noticed.
+#
+# Weekly rather than daily: list prices move slowly, a full ingest pulls a
+# ~300 MB EC2 catalog, and the freshness badge is calibrated in days. The
+# staleness check below runs DAILY, because the thing that matters is
+# finding out quickly when a refresh has stopped working -- not refreshing
+# more often.
+name: Refresh prices
+
+on:
+  schedule:
+    # Sundays 02:00 UTC — quiet, and well clear of provider catalog updates.
+    - cron: "0 2 * * 0"
+    # Daily staleness check, independent of the refresh itself.
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-download cached provider catalogs"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  # ── the daily alarm ──────────────────────────────────────────────────
+  #
+  # Deliberately separate from, and cheaper than, the ingest. A refresh that
+  # silently stopped working is the failure this is for; running it only
+  # alongside the refresh would mean the alarm is broken in exactly the case
+  # it exists to catch.
+  staleness:
+    name: Catalog freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if the catalog is older than the threshold
+        env:
+          # The landing page already shows the age in orange. This is the
+          # same number as an SLO rather than as decoration.
+          MAX_AGE_DAYS: "14"
+        run: |
+          body=$(curl -s --max-time 90 --retry 3 --retry-delay 20 \
+            https://whichcloud-backend.onrender.com/health)
+          echo "$body" | head -c 400; echo
+          python3 - "$body" <<'PY'
+          import json, sys, datetime, os
+          health = json.loads(sys.argv[1])
+          stamp = health.get("last_updated")
+          if not stamp:
+              sys.exit("no last_updated in /health — cannot judge freshness")
+          when = datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+          age = (datetime.datetime.now(datetime.timezone.utc) - when).days
+          limit = int(os.environ["MAX_AGE_DAYS"])
+          print(f"catalog is {age} days old (limit {limit}), {health.get('prices')} prices")
+          if age > limit:
+              sys.exit(
+                  f"::error::Price catalog is {age} days old (limit {limit}). "
+                  "Run the Refresh prices workflow, and check why the weekly "
+                  "ingest did not."
+              )
+          PY
+
+  # ── the weekly ingest ────────────────────────────────────────────────
+  refresh:
+    name: Ingest prices
+    # Only on the Sunday cron and manual runs — not on the daily alarm.
+    if: github.event.schedule != '30 6 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Ingest
+        working-directory: backend
+        env:
+          # Same variable the service reads — see backend/.env.example.
+          # Set this as a repository secret pointing at the Neon database.
+          WHICHCLOUD_DSN: ${{ secrets.WHICHCLOUD_DSN }}
+        run: |
+          if [ -z "$WHICHCLOUD_DSN" ]; then
+            echo "::error::WHICHCLOUD_DSN secret is not set — nothing to ingest into."
+            exit 1
+          fi
+          python scripts/ingest_prices.py --region india --provider all \
+            ${{ inputs.force && '--force' || '' }}
+
+      - name: Confirm the service sees the new catalog
+        run: |
+          # The engine reads the same database, so a successful ingest should
+          # move /health's last_updated. Reported, not asserted: the service
+          # may be asleep, and waking it is not this job's business.
+          curl -s --max-time 120 --retry 3 --retry-delay 20 \
+            https://whichcloud-backend.onrender.com/health | head -c 400; echo
