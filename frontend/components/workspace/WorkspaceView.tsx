@@ -167,12 +167,23 @@ function DownloadTerraformButton({
 
 /** What the progress line below counts toward, in seconds.
  *
- *  Not decoration: the backend abandons the model read at EXTRACT_BUDGET_S
- *  (14s in intake.py) and pricing the result measures ~0.5s, so a generate
- *  either lands inside this or fails with a message. Keep the two numbers
- *  together -- a bar that fills toward a deadline the server does not
- *  actually enforce is worse than no bar at all. */
+ *  Two numbers, because there are two regimes and one of them was being
+ *  hidden. A warm backend answers a /describe inside WARM; a cold one --
+ *  Render's free plan sleeps after 15 min idle and runs on 0.1 CPU -- was
+ *  measured against production at 41-66s, with the identical repeat just
+ *  as slow before /describe got a response cache.
+ *
+ *  This used to be a single 15s constant justified by "the backend
+ *  abandons the model read at 14s, so this is a real ceiling". That
+ *  reasoning was about intake.py; /describe has no such cap, so the
+ *  ceiling was not real, and the bar sat pinned at 96% for another 50
+ *  seconds telling the user a deadline had passed. By the file's own
+ *  rule -- a bar that fills toward a deadline the server does not
+ *  actually enforce is worse than no bar at all -- the honest thing is
+ *  to name the cold case instead of pretending it cannot happen. */
 const GENERATE_BUDGET_S = 15;
+/** Cold-start ceiling on the free plan, from measured production. */
+const GENERATE_COLD_CEILING_S = 75;
 
 export function WorkspaceView({ name }: { name: string | null }) {
   const [description, setDescription] = useState("");
@@ -185,10 +196,13 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const abortRef = useRef<AbortController | null>(null);
   const reqIdRef = useRef(0);
   /* Seconds spent on the current generate, for the progress line below.
-     The backend caps the read at 14s and pricing costs well under a second,
-     so GENERATE_BUDGET_S is a real ceiling rather than a guess -- which is
-     what lets the bar be determinate instead of an indefinite spinner that
-     says nothing about how much longer it will be. */
+     Determinate rather than an indefinite spinner, because a spinner says
+     nothing about how much longer it will be -- but the ceiling it fills
+     toward is GENERATE_COLD_CEILING_S, the measured cold figure, not the
+     warm one. A keep-warm workflow pings /health every 10 minutes, so the
+     backend is normally already awake and the residual cost is the 0.1-CPU
+     plan itself, not a boot: /health answered in 0.8s immediately before
+     a /describe that took 41s. */
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!busy) {
@@ -824,15 +838,27 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       role="progressbar"
                       aria-label="Generating architecture"
                       aria-valuemin={0}
-                      aria-valuemax={GENERATE_BUDGET_S}
-                      aria-valuenow={Math.min(elapsed, GENERATE_BUDGET_S)}
+                      aria-valuemax={GENERATE_COLD_CEILING_S}
+                      aria-valuenow={Math.min(elapsed, GENERATE_COLD_CEILING_S)}
                     >
                       <div
                         className="h-full rounded-full bg-accent transition-[width] duration-100 ease-linear"
                         style={{
+                          /* Time constant set from the COLD ceiling, not
+                             the warm one. Against the warm budget this
+                             curve reached 92% at 15s and then clamped at
+                             96% for however long the cold path actually
+                             took, which is the "filled bar, nothing
+                             happening" "read as stuck" case the bar
+                             exists to avoid. Against the cold ceiling it
+                             keeps visibly moving the whole way. */
                           width: `${Math.min(
                             96,
-                            100 * (1 - Math.exp(-elapsed / (GENERATE_BUDGET_S / 2.5))),
+                            100 *
+                              (1 -
+                                Math.exp(
+                                  -elapsed / (GENERATE_COLD_CEILING_S / 3),
+                                )),
                           )}%`,
                         }}
                       />
@@ -842,16 +868,25 @@ export function WorkspaceView({ name }: { name: string | null }) {
                       {elapsed.toFixed(1)}s
                       <span className="text-ink-3/70">
                         {" "}
-                        / up to {GENERATE_BUDGET_S}s
+                        / up to{" "}
+                        {elapsed < GENERATE_BUDGET_S
+                          ? GENERATE_BUDGET_S
+                          : GENERATE_COLD_CEILING_S}
+                        s
                       </span>
                     </p>
 
                     <p className="mt-1 text-[12.5px] text-ink-3">
+                      {/* The cold case is named while the user is still
+                          willing to wait, not sprung on them at 15s after
+                          a bar has already promised it would be done. */}
                       {elapsed < 1.5
                         ? "Reading the description…"
-                        : elapsed < GENERATE_BUDGET_S
+                        : elapsed < 8
                           ? "Costing every service against the live catalog."
-                          : "Taking longer than usual — the backend may be waking from idle."}
+                          : elapsed < GENERATE_BUDGET_S
+                            ? "Still costing — the free-tier backend is slow to start."
+                            : "First run for this description, on a 0.1-CPU free-tier backend. This can take up to a minute; the result is then cached and near-instant."}
                     </p>
                   </>
                 ) : result && shown ? (

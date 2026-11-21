@@ -1253,11 +1253,13 @@ def catalog(
 @app.get("/techniques")
 def techniques() -> dict:
     """The optimization knowledge base."""
+    # One load, not two: `len(...)` and the comprehension were each
+    # calling load_techniques(), so the knowledge base was read twice per
+    # response.
+    catalog = load_techniques()
     return {
-        "count": len(load_techniques()),
-        "techniques": [
-            _technique_out(t).model_dump() for t in load_techniques()
-        ],
+        "count": len(catalog),
+        "techniques": [_technique_out(t).model_dump() for t in catalog],
     }
 
 
@@ -2015,6 +2017,41 @@ def describe_route(body: DescribeIn) -> RecommendationOut:
     from whichcloud.engine import Option
 
     provider = body.provider or "aws"
+
+    # /describe was the one priced route with no response cache, so every
+    # resubmission of the same text re-ran the whole planner. Measured
+    # against production: an identical repeat still took 70s.
+    #
+    # The single-flight half matters more than the memoisation here. The
+    # studio and the dashboard both submit on mount, and a visitor who
+    # retries a slow request has two identical computations in flight on a
+    # backend with one worker -- the second one not merely wasted but
+    # holding the worker the first needs to finish.
+    #
+    # Keyed with build_workload_cache_key, which normalises whitespace and
+    # carries a schema version, so the Phase 1 stale-result problem -- a key
+    # too coarse to tell two workloads apart -- cannot come back through
+    # this door.
+    # `reader` is in the key even though _describe_uncached does not thread
+    # it into planning.build yet, so the two requests it distinguishes are
+    # currently identical. Keying it anyway because the day someone does
+    # thread it through, the cache would otherwise hand a caller who asked
+    # for anthropic a groq reading with `read_by` claiming anthropic -- a
+    # wrong answer that looks authoritative, which is the stale-result
+    # class this key exists to prevent. _cached_intake already keys on it.
+    cache_key = "describe:" + (body.reader or "") + ":" + build_workload_cache_key(
+        body.description, provider,
+    )
+
+    def _compute() -> RecommendationOut:
+        return _describe_uncached(body, provider)
+
+    return _cached_engine_call(cache_key, _compute)
+
+
+def _describe_uncached(body: DescribeIn, provider: str) -> RecommendationOut:
+    from whichcloud import plan as planning
+    from whichcloud.engine import Option
 
     plan = planning.build(body.description, provider=provider)
     if not plan.priced:

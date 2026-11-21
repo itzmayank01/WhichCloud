@@ -336,7 +336,7 @@ function FinOpsContent() {
             <p className="mt-2 text-[12px] text-ink-3">
               {secondsWaiting}s
               {secondsWaiting >= 15
-                ? " — the backend is waking from idle on the free tier, this can take up to a minute"
+                ? " — the free-tier backend runs on 0.1 CPU, this can take up to a minute"
                 : ""}
             </p>
           )}

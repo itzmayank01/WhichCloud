@@ -66,6 +66,24 @@ from whichcloud.pricing import store
 #: we can now read properly is a worse answer than re-reading it.
 SCHEMA_VERSION = "constraints-v7"
 
+#: Per-attempt wall-clock budget for one extraction call, and how many
+#: times a single key may be retried.
+#:
+#: Every SDK here defaults to a long timeout and silent retries -- the
+#: OpenAI client alone defaults to 600s with two retries, so one wedged
+#: Groq key could hold a request for half an hour, and _call_with_failover
+#: walks a chain of up to five keys. There is one uvicorn worker, so a
+#: request stuck that way is not just slow for its own caller: it holds
+#: the worker everyone else is queued behind. /compare was observed
+#: timing out at 180s against production.
+#:
+#: 20s is generous for this call -- a reading task with a fixed schema at
+#: reasoning_effort="low" -- and failing over to the next key beats
+#: waiting. Retries are left to the chain, which has other keys to try,
+#: rather than spent re-asking the one that just hung.
+EXTRACT_TIMEOUT_SECONDS = float(os.getenv("WHICHCLOUD_EXTRACT_TIMEOUT", "20"))
+EXTRACT_MAX_RETRIES = 0
+
 #: THE PINNED PRIMARY. One provider and one model, named, because
 #: different models return different Constraints from the same prompt --
 #: so "98.5% field agreement" is a statement about THIS pair, and a plan
@@ -657,6 +675,10 @@ def _gemini(description: str, key: str) -> Extraction:
             "response_schema": Extraction,
             # Sampling is the difference between a tool and a slot machine.
             "temperature": 0.0,
+            # google-genai takes this per request, in MILLISECONDS.
+            "http_options": {
+                "timeout": int(EXTRACT_TIMEOUT_SECONDS * 1000),
+            },
         },
     )
     return Extraction.model_validate_json(result.text)
@@ -665,7 +687,11 @@ def _gemini(description: str, key: str) -> Extraction:
 def _anthropic(description: str, key: str) -> Extraction:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=key)
+    client = anthropic.Anthropic(
+        api_key=key,
+        timeout=EXTRACT_TIMEOUT_SECONDS,
+        max_retries=EXTRACT_MAX_RETRIES,
+    )
     schema = _lean_schema()
     message = client.messages.create(
         model=_MODELS["anthropic"],
@@ -716,7 +742,12 @@ def _groq(description: str, key: str) -> Extraction:
     from openai import OpenAI
 
     global LAST_PROMPT_TOKENS
-    client = OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1")
+    client = OpenAI(
+        api_key=key,
+        base_url="https://api.groq.com/openai/v1",
+        timeout=EXTRACT_TIMEOUT_SECONDS,
+        max_retries=EXTRACT_MAX_RETRIES,
+    )
     completion = client.chat.completions.create(
         model=_MODELS["groq"],
         temperature=0,

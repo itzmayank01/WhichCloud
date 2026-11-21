@@ -22,6 +22,7 @@ are explicitly marked as unpriced rather than folded into a total.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -200,8 +201,26 @@ def parse_technique(data: dict, path: Path) -> Technique:
 
 
 def load_techniques(directory: Path | None = None) -> list[Technique]:
-    """Load every technique file. A malformed file stops the load."""
-    directory = directory or DEFAULT_KB
+    """Load every technique file. A malformed file stops the load.
+
+    Parsed once per directory and then served from memory. The knowledge
+    base is baked into the image and cannot change under a running
+    server, but this was being re-globbed and re-parsed from YAML on
+    every call -- and the hot callers are engine.recommend() and the
+    /techniques route, which asks for it TWICE in one response (once to
+    count it, once to serialise it). On the 0.1-CPU plan that reparse was
+    measured at roughly 4.7s of the /techniques response.
+
+    A list is still returned, copied per call, so a caller that mutates
+    what it gets cannot corrupt the shared parse. lru_cache does not
+    store exceptions, so a malformed or missing directory keeps raising
+    on every call rather than being remembered as a failure.
+    """
+    return list(_parse_techniques((directory or DEFAULT_KB).resolve()))
+
+
+@lru_cache(maxsize=8)
+def _parse_techniques(directory: Path) -> tuple[Technique, ...]:
     if not directory.is_dir():
         raise KnowledgeBaseError(f"knowledge base not found at {directory}")
 
@@ -227,7 +246,7 @@ def load_techniques(directory: Path | None = None) -> list[Technique]:
 
     if not techniques:
         raise KnowledgeBaseError(f"no technique files found in {directory}")
-    return techniques
+    return tuple(techniques)
 
 
 @dataclass(frozen=True, slots=True)
