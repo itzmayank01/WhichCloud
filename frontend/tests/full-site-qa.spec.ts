@@ -147,19 +147,19 @@ test.describe("Phase 5: Whole-site UI QA", () => {
     const stamp = page.getByTestId("generated-for-stamp");
     await expect(stamp).toBeVisible({ timeout: 30_000 });
 
-    // Empty input validation in Edit Workload modal
-    await page.getByRole("button", { name: "Edit Workload" }).click();
-    const modalTa = page.locator("#terraform-workload-input");
-    await expect(modalTa).toBeVisible();
-    await modalTa.fill("   ");
-    await page.getByRole("button", { name: /Generate Architecture & Terraform/i }).click();
-    await expect(page.locator(ALERT_SELECTOR).first()).toContainText(
-      "Please enter a workload description"
-    );
+    // An empty workload cannot be submitted at all now. The modal used to
+    // accept the click and answer with an error; the inline bar disables
+    // Generate instead, which is the same rule enforced one step earlier.
+    const workloadBar = page.locator("#terraform-workload-bar");
+    await expect(workloadBar).toBeVisible();
+    const generate = page.getByRole("button", { name: /^Generate$/ });
+    await workloadBar.fill("   ");
+    await expect(generate).toBeDisabled();
 
     // Submit real Pune workload
-    await modalTa.fill(PUNE_WORKLOAD);
-    await page.getByRole("button", { name: /Generate Architecture & Terraform/i }).click();
+    await workloadBar.fill(PUNE_WORKLOAD);
+    await expect(generate).toBeEnabled();
+    await generate.click();
     await expect(stamp).toContainText("Generated for: I manage IT for a 3-hospital group in Pune", {
       timeout: 30_000,
     });

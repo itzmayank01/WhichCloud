@@ -70,7 +70,19 @@ export function Notices({
   const incomplete = !option.complete;
   const saturated = option.budget_saturated;
 
-  if (!unmet && !incomplete && !saturated) return null;
+  /* Other tiers landing on this exact figure. Only interesting when something
+     went unpriced: two tiers that genuinely cost the same are a real result,
+     while two that cost the same because the difference between them could
+     not be priced is a measurement failure wearing the same clothes. */
+  const collapsedWith = incomplete
+    ? (result?.options ?? []).filter(
+        (o) =>
+          o.label !== option.label &&
+          Math.abs((o.monthly_usd ?? 0) - (option.monthly_usd ?? 0)) < 0.005,
+      )
+    : [];
+
+  if (!unmet && !incomplete && !saturated && collapsedWith.length === 0) return null;
 
   return (
     <div className="mt-3 flex flex-col gap-2.5 border-t border-line pt-3">
@@ -121,6 +133,27 @@ export function Notices({
           } could not be priced`}
         >
           <p>This total is a floor, not the answer.</p>
+        </Notice>
+      )}
+
+      {/* THREE TIERS AT THE SAME PRICE ARE NOT THREE EQUAL CHOICES.
+          On Azure in centralindia a marketing site prices every tier at
+          $3.10 -- Cheapest, Most reliable and Most optimized alike -- while
+          the designs behind them run 6, 8 and 10 components. Every component
+          they differ by (WAF, KMS, TLS, DNS, backup, threat detection,
+          object lock) is absent from that region's catalog, so the only two
+          that price are the two they share.
+          Shown as equal figures with PICK on the cheapest, that reads as
+          "the better design costs nothing extra, take it". The honest
+          reading is the opposite: the difference is exactly what we could
+          not price. */}
+      {collapsedWith.length > 0 && (
+        <Notice level="caution" title="These tiers cannot be told apart on price">
+          <p>
+            {collapsedWith.length + 1} tiers price the same because every
+            component they differ by is unpriced here. They are not the same
+            design — compare what each one includes, not the figure.
+          </p>
         </Notice>
       )}
 

@@ -224,7 +224,6 @@ function TerraformStudioContent() {
   // difference the download would not actually contain.
   const [environment, setEnvironment] = useState<"dev" | "prod">(environmentParam);
 
-  const [editingWorkload, setEditingWorkload] = useState(false);
   const [customWorkloadDraft, setCustomWorkloadDraft] = useState(description);
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitNonce, setSubmitNonce] = useState(0);
@@ -796,26 +795,66 @@ resource "whichcloud_cost_report" "ai_curated_report" {
       {/* Subheader: Workload context banner with quick-switch chips and live editor */}
       <div className="border-b border-line/60 bg-surface/50 px-5 py-2 text-[11.5px] text-ink-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-            <span className="font-semibold text-ink-2 uppercase tracking-wide shrink-0">Workload:</span>
-            <span
-              className="line-clamp-2 break-words italic font-mono text-ink-2"
-              title={description}
-            >
-              “{description}”
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setCustomWorkloadDraft(description);
-                setModalError(null);
-                setEditingWorkload(true);
+          {/* THE WORKLOAD IS THE INPUT, NOT A CAPTION.
+              It used to render as italic read-only text clamped to two lines
+              -- so the sentence that drives every number on the page ended
+              "...Budget i…" -- with editing behind an "Edit Workload" button
+              that opened a modal. The thing you most want to change was the
+              hardest to reach, and you could not read what you were changing.
+              It is a text box now: the full description, editable in place,
+              Enter to regenerate. */}
+          <form
+            className="flex min-w-0 flex-1 items-start gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const next = customWorkloadDraft.trim();
+              if (!next) {
+                setModalError("Describe the workload before generating.");
+                return;
+              }
+              setModalError(null);
+              setDescription(next);
+              setSubmitNonce((n) => n + 1);
+            }}
+          >
+            <label htmlFor="terraform-workload-bar" className="sr-only">
+              Describe your workload
+            </label>
+            <textarea
+              id="terraform-workload-bar"
+              rows={2}
+              value={customWorkloadDraft}
+              onChange={(e) => {
+                setCustomWorkloadDraft(e.target.value);
+                if (modalError) setModalError(null);
               }}
-              className="ml-1 shrink-0 rounded-md border border-line bg-canvas px-2 py-0.5 text-[10.5px] font-semibold text-brand hover:border-brand hover:bg-sunk transition shadow-2xs"
+              onKeyDown={(e) => {
+                // Enter regenerates; Shift+Enter is a newline, because this
+                // is prose and people do paste multi-line briefs into it.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
+              placeholder="Describe the system — what it does, how busy it is, how much it stores, and the budget."
+              className="min-w-0 flex-1 resize-y rounded-lg border border-line bg-canvas px-3 py-1.5 font-mono text-[11.5px] leading-relaxed text-ink outline-none transition focus:border-brand focus:ring-1 focus:ring-brand"
+            />
+            <button
+              type="submit"
+              disabled={!customWorkloadDraft.trim() || customWorkloadDraft.trim() === description.trim()}
+              className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-[11.5px] font-semibold text-white shadow-2xs transition hover:bg-brand-strong active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              title="Re-price all three tiers and regenerate the diagram and Terraform"
             >
-              Edit Workload
+              Generate
             </button>
-          </div>
+          </form>
+          {/* The error used to live inside the modal, which no longer
+              exists — without this the form could refuse silently. */}
+          {modalError && (
+            <p role="alert" className="w-full text-[11px] font-medium text-red-600 dark:text-red-400">
+              {modalError}
+            </p>
+          )}
           <div className="flex max-w-full flex-wrap items-center gap-3 font-mono text-[11px]">
             {generatedFor && (
               <span
@@ -877,77 +916,6 @@ resource "whichcloud_cost_report" "ai_curated_report" {
           })}
         </div>
       </div>
-
-      {/* Edit Workload Modal Dialog */}
-      {editingWorkload && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-xl rounded-2xl border border-line bg-surface p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-line">
-              <h3 className="text-[15px] font-bold text-ink">Describe or Modify Workload</h3>
-              <button
-                type="button"
-                aria-label="Close modal"
-                onClick={() => setEditingWorkload(false)}
-                className="rounded-lg p-1 text-ink-3 hover:text-ink hover:bg-sunk"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="mt-3 text-[12.5px] text-ink-2">
-              Enter your architectural requirements (traffic, storage, database, budget, region, and availability constraints). The engine will re-price all three tiers and regenerate the diagram and Terraform files.
-            </p>
-
-            <label htmlFor="terraform-workload-input" className="sr-only">
-              Workload description
-            </label>
-            <textarea
-              id="terraform-workload-input"
-              rows={4}
-              value={customWorkloadDraft}
-              onChange={(e) => {
-                setCustomWorkloadDraft(e.target.value);
-                if (modalError) setModalError(null);
-              }}
-              className="mt-3 w-full rounded-xl border border-line bg-canvas p-3 font-mono text-[12.5px] text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand"
-              placeholder="e.g. Online store with 40 branches, PostgreSQL Multi-AZ, 500GB storage, $500 budget..."
-            />
-
-            {modalError && (
-              <p role="alert" className="mt-2 text-[12px] font-medium text-red-600 dark:text-red-400">
-                {modalError}
-              </p>
-            )}
-
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setEditingWorkload(false)}
-                className="rounded-xl border border-line px-4 py-2 text-[12.5px] font-medium text-ink-2 hover:bg-sunk transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const newDesc = customWorkloadDraft.trim();
-                  if (!newDesc) {
-                    setModalError("Please enter a workload description before generating.");
-                    return;
-                  }
-                  setModalError(null);
-                  setDescription(newDesc);
-                  setSubmitNonce((n) => n + 1);
-                  setEditingWorkload(false);
-                }}
-                className="rounded-xl bg-brand px-4 py-2 text-[12.5px] font-semibold text-white shadow-sm hover:bg-brand-strong transition active:scale-[0.98]"
-              >
-                Generate Architecture &amp; Terraform
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── SCREENSHOT 3: FLOATING PROGRESS MODAL ────────────────────────────── */}
       {isGeneratingReport && (
