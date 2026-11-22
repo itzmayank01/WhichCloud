@@ -35,10 +35,20 @@ const BASE = resolveApiBase();
 export const API_BASE = BASE;
 
 export type Health = {
+  /** "ok", or "degraded" when the catalog is unreachable or empty. */
   status: string;
   prices: number;
+  /** Where `prices` came from: "database", "fallback" or "empty".
+   *
+   *  /health used to answer a hardcoded 36761 with status "ok" whenever
+   *  Postgres was unreachable, so a count alone could not be trusted and
+   *  nothing downstream could tell a real catalog from an outage. */
+  catalog_source?: "database" | "fallback" | "empty";
   providers: string[];
-  last_updated: string;
+  /** null while degraded: there is no real ingest timestamp to show, and
+   *  the endpoint no longer invents now() in its place. Callers that
+   *  render this must handle null -- PreviewCards and HeroFreshness do. */
+  last_updated: string | null;
 };
 
 export type CatalogRow = {

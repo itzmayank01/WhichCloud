@@ -185,6 +185,29 @@ const GENERATE_BUDGET_S = 15;
 /** Cold-start ceiling on the free plan, from measured production. */
 const GENERATE_COLD_CEILING_S = 75;
 
+/** What to say at this point in a generate.
+ *
+ *  The cold case is named at 8s, while the user is still willing to wait,
+ *  rather than sprung on them once a bar has already promised it would be
+ *  done. A lookup table rather than a chain of ternaries inside the JSX:
+ *  the thresholds are the thing worth reading, and they were getting lost
+ *  in the nesting. */
+const GENERATE_STAGES: ReadonlyArray<readonly [number, string]> = [
+  [1.5, "Reading the description…"],
+  [8, "Costing every service against the live catalog."],
+  [GENERATE_BUDGET_S, "Still costing — the free-tier backend is slow to start."],
+  [
+    Infinity,
+    "First run for this description, on a 0.1-CPU free-tier backend. " +
+      "This can take up to a minute; the result is then cached and near-instant.",
+  ],
+];
+
+function generateStageLabel(elapsed: number): string {
+  const stage = GENERATE_STAGES.find(([until]) => elapsed < until);
+  return stage ? stage[1] : GENERATE_STAGES[GENERATE_STAGES.length - 1][1];
+}
+
 export function WorkspaceView({ name }: { name: string | null }) {
   const [description, setDescription] = useState("");
   const [asked, setAsked] = useState("");
@@ -877,16 +900,7 @@ export function WorkspaceView({ name }: { name: string | null }) {
                     </p>
 
                     <p className="mt-1 text-[12.5px] text-ink-3">
-                      {/* The cold case is named while the user is still
-                          willing to wait, not sprung on them at 15s after
-                          a bar has already promised it would be done. */}
-                      {elapsed < 1.5
-                        ? "Reading the description…"
-                        : elapsed < 8
-                          ? "Costing every service against the live catalog."
-                          : elapsed < GENERATE_BUDGET_S
-                            ? "Still costing — the free-tier backend is slow to start."
-                            : "First run for this description, on a 0.1-CPU free-tier backend. This can take up to a minute; the result is then cached and near-instant."}
+                      {generateStageLabel(elapsed)}
                     </p>
                   </>
                 ) : result && shown ? (

@@ -37,6 +37,29 @@ needs_db = pytest.mark.skipif(
 )
 
 
+def full_catalog_ready() -> bool:
+    """More than the 115-row built-in fallback, i.e. a real ingest.
+
+    needs_db only asks for a non-empty catalog, which the fallback seed
+    satisfies, so a test asserting a FULL catalog's row count would fail
+    rather than skip on a fallback-seeded database -- indistinguishable
+    from a genuine regression. CI gates the same distinction with
+    WHICHCLOUD_FULL_CATALOG_CI.
+    """
+    try:
+        from whichcloud.pricing.store import stats
+
+        return sum(r["n"] for r in stats()) > 1000
+    except Exception:
+        return False
+
+
+needs_full_catalog = pytest.mark.skipif(
+    not full_catalog_ready(),
+    reason="needs a fully ingested price catalog, not the fallback seed",
+)
+
+
 # ── routes that need no database ────────────────────────────────────────
 
 
@@ -88,12 +111,67 @@ def test_negative_egress_is_a_400(client):
 
 
 @needs_db
+@needs_full_catalog
 def test_health_reports_catalog_size_and_freshness(client):
+    """Now marked @needs_db, and that is the point of the change.
+
+    It used to run without one and still assert status "ok" and
+    prices > 1000, which /health satisfied by answering a hardcoded 36761
+    and a last_updated of now() whenever the database was unreachable. So
+    the endpoint could not report ill health, and Render's health check
+    and the keep-backend-warm workflow were both green over a dead
+    catalog. The constant existed to keep this test passing, which is a
+    test dictating a lie to production code; the honest version needs a
+    database to assert the healthy shape, and the degraded shapes get
+    their own tests below.
+    """
     body = client.get("/health").json()
     assert body["status"] == "ok"
+    assert body["catalog_source"] == "database"
     assert body["prices"] > 1000
     assert set(body["providers"]) == {"aws", "azure", "gcp"}
     assert body["last_updated"]  # ISO timestamp the UI can show
+
+
+def test_health_says_degraded_when_the_catalog_is_unreachable(client, monkeypatch):
+    """An outage must be visible in the body, and must not be reported as
+    a number no query produced."""
+    from whichcloud.pricing import store
+
+    def unreachable(*_args, **_kwargs):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(store, "stats", unreachable)
+    monkeypatch.setattr(store, "db_now", unreachable)
+
+    resp = client.get("/health")
+    # Still 200: the service really does keep answering from the built-in
+    # fallback, so a 503 would have the platform restart-loop a working
+    # instance over a transient database suspend.
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "degraded"
+    assert body["catalog_source"] == "fallback"
+    assert body["last_updated"] is None
+    # The count is the fallback that is actually serving requests, not a
+    # constant, and never the ~36k of a fully ingested catalog.
+    assert 0 < body["prices"] < 1000
+
+
+def test_health_tells_an_empty_catalog_from_an_unreachable_one(client, monkeypatch):
+    """store.stats() answers [] for both, so /health has to probe further.
+    An ingest that never ran and a database that is down need different
+    fixes and must not report the same thing."""
+    from whichcloud.pricing import store
+
+    monkeypatch.setattr(store, "stats", lambda *a, **k: [])
+    monkeypatch.setattr(store, "db_now", lambda *a, **k: "2026-01-01T00:00:00Z")
+
+    body = client.get("/health").json()
+    assert body["status"] == "degraded"
+    assert body["catalog_source"] == "empty"
+    assert body["prices"] == 0
+    assert body["last_updated"] is None
 
 
 @needs_db

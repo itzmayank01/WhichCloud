@@ -60,14 +60,19 @@ async function* walk(dir) {
 async function collectNames() {
   /** @type {Map<string, Set<string>>} */
   const wanted = new Map();
+  const files = [];
   for (const dir of SCAN_DIRS) {
-    for await (const file of walk(join(root, dir))) {
-      const text = await readFile(file, "utf8");
-      for (const match of text.matchAll(ICON_RE)) {
-        const [, prefix, name] = match;
-        if (!wanted.has(prefix)) wanted.set(prefix, new Set());
-        wanted.get(prefix).add(name);
-      }
+    for await (const file of walk(join(root, dir))) files.push(file);
+  }
+  // Read concurrently rather than awaiting one file at a time: a few
+  // hundred small source files, and the order they are read in cannot
+  // matter because the result is a set per prefix, sorted later.
+  const texts = await Promise.all(files.map((file) => readFile(file, "utf8")));
+  for (const text of texts) {
+    for (const match of text.matchAll(ICON_RE)) {
+      const [, prefix, name] = match;
+      if (!wanted.has(prefix)) wanted.set(prefix, new Set());
+      wanted.get(prefix).add(name);
     }
   }
   return wanted;
@@ -82,7 +87,16 @@ for (const prefix of PREFIXES) {
   const names = wanted.get(prefix);
   if (!names || names.size === 0) continue;
   const full = require(`@iconify-json/${prefix}/icons.json`);
-  const sorted = [...names].sort();
+  // An explicit comparator, and deliberately NOT localeCompare, which is
+  // what SonarQube's rule suggests: this output is committed and checked
+  // byte-for-byte by icons:check, so a locale- or ICU-dependent collation
+  // would make the file differ between a developer's machine and CI and
+  // fail the check for no reason. Icon names are lowercase ASCII and
+  // hyphens, so code-unit order is both correct and reproducible.
+  const sorted = [...names].sort((a, b) => {
+    if (a < b) return -1;
+    return a > b ? 1 : 0;
+  });
   const subset = getIcons(full, sorted);
   if (!subset) {
     missing.push(`${prefix}: whole collection could not be subset`);
@@ -97,8 +111,9 @@ for (const prefix of PREFIXES) {
   }
   total += got + aliases;
   subsets.push(subset);
+  const aliasNote = aliases ? ` + ${aliases} aliases` : "";
   process.stdout.write(
-    `  ${prefix}: ${got} icons${aliases ? ` + ${aliases} aliases` : ""} of ${sorted.length} requested\n`,
+    `  ${prefix}: ${got} icons${aliasNote} of ${sorted.length} requested\n`,
   );
 }
 

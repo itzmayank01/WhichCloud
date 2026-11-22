@@ -1090,27 +1090,68 @@ class ArchitectureIn(BaseModel):
 @app.get("/health")
 def health() -> dict:
     """Is the catalog loaded and usable?"""
+    import logging
+
     from .architecture.readers import configured, configured_sources
     from .connections import aws as _aws_conn
     from .pricing import cache as price_cache
 
+    # This endpoint used to answer `status: "ok"`, `prices: 36761` and a
+    # `last_updated` of now() even when the database was unreachable: the
+    # row count was a hardcoded constant and the exception handler
+    # discarded the error. So a health check could not report ill health.
+    # Render points `healthCheckPath` here and the keep-backend-warm
+    # workflow asserts HTTP 200, and both were satisfied by a dead
+    # catalog, while the UI showed the prices as freshly updated.
+    #
+    # The constant was there to let test_health_reports_catalog_size_and_
+    # freshness pass with no database, which is a test driving a lie into
+    # production code. That test now needs a database for those
+    # assertions, and the degraded shape has its own.
+    #
+    # Still HTTP 200 deliberately. The service really does keep answering
+    # from the built-in fallback catalog when Postgres is away, so a 503
+    # would have Render pull a working instance out of rotation and
+    # restart-loop it over a transient Neon suspend. The honesty belongs
+    # in the body, where an operator and the UI can both read it.
+    catalog_source = "database"
     try:
         rows = store.stats()
         total = sum(r["n"] for r in rows)
-        if not total:
-            total = 36761
-        providers = sorted({r["provider"] for r in rows}) if rows else ["aws", "gcp", "azure"]
-        last_updated = max(r["fetched"] for r in rows).isoformat() if rows else datetime.now(timezone.utc).isoformat()
-        status = "ok"
-    except Exception as exc:
-        total = 36761
-        providers = ["aws", "gcp", "azure"]
-        last_updated = datetime.now(timezone.utc).isoformat()
-        status = "ok"
+        providers = sorted({r["provider"] for r in rows})
+        last_updated = (
+            max(r["fetched"] for r in rows).isoformat() if rows else None
+        )
+        if total:
+            status = "ok"
+        else:
+            # store.stats() answers [] for BOTH an unreachable database and
+            # a genuinely empty table -- it catches its own exceptions --
+            # which is what made the two indistinguishable here in the
+            # first place. db_now() does propagate, so it tells them apart:
+            # a reachable-but-empty catalog is an ingest that never ran,
+            # and an unreachable one is an outage. Different fixes, so they
+            # must not report the same thing.
+            store.db_now()
+            status, catalog_source = "degraded", "empty"
+    except Exception as exc:  # noqa: BLE001 -- reported, not raised
+        # Report what is actually serving requests, which is the built-in
+        # fallback, rather than a number no query produced.
+        fallback = store._load_fallback_points()
+        total = len(fallback)
+        providers = sorted({p.provider for p in fallback})
+        last_updated = None
+        status, catalog_source = "degraded", "fallback"
+        logging.getLogger("whichcloud.api").warning(
+            "health: price catalog unreachable (%s)", exc
+        )
 
     return {
         "status": status,
         "prices": total,
+        # Where that number came from, so "prices: 115" is not mistaken for
+        # a catalog that shrank when it means Postgres is away.
+        "catalog_source": catalog_source,
         "providers": providers,
         "last_updated": last_updated,
         "readers": configured(),

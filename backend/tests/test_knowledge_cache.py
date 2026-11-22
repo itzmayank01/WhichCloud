@@ -91,7 +91,8 @@ def test_the_same_directory_spelled_two_ways_shares_an_entry(tmp_path: Path):
     load_techniques(kb)
     load_techniques(tmp_path / "kb" / ".." / "kb")
     info = _parse_techniques.cache_info()
-    assert info.misses == 1 and info.hits == 1
+    assert info.misses == 1
+    assert info.hits == 1
 
 
 @pytest.mark.parametrize(
