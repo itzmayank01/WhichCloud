@@ -11,6 +11,7 @@ hand-written table. A SKU absent from that catalog is skipped, never guessed.
 
 from __future__ import annotations
 
+import time
 from decimal import Decimal, InvalidOperation
 
 import httpx
