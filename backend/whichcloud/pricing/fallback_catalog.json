@@ -1026,8 +1026,8 @@
     "sku": "waf:request",
     "name": "AWS WAF Requests",
     "region": "ap-south-1",
-    "unit": "million-requests",
-    "price_usd": "0.60"
+    "unit": "Request",
+    "price_usd": "0.0000006"
   },
   {
     "provider": "aws",
@@ -1098,8 +1098,8 @@
     "sku": "route53:dns-queries",
     "name": "Route 53 DNS Queries",
     "region": "ap-south-1",
-    "unit": "million-queries",
-    "price_usd": "0.40"
+    "unit": "query",
+    "price_usd": "0.0000004"
   },
   {
     "provider": "aws",
@@ -1146,8 +1146,16 @@
     "unit": "Requests",
     "price_usd": "0.0000005",
     "tiers": [
-      {"begin": "0", "end": "1000000", "price_usd": "0.000000"},
-      {"begin": "1000000", "end": null, "price_usd": "0.0000005"}
+      {
+        "begin": "0",
+        "end": "1000000",
+        "price_usd": "0.000000"
+      },
+      {
+        "begin": "1000000",
+        "end": null,
+        "price_usd": "0.0000005"
+      }
     ]
   },
   {
@@ -1159,8 +1167,16 @@
     "unit": "Requests",
     "price_usd": "0.0000004",
     "tiers": [
-      {"begin": "0", "end": "1000000", "price_usd": "0.000000"},
-      {"begin": "1000000", "end": null, "price_usd": "0.0000004"}
+      {
+        "begin": "0",
+        "end": "1000000",
+        "price_usd": "0.000000"
+      },
+      {
+        "begin": "1000000",
+        "end": null,
+        "price_usd": "0.0000004"
+      }
     ]
   },
   {
