@@ -642,3 +642,56 @@ html {
     -webkit-text-fill-color: currentColor;
   }
 }
+/* ── indeterminate progress ──
+ *
+ * A travelling segment, for a wait whose END IS NOT KNOWN.
+ *
+ * The bar this replaces was determinate: it eased toward a 15-second budget
+ * and the caption read "20.2s / up to 15s", which is the interface arguing
+ * with itself in front of the reader. The budget is real on the server, but
+ * a cold start, a slow provider or a sleeping backend all outlive it, so the
+ * honest shape for this wait is one that shows liveness and claims nothing
+ * about when it ends. Elapsed time is reported beside it; a deadline is not.
+ */
+@keyframes indeterminate-slide {
+  from {
+    transform: translateX(-60%);
+  }
+
+  to {
+    transform: translateX(260%);
+  }
+}
+
+.indeterminate-track {
+  position: relative;
+  overflow: hidden;
+}
+
+.indeterminate-track::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inline-size: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      var(--accent) 50%,
+      transparent 100%);
+  animation: indeterminate-slide 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Motion is the only thing saying "still alive" here, so it is not removed
+   under reduced motion -- it is replaced by a still, dimmed fill, which
+   carries the same "in progress" meaning without travel. */
+@media (prefers-reduced-motion: reduce) {
+  .indeterminate-track::after {
+    position: static;
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    background: var(--accent);
+    opacity: 0.45;
+    animation: none;
+  }
+}

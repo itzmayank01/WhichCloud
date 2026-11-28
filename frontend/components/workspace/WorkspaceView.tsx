@@ -252,7 +252,15 @@ function DownloadTerraformButton({
  *  either lands inside this or fails with a message. Keep the two numbers
  *  together -- a bar that fills toward a deadline the server does not
  *  actually enforce is worse than no bar at all. */
-const GENERATE_BUDGET_S = 15;
+/** When a wait stops being ordinary and the copy should say so.
+ *
+ *  NOT a deadline, and nothing on screen presents it as one. The previous
+ *  constant was a 15-second budget rendered as "up to 15s" beside a running
+ *  counter, so a 20-second wait -- which a cold start produces routinely --
+ *  put a contradiction in front of the reader. This only decides when the
+ *  wording changes from "generating" to "still generating, the service may
+ *  be waking up". */
+const SLOW_AFTER_S = 15;
 
 export function WorkspaceView({ name }: { name: string | null }) {
   const [description, setDescription] = useState("");
@@ -264,11 +272,10 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const reqIdRef = useRef(0);
-  /* Seconds spent on the current generate, for the progress line below.
-     The backend caps the read at 14s and pricing costs well under a second,
-     so GENERATE_BUDGET_S is a real ceiling rather than a guess -- which is
-     what lets the bar be determinate instead of an indefinite spinner that
-     says nothing about how much longer it will be. */
+  /* Seconds spent on the current generate, reported as elapsed time only.
+     The backend does cap its model read, but a cold start, a slow provider
+     or a sleeping service all outlive that cap, so this drives wording and a
+     counter -- never a progress figure, and never a stated ceiling. */
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!busy) {
@@ -893,50 +900,41 @@ export function WorkspaceView({ name }: { name: string | null }) {
               <div className="w-full max-w-4xl text-center">
                 {busy ? (
                   <>
-                    <p className="text-[14px] font-medium text-ink-2">
-                      Generating architecture…
+                    {/* Stage, not a fixed label: the line that moves is the
+                        one worth reading. The shimmer is the same one the
+                        workspace already uses for live work. */}
+                    <p className="working-text text-[14px] font-medium">
+                      {elapsed < SLOW_AFTER_S
+                        ? "Generating architecture…"
+                        : "Still generating…"}
                     </p>
 
-                    {/* The progress LINE. Determinate, because the wait has a
-                        known ceiling (see GENERATE_BUDGET_S) -- a bar that
-                        fills toward a real deadline tells you the wait is
-                        bounded, which a spinner never can. It eases toward the
-                        budget rather than running linearly off the end: the
-                        last stretch slows down instead of hitting 100% and
-                        sitting there, which would read as stuck. */}
+                    {/* INDETERMINATE, deliberately.
+                        This was a determinate bar easing toward a 15s budget,
+                        with the caption "20.2s / up to 15s" underneath -- the
+                        interface contradicting itself while someone waited.
+                        The server's budget is real, but a cold start or a slow
+                        provider outlives it, so nothing here promises an end.
+                        It shows the work is alive; the elapsed figure below
+                        says how long, and that is all either can honestly
+                        claim. */}
                     <div
-                      className="mx-auto mt-3 h-1 w-full max-w-xs overflow-hidden rounded-full bg-sunk"
+                      className="indeterminate-track mx-auto mt-3 h-1 w-full max-w-xs rounded-full bg-sunk"
                       role="progressbar"
                       aria-label="Generating architecture"
-                      aria-valuemin={0}
-                      aria-valuemax={GENERATE_BUDGET_S}
-                      aria-valuenow={Math.min(elapsed, GENERATE_BUDGET_S)}
-                    >
-                      <div
-                        className="h-full rounded-full bg-accent transition-[width] duration-100 ease-linear"
-                        style={{
-                          width: `${Math.min(
-                            96,
-                            100 * (1 - Math.exp(-elapsed / (GENERATE_BUDGET_S / 2.5))),
-                          )}%`,
-                        }}
-                      />
-                    </div>
+                      aria-busy="true"
+                    />
 
-                    <p className="mt-2 font-mono text-[12px] tabular-nums text-ink-3">
-                      {elapsed.toFixed(1)}s
-                      <span className="text-ink-3/70">
-                        {" "}
-                        / up to {GENERATE_BUDGET_S}s
-                      </span>
-                    </p>
-
-                    <p className="mt-1 text-[12.5px] text-ink-3">
+                    <p className="mt-2.5 text-[12.5px] text-ink-3">
                       {elapsed < 1.5
-                        ? "Reading the description…"
-                        : elapsed < GENERATE_BUDGET_S
-                          ? "Costing every service against the live catalog."
-                          : "Taking longer than usual — the backend may be waking from idle."}
+                        ? "Reading the description"
+                        : elapsed < SLOW_AFTER_S
+                          ? "Costing every service against the live catalog"
+                          : "The service may be waking up — a cold start can take a minute"}
+                      <span className="mx-1.5 text-ink-3/50">·</span>
+                      <span className="font-mono tabular-nums text-ink-3/80">
+                        {elapsed.toFixed(1)}s
+                      </span>
                     </p>
                   </>
                 ) : result && shown ? (
