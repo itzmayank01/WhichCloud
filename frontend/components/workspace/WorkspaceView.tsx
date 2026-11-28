@@ -16,6 +16,7 @@ import {
   type SelectedNode,
 } from "@/components/architecture/ArchitectureGraph";
 import { CostRail } from "@/components/workspace/CostRail";
+import { GenerateProgress } from "@/components/workspace/GenerateProgress";
 import { TerraformLogo } from "@/components/Logo";
 import { AskPanel } from "@/components/workspace/AskPanel";
 import { Inspector } from "@/components/workspace/Inspector";
@@ -252,16 +253,6 @@ function DownloadTerraformButton({
  *  either lands inside this or fails with a message. Keep the two numbers
  *  together -- a bar that fills toward a deadline the server does not
  *  actually enforce is worse than no bar at all. */
-/** When a wait stops being ordinary and the copy should say so.
- *
- *  NOT a deadline, and nothing on screen presents it as one. The previous
- *  constant was a 15-second budget rendered as "up to 15s" beside a running
- *  counter, so a 20-second wait -- which a cold start produces routinely --
- *  put a contradiction in front of the reader. This only decides when the
- *  wording changes from "generating" to "still generating, the service may
- *  be waking up". */
-const SLOW_AFTER_S = 15;
-
 export function WorkspaceView({ name }: { name: string | null }) {
   const [description, setDescription] = useState("");
   const [asked, setAsked] = useState("");
@@ -272,20 +263,6 @@ export function WorkspaceView({ name }: { name: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const reqIdRef = useRef(0);
-  /* Seconds spent on the current generate, reported as elapsed time only.
-     The backend does cap its model read, but a cold start, a slow provider
-     or a sleeping service all outlive that cap, so this drives wording and a
-     counter -- never a progress figure, and never a stated ceiling. */
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!busy) {
-      setElapsed(0);
-      return;
-    }
-    const started = Date.now();
-    const id = setInterval(() => setElapsed((Date.now() - started) / 1000), 100);
-    return () => clearInterval(id);
-  }, [busy]);
   /* Bumped on every replay press. It is the canvas's React key, so a press
      remounts it and the build-in animation runs again from the first node --
      the animation is a mount effect, and without a new key there is nothing
@@ -899,44 +876,11 @@ export function WorkspaceView({ name }: { name: string | null }) {
                   everything. */}
               <div className="w-full max-w-4xl text-center">
                 {busy ? (
-                  <>
-                    {/* Stage, not a fixed label: the line that moves is the
-                        one worth reading. The shimmer is the same one the
-                        workspace already uses for live work. */}
-                    <p className="working-text text-[14px] font-medium">
-                      {elapsed < SLOW_AFTER_S
-                        ? "Generating architecture…"
-                        : "Still generating…"}
-                    </p>
-
-                    {/* INDETERMINATE, deliberately.
-                        This was a determinate bar easing toward a 15s budget,
-                        with the caption "20.2s / up to 15s" underneath -- the
-                        interface contradicting itself while someone waited.
-                        The server's budget is real, but a cold start or a slow
-                        provider outlives it, so nothing here promises an end.
-                        It shows the work is alive; the elapsed figure below
-                        says how long, and that is all either can honestly
-                        claim. */}
-                    <div
-                      className="indeterminate-track mx-auto mt-3 h-1 w-full max-w-xs rounded-full bg-sunk"
-                      role="progressbar"
-                      aria-label="Generating architecture"
-                      aria-busy="true"
-                    />
-
-                    <p className="mt-2.5 text-[12.5px] text-ink-3">
-                      {elapsed < 1.5
-                        ? "Reading the description"
-                        : elapsed < SLOW_AFTER_S
-                          ? "Costing every service against the live catalog"
-                          : "The service may be waking up — a cold start can take a minute"}
-                      <span className="mx-1.5 text-ink-3/50">·</span>
-                      <span className="font-mono tabular-nums text-ink-3/80">
-                        {elapsed.toFixed(1)}s
-                      </span>
-                    </p>
-                  </>
+                  /* The real sequence a generate runs in, instead of a bar
+                     that could only say "something is happening". See
+                     GenerateProgress for why nothing here advances on a
+                     timer. */
+                  <GenerateProgress phase="reading" />
                 ) : result && shown ? (
                   <>
                     {/* Was "only AWS architectures are drawn today". That
