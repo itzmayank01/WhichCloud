@@ -263,6 +263,42 @@ export class ApiError extends Error {
   }
 }
 
+/** Status 0 means the request never reached the app: DNS, CORS, a suspended
+ *  service, or no network. Callers that want to offer a retry can key on it
+ *  -- unlike a 4xx, trying again later is genuinely worth doing. */
+export const UNREACHABLE = 0;
+
+/** What to tell someone when the service cannot be reached at all.
+ *
+ *  The browser's own words for this are "Failed to fetch" (or "Load failed"
+ *  in Safari), and that string was reaching the screen verbatim -- next to a
+ *  button someone had just pressed, with no indication of whether the fault
+ *  was theirs, whether their work was lost, or whether pressing it again
+ *  would help. A suspended or sleeping backend produced exactly that.
+ *
+ *  Every unreachable path is funnelled through here so the answer is one
+ *  sentence of plain language plus what to do next. */
+function unreachableError(): ApiError {
+  return new ApiError(
+    "Can't reach the pricing service right now. It may be starting up — " +
+      "wait a moment and try again.",
+    UNREACHABLE,
+  );
+}
+
+/** The same, for a gateway that answered but never handed over to the app.
+ *
+ *  A suspended Render service replies 503 with its own HTML page, so there is
+ *  no `detail` to quote and the caller fell back to "GET /path failed" -- a
+ *  path and a verb, shown to someone who asked for a price. */
+function gatewayError(status: number): ApiError {
+  return new ApiError(
+    "The pricing service is not responding. It may be restarting — " +
+      "wait a moment and try again.",
+    status,
+  );
+}
+
 /* The backend sleeps after 15 minutes idle and takes 30-60s to wake, and
  * until it is up Render's edge answers instead of the app. Two things follow,
  * and the second is the one that bites:
@@ -357,7 +393,47 @@ async function fetchThroughWake(
     }
   }
 
-  throw lastError;
+  /* `throw lastError` sent the browser's own TypeError up to the UI, which
+     is how "Failed to fetch" ended up rendered beside the Price it button.
+     An AbortError is the caller's own cancellation and is rethrown above;
+     anything reaching here is the service being unreachable after the full
+     wake budget, which has a sentence of its own. */
+  if (lastError instanceof ApiError) throw lastError;
+  throw unreachableError();
+}
+
+/** POST JSON through the wake-retry path, with human errors.
+ *
+ *  Exported because components were hand-rolling `fetch(`${BASE}${path}`)`
+ *  for calls that needed an AbortSignal, which the `post` helper below does
+ *  not take. Each of those re-implementations silently opted out of two
+ *  things: the retry that carries a request across a cold start, and the
+ *  plain-language failures above -- which is why a stopped backend put the
+ *  browser's own "Failed to fetch" on screen next to the button.
+ *
+ *  Takes a signal, so there is no longer a reason to bypass this module. */
+export async function postJson<T>(
+  path: string,
+  body: unknown,
+  init: { signal?: AbortSignal; token?: string } = {},
+): Promise<T> {
+  const response = await fetchThroughWake(`${BASE}${path}`, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json", ...bearer(init.token) },
+    body: JSON.stringify(body),
+    signal: init.signal,
+  });
+
+  if (!response.ok) {
+    if (WAKING.has(response.status)) throw gatewayError(response.status);
+    const detail = await response
+      .json()
+      .then((d) => (typeof d?.detail === "string" ? d.detail : ""))
+      .catch(() => "");
+    throw new ApiError(detail || `POST ${path} failed`, response.status);
+  }
+  return response.json();
 }
 
 async function get<T>(
@@ -378,6 +454,10 @@ async function get<T>(
       .json()
       .then((d) => (typeof d?.detail === "string" ? d.detail : ""))
       .catch(() => "");
+    /* A gateway status carries the platform's HTML, not the app's JSON, so
+       there is no detail to quote -- the old fallback showed "GET /path
+       failed" to someone who asked for a price. */
+    if (WAKING.has(response.status)) throw gatewayError(response.status);
     throw new ApiError(detail || `GET ${path} failed`, response.status);
   }
   return response.json();
@@ -398,7 +478,8 @@ async function del<T>(path: string, token?: string): Promise<T> {
     headers: bearer(token),
   });
   if (!response.ok) {
-    throw new Error(`DELETE ${path} failed: ${response.status}`);
+    if (WAKING.has(response.status)) throw gatewayError(response.status);
+    throw new ApiError(`DELETE ${path} failed: ${response.status}`, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -435,6 +516,7 @@ async function post<T>(
   });
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
+    if (WAKING.has(response.status)) throw gatewayError(response.status);
     throw new ApiError(detail.detail ?? `POST ${path} failed`, response.status);
   }
   return response.json();

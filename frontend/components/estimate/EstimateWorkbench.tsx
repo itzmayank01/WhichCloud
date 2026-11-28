@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { PricedDiagram } from "@/components/PricedDiagram";
-import { API_BASE, money, type Option, type Recommendation } from "@/lib/api";
+import { API_BASE, money, postJson, type Option, type Recommendation } from "@/lib/api";
 
 /**
  * The estimate page: requirements in, three priced architectures out.
@@ -157,15 +157,15 @@ export function EstimateWorkbench() {
           ? ["/describe", { description: description.trim() }]
           : ["/recommend", form];
 
-      const res = await fetch(`${BASE}${path}`, {
-        method: "POST",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      /* Through lib/api.ts rather than a bare fetch. The hand-rolled call
+         that was here skipped the wake retry, so a request that arrived
+         during a cold start simply failed, and it surfaced the browser's own
+         TypeError -- "Failed to fetch" rendered beside the Price it button,
+         which says nothing about whose fault it is or whether pressing it
+         again would help. */
+      const data = await postJson<Recommendation>(path, body, {
         signal: controller.signal,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? "Could not price that.");
       if (controller.signal.aborted || reqId !== reqIdRef.current) return;
 
       setResult(data);
